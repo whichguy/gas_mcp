@@ -1,0 +1,80 @@
+{
+  "name": "fibonacci-calculator",
+  "title": "Fibonacci Calculator Project",
+  "description": "A Google Apps Script project demonstrating Fibonacci number calculations, string utilities, and MCP runtime integration with fixed double extension handling.",
+  "version": "1.0.1",
+  "created": "2025-06-11T13:58:10.839Z",
+  "lastModified": "2025-06-11T14:13:00.000Z",
+  "googleAppsScript": {
+    "scriptId": "1Yw-r4apdS-_95TQyZnbsQK3HiEaO-wGE2_VTydYnZ5kIH6C8_Uh3ggqp",
+    "projectUrl": "https://script.google.com/home/projects/1Yw-r4apdS-_95TQyZnbsQK3HiEaO-wGE2_VTydYnZ5kIH6C8_Uh3ggqp",
+    "timezone": "America/New_York",
+    "runtimeVersion": "V8"
+  },
+  "files": [
+    {
+      "name": "appsscript.json",
+      "type": "JSON",
+      "description": "Google Apps Script manifest file"
+    },
+    {
+      "name": "fibonacci.gs",
+      "type": "SERVER_JS", 
+      "description": "Main Fibonacci calculation functions with iterative algorithm"
+    },
+    {
+      "name": "test-stringUtils.gs",
+      "type": "SERVER_JS",
+      "description": "String utility functions including double_string function with test cases"
+    },
+    {
+      "name": "__mcp_gas_run.gs",
+      "type": "SERVER_JS",
+      "description": "MCP runtime shim for dynamic function execution (fixed double extension issue)"
+    }
+  ],
+  "functions": {
+    "main": [
+      "fib(n)",
+      "getFibonacciSequence(count)",
+      "testFibonacci()",
+      "double_string(str)",
+      "testDoubleString()",
+      "simpleDoubleTest(input)"
+    ],
+    "system": [
+      "doGet(e)",
+      "doPost(e)",
+      "__gas_run(function_plus_args)",
+      "testMcpGasRun()"
+    ]
+  },
+  "features": [
+    "Iterative Fibonacci calculation",
+    "String manipulation utilities", 
+    "MCP runtime integration",
+    "Dynamic function execution",
+    "Comprehensive testing functions",
+    "Fixed double extension bug in gas_run"
+  ],
+  "testing": {
+    "validated": [
+      "fib(9) = 34",
+      "fib(11) = 89", 
+      "fib(12) = 144",
+      "double_string('Hello') = 'HelloHello'",
+      "Extension handling works correctly"
+    ]
+  },
+  "deployments": {
+    "latest": {
+      "type": "WEB_APP",
+      "access": "MYSELF",
+      "executeAs": "USER_DEPLOYING",
+      "lastDeployed": "2025-06-11T14:13:00.000Z"
+    }
+  },
+  "tags": ["fibonacci", "math", "string-utils", "mcp", "testing", "bugfix"],
+  "author": "MCP Gas Development",
+  "license": "MIT"
+} 
