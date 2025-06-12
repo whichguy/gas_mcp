@@ -1,13 +1,107 @@
 import { OAuth2Client } from 'google-auth-library';
 import { AuthStateManager, TokenInfo, UserInfo } from './authState.js';
 import { OAuthError } from '../errors/mcpErrors.js';
-import { readFileSync } from 'fs';
+import fs from 'fs';
+import path from 'path';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const oauthConfig = JSON.parse(readFileSync(join(__dirname, '../../config/oauth.json'), 'utf8'));
+const __dirname = path.dirname(__filename);
+
+export interface OAuthConfig {
+  oauth: {
+    client_id: string;
+    client_secret: string;
+    redirect_uri: string;
+    auth_uri: string;
+    token_uri: string;
+    scopes: string[];
+  };
+  server: {
+    port: number;
+  };
+}
+
+function loadOAuthConfig(): OAuthConfig {
+  // Try environment variables first
+  const envClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const envClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const envPort = process.env.OAUTH_SERVER_PORT;
+
+  if (envClientId && envClientSecret) {
+    console.log('🔑 Using OAuth credentials from environment variables');
+    return {
+      oauth: {
+        client_id: envClientId,
+        client_secret: envClientSecret,
+        redirect_uri: `http://localhost:${envPort || 3000}/oauth/callback`,
+        auth_uri: "https://accounts.google.com/o/oauth2/auth",
+        token_uri: "https://oauth2.googleapis.com/token",
+        scopes: [
+          "https://www.googleapis.com/auth/script.projects",
+          "https://www.googleapis.com/auth/script.processes",
+          "https://www.googleapis.com/auth/script.deployments",
+          "https://www.googleapis.com/auth/script.scriptapp",
+          "https://www.googleapis.com/auth/script.external_request",
+          "https://www.googleapis.com/auth/script.webapp.deploy",
+          "https://www.googleapis.com/auth/drive",
+          "https://www.googleapis.com/auth/spreadsheets",
+          "https://www.googleapis.com/auth/documents",
+          "https://www.googleapis.com/auth/forms",
+          "https://www.googleapis.com/auth/userinfo.email",
+          "https://www.googleapis.com/auth/userinfo.profile"
+        ]
+      },
+      server: {
+        port: parseInt(envPort || '3000')
+      }
+    };
+  }
+
+  // Fallback to config file
+  const configPath = path.join(__dirname, '..', '..', 'config', 'oauth.json');
+  
+  if (!fs.existsSync(configPath)) {
+    console.error('❌ No OAuth configuration found!');
+    console.error('📋 Options:');
+    console.error('   1. Run "npm run setup" to create config/oauth.json');
+    console.error('   2. Set environment variables: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET');
+    console.error('   3. See OAUTH_QUICK_SETUP.md for getting real credentials');
+    throw new Error('OAuth configuration not found. Run "npm run setup" or set environment variables.');
+  }
+
+  try {
+    const configData = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configData) as OAuthConfig;
+    
+    if (config.oauth.client_id === 'test_client_id') {
+      console.log('⚠️  Using test OAuth credentials from config file');
+      console.log('📘 See OAUTH_QUICK_SETUP.md to get real Google OAuth credentials');
+    } else {
+      console.log('✅ Using OAuth credentials from config file');
+    }
+    
+    return config;
+  } catch (error) {
+    console.error('❌ Failed to parse OAuth config file:', error);
+    throw new Error('Invalid OAuth configuration file. Check config/oauth.json format.');
+  }
+}
+
+// Export the loaded config
+export const oauthConfig: OAuthConfig = loadOAuthConfig();
+
+// Export client configuration for OAuth tools
+export const oauthClientConfig = {
+  clientId: oauthConfig.oauth.client_id,
+  clientSecret: oauthConfig.oauth.client_secret,
+  redirectUri: oauthConfig.oauth.redirect_uri,
+  authUri: oauthConfig.oauth.auth_uri,
+  tokenUri: oauthConfig.oauth.token_uri,
+  scopes: oauthConfig.oauth.scopes
+};
+
+export default oauthConfig;
 
 /**
  * Google OAuth client for Apps Script authentication

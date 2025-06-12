@@ -5,7 +5,7 @@
   "main": "dist/src/index.js",
   "type": "module",
   "scripts": {
-    "build": "npx tsc",
+    "build": "npx tsc && cp -r config dist/",
     "test": "npm run test:core",
     "test:unit": "mocha test/errors/**/*.test.ts test/api/**/*.test.ts test/auth/**/*.test.ts test/tools/**/*.test.ts",
     "test:core": "mocha test/system/consolidated-core.test.ts --timeout 30000",
@@ -25,42 +25,52 @@
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "setup": "chmod +x scripts/setup-credentials.sh && scripts/setup-credentials.sh",
     "docs:deployment": "echo '📖 Opening deployment workflow documentation...' && cat docs/FUNCTION_EXECUTION_DEPLOYMENT.md",
     "docs:auto-auth": "echo '📖 Opening auto-authentication documentation...' && cat docs/AUTO_AUTHENTICATION.md",
     "autodeploy": "node auto-deploy-proxy.js",
     "test:proxy": "npm run autodeploy",
     "test:sheet-finder": "mocha test/system/sheet-script-finder.test.ts --timeout 60000"
   },
-  "keywords": ["mcp", "google-apps-script", "oauth", "filesystem", "dynamic-execution", "code-execution", "web-app-deployment"],
+  "keywords": [
+    "mcp",
+    "google-apps-script",
+    "oauth",
+    "filesystem",
+    "dynamic-execution",
+    "code-execution",
+    "web-app-deployment"
+  ],
   "author": "MCP Gas Server",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.4.0",
-    "googleapis": "^128.0.0",
-    "google-auth-library": "^9.0.0",
-    "express": "^4.18.2",
-    "open": "^8.4.0",
-    "winston": "^3.11.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "google-auth-library": "^9.0.0",
+    "googleapis": "^128.0.0",
+    "open": "^8.4.0",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/express": "^4.17.0",
-    "@types/cors": "^2.8.0",
-    "@types/mocha": "^10.0.0",
     "@types/chai": "^4.3.0",
+    "@types/cors": "^2.8.0",
+    "@types/express": "^4.17.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
     "@types/sinon": "^17.0.0",
-    "typescript": "^5.2.0",
-    "ts-node": "^10.9.0",
-    "nodemon": "^3.0.0",
-    "mocha": "^10.2.0",
-    "chai": "^4.3.0",
-    "sinon": "^17.0.0",
-    "nock": "^13.4.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.45.0"
+    "chai": "^4.3.0",
+    "eslint": "^8.45.0",
+    "mocha": "^10.2.0",
+    "nock": "^13.4.0",
+    "nodemon": "^3.0.0",
+    "sinon": "^17.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -68,10 +78,12 @@
   "mcpServers": {
     "mcp-gas": {
       "command": "node",
-      "args": ["/Users/jameswiese/src/mcp_gas/dist/src/index.js"],
+      "args": [
+        "/Users/jameswiese/src/mcp_gas/dist/src/index.js"
+      ],
       "env": {
         "NODE_ENV": "production"
       }
     }
   }
-} 
+}

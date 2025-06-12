@@ -127,3 +127,6 @@ config/local.json
 # OAuth configuration files
 **/oauth.json
 **/oauth-*.json
+
+# OAuth credentials (keep private)
+config/oauth.json
