@@ -1,10 +1,13 @@
 {
+  "description": "UWP OAuth 2.0 Configuration for MCP Gas Server",
+  "note": "UWP application OAuth client with PKCE-only authentication - no client_secret required",
   "oauth": {
-    "client_id": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
-    "client_secret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
-    "redirect_uri": "http://localhost:3000/oauth/callback",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
+    "client_id": "428972970708-jtm1ou5838lv7vbjdv5kgp5222s7d8f0.apps.googleusercontent.com",
+    "type": "uwp",
+    "redirect_uris": [
+      "http://127.0.0.1/*",
+      "http://localhost/*"
+    ],
     "scopes": [
       "https://www.googleapis.com/auth/script.projects",
       "https://www.googleapis.com/auth/script.processes",
@@ -19,8 +22,5 @@
       "https://www.googleapis.com/auth/userinfo.email",
       "https://www.googleapis.com/auth/userinfo.profile"
     ]
-  },
-  "server": {
-    "port": 3000
   }
-} 
+}

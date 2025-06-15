@@ -6,6 +6,7 @@ import { GASAuthClient } from '../auth/oauthClient.js';
 import { AUTH_MESSAGES, getContextualAuthMessage } from '../constants/authMessages.js';
 import { GASErrorHandler, ErrorContext } from '../utils/errorHandler.js';
 import { MCPValidator } from '../utils/validation.js';
+import { AuthConfig } from '../auth/oauthClient.js';
 
 /**
  * Base class for all MCP Gas tools with comprehensive authentication and validation support
@@ -158,7 +159,24 @@ export abstract class BaseTool implements Tool {
     // Support both session-based and singleton authentication
     this.sessionAuthManager = sessionAuthManager;
     this.authStateManager = AuthStateManager.getInstance();
-    this.authClient = new GASAuthClient();
+    
+    // Use simplified OAuth configuration from JSON file only
+    try {
+      const { loadOAuthConfigFromJson } = require('./auth.js');
+      const fullConfig = loadOAuthConfigFromJson();
+      this.authClient = new GASAuthClient(fullConfig);
+    } catch (error) {
+      // If config loading fails, use a minimal config for base tool
+      console.warn('⚠️  Base tool: Failed to load OAuth config, using minimal fallback');
+      const minimalConfig: AuthConfig = {
+        client_id: 'base-tool-fallback',
+        client_secret: undefined,
+        type: 'uwp',
+        redirect_uris: ['http://127.0.0.1/*', 'http://localhost/*'],
+        scopes: []
+      };
+      this.authClient = new GASAuthClient(minimalConfig);
+    }
   }
 
   /**
@@ -202,8 +220,10 @@ export abstract class BaseTool implements Tool {
    * 
    * 1. **Session Auth First**: Try session-specific authentication if available
    * 2. **Token Validation**: Verify token is valid and not expired
-   * 3. **Singleton Fallback**: Use singleton auth if session auth unavailable
-   * 4. **Error Handling**: Throw `AuthenticationError` with auth URL if failed
+   * 3. **Reload on Failure**: Refresh auth state from disk if auth fails initially
+   * 4. **Retry After Reload**: Try authentication again after reloading state
+   * 5. **Singleton Fallback**: Use singleton auth if session auth unavailable
+   * 6. **Error Handling**: Throw `AuthenticationError` with auth URL if failed
    * 
    * ## Error Scenarios:
    * - **Not Authenticated**: User hasn't completed OAuth flow
@@ -229,33 +249,49 @@ export abstract class BaseTool implements Tool {
   protected async requireAuthentication(): Promise<string> {
     // Try session auth first if available
     if (this.sessionAuthManager) {
-      if (!this.sessionAuthManager.isAuthenticated()) {
-        const authUrl = this.authClient.generateAuthUrl();
-        throw new AuthenticationError(AUTH_MESSAGES.REQUIRED, authUrl);
+      // First attempt - use cached auth state
+      if (this.sessionAuthManager.isAuthenticated()) {
+        const token = this.sessionAuthManager.getValidToken();
+        if (token) {
+          return token;
+        }
       }
 
-      const token = this.sessionAuthManager.getValidToken();
-      if (!token) {
-        const authUrl = this.authClient.generateAuthUrl();
-        throw new AuthenticationError(AUTH_MESSAGES.EXPIRED, authUrl);
-      }
+      // If first attempt failed, reload auth state from disk
+      // This ensures we see authentication saved by other tools (like gas_auth)
+      console.log(`🔄 [${this.name}] Reloading auth state to check for fresh authentication...`);
+      this.sessionAuthManager.reloadAuthSession();
       
-      // For session auth, we already validated the token in the session manager
-      return token;
+      // Second attempt - try again with fresh state
+      if (this.sessionAuthManager.isAuthenticated()) {
+        const token = this.sessionAuthManager.getValidToken();
+        if (token) {
+          console.log(`✅ [${this.name}] Found fresh authentication after reload`);
+          return token;
+        }
+      }
+
+      // Both attempts failed
+      throw new AuthenticationError(
+        `Authentication required for ${this.name}. Please run gas_auth(mode="start") to authenticate with Google Apps Script, then retry this command.`
+      );
     }
 
     // Fall back to singleton auth
     if (!this.authStateManager.isAuthenticated()) {
-      const authUrl = this.authClient.generateAuthUrl();
-      throw new AuthenticationError(AUTH_MESSAGES.REQUIRED, authUrl);
+      throw new AuthenticationError(
+        `Authentication required for ${this.name}. Please run gas_auth(mode="start") to authenticate with Google Apps Script, then retry this command.`
+      );
     }
 
-    try {
-      return await this.authClient.getValidAccessToken();
-    } catch (error) {
-      const authUrl = this.authClient.generateAuthUrl();
-      throw new AuthenticationError(AUTH_MESSAGES.EXPIRED, authUrl);
+    const token = this.authStateManager.getValidToken();
+    if (!token) {
+      throw new AuthenticationError(
+        `Authentication expired for ${this.name}. Please run gas_auth(mode="start") to re-authenticate with Google Apps Script, then retry this command.`
+      );
     }
+    
+    return token;
   }
 
   /**

@@ -48,7 +48,7 @@
     "latest": {
       "type": "[WEB_APP|EXECUTION_API|ADD_ON]",
       "access": "[MYSELF|DOMAIN|ANYONE|ANYONE_ANONYMOUS]",
-      "executeAs": "[USER_ACCESSING|USER_DEPLOYING]",
+              "executeAs": "[USER_ACCESSING|USER_DEPLOYING] (default: USER_ACCESSING)",
       "lastDeployed": "[YYYY-MM-DDTHH:mm:ss.sssZ]"
     }
   },

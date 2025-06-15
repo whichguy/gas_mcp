@@ -33,13 +33,18 @@ describe('GASAuthTool', () => {
       expect(authTool.description).to.include('OAuth 2.0');
     });
 
-    it('should have proper input schema', () => {
-      const schema = authTool.inputSchema;
+    it('should have correct input schema', () => {
+      const tool = new GASAuthTool();
+      const schema = tool.inputSchema as any;
+      
       expect(schema.type).to.equal('object');
       expect(schema.properties.mode).to.exist;
-      expect(schema.properties.mode.enum).to.include.members(['start', 'callback', 'status', 'logout']);
-      expect(schema.properties.code).to.exist;
       expect(schema.properties.openBrowser).to.exist;
+      expect(schema.properties.waitForCompletion).to.exist;
+      expect(schema.properties.accessToken).to.exist;
+      
+      // Verify mode enum values
+      expect(schema.properties.mode.enum).to.deep.equal(['start', 'status', 'logout']);
     });
   });
 

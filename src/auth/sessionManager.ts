@@ -182,6 +182,16 @@ export class SessionAuthManager {
   }
 
   /**
+   * Force reload authentication session from file
+   * This bypasses the loaded cache and re-reads from disk
+   */
+  public reloadAuthSession(): void {
+    this.loaded = false;
+    this.authSession = null;
+    this.loadAuthSession();
+  }
+
+  /**
    * Save authentication session to file
    */
   private saveAuthSession(): void {

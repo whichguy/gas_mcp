@@ -98,7 +98,7 @@ export class GASProxySetupTool extends BaseTool {
       let deployment = null;
       if (deploy) {
         try {
-          // Create deployment
+          // Create deployment with USER_ACCESSING for proper user context
           deployment = await this.gasClient.createDeployment(
             scriptId,
             'HTTP Proxy Deployment',
@@ -107,7 +107,7 @@ export class GASProxySetupTool extends BaseTool {
               accessLevel: 'MYSELF',
               webAppConfig: {
                 access: 'MYSELF',
-                executeAs: 'USER_DEPLOYING'
+                executeAs: 'USER_ACCESSING'
               }
             },
             undefined,

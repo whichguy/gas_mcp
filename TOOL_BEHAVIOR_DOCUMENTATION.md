@@ -16,7 +16,7 @@
 
 **Documentation Added**: Added warning comments in `src/tools/auth.ts` explaining this behavior.
 
-### 2. `gas_run` Tool Direct Execution and Automatic Deployment Behavior
+### 2. `gas_run` Tool HEAD Deployment and Testing Endpoint Behavior
 
 **CRITICAL CAPABILITIES DOCUMENTED**:
 - **CAN EXECUTE ANY STATEMENT OR CALL WITHOUT WRAPPER FUNCTIONS**: 
@@ -24,12 +24,18 @@
   - No need to create wrapper functions - executes code directly using Function constructor
   - Supports any valid JavaScript/Google Apps Script expression or function call
 
-**AUTOMATIC DEPLOYMENT BEHAVIOR**: 
-- **NO PRIOR DEPLOYMENT OR VERSIONING REQUIRED**: The `gas_run` tool automatically handles all deployment
+**HEAD DEPLOYMENT STRATEGY**: 
+- **USES HEAD DEPLOYMENTS**: `versionNumber=null` for true testing endpoint behavior
+- **AUTOMATIC /dev URLs**: Forces `/dev` URLs even when Google Apps Script API returns `/exec`
+- **NO REDEPLOYMENT NEEDED**: Content updates are automatic with HEAD deployments
+- **TESTING ENDPOINT PATTERN**: Follows Google Apps Script documentation for proper development workflow
 - **NO MANUAL SETUP NEEDED**: Works with any project immediately - just provide the code to execute
-- **Automatic Version Creation**: Creates new version with latest code changes automatically  
-- **Automatic Deployment**: Creates new deployment as Web App automatically
-- **HEAD Deployment Management**: Automatically creates and manages HEAD deployment for latest content
+
+**DEPLOYMENT TYPE BEHAVIOR**:
+| Deployment Type | versionNumber | URL Suffix | Content Updates | Used By |
+|----------------|---------------|------------|-----------------|---------|
+| **HEAD** (testing) | `null` or `0` | **`/dev`** | ✅ Automatic (latest saved content) | `gas_run` |
+| **Versioned** (production) | Positive integer | **`/exec`** | ❌ Fixed version (requires redeployment) | Manual deployments |
 
 **KEY BENEFITS**:
 - Execute any code directly without pre-defining functions

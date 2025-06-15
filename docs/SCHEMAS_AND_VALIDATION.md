@@ -244,16 +244,23 @@ interface GasWriteInput {
 
 ### 3. Execution Tools
 
-#### `gas_run` - Direct Code Execution
+#### `gas_run` - Direct Code Execution with HEAD Deployment
 
 ```typescript
 interface GasRunInput {
   scriptId: string;                 // Google Apps Script project ID
   functionName: string;             // Any JavaScript statement or function call
   parameters?: any[];               // Optional parameters (for function calls)
+  devMode?: boolean;                // Uses HEAD deployment with /dev URL (default: true)
+  autoRedeploy?: boolean;           // Ensures HEAD deployment exists (default: true)
   accessToken?: string;             // Optional access token
 }
 ```
+
+**Deployment Strategy:**
+- **HEAD Deployments**: `versionNumber=null`, uses `/dev` URLs, serves latest content automatically
+- **Testing Endpoint**: Follows Google Apps Script documentation for proper testing workflow
+- **No Redeployment**: Content updates are automatic when using HEAD deployments
 
 **JSON Schema:**
 ```json
@@ -262,14 +269,14 @@ interface GasRunInput {
   "properties": {
     "scriptId": {
       "type": "string",
-      "description": "Google Apps Script project ID",
+      "description": "Google Apps Script project ID. Tool will use or create HEAD deployment with /dev URL for testing latest content.",
       "pattern": "^[a-zA-Z0-9_-]{20,60}$",
       "minLength": 20,
       "maxLength": 60
     },
     "functionName": {
       "type": "string", 
-      "description": "Any JavaScript/Apps Script statement or function call to execute directly",
+      "description": "Any JavaScript/Apps Script statement or function call to execute directly via doGet() proxy",
       "minLength": 1,
       "maxLength": 1000,
       "examples": [
@@ -294,6 +301,16 @@ interface GasRunInput {
         ]
       },
       "maxItems": 10
+    },
+    "devMode": {
+      "type": "boolean",
+      "description": "Run in development mode using HEAD deployment (default: true)",
+      "default": true
+    },
+    "autoRedeploy": {
+      "type": "boolean", 
+      "description": "Enable automatic HEAD deployment setup: ensures HEAD deployment exists with /dev URL for testing. Content updates are automatic without redeployment. (default: true)",
+      "default": true
     },
     "accessToken": {
       "type": "string",
