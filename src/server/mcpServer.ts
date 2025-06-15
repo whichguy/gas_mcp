@@ -37,6 +37,7 @@ import {
   GASCreateScriptTool
 } from '../tools/driveContainerTools.js';
 
+
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
 
@@ -90,11 +91,11 @@ interface ClientSession {
  * - **Structured Responses**: Returns helpful guidance and instructions to users
  * - **Test Mode Support**: Disables auto-auth in test mode to prevent browser conflicts
  * 
- * ### 🛠️ Tool Architecture
- * - **11 Core Tools**: Complete Google Apps Script API coverage
- * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
- * - **Schema Validation**: Comprehensive input validation with helpful error messages
- * - **Rate Limiting**: Built-in rate limiting and retry strategies for Google APIs
+    * ### 🛠️ Tool Architecture
+   * - **11 Core Tools**: Complete Google Apps Script API coverage
+   * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
+   * - **Schema Validation**: Comprehensive input validation with helpful error messages
+   * - **Rate Limiting**: Built-in rate limiting and retry strategies for Google APIs
  * 
  * ## Development Guidelines for AI Assistants
  * 
@@ -159,14 +160,14 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    * 
-   * Each session gets its own instances of all 11 MCP tools, each configured
+   * Each session gets its own instances of all 12 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    * 
    * ## Tool Categories Created:
    * 
-   * ### Authentication & Session
-   * - `gas_auth` - OAuth 2.0 flow management
+   * ### Authentication & Session (1 tool)
+   * - `gas_auth` - OAuth 2.0 flow management with desktop PKCE
    * 
    * ### Filesystem Operations (6 tools)
    * - `gas_ls` - List projects and files

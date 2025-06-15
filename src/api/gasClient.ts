@@ -3,6 +3,7 @@ import { GASAuthClient } from '../auth/oauthClient.js';
 import { rateLimiter } from './rateLimiter.js';
 import { GASApiError } from '../errors/mcpErrors.js';
 import { getFileType, sortFilesForExecution } from './pathParser.js';
+import { AuthConfig } from '../auth/oauthClient.js';
 
 /**
  * Google Apps Script project information
@@ -139,14 +140,35 @@ export class GASClient {
   private driveApi: any;
 
   constructor() {
-    this.authClient = new GASAuthClient();
+    // Use simplified OAuth configuration from JSON file only
+    try {
+      const { loadOAuthConfigFromJson } = require('../tools/auth.js');
+      const config = loadOAuthConfigFromJson();
+      this.authClient = new GASAuthClient(config);
+    } catch (error) {
+      // If config loading fails, create a minimal client that will fail fast
+      console.warn('⚠️  GASClient: Failed to load OAuth config, using minimal fallback');
+      const minimalConfig: AuthConfig = {
+        client_id: 'gas-client-no-config',
+        client_secret: undefined,
+        type: 'uwp',
+        redirect_uris: ['http://127.0.0.1/*', 'http://localhost/*'],
+        scopes: []
+      };
+      this.authClient = new GASAuthClient(minimalConfig);
+    }
   }
 
   /**
    * Initialize the Google APIs client
    */
   private async initializeClient(accessToken?: string): Promise<void> {
-    const token = accessToken || await this.authClient.getValidAccessToken();
+    // accessToken must be provided for API calls since GASAuthClient doesn't manage tokens directly
+    if (!accessToken) {
+      throw new Error('Access token is required for API initialization');
+    }
+    
+    const token = accessToken;
     
     console.log(`🔧 Initializing GAS client with token: ${token.substring(0, 20)}...`);
     
@@ -632,19 +654,45 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Extract Web App URL if available
+      // Extract Web App URL if available, or construct appropriate URL
       if (response.data.entryPoints) {
         console.log(`🔍 Entry points found:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
-          console.log(`🌐 Web App URL detected: ${webAppEntry.webApp.url}`);
+          console.log(`🌐 Web App URL detected from API: ${webAppEntry.webApp.url}`);
           deployment.webAppUrl = webAppEntry.webApp.url;
+        } else if (deployment.deploymentId && webAppEntry) {
+          // Construct appropriate URL based on deployment type
+          const isHead = this.isHeadDeployment(deployment);
+          const constructedUrl = this.constructWebAppUrl(deployment.deploymentId, isHead);
+          console.log(`🌐 Constructed Web App URL: ${constructedUrl} (${isHead ? 'HEAD/dev' : 'versioned/exec'})`);
+          deployment.webAppUrl = constructedUrl;
         }
       }
 
       return deployment;
     }, accessToken);
+  }
+
+  /**
+   * Construct web app URL based on deployment type
+   * HEAD deployments (versionNumber=null/0) use /dev
+   * Versioned deployments use /exec
+   */
+  constructWebAppUrl(deploymentId: string, isHeadDeployment: boolean = false): string {
+    const urlSuffix = isHeadDeployment ? 'dev' : 'exec';
+    return `https://script.google.com/macros/s/${deploymentId}/${urlSuffix}`;
+  }
+
+  /**
+   * Check if a deployment is a HEAD deployment
+   * HEAD deployments have versionNumber=null, undefined, or 0
+   */
+  isHeadDeployment(deployment: GASDeployment): boolean {
+    return deployment.versionNumber === null || 
+           deployment.versionNumber === undefined || 
+           deployment.versionNumber === 0;
   }
 
   /**
@@ -676,7 +724,7 @@ export class GASClient {
 
   /**
    * Create a HEAD deployment (serves latest content automatically)
-   * HEAD deployments now require a version number but still serve the current saved content
+   * HEAD deployments have versionNumber=null and use /dev URLs
    */
   async createHeadDeployment(
     scriptId: string,
@@ -689,36 +737,31 @@ export class GASClient {
     await this.initializeClient(accessToken);
     
     return this.makeApiCall(async () => {
-      // Create a version first (required by Google Apps Script API)
-      console.log('📦 Creating version for HEAD deployment...');
-      const version = await this.createVersion(scriptId, `Version for ${description}`, accessToken);
-      const targetVersion = version.versionNumber;
-      console.log(`✅ Created version ${targetVersion} for HEAD deployment`);
-
       // Default to Web App for HEAD deployments
       const entryPointType = options.entryPointType || 'WEB_APP';
-      const accessLevel = options.accessLevel || 'ANYONE';
+      const accessLevel = options.accessLevel || 'MYSELF';
 
-      // Build HEAD deployment request (now requires versionNumber)
+      // Build HEAD deployment request (NO versionNumber = HEAD deployment)
       const requestBody: any = {
-        versionNumber: targetVersion,
         description,
         manifestFileName: 'appsscript'
+        // Note: Omitting versionNumber makes this a HEAD deployment
       };
 
       // Log deployment configuration
       if (entryPointType === 'WEB_APP') {
         const webAppConfig = options.webAppConfig || {
           access: accessLevel,
-          executeAs: 'USER_DEPLOYING'
+          executeAs: 'USER_ACCESSING'
         };
         console.log(`🌐 Creating HEAD Web App deployment`);
         console.log(`   Access: ${webAppConfig.access}`);
         console.log(`   Execute As: ${webAppConfig.executeAs}`);
-        console.log(`   Serves: Latest saved content automatically`);
+        console.log(`   Serves: Latest saved content automatically (no redeployment needed)`);
+        console.log(`   URL Type: /dev (testing endpoint)`);
       }
 
-      console.log(`🔧 Creating HEAD deployment with version ${targetVersion}`);
+      console.log(`🔧 Creating HEAD deployment (versionNumber=null for latest content)`);
       console.log(`📋 Request body:`, JSON.stringify(requestBody, null, 2));
 
       const response = await this.scriptApi.projects.deployments.create({
@@ -731,7 +774,7 @@ export class GASClient {
 
       const deployment: GASDeployment = {
         deploymentId: response.data.deploymentId,
-        versionNumber: response.data.versionNumber, // Will be null for HEAD
+        versionNumber: response.data.versionNumber, // Should be null for HEAD
         description: response.data.description,
         manifestFileName: response.data.manifestFileName,
         updateTime: response.data.updateTime,
@@ -739,16 +782,25 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Extract Web App URL if available
+      // Extract Web App URL if available, or construct /dev URL for HEAD deployment
       if (response.data.entryPoints) {
         console.log(`🔍 HEAD deployment entry points:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
-          console.log(`🌐 HEAD Web App URL: ${webAppEntry.webApp.url}`);
-          console.log(`🔄 This URL will serve the latest content automatically`);
-          deployment.webAppUrl = webAppEntry.webApp.url;
+          console.log(`🌐 HEAD Web App URL from API: ${webAppEntry.webApp.url}`);
+          // Note: API often returns /exec URLs even for HEAD deployments
+          // Always construct proper /dev URL for HEAD deployments
+          const headUrl = this.constructWebAppUrl(deployment.deploymentId, true);
+          console.log(`🔧 Corrected HEAD URL (/exec → /dev): ${headUrl}`);
+          deployment.webAppUrl = headUrl;
+        } else if (deployment.deploymentId) {
+          // Construct /dev URL for HEAD deployment
+          const headUrl = this.constructWebAppUrl(deployment.deploymentId, true);
+          console.log(`🌐 Constructed HEAD Web App URL: ${headUrl}`);
+          deployment.webAppUrl = headUrl;
         }
+        console.log(`🔄 This URL will serve the latest content automatically`);
       }
 
       return deployment;
@@ -774,11 +826,14 @@ export class GASClient {
       console.log(`✅ Using existing HEAD deployment: ${existingHead.deploymentId}`);
       
       // Get the web app URL if it's a web app deployment
+      // For HEAD deployments, always construct /dev URL instead of using API-provided /exec URL
       let webAppUrl = existingHead.webAppUrl;
-      if (!webAppUrl && existingHead.entryPoints) {
+      if (existingHead.entryPoints) {
         const webAppEntry = existingHead.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-        if (webAppEntry?.webApp?.url) {
-          webAppUrl = webAppEntry.webApp.url;
+        if (webAppEntry && existingHead.deploymentId) {
+          // Force /dev URL for HEAD deployment (API often returns incorrect /exec URLs)
+          webAppUrl = this.constructWebAppUrl(existingHead.deploymentId, true);
+          console.log(`🔧 Using corrected HEAD URL: ${webAppUrl} (forced /dev for testing)`);
         }
       }
       

@@ -66,10 +66,10 @@ async function ensureManifestEntryPoints(
       if (!manifest.webapp || manifest.webapp.access !== accessLevel) {
         manifest.webapp = {
           access: accessLevel,
-          executeAs: 'USER_DEPLOYING'
+          executeAs: 'USER_ACCESSING'
         };
         needsUpdate = true;
-        console.log(`📝 Set webapp configuration: access=${accessLevel}, executeAs=USER_DEPLOYING`);
+        console.log(`📝 Set webapp configuration: access=${accessLevel}, executeAs=USER_ACCESSING`);
       }
       
       // CRITICAL: Remove executionApi to prevent library deployment confusion
@@ -409,14 +409,14 @@ export class GASRunApiExecTool extends BaseTool {
  */
 export class GASRunTool extends BaseTool {
   public name = 'gas_run';
-  public description = 'Execute any JavaScript/Apps Script statement or function call directly with automatic deployment management. Creates fresh web app deployment by default to ensure latest code. Creates shim code (__mcp_gas_run.gs) automatically if missing. Supports dynamic code execution via Function constructor.';
+  public description = 'Execute any JavaScript/Apps Script statement or function call directly using HEAD deployment for testing. Uses /dev URLs that automatically serve latest saved content without redeployment. Creates shim code (__mcp_gas_run.gs) automatically if missing. Supports dynamic code execution via Function constructor.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID. Tool will create fresh web app deployment by default to ensure latest code is deployed and executed.'
+        description: 'Google Apps Script project ID. Tool will use or create HEAD deployment with /dev URL for testing latest content.'
       },
       functionName: {
         type: 'string',
@@ -437,7 +437,7 @@ export class GASRunTool extends BaseTool {
       },
       autoRedeploy: {
         type: 'boolean',
-        description: 'Enable automatic fresh deployment: creates NEW VERSION + NEW WEB APP DEPLOYMENT before each execution to ensure latest code. Set to false to use existing deployment only. (default: true)',
+        description: 'Enable automatic HEAD deployment setup: ensures HEAD deployment exists with /dev URL for testing. Content updates are automatic without redeployment. Set to false to use existing deployments only. (default: true)',
         default: true
       },
 
@@ -559,51 +559,37 @@ export class GASRunTool extends BaseTool {
           console.log(`⏳ Waiting for manifest update to be processed...`);
           await new Promise(resolve => setTimeout(resolve, 2000));
 
-          // Create new version (now includes shim if it was missing)
-          const versionResult = await this.gasClient.createVersion(
-            scriptId, 
-            `Auto-redeploy for ${functionName} execution at ${new Date().toISOString()}`, 
-            accessToken
-          );
-          console.log(`✅ Created version: ${versionResult.versionNumber}`);
-
-          // Create web app deployment (always WEB_APP for this implementation)
+          // STEP 3: Ensure HEAD deployment exists (creates stable /dev URL for testing)
+          console.log(`🎯 Ensuring HEAD deployment exists for testing...`);
+          console.log(`📋 Testing Mode: Using HEAD deployment (/dev URL) for latest content`);
+          
           const deploymentOptions = {
             entryPointType: 'WEB_APP' as const,
             webAppConfig: {
               access: 'MYSELF' as const,
-              executeAs: 'USER_DEPLOYING' as const
+              executeAs: 'USER_ACCESSING' as const
             }
           };
 
-          // Create new web app deployment
-          const deploymentResult = await this.gasClient.createDeployment(
+          const headResult = await this.gasClient.ensureHeadDeployment(
             scriptId,
-            `Web App deployment for ${functionName} - ${new Date().toISOString()}`,
+            `HEAD deployment for testing - serves latest content`,
             deploymentOptions,
-            versionResult.versionNumber,
             accessToken
           );
           
-          console.log(`✅ Created Web App deployment: ${deploymentResult.deploymentId}`);
-          
-          // Store deployment info for immediate use (avoid re-searching)
-          let immediateWebAppUrl = deploymentResult.webAppUrl;
-          
-          // If webAppUrl is not in the response, construct it manually
-          if (!immediateWebAppUrl) {
-            immediateWebAppUrl = `https://script.google.com/macros/s/${deploymentResult.deploymentId}/exec`;
-            console.log(`🔧 Constructed Web App URL from deployment ID: ${immediateWebAppUrl}`);
-          } else {
-            console.log(`🌐 Got Web App URL from deployment response: ${immediateWebAppUrl}`);
-          }
+          const deployment = headResult.deployment;
+          console.log(`✅ ${headResult.wasCreated ? 'Created' : 'Using existing'} HEAD deployment: ${deployment.deploymentId}`);
+          console.log(`🌐 HEAD Web App URL: ${headResult.webAppUrl}`);
+          console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
+          console.log(`📝 URL type: ${headResult.webAppUrl?.includes('/dev') ? '/dev (testing endpoint)' : '/exec (versioned)'}`);
           
           // Store the deployment info for immediate use
           immediateDeployment = {
-            deploymentId: deploymentResult.deploymentId,
-            webAppUrl: immediateWebAppUrl,
-            versionNumber: deploymentResult.versionNumber,
-            updateTime: deploymentResult.updateTime
+            deploymentId: deployment.deploymentId,
+            webAppUrl: headResult.webAppUrl!,
+            versionNumber: deployment.versionNumber, // null for HEAD
+            updateTime: deployment.updateTime
           };
 
 
@@ -622,62 +608,95 @@ export class GASRunTool extends BaseTool {
         webAppDeployment = immediateDeployment;
         console.log(`✅ Using Web App URL from immediate deployment: ${webAppUrl}`);
       } else {
-        // STEP 1: List all deployments 
-        console.log(`🔍 Step 1: Listing existing deployments...`);
-        const deploymentsList = await this.gasClient.listDeployments(scriptId, accessToken);
-        console.log(`📋 Found ${deploymentsList.length} deployments`);
+        // STEP 1: Check for existing HEAD deployment first (preferred for testing)
+        console.log(`🔍 Step 1: Looking for existing HEAD deployment (/dev URL)...`);
+        const headDeployment = await this.gasClient.findHeadDeployment(scriptId, accessToken);
         
-        // Sort deployments by update time (most recent first)
-        const sortedDeployments = deploymentsList.sort((a, b) => 
-          new Date(b.updateTime || 0).getTime() - new Date(a.updateTime || 0).getTime()
-        );
+        if (headDeployment && headDeployment.entryPoints) {
+          const webAppEntry = headDeployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+          if (webAppEntry?.webApp?.url) {
+            webAppUrl = webAppEntry.webApp.url;
+            webAppDeployment = headDeployment;
+            console.log(`✅ Found existing HEAD deployment: ${headDeployment.deploymentId}`);
+            console.log(`🌐 HEAD Web App URL: ${webAppUrl}`);
+            console.log(`📝 URL type: ${webAppUrl.includes('/dev') ? '/dev (testing endpoint)' : 'unknown'}`);
+            console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
+          } else if (headDeployment.deploymentId) {
+            // Construct /dev URL for HEAD deployment if not available from API
+            webAppUrl = this.gasClient.constructWebAppUrl(headDeployment.deploymentId, true);
+            webAppDeployment = headDeployment;
+            console.log(`✅ Found HEAD deployment, constructed /dev URL: ${webAppUrl}`);
+            console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
+          }
+          
+          // Force /dev URL for any HEAD deployment (API often returns incorrect /exec URLs)
+          if (headDeployment && webAppUrl && webAppUrl.includes('/exec')) {
+            const correctedUrl = this.gasClient.constructWebAppUrl(headDeployment.deploymentId, true);
+            console.log(`🔧 Correcting HEAD deployment URL: ${webAppUrl} → ${correctedUrl}`);
+            webAppUrl = correctedUrl;
+          }
+        }
         
-        if (deploymentsList.length > 0) {
+        // STEP 2: If no HEAD deployment found, list all deployments
+        if (!webAppUrl) {
+          console.log(`🔍 Step 2: No HEAD deployment found, checking other deployments...`);
+          const deploymentsList = await this.gasClient.listDeployments(scriptId, accessToken);
+          console.log(`📋 Found ${deploymentsList.length} deployments`);
           
-          // STEP 2: Get detailed information for each deployment to check for web app URLs
-          console.log(`🔍 Step 2: Getting detailed information for each deployment...`);
+          // Sort deployments by update time (most recent first)
+          const sortedDeployments = deploymentsList.sort((a, b) => 
+            new Date(b.updateTime || 0).getTime() - new Date(a.updateTime || 0).getTime()
+          );
           
-          for (const basicDeployment of sortedDeployments) {
-            console.log(`🔍 Checking deployment ${basicDeployment.deploymentId} (${basicDeployment.updateTime})`);
+          if (deploymentsList.length > 0) {
             
-            try {
-              // Get detailed deployment info with complete entry points
-              const detailedDeployment = await this.gasClient.getDeployment(
-                scriptId, 
-                basicDeployment.deploymentId, 
-                accessToken
-              );
+            // Get detailed information for each deployment to check for web app URLs
+            console.log(`🔍 Getting detailed information for each deployment...`);
+            
+            for (const basicDeployment of sortedDeployments) {
+              console.log(`🔍 Checking deployment ${basicDeployment.deploymentId} (${basicDeployment.updateTime})`);
               
-              console.log(`📦 Deployment ${basicDeployment.deploymentId} entry points:`, 
-                         detailedDeployment.entryPoints?.length || 0);
-              
-              // Check if this is a functional web app deployment with a URL
-              if (detailedDeployment.entryPoints && Array.isArray(detailedDeployment.entryPoints)) {
-                const webAppEntry = detailedDeployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+              try {
+                // Get detailed deployment info with complete entry points
+                const detailedDeployment = await this.gasClient.getDeployment(
+                  scriptId, 
+                  basicDeployment.deploymentId, 
+                  accessToken
+                );
                 
-                if (webAppEntry?.webApp?.url) {
-                  webAppUrl = webAppEntry.webApp.url;
-                  webAppDeployment = detailedDeployment;
-                  console.log(`✅ Found functional Web App deployment with URL: ${webAppUrl}`);
-                  console.log(`🔑 Access: ${webAppEntry.webApp.entryPointConfig?.access || 'Unknown'}, Execute as: ${webAppEntry.webApp.entryPointConfig?.executeAs || 'Unknown'}`);
-                  break; // Found a working web app, use it
-                } else if (webAppEntry) {
-                  console.log(`⚠️  Web App entry point found but missing URL in deployment ${basicDeployment.deploymentId}`);
+                console.log(`📦 Deployment ${basicDeployment.deploymentId} entry points:`, 
+                           detailedDeployment.entryPoints?.length || 0);
+                
+                // Check if this is a functional web app deployment with a URL
+                if (detailedDeployment.entryPoints && Array.isArray(detailedDeployment.entryPoints)) {
+                  const webAppEntry = detailedDeployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+                  
+                  if (webAppEntry?.webApp?.url) {
+                    webAppUrl = webAppEntry.webApp.url;
+                    webAppDeployment = detailedDeployment;
+                    const isHead = this.gasClient.isHeadDeployment(detailedDeployment);
+                    console.log(`✅ Found functional Web App deployment with URL: ${webAppUrl}`);
+                    console.log(`📝 Deployment type: ${isHead ? 'HEAD (/dev)' : 'Versioned (/exec)'}`);
+                    console.log(`🔑 Access: ${webAppEntry.webApp.entryPointConfig?.access || 'Unknown'}, Execute as: ${webAppEntry.webApp.entryPointConfig?.executeAs || 'Unknown'}`);
+                    break; // Found a working web app, use it
+                  } else if (webAppEntry) {
+                    console.log(`⚠️  Web App entry point found but missing URL in deployment ${basicDeployment.deploymentId}`);
+                  } else {
+                    console.log(`📝 Deployment ${basicDeployment.deploymentId} has no Web App entry point`);
+                  }
                 } else {
-                  console.log(`📝 Deployment ${basicDeployment.deploymentId} has no Web App entry point`);
+                  console.log(`📝 Deployment ${basicDeployment.deploymentId} has no entry points configured`);
                 }
-              } else {
-                console.log(`📝 Deployment ${basicDeployment.deploymentId} has no entry points configured`);
+              } catch (deploymentError: any) {
+                console.log(`⚠️  Failed to get details for deployment ${basicDeployment.deploymentId}: ${deploymentError.message}`);
               }
-            } catch (deploymentError: any) {
-              console.log(`⚠️  Failed to get details for deployment ${basicDeployment.deploymentId}: ${deploymentError.message}`);
             }
           }
         }
         
-        // STEP 3: If no functional web app deployment found, create one
+        // STEP 3: If no functional web app deployment found, create HEAD deployment
         if (!webAppUrl) {
-          console.log(`🚀 Step 3: No functional web app deployment found, creating new one...`);
+          console.log(`🚀 Step 3: No functional web app deployment found, creating HEAD deployment...`);
           
           // STEP 3a: Update the appsscript.json manifest to ensure web app entry points
           console.log(`🔧 Step 3a: Updating appsscript.json manifest for Web App deployment...`);
@@ -687,76 +706,37 @@ export class GASRunTool extends BaseTool {
           console.log(`⏳ Waiting for manifest update to be processed...`);
           await new Promise(resolve => setTimeout(resolve, 2000));
           
-          // STEP 3b: Create new version with updated manifest
-          console.log(`🔧 Step 3b: Creating new version with web app manifest...`);
-          const versionResult = await this.gasClient.createVersion(
-            scriptId, 
-            `Web App deployment for ${functionName} execution at ${new Date().toISOString()}`, 
-            accessToken
-          );
-          console.log(`✅ Created version: ${versionResult.versionNumber}`);
-          
-          // STEP 3c: Create web app deployment with explicit entry point configuration
-          console.log(`🔧 Step 3c: Creating Web App deployment with entry points...`);
+          // STEP 3b: Create HEAD deployment for testing
+          console.log(`🔧 Step 3b: Creating HEAD deployment with /dev URL for testing...`);
           const deploymentOptions = {
             entryPointType: 'WEB_APP' as const,
             webAppConfig: {
               access: 'MYSELF' as const,
-              executeAs: 'USER_DEPLOYING' as const
-            },
-            accessLevel: 'MYSELF' as const
+              executeAs: 'USER_ACCESSING' as const
+            }
           };
           
-          const deploymentResult = await this.gasClient.createDeployment(
+          const headResult = await this.gasClient.ensureHeadDeployment(
             scriptId,
-            `Web App deployment for ${functionName} - ${new Date().toISOString()}`,
+            `HEAD deployment for testing - serves latest content`,
             deploymentOptions,
-            versionResult.versionNumber,
             accessToken
           );
           
-          console.log(`✅ Created Web App deployment: ${deploymentResult.deploymentId}`);
-          console.log(`📦 Entry points configured:`, deploymentResult.entryPoints?.length || 0);
-          
-          // Get the web app URL from the deployment response
-          webAppUrl = deploymentResult.webAppUrl;
-          
-          // If webAppUrl is not in the response, construct it manually and verify with get details
-          if (!webAppUrl) {
-            console.log(`🔧 Web App URL not in deployment response, constructing and verifying...`);
-            const constructedUrl = `https://script.google.com/macros/s/${deploymentResult.deploymentId}/exec`;
-            
-            // Verify the deployment by getting its details
-            try {
-              const verifyDeployment = await this.gasClient.getDeployment(
-                scriptId, 
-                deploymentResult.deploymentId, 
-                accessToken
-              );
-              
-              const webAppEntry = verifyDeployment.entryPoints?.find((ep: any) => ep.entryPointType === 'WEB_APP');
-              if (webAppEntry?.webApp?.url) {
-                webAppUrl = webAppEntry.webApp.url;
-                console.log(`✅ Verified Web App URL from deployment details: ${webAppUrl}`);
-              } else {
-                webAppUrl = constructedUrl;
-                console.log(`🔧 Using constructed Web App URL: ${webAppUrl}`);
-              }
-            } catch (verifyError: any) {
-              webAppUrl = constructedUrl;
-              console.log(`⚠️  Failed to verify deployment, using constructed URL: ${webAppUrl}`);
-            }
-          } else {
-            console.log(`🌐 Got Web App URL from deployment response: ${webAppUrl}`);
-          }
+          const deployment = headResult.deployment;
+          console.log(`✅ ${headResult.wasCreated ? 'Created' : 'Found existing'} HEAD deployment: ${deployment.deploymentId}`);
+          console.log(`🌐 HEAD Web App URL: ${headResult.webAppUrl}`);
+          console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
+          console.log(`📝 URL type: ${headResult.webAppUrl?.includes('/dev') ? '/dev (testing endpoint)' : '/exec (versioned)'}`);
           
           // Store the deployment info
-          webAppDeployment = deploymentResult;
+          webAppUrl = headResult.webAppUrl!;
+          webAppDeployment = deployment;
           immediateDeployment = {
-            deploymentId: deploymentResult.deploymentId,
+            deploymentId: deployment.deploymentId,
             webAppUrl: webAppUrl,
-            versionNumber: deploymentResult.versionNumber,
-            updateTime: deploymentResult.updateTime
+            versionNumber: deployment.versionNumber, // null for HEAD
+            updateTime: deployment.updateTime
           };
         }
       }

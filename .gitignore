@@ -124,9 +124,5 @@ config/local.json
 *.tmp
 *.backup
 
-# OAuth configuration files
-**/oauth.json
-**/oauth-*.json
-
-# OAuth credentials (keep private)
-config/oauth.json
+# Auth session storage
+.auth/

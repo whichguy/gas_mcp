@@ -144,7 +144,7 @@ export class GASDeployCreateTool extends BaseTool {
         type: 'string',
         enum: ['USER_ACCESSING', 'USER_DEPLOYING'],
         description: 'Who the web app runs as (for WEB_APP type)',
-        default: 'USER_DEPLOYING'
+        default: 'USER_ACCESSING'
       },
       accessLevel: {
         type: 'string',
@@ -188,7 +188,7 @@ export class GASDeployCreateTool extends BaseTool {
     const entryPointType = (params.entryPointType || 'EXECUTION_API') as EntryPointType;
     const accessLevel = (params.accessLevel || 'MYSELF') as WebAppAccess;
     const webAppAccess = (params.webAppAccess || 'ANYONE') as WebAppAccess;
-    const webAppExecuteAs = (params.webAppExecuteAs || 'USER_DEPLOYING') as WebAppExecuteAs;
+    const webAppExecuteAs = (params.webAppExecuteAs || 'USER_ACCESSING') as WebAppExecuteAs;
 
     // Build deployment options
     const deploymentOptions: DeploymentOptions = {

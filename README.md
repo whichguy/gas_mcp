@@ -60,7 +60,7 @@ This is the normal state for initial setup. Follow the OAuth configuration in [`
 - **Project Management**: Create, list, and manage GAS projects
 - **File Operations**: Read, write, copy, move, delete files in GAS projects
 - **Code Execution**: 
-  - `gas_run` - Execute functions via web app deployment (HTTP proxy)
+  - `gas_run` - Execute functions via HEAD deployment with /dev URLs (testing endpoint)
   - `gas_run_api_exec` - Execute via API (requires deployment)
 - **Deployment Management**: Create versions and deployments
 - **Drive Integration**: Find and bind scripts to Sheets, Docs, Forms

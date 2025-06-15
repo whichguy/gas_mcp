@@ -559,9 +559,22 @@ const reorderResult = await callTool('gas_reorder', {
 
 ## ⚡ Execution Tools
 
-### `gas_run` - Direct Code Execution
+### `gas_run` - Direct Code Execution with HEAD Deployment
 
-Execute any JavaScript/Apps Script statement directly without requiring deployment or wrapper functions.
+Execute any JavaScript/Apps Script statement directly using HEAD deployments for testing. Uses `/dev` URLs that automatically serve the latest saved content without redeployment. Perfect for development and testing workflows.
+
+#### Key Features
+- **🔄 HEAD Deployment Strategy**: Uses HEAD deployments (`versionNumber=null`) with stable `/dev` URLs
+- **⚡ Automatic Content Updates**: Code changes are reflected immediately without redeployment  
+- **🎯 Testing Endpoint**: Uses Google Apps Script's true testing endpoint pattern
+- **🚀 Auto-Setup**: Automatically creates HEAD deployment and proxy shim if needed
+- **📝 Direct Execution**: Execute any JavaScript/Apps Script statement or function call
+
+#### Deployment Behavior
+| Deployment Type | versionNumber | URL Suffix | Content Updates |
+|----------------|---------------|------------|-----------------|
+| **HEAD** (testing) | `null` or `0` | **`/dev`** | ✅ Automatic (latest saved content) |
+| **Versioned** (production) | Positive integer | **`/exec`** | ❌ Fixed version (requires redeployment) |
 
 #### Input Schema
 ```typescript
@@ -569,6 +582,8 @@ interface GasRunInput {
   scriptId: string;
   functionName: string;  // Any JavaScript statement or function call
   parameters?: any[];
+  devMode?: boolean;     // Uses HEAD deployment (default: true)
+  autoRedeploy?: boolean; // Ensures HEAD deployment exists (default: true)
   accessToken?: string;
 }
 ```

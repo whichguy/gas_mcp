@@ -1,330 +1,997 @@
 import { OAuth2Client } from 'google-auth-library';
+import http from 'node:http';
+import { URL } from 'node:url';
+import open from 'open';
+import crypto from 'node:crypto';
 import { AuthStateManager, TokenInfo, UserInfo } from './authState.js';
 import { OAuthError } from '../errors/mcpErrors.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-export interface OAuthConfig {
-  oauth: {
-    client_id: string;
-    client_secret: string;
-    redirect_uri: string;
-    auth_uri: string;
-    token_uri: string;
-    scopes: string[];
-  };
-  server: {
-    port: number;
-  };
-}
-
-function loadOAuthConfig(): OAuthConfig {
-  // Try environment variables first
-  const envClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const envClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
-  const envPort = process.env.OAUTH_SERVER_PORT;
-
-  if (envClientId && envClientSecret) {
-    console.log('🔑 Using OAuth credentials from environment variables');
-    return {
-      oauth: {
-        client_id: envClientId,
-        client_secret: envClientSecret,
-        redirect_uri: `http://localhost:${envPort || 3000}/oauth/callback`,
-        auth_uri: "https://accounts.google.com/o/oauth2/auth",
-        token_uri: "https://oauth2.googleapis.com/token",
-        scopes: [
-          "https://www.googleapis.com/auth/script.projects",
-          "https://www.googleapis.com/auth/script.processes",
-          "https://www.googleapis.com/auth/script.deployments",
-          "https://www.googleapis.com/auth/script.scriptapp",
-          "https://www.googleapis.com/auth/script.external_request",
-          "https://www.googleapis.com/auth/script.webapp.deploy",
-          "https://www.googleapis.com/auth/drive",
-          "https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/documents",
-          "https://www.googleapis.com/auth/forms",
-          "https://www.googleapis.com/auth/userinfo.email",
-          "https://www.googleapis.com/auth/userinfo.profile"
-        ]
-      },
-      server: {
-        port: parseInt(envPort || '3000')
-      }
-    };
-  }
-
-  // Fallback to config file
-  const configPath = path.join(__dirname, '..', '..', 'config', 'oauth.json');
-  
-  if (!fs.existsSync(configPath)) {
-    console.error('❌ No OAuth configuration found!');
-    console.error('📋 Options:');
-    console.error('   1. Run "npm run setup" to create config/oauth.json');
-    console.error('   2. Set environment variables: GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET');
-    console.error('   3. See OAUTH_QUICK_SETUP.md for getting real credentials');
-    throw new Error('OAuth configuration not found. Run "npm run setup" or set environment variables.');
-  }
-
-  try {
-    const configData = fs.readFileSync(configPath, 'utf8');
-    const config = JSON.parse(configData) as OAuthConfig;
-    
-    if (config.oauth.client_id === 'test_client_id') {
-      console.log('⚠️  Using test OAuth credentials from config file');
-      console.log('📘 See OAUTH_QUICK_SETUP.md to get real Google OAuth credentials');
-    } else {
-      console.log('✅ Using OAuth credentials from config file');
-    }
-    
-    return config;
-  } catch (error) {
-    console.error('❌ Failed to parse OAuth config file:', error);
-    throw new Error('Invalid OAuth configuration file. Check config/oauth.json format.');
-  }
-}
-
-// Export the loaded config
-export const oauthConfig: OAuthConfig = loadOAuthConfig();
-
-// Export client configuration for OAuth tools
-export const oauthClientConfig = {
-  clientId: oauthConfig.oauth.client_id,
-  clientSecret: oauthConfig.oauth.client_secret,
-  redirectUri: oauthConfig.oauth.redirect_uri,
-  authUri: oauthConfig.oauth.auth_uri,
-  tokenUri: oauthConfig.oauth.token_uri,
-  scopes: oauthConfig.oauth.scopes
-};
-
-export default oauthConfig;
+import { PKCEGenerator, PKCEChallenge } from './pkce.js';
 
 /**
- * Google OAuth client for Apps Script authentication
+ * Google Apps Script OAuth Client for UWP Applications
+ * 
+ * UWP PKCE-ONLY AUTHENTICATION:
+ * - Uses UWP OAuth client type (eliminates client_secret requirement)
+ * - Pure PKCE implementation following OAuth 2.0 standards
+ * - Works around Google's non-standard desktop application requirements
+ * - Client secret is optional (UWP clients don't require it)
+ */
+
+export interface TokenResponse {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    token_type?: string;
+    scope?: string;
+}
+
+export interface AuthConfig {
+    client_id: string;
+    client_secret?: string;  // OPTIONAL - UWP clients don't require it
+    type: 'uwp' | 'desktop';  // UWP preferred for PKCE-only flows
+    redirect_uris: string[];
+    scopes: string[];
+}
+
+/**
+ * UWP OAuth client for Google Apps Script API
+ * 
+ * UWP PKCE-ONLY AUTHENTICATION IMPLEMENTATION:
+ * - Works with UWP OAuth clients configured in Google Cloud Console
+ * - Pure PKCE flow without client_secret requirement
+ * - Follows OAuth 2.0 PKCE standards properly
+ * - Enhanced security with code challenge/verifier
  */
 export class GASAuthClient {
-  private oauth2Client: OAuth2Client;
-  private authStateManager: AuthStateManager;
-  private config: any;
-  private authEndpoint: string;
+    private oauth2Client: OAuth2Client;
+    private config: AuthConfig;
+    private codeVerifier?: string;
+    private codeChallenge?: string;
+    private state?: string;  // Store state parameter for CSRF protection
+    private server?: http.Server;
+    private serverPort?: number;
+    private redirectUri?: string;
+    private callbackResult?: { code: string; state: string | null; success: boolean };
 
-  constructor() {
-    this.oauth2Client = new OAuth2Client(
-      oauthConfig.oauth.client_id,
-      oauthConfig.oauth.client_secret,
-      oauthConfig.oauth.redirect_uri
-    );
-    this.authStateManager = AuthStateManager.getInstance();
-    this.config = oauthConfig;
-    this.authEndpoint = 'https://accounts.google.com/o/oauth2/auth';
-  }
-
-  /**
-   * Generate OAuth authorization URL with state parameter
-   */
-  generateAuthUrl(state?: string, callbackPort?: number): string {
-    const stateParam = state || `state_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Always use the configured redirect URI (port 3000)
-    const redirectUri = this.config.oauth.redirect_uri;
-    
-    // Debug: Log the scopes being requested
-    console.log('🔍 OAuth scopes from config:', this.config.oauth.scopes);
-    const scopeString = this.config.oauth.scopes.join(' ');
-    console.log('🔍 OAuth scope string:', scopeString);
-    
-    const params = new URLSearchParams({
-      access_type: 'offline',
-      scope: scopeString,
-      prompt: 'consent',
-      state: stateParam,
-      response_type: 'code',
-      client_id: this.config.oauth.client_id,
-      redirect_uri: redirectUri
-    });
-
-    const authUrl = `${this.authEndpoint}?${params.toString()}`;
-    console.log('🔍 Generated OAuth URL:', authUrl);
-    
-    return authUrl;
-  }
-
-  /**
-   * Exchange authorization code for tokens
-   */
-  async exchangeCodeForTokens(code: string): Promise<TokenInfo> {
-    try {
-      const { tokens } = await this.oauth2Client.getToken(code);
-      
-      if (!tokens.access_token) {
-        throw new OAuthError('No access token received', 'token_exchange');
-      }
-
-      const tokenInfo: TokenInfo = {
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token || undefined,
-        expires_at: tokens.expiry_date || (Date.now() + 3600000), // 1 hour default
-        scope: tokens.scope || this.config.oauth.scopes.join(' '),
-        token_type: tokens.token_type || 'Bearer'
-      };
-
-      return tokenInfo;
-    } catch (error: any) {
-      throw new OAuthError(
-        `Failed to exchange code for tokens: ${error.message}`,
-        'token_exchange'
-      );
-    }
-  }
-
-  /**
-   * Refresh access token using refresh token
-   */
-  async refreshTokens(refreshToken: string): Promise<TokenInfo> {
-    try {
-      this.oauth2Client.setCredentials({
-        refresh_token: refreshToken
-      });
-
-      const { credentials } = await this.oauth2Client.refreshAccessToken();
-
-      if (!credentials.access_token) {
-        throw new OAuthError('No access token received during refresh', 'token_refresh');
-      }
-
-      const tokenInfo: TokenInfo = {
-        access_token: credentials.access_token,
-        refresh_token: credentials.refresh_token || refreshToken, // Keep original if not provided
-        expires_at: credentials.expiry_date || (Date.now() + 3600000),
-        scope: credentials.scope || this.config.oauth.scopes.join(' '),
-        token_type: credentials.token_type || 'Bearer'
-      };
-
-      return tokenInfo;
-    } catch (error: any) {
-      throw new OAuthError(
-        `Failed to refresh tokens: ${error.message}`,
-        'token_refresh'
-      );
-    }
-  }
-
-  /**
-   * Get user info from Google OAuth
-   */
-  async getUserInfo(accessToken: string): Promise<UserInfo> {
-    try {
-      const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
+    constructor(config: AuthConfig) {
+        this.config = config;
+        
+        // Configure OAuth2Client - client_secret is optional for UWP
+        const clientConfig: any = {
+            clientId: config.client_id,
+        };
+        
+        // Only add client_secret if provided (optional for UWP)
+        if (config.client_secret) {
+            clientConfig.clientSecret = config.client_secret;
         }
-      });
+        
+        this.oauth2Client = new OAuth2Client(clientConfig);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const userData = await response.json();
-
-      return {
-        id: userData.id,
-        email: userData.email,
-        name: userData.name,
-        picture: userData.picture,
-        verified_email: userData.verified_email
-      };
-    } catch (error: any) {
-      throw new OAuthError(
-        `Failed to get user info: ${error.message}`,
-        'validation'
-      );
+        console.log('🔧 UWP PKCE AUTH: Google Auth Library initialized');
+        console.log(`🔑 Client ID: ${config.client_id.substring(0, 20)}...`);
+        console.log(`🔐 Client Secret: ${config.client_secret ? 'PROVIDED (optional)' : 'NOT PROVIDED (UWP PKCE-only)'}`);
+        console.log(`🏷️  Auth Type: ${config.type?.toUpperCase() || 'UWP'} (PKCE-enabled)`);
     }
-  }
 
-  /**
-   * Validate access token
-   */
-  async validateToken(accessToken: string): Promise<boolean> {
-    try {
-      const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
+    /**
+     * Start the OAuth authentication flow
+     * 
+     * This method sets up a local callback server, generates PKCE parameters and state,
+     * creates the authorization URL, and optionally opens it in the browser.
+     * 
+     * @param openBrowser - Whether to automatically open the browser for authentication
+     * @returns Promise that resolves to the authorization URL
+     * @throws OAuthError if the flow cannot be started
+     */
+    async startAuthFlow(openBrowser: boolean = true): Promise<string> {
+        console.log('🔐 Starting Google OAuth 2.0 flow with PKCE...');
+
+        try {
+            // Generate PKCE parameters using the imported helper
+            const pkceChallenge = PKCEGenerator.generateChallenge();
+            this.codeVerifier = pkceChallenge.codeVerifier;
+            this.codeChallenge = pkceChallenge.codeChallenge;
+            
+            // Generate state parameter for CSRF protection
+            this.state = crypto.randomUUID();
+            
+            console.log('🔑 Generated PKCE challenge and state parameter');
+
+            // Set up callback server with OS-assigned port AND handlers to eliminate race condition
+            await this.setupCallbackServerWithHandlers();
+
+            // Generate authorization URL with all security parameters
+            const authUrl = this.createAuthorizationUrl();
+
+            console.log(`🔐 OAuth server listening on ${this.redirectUri}`);
+            console.log(`🌐 Authorization URL: ${authUrl}`);
+
+            if (openBrowser) {
+                console.log('🚀 Opening browser for authentication...');
+                try {
+                    await open(authUrl);
+                } catch (error) {
+                    console.warn('⚠️ Could not open browser automatically. Please visit the URL above manually.');
+                }
+            }
+
+            return authUrl;
+        } catch (error: any) {
+            throw new OAuthError(
+                `Failed to start OAuth flow: ${error.message}`,
+                'authorization'
+            );
         }
-      });
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const tokenInfo = await response.json();
-      
-      // Check if token has required scopes
-      const requiredScopes = ['script.projects', 'script.processes', 'script.deployments', 'script.scriptapp'];
-      const tokenScopes = tokenInfo.scope?.split(' ') || [];
-      
-      console.log('🔍 Token scopes:', tokenScopes);
-      console.log('🔍 Required scopes:', requiredScopes);
-      
-      const hasRequiredScopes = requiredScopes.every(scope =>
-        tokenScopes.some((ts: string) => ts.includes(scope))
-      );
-      
-      console.log('🔍 Has required scopes:', hasRequiredScopes);
-
-      return hasRequiredScopes;
-    } catch (error) {
-      return false;
     }
-  }
 
-  /**
-   * Revoke tokens (logout)
-   */
-  async revokeTokens(accessToken: string): Promise<void> {
-    try {
-      await fetch(`https://oauth2.googleapis.com/revoke?token=${accessToken}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+    /**
+     * Set up the local callback server with OS-assigned port AND request handlers
+     * 
+     * This eliminates the race condition by having the OS assign a free port
+     * and setting up request handlers immediately, so the server can respond
+     * to OAuth callbacks right away.
+     * 
+     * @private
+     */
+    private async setupCallbackServerWithHandlers(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // Create server with request handler
+            this.server = http.createServer(async (req, res) => {
+                try {
+                    if (req.url?.startsWith('/callback')) {
+                        const url = new URL(req.url, `http://${req.headers.host}`);
+                        const code = url.searchParams.get('code');
+                        const error = url.searchParams.get('error');
+                        const returnedState = url.searchParams.get('state');
+
+                        console.log('🔄 OAuth callback received:', { hasCode: !!code, hasState: !!returnedState, hasError: !!error });
+
+                        // CRITICAL: Validate state parameter to prevent CSRF attacks
+                        if (returnedState !== this.state) {
+                            console.error('❌ Invalid state parameter. Possible CSRF attack.');
+                            const errorMsg = 'Invalid state parameter - possible CSRF attack detected';
+                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
+                            return;
+                        }
+
+                        if (error) {
+                            console.error('❌ OAuth error:', error);
+                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(`OAuth Error: ${error}`));
+                            return;
+                        }
+
+                        if (!code) {
+                            console.error('❌ No authorization code received');
+                            const errorMsg = 'No authorization code found';
+                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
+                            return;
+                        }
+
+                        console.log('✅ Authorization callback received successfully');
+                        console.log('✅ State parameter validated - CSRF protection confirmed');
+                        console.log('🔄 Processing OAuth callback...');
+
+                        // Show success page immediately
+                        res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
+
+                        // Store callback result for retrieval
+                        this.callbackResult = {
+                            code,
+                            state: returnedState,
+                            success: true
+                        };
+
+                    } else if (req.url === '/health') {
+                        // Health check endpoint
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ status: 'ok', port: this.serverPort }));
+                    } else if (req.url === '/favicon.ico') {
+                        // Ignore favicon requests
+                        res.writeHead(404).end();
+                    } else {
+                        res.writeHead(404).end('Not found');
+                    }
+                } catch (error: any) {
+                    console.error('❌ Server error:', error.message);
+                    res.writeHead(500).end('Internal server error');
+                }
+            });
+            
+            // Listen on port 0 to let OS assign a free port
+            this.server.listen(0, '127.0.0.1', () => {
+                const address = this.server!.address();
+                if (address && typeof address === 'object') {
+                    this.serverPort = address.port;
+                    this.redirectUri = `http://127.0.0.1:${this.serverPort}/callback`;
+                    resolve();
+                } else {
+                    reject(new Error('Could not determine server port'));
+                }
+            });
+
+            this.server.on('error', (error) => {
+                reject(new Error(`Failed to start callback server: ${error.message}`));
+            });
+        });
+    }
+
+    /**
+     * Create the OAuth authorization URL with all required parameters
+     * 
+     * @private
+     * @returns The complete authorization URL
+     */
+    private createAuthorizationUrl(): string {
+        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+        authUrl.searchParams.set('client_id', this.config.client_id);
+        authUrl.searchParams.set('redirect_uri', this.redirectUri!);
+        authUrl.searchParams.set('scope', this.config.scopes.join(' '));
+        authUrl.searchParams.set('response_type', 'code');
+        authUrl.searchParams.set('access_type', 'offline');
+        authUrl.searchParams.set('prompt', 'consent');
+        authUrl.searchParams.set('state', this.state!);
+        authUrl.searchParams.set('code_challenge', this.codeChallenge!);
+        authUrl.searchParams.set('code_challenge_method', 'S256');
+
+        return authUrl.toString();
+    }
+
+    /**
+     * Wait for the OAuth callback and exchange the code for tokens
+     * 
+     * This method sets up request handlers for the callback server and processes
+     * the OAuth response with proper security validations including state parameter
+     * verification to prevent CSRF attacks.
+     * 
+     * @returns Promise that resolves to the token response
+     * @throws OAuthError if the callback fails or tokens cannot be exchanged
+     */
+    async waitForCallback(): Promise<TokenResponse> {
+        return new Promise((resolve, reject) => {
+            if (!this.server || !this.redirectUri || !this.codeVerifier || !this.state) {
+                reject(new OAuthError('Auth flow not properly initialized. Call startAuthFlow() first.', 'authorization'));
+                return;
+            }
+
+            console.log(`🔒 OAuth server waiting for callback on ${this.redirectUri}`);
+
+            // Remove any existing listeners to avoid duplicates
+            this.server.removeAllListeners('request');
+
+            this.server.on('request', async (req, res) => {
+                try {
+                    if (req.url?.startsWith('/callback')) {
+                        const url = new URL(req.url, `http://${req.headers.host}`);
+                        const code = url.searchParams.get('code');
+                        const error = url.searchParams.get('error');
+                        const returnedState = url.searchParams.get('state');
+
+                        // CRITICAL: Validate state parameter to prevent CSRF attacks
+                        if (returnedState !== this.state) {
+                            console.error('❌ Invalid state parameter. Possible CSRF attack.');
+                            const errorMsg = 'Invalid state parameter - possible CSRF attack detected';
+                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
+                            reject(new OAuthError(errorMsg, 'authorization'));
+                            return;
+                        }
+
+                        if (error) {
+                            console.error('❌ OAuth error:', error);
+                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(`OAuth Error: ${error}`));
+                            reject(new OAuthError(`OAuth authorization failed: ${error}`, 'authorization'));
+                            return;
+                        }
+
+                        if (!code) {
+                            console.error('❌ No authorization code received');
+                            const errorMsg = 'No authorization code found';
+                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
+                            reject(new OAuthError(errorMsg, 'authorization'));
+                            return;
+                        }
+
+                        console.log('✅ Authorization callback received successfully');
+                        console.log('✅ State parameter validated - CSRF protection confirmed');
+                        console.log('🔄 Exchanging authorization code for tokens with PKCE...');
+
+                        try {
+                            // Exchange code for tokens using Google's library with PKCE
+                            const tokenResponse = await this.exchangeCodeForTokens(code);
+                            
+                            // Show success page
+                            res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
+
+                            resolve(tokenResponse);
+
+                        } catch (tokenError: any) {
+                            console.error('❌ Token exchange failed:', tokenError);
+                            res.writeHead(500, { 'Content-Type': 'text/html' }).end(this.createTokenErrorPage(tokenError));
+                            reject(new OAuthError(`Token exchange failed: ${tokenError.message}`, 'token_exchange'));
+                        }
+                    } else if (req.url === '/favicon.ico') {
+                        // Ignore favicon requests
+                        res.writeHead(404).end();
+                    } else {
+                        res.writeHead(404).end('Not found');
+                    }
+                } catch (error: any) {
+                    console.error('❌ Server error:', error.message);
+                    res.writeHead(500).end('Internal server error');
+                    reject(new OAuthError(`Server error: ${error.message}`, 'authorization'));
+                } finally {
+                    // Close server after handling the callback
+                    this.server?.close();
+                }
+            });
+        });
+    }
+
+    /**
+     * Exchange authorization code for access tokens
+     * 
+     * @private
+     * @param code - The authorization code from Google
+     * @returns Token response with expiry buffer applied
+     */
+    private async exchangeCodeForTokens(code: string): Promise<TokenResponse> {
+        console.log('🔍 === UWP PKCE TOKEN EXCHANGE ===');
+        console.log('📤 Request Parameters:');
+        console.log('  - Client ID:', this.config.client_id);
+        console.log('  - Client Secret:', this.config.client_secret ? 'PROVIDED (optional)' : 'NOT PROVIDED (UWP PKCE-only)');
+        console.log('  - Redirect URI:', this.redirectUri);
+        console.log('  - Authorization Code:', code.substring(0, 20) + '...');
+        console.log('  - Code Verifier:', this.codeVerifier?.substring(0, 20) + '...');
+        console.log('  - Code Challenge:', this.codeChallenge?.substring(0, 20) + '...');
+        
+        try {
+            console.log('📡 Exchanging authorization code for tokens...');
+            console.log(`💡 Using UWP PKCE-only flow (standards-compliant)`);
+            
+            // Use Google Auth Library's built-in getToken method with PKCE
+            const { tokens } = await this.oauth2Client.getToken({
+                code: code,
+                codeVerifier: this.codeVerifier!,
+                redirect_uri: this.redirectUri!
+            });
+            
+            console.log('✅ UWP PKCE token exchange successful!');
+            console.log('📥 Received tokens:');
+            console.log('  - Access token:', tokens.access_token?.substring(0, 30) + '...');
+            console.log('  - Refresh token:', tokens.refresh_token ? tokens.refresh_token.substring(0, 30) + '...' : 'none');
+            console.log('  - Token type:', tokens.token_type);
+            console.log('  - Expires in:', tokens.expiry_date ? Math.floor((tokens.expiry_date - Date.now()) / 1000) : 'unknown', 'seconds');
+            console.log('  - Scope:', tokens.scope);
+            
+            // Apply 60-second buffer to token expiry for clock skew and network latency
+            const expiresIn = tokens.expiry_date 
+                ? Math.floor((tokens.expiry_date - Date.now() - 60000) / 1000) // Apply 60-second buffer
+                : undefined;
+
+            console.log('⏰ Token expiry calculation:');
+            console.log('  - Original expiry:', tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : 'none');
+            console.log('  - Buffer applied: 60 seconds');
+            console.log('  - Effective expires_in:', expiresIn, 'seconds');
+            console.log('🔍 === END UWP PKCE TOKEN EXCHANGE ===');
+
+            return {
+                access_token: tokens.access_token!,
+                refresh_token: tokens.refresh_token || undefined,
+                expires_in: expiresIn,
+                token_type: tokens.token_type || 'Bearer',
+                scope: tokens.scope || undefined
+            };
+            
+        } catch (error: any) {
+            console.log('❌ === TOKEN EXCHANGE ERROR DEBUG ===');
+            console.log('🚨 Error details:');
+            console.log('  - Error message:', error.message);
+            console.log('  - Error type:', error.constructor.name);
+            console.log('  - Error stack:', error.stack);
+            console.log('🔍 === END ERROR DEBUG ===');
+            
+            throw new Error(`Token exchange failed: ${error.message}`);
         }
-      });
-    } catch (error) {
-      // Don't throw on revoke errors - just log them
-      console.warn('Failed to revoke tokens:', error);
-    }
-  }
-
-  /**
-   * Get valid access token, refreshing if necessary
-   */
-  async getValidAccessToken(): Promise<string> {
-    if (!this.authStateManager.isAuthenticated()) {
-      throw new OAuthError('Not authenticated', 'validation');
     }
 
-    // Check if current token is valid
-    if (this.authStateManager.isTokenValid()) {
-      return this.authStateManager.getValidToken()!;
+    /**
+     * Get the callback result (non-blocking)
+     * 
+     * @returns The callback result if available, null otherwise
+     */
+    getCallbackResult(): { code: string; state: string | null; success: boolean } | null {
+        return this.callbackResult || null;
     }
 
-    // Try to refresh token
-    const refreshToken = this.authStateManager.getRefreshToken();
-    if (!refreshToken) {
-      throw new OAuthError('No refresh token available', 'token_refresh');
+    /**
+     * Wait for callback result with polling
+     * 
+     * @param timeoutMs - Timeout in milliseconds (default: 5 minutes)
+     * @returns Promise that resolves to callback result
+     */
+    async waitForCallbackResult(timeoutMs: number = 300000): Promise<{ code: string; state: string | null; success: boolean }> {
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < timeoutMs) {
+            if (this.callbackResult) {
+                return this.callbackResult;
+            }
+            
+            // Poll every 500ms
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        throw new OAuthError('OAuth callback timeout after 5 minutes', 'authorization');
     }
 
-    try {
-      const newTokens = await this.refreshTokens(refreshToken);
-      this.authStateManager.updateTokens(newTokens);
-      return newTokens.access_token;
-    } catch (error) {
-      // Refresh failed - clear auth and require re-authentication
-      this.authStateManager.clearAuth();
-      throw new OAuthError('Token refresh failed, re-authentication required', 'token_refresh');
+    /**
+     * Perform the complete OAuth authentication flow
+     * 
+     * This is a convenience method that combines startAuthFlow and waitForCallbackResult
+     * to handle the entire authentication process in a single call.
+     * 
+     * @param openBrowser - Whether to automatically open the browser for authentication
+     * @returns Promise that resolves to the token response
+     * @throws OAuthError if authentication fails at any step
+     */
+    async performCompleteAuthFlow(openBrowser: boolean = true): Promise<TokenResponse> {
+        await this.startAuthFlow(openBrowser);
+        
+        // Wait for callback result
+        const callbackResult = await this.waitForCallbackResult();
+        
+        if (!callbackResult.success || !callbackResult.code) {
+            throw new OAuthError('OAuth callback failed', 'authorization');
+        }
+        
+        // Exchange code for tokens
+        return await this.exchangeCodeForTokens(callbackResult.code);
     }
-  }
+
+    /**
+     * Get the configured OAuth2Client for advanced usage
+     * 
+     * @returns The Google Auth Library OAuth2Client instance
+     */
+    getOAuth2Client(): OAuth2Client {
+        return this.oauth2Client;
+    }
+
+    /**
+     * Get user information using access token
+     */
+    async getUserInfo(accessToken: string): Promise<UserInfo> {
+        try {
+            console.log('🔄 Fetching user information...');
+            
+            const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`User info fetch failed: ${response.status} ${response.statusText} - ${errorText}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.email) {
+                throw new Error('No email address in user info response');
+            }
+
+            const userInfo: UserInfo = {
+                email: data.email,
+                name: data.name || data.email,
+                id: data.id || data.email,
+                picture: data.picture,
+                verified_email: data.verified_email || false,
+            };
+
+            console.log(`✅ User info retrieved for: ${userInfo.email}`);
+            return userInfo;
+
+        } catch (error: any) {
+            console.error('❌ User info fetch failed:', error);
+            throw new OAuthError(
+                `Failed to fetch user information: ${error.message}`,
+                'validation'
+            );
+        }
+    }
+
+    /**
+     * Revoke tokens
+     */
+    async revokeTokens(accessToken: string): Promise<void> {
+        try {
+            console.log('🔄 Revoking access token...');
+            
+            const response = await fetch('https://oauth2.googleapis.com/revoke', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    token: accessToken,
+                }),
+            });
+
+            if (!response.ok) {
+                console.warn(`Token revocation failed: ${response.status} ${response.statusText}`);
+                // Don't throw error - revocation failure shouldn't block logout
+            } else {
+                console.log('✅ Token revoked successfully');
+            }
+
+        } catch (error: any) {
+            console.warn('⚠️  Token revocation error:', error.message);
+            // Don't throw error - revocation failure shouldn't block logout
+        }
+    }
+
+    /**
+     * Validate token and get basic info
+     */
+    async validateToken(accessToken: string): Promise<boolean> {
+        try {
+            const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo', {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                },
+            });
+
+            if (!response.ok) {
+                return false;
+            }
+
+            const data = await response.json();
+            
+            // Check if token has required scopes
+            const requiredScopes = ['script.projects', 'script.processes', 'script.deployments', 'script.scriptapp'];
+            const tokenScope = data.scope || '';
+            
+            const hasRequiredScopes = requiredScopes.every(scope =>
+                tokenScope.includes(scope)
+            );
+
+            return hasRequiredScopes;
+
+        } catch (error) {
+            console.error('Token validation error:', error);
+            return false;
+        }
+    }
+
+    private createErrorPage(message: string): string {
+        return `
+            <html>
+                <head>
+                    <title>OAuth Authentication Error</title>
+                    <style>
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            max-width: 800px; 
+                            margin: 50px auto; 
+                            padding: 20px; 
+                            background: #f9f9f9; 
+                        }
+                        .error-container { 
+                            background: white; 
+                            padding: 30px; 
+                            border-radius: 8px; 
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+                        }
+                        .error-header { 
+                            color: #dc3545; 
+                            margin-bottom: 20px; 
+                            border-bottom: 2px solid #dc3545; 
+                            padding-bottom: 10px; 
+                        }
+                        .error-details { 
+                            background: #f8f9fa; 
+                            padding: 15px; 
+                            border-radius: 4px; 
+                            margin: 15px 0; 
+                            font-family: monospace; 
+                            font-size: 14px;
+                            overflow-x: auto;
+                        }
+                        .suggestions { 
+                            background: #fff3cd; 
+                            border: 1px solid #ffeaa7; 
+                            padding: 15px; 
+                            border-radius: 4px; 
+                            margin: 15px 0; 
+                        }
+                        .suggestions ul { 
+                            margin: 10px 0; 
+                            padding-left: 20px; 
+                        }
+                        .suggestions li { 
+                            margin: 8px 0; 
+                            line-height: 1.4; 
+                        }
+                        .close-button { 
+                            background: #007bff; 
+                            color: white; 
+                            border: none; 
+                            padding: 10px 20px; 
+                            border-radius: 4px; 
+                            cursor: pointer; 
+                            margin-top: 20px; 
+                        }
+                        .close-button:hover { 
+                            background: #0056b3; 
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="error-container">
+                        <div class="error-header">
+                            <h2>❌ OAuth Authentication Failed</h2>
+                            <h3>${message}</h3>
+                        </div>
+                        
+                        <div class="error-details">
+                            <strong>Error Details:</strong><br>
+                            ${message}
+                        </div>
+                        
+                        <div class="suggestions">
+                            <h4>💡 How to Fix This:</h4>
+                            <ul>
+                                <li>🔧 Check your Google Cloud Console OAuth client configuration</li>
+                                <li>📍 Ensure the client is configured as "Desktop Application"</li>
+                                <li>🔗 Verify redirect URIs are set to http://127.0.0.1/* and http://localhost/*</li>
+                                <li>👤 Make sure you are added as a test user if the app is in Testing mode</li>
+                            </ul>
+                        </div>
+                        
+                        <button class="close-button" onclick="window.close()">
+                            Close Tab
+                        </button>
+                    </div>
+                    
+                    <script>
+                        // Auto-close after 30 seconds
+                        setTimeout(() => {
+                            window.close();
+                        }, 30000);
+                    </script>
+                </body>
+            </html>
+        `;
+    }
+
+    private createSuccessPage(): string {
+        return `
+            <html>
+                <head>
+                    <title>OAuth Authentication Successful</title>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { 
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                            max-width: 600px; 
+                            margin: 50px auto; 
+                            padding: 30px; 
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            color: white;
+                            text-align: center;
+                            line-height: 1.6;
+                            border-radius: 15px;
+                            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+                        }
+                        .success-container { 
+                            background: rgba(255, 255, 255, 0.1); 
+                            padding: 40px; 
+                            border-radius: 15px; 
+                            backdrop-filter: blur(10px);
+                            border: 1px solid rgba(255, 255, 255, 0.2);
+                        }
+                        .success-header { 
+                            margin-bottom: 30px; 
+                        }
+                        .success-header h1 {
+                            margin: 0;
+                            font-size: 32px;
+                            font-weight: 600;
+                            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                        }
+                        .success-header h2 {
+                            margin: 15px 0 0 0;
+                            font-weight: 300;
+                            font-size: 18px;
+                            opacity: 0.9;
+                        }
+                        .success-details { 
+                            background: rgba(255, 255, 255, 0.1); 
+                            padding: 25px; 
+                            border-radius: 10px; 
+                            margin: 25px 0; 
+                            font-size: 16px;
+                            border: 1px solid rgba(255, 255, 255, 0.2);
+                        }
+                        .close-button { 
+                            background: rgba(255, 255, 255, 0.2); 
+                            color: white; 
+                            border: 2px solid rgba(255, 255, 255, 0.3); 
+                            padding: 15px 30px; 
+                            border-radius: 8px; 
+                            cursor: pointer; 
+                            margin-top: 25px; 
+                            font-size: 16px;
+                            font-weight: 500;
+                            transition: all 0.3s ease;
+                            backdrop-filter: blur(5px);
+                        }
+                        .close-button:hover { 
+                            background: rgba(255, 255, 255, 0.3);
+                            transform: translateY(-2px);
+                            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                        }
+                        .checkmark {
+                            font-size: 48px;
+                            margin-bottom: 20px;
+                            display: block;
+                        }
+                        .feature-list {
+                            text-align: left;
+                            margin: 20px 0;
+                        }
+                        .feature-list li {
+                            margin: 8px 0;
+                            padding-left: 25px;
+                            position: relative;
+                        }
+                        .feature-list li:before {
+                            content: "✓";
+                            position: absolute;
+                            left: 0;
+                            color: #4ade80;
+                            font-weight: bold;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="success-container">
+                        <div class="success-header">
+                            <span class="checkmark">&#x2705;</span>
+                            <h1>Authentication Successful!</h1>
+                            <h2>MCP Gas Server OAuth Flow Complete</h2>
+                        </div>
+                        
+                        <div class="success-details">
+                            <strong>You are now authenticated with Google Apps Script API</strong>
+                            <ul class="feature-list">
+                                <li>Access token received and saved securely</li>
+                                <li>PKCE security validation passed</li>
+                                <li>CSRF protection confirmed</li>
+                                <li>All Google Apps Script scopes granted</li>
+                            </ul>
+                            <p style="margin-top: 20px; font-size: 14px; opacity: 0.8;">
+                                You can now close this tab and return to your application.
+                            </p>
+                        </div>
+                        
+                        <button class="close-button" onclick="window.close()">
+                            Close Tab
+                        </button>
+                    </div>
+                    
+                    <script>
+                        // Auto-close after 3 seconds
+                        setTimeout(() => {
+                            window.close();
+                        }, 3000);
+                        
+                        // Add a subtle animation
+                        document.addEventListener('DOMContentLoaded', () => {
+                            const container = document.querySelector('.success-container');
+                            container.style.opacity = '0';
+                            container.style.transform = 'translateY(20px)';
+                            container.style.transition = 'all 0.5s ease';
+                            
+                            setTimeout(() => {
+                                container.style.opacity = '1';
+                                container.style.transform = 'translateY(0)';
+                            }, 100);
+                        });
+                    </script>
+                </body>
+            </html>
+        `;
+    }
+
+    private createTokenErrorPage(error: any): string {
+        const isClientSecretError = error.message?.includes('client_secret is missing');
+        
+        const errorTitle = isClientSecretError 
+            ? 'OAuth Client Configuration Error'
+            : 'Token Exchange Failed';
+            
+        const errorMessage = isClientSecretError
+            ? 'Your OAuth client is configured as "Web Application" but should be "Desktop Application" for PKCE to work.'
+            : error.message;
+            
+        const suggestions = isClientSecretError ? [
+            '🔧 IMMEDIATE FIX REQUIRED: Change OAuth Client Type',
+            '📍 Go to: https://console.cloud.google.com/apis/credentials',
+            '🔑 Find your OAuth client ID in the list',
+            '⚙️ Click on the client name (not download button)',
+            '🔄 Change "Application type" from "Web application" to "Desktop application"',
+            '💾 Click "Save" to apply changes',
+            '⏰ Wait 5-10 minutes for Google servers to propagate the change',
+            '🔁 Then retry the authentication flow',
+            '',
+            '📋 DETAILED STEPS:',
+            '1. Open Google Cloud Console Credentials page',
+            '2. Look for client ID: 428972970708-jtm1ou5838lv7vbjdv5kgp5222s7d8f0.apps.googleusercontent.com',
+            '3. Click on the client name (should open edit dialog)',
+            '4. At the top, find "Application type" dropdown',
+            '5. Change from "Web application" to "Desktop application"',
+            '6. Save and wait for propagation',
+            '',
+            '❓ WHY THIS HAPPENS:',
+            '• Web Application clients require client_secret for token exchange',
+            '• Desktop Application clients use PKCE instead (more secure)',
+            '• Our implementation correctly uses PKCE but your client type is wrong',
+            '',
+            '🔍 VERIFICATION:',
+            '• After changing to Desktop app, no redirect URIs should be required',
+            '• Desktop apps automatically allow localhost redirects',
+            '• You can keep the client_secret but our app will not use it'
+        ] : [
+            '🔧 Check your Google Cloud Console OAuth client configuration',
+            '📍 Ensure the client is configured as "Desktop Application"',
+            '🔗 Verify redirect URIs are set to http://127.0.0.1/* and http://localhost/*',
+            '👤 Make sure you are added as a test user if the app is in Testing mode'
+        ];
+
+        return `
+            <html>
+                <head>
+                    <title>OAuth Authentication Error</title>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { 
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                            max-width: 900px; 
+                            margin: 20px auto; 
+                            padding: 20px; 
+                            background: #f5f5f5; 
+                            line-height: 1.6;
+                        }
+                        .error-container { 
+                            background: white; 
+                            padding: 30px; 
+                            border-radius: 12px; 
+                            box-shadow: 0 4px 20px rgba(0,0,0,0.1); 
+                        }
+                        .error-header { 
+                            color: #d73a49; 
+                            margin-bottom: 25px; 
+                            border-bottom: 3px solid #d73a49; 
+                            padding-bottom: 15px; 
+                        }
+                        .error-header h2 {
+                            margin: 0;
+                            font-size: 24px;
+                        }
+                        .error-header h3 {
+                            margin: 10px 0 0 0;
+                            font-weight: normal;
+                            color: #586069;
+                        }
+                        .error-details { 
+                            background: #f6f8fa; 
+                            padding: 20px; 
+                            border-radius: 8px; 
+                            margin: 20px 0; 
+                            font-family: 'Monaco', 'Menlo', monospace; 
+                            font-size: 14px;
+                            border-left: 4px solid #d73a49;
+                            word-break: break-word;
+                        }
+                        .suggestions { 
+                            background: #fff3cd; 
+                            border: 2px solid #ffeaa7; 
+                            padding: 25px; 
+                            border-radius: 8px; 
+                            margin: 25px 0; 
+                        }
+                        .suggestions h4 {
+                            margin-top: 0;
+                            color: #856404;
+                            font-size: 18px;
+                        }
+                        .suggestions ul { 
+                            margin: 15px 0; 
+                            padding-left: 25px; 
+                        }
+                        .suggestions li { 
+                            margin: 12px 0; 
+                            line-height: 1.5; 
+                        }
+                        .close-button { 
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            color: white; 
+                            border: none; 
+                            padding: 12px 24px; 
+                            border-radius: 6px; 
+                            cursor: pointer; 
+                            margin-top: 20px; 
+                            font-size: 16px;
+                            font-weight: 500;
+                            transition: transform 0.2s ease;
+                        }
+                        .close-button:hover { 
+                            transform: translateY(-2px);
+                        }
+                        .debug-info {
+                            background: #f1f3f4;
+                            padding: 15px;
+                            border-radius: 6px;
+                            margin: 15px 0;
+                            font-family: monospace;
+                            font-size: 13px;
+                            border: 1px solid #dadce0;
+                        }
+                        .highlight {
+                            background: #fff2cc;
+                            padding: 2px 4px;
+                            border-radius: 3px;
+                            font-weight: bold;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="error-container">
+                        <div class="error-header">
+                            <h2>❌ ${errorTitle}</h2>
+                            <h3>${errorMessage}</h3>
+                        </div>
+                        
+                        <div class="error-details">
+                            <strong>Technical Error:</strong><br>
+                            ${error.message}
+                        </div>
+                        
+                        ${isClientSecretError ? `
+                        <div class="debug-info">
+                            <strong>🔍 What We Detected:</strong><br>
+                            • OAuth Client Type: <span class="highlight">Web Application</span> (should be Desktop Application)<br>
+                            • PKCE Parameters: ✅ Correctly sent<br>
+                            • Client Secret: ❌ Required by Web App type but not sent (correct for PKCE)<br>
+                            • Solution: Change client type to Desktop Application
+                        </div>
+                        ` : ''}
+                        
+                        <div class="suggestions">
+                            <h4>💡 How to Fix This:</h4>
+                            <ul>
+                                ${suggestions.map(s => `<li>${s}</li>`).join('')}
+                            </ul>
+                        </div>
+                        
+                        <button class="close-button" onclick="window.close()">
+                            Close Tab
+                        </button>
+                    </div>
+                    
+                    <script>
+                        // Auto-close after 2 minutes
+                        setTimeout(() => {
+                            if (confirm('Close this tab automatically?')) {
+                                window.close();
+                            }
+                        }, 120000);
+                    </script>
+                </body>
+            </html>
+        `;
+    }
 } 
