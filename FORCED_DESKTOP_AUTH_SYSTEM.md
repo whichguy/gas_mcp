@@ -63,8 +63,8 @@ if (!clientSecret) {
   "description": "FORCED Desktop OAuth 2.0 Configuration for MCP Gas Server",
   "note": "Desktop application OAuth client with REQUIRED client_secret",
   "oauth": {
-    "client_id": "428972970708-rcp6itnh5aqm25k2udf05cpcbfk7dk79.apps.googleusercontent.com",
-    "client_secret": "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",
+    "client_id": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
+    "client_secret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
     "type": "desktop",
     "redirect_uris": ["http://127.0.0.1/*", "http://localhost/*"],
     "scopes": [
@@ -88,8 +88,8 @@ if (!clientSecret) {
 ### Environment Variables (Alternative)
 
 ```bash
-export GOOGLE_OAUTH_CLIENT_ID="428972970708-rcp6itnh5aqm25k2udf05cpcbfk7dk79.apps.googleusercontent.com"
-export GOOGLE_OAUTH_CLIENT_SECRET="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"
+export GOOGLE_OAUTH_CLIENT_ID="YOUR_GOOGLE_OAUTH_CLIENT_ID"
+export GOOGLE_OAUTH_CLIENT_SECRET="YOUR_GOOGLE_OAUTH_CLIENT_SECRET"
 ```
 
 ## Google Cloud Console Setup
@@ -97,8 +97,8 @@ export GOOGLE_OAUTH_CLIENT_SECRET="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"
 ### 1. OAuth Client Configuration
 
 - **Application Type**: `Desktop application` (REQUIRED)
-- **Client ID**: `428972970708-rcp6itnh5aqm25k2udf05cpcbfk7dk79.apps.googleusercontent.com`
-- **Client Secret**: `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`
+- **Client ID**: `YOUR_GOOGLE_OAUTH_CLIENT_ID`
+- **Client Secret**: `YOUR_GOOGLE_OAUTH_CLIENT_SECRET`
 
 ### 2. Authorized Redirect URIs
 
