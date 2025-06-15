@@ -63,8 +63,8 @@ if (!clientSecret) {
   "description": "FORCED Desktop OAuth 2.0 Configuration for MCP Gas Server",
   "note": "Desktop application OAuth client with REQUIRED client_secret",
   "oauth": {
-    "client_id": "***REMOVED-GOOGLE-CLIENT-ID***",
-    "client_secret": "***REMOVED-GOOGLE-CLIENT-SECRET***",
+    "client_id": "YOUR_GOOGLE_OAUTH_CLIENT_ID",
+    "client_secret": "YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
     "type": "desktop",
     "redirect_uris": ["http://127.0.0.1/*", "http://localhost/*"],
     "scopes": [
@@ -88,8 +88,8 @@ if (!clientSecret) {
 ### Environment Variables (Alternative)
 
 ```bash
-export GOOGLE_OAUTH_CLIENT_ID="***REMOVED-GOOGLE-CLIENT-ID***"
-export GOOGLE_OAUTH_CLIENT_SECRET="***REMOVED-GOOGLE-CLIENT-SECRET***"
+export GOOGLE_OAUTH_CLIENT_ID="YOUR_GOOGLE_OAUTH_CLIENT_ID"
+export GOOGLE_OAUTH_CLIENT_SECRET="YOUR_GOOGLE_OAUTH_CLIENT_SECRET"
 ```
 
 ## Google Cloud Console Setup
@@ -97,8 +97,8 @@ export GOOGLE_OAUTH_CLIENT_SECRET="***REMOVED-GOOGLE-CLIENT-SECRET***"
 ### 1. OAuth Client Configuration
 
 - **Application Type**: `Desktop application` (REQUIRED)
-- **Client ID**: `***REMOVED-GOOGLE-CLIENT-ID***`
-- **Client Secret**: `***REMOVED-GOOGLE-CLIENT-SECRET***`
+- **Client ID**: `YOUR_GOOGLE_OAUTH_CLIENT_ID`
+- **Client Secret**: `YOUR_GOOGLE_OAUTH_CLIENT_SECRET`
 
 ### 2. Authorized Redirect URIs
 
