@@ -63,39 +63,39 @@ export class GASProxySetupTool extends BaseTool {
       // Get current project structure
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
       
-      // Check if proxy setup already exists
-      const hasDoGet = files.some(file => 
-        file.source?.includes('function doGet') || 
-        file.source?.includes('doGet(')
+      // Check if __mcp_gas_run exists (the proper proxy handler)
+      const hasMcpGasRun = files.some(file => 
+        file.name === '__mcp_gas_run' && (
+          file.source?.includes('function doGet') || 
+          file.source?.includes('doGet(')
+        )
       );
 
-      if (hasDoGet && !deploy) {
+      if (hasMcpGasRun && !deploy) {
         return {
           status: 'already_configured',
           scriptId,
-          message: 'Project already has doGet handler configured',
+          message: 'Project already has __mcp_gas_run doGet handler configured',
           existingFiles: files.map(f => f.name),
+          proxyFile: '__mcp_gas_run',
           recommendation: 'Set deploy=true to create/update deployment'
         };
       }
 
-      // Generate proxy code
-      const proxyCode = this.generateProxyCode();
-      
-      // Update project with proxy files
-      const proxyFile = {
-        name: 'proxy_handler.gs',
-        type: 'SERVER_JS' as const,
-        source: proxyCode
-      };
-
-      // Add or update proxy file
-      const existingFiles = files.filter(f => f.name !== 'proxy_handler.gs');
-      const updatedFiles = [proxyFile, ...existingFiles];
-
-      await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
+      // Don't create redundant proxy_handler.gs - __mcp_gas_run provides all functionality
+      if (!hasMcpGasRun) {
+        return {
+          status: 'error',
+          scriptId,
+          message: 'Project missing __mcp_gas_run file. This file should be created automatically by gas_run tool.',
+          existingFiles: files.map(f => f.name),
+          recommendation: 'Use gas_run tool which automatically creates __mcp_gas_run with proper doGet handler'
+        };
+      }
 
       let deployment = null;
+      let gasRunUrl = null;
+      
       if (deploy) {
         try {
           // Create deployment with USER_ACCESSING for proper user context
@@ -113,31 +113,63 @@ export class GASProxySetupTool extends BaseTool {
             undefined,
             accessToken
           );
+
+          // Get the Google web app URL and convert to gas_run format
+          if (deployment && deployment.webAppUrl) {
+            gasRunUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+            console.log(`🌐 Google Web App URL: ${deployment.webAppUrl}`);
+            console.log(`🔧 Gas_run URL (replaced /exec with /dev): ${gasRunUrl}`);
+          }
         } catch (deployError: any) {
           console.warn(`Deployment creation failed: ${deployError.message}`);
           // Continue without deployment
         }
       }
 
+      // If no deployment was created or no URL available, try to find existing deployment
+      if (!gasRunUrl) {
+        try {
+          const deployments = await this.gasClient.listDeployments(scriptId, accessToken);
+          const foundDeployment = deployments.find(d => 
+            d.entryPoints?.some(ep => ep.entryPointType === 'WEB_APP')
+          );
+          
+          if (foundDeployment) {
+            const webAppEntry = foundDeployment.entryPoints?.find(ep => ep.entryPointType === 'WEB_APP');
+            const googleWebAppUrl = (webAppEntry as any)?.webApp?.url;
+            
+            if (googleWebAppUrl) {
+              gasRunUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+              console.log(`🌐 Using existing Google Web App URL: ${googleWebAppUrl}`);
+              console.log(`🔧 Gas_run URL (replaced /exec with /dev): ${gasRunUrl}`);
+            }
+          }
+        } catch (listError: any) {
+          console.warn(`Could not find existing deployments: ${listError.message}`);
+        }
+      }
+      
       return {
         status: 'success',
         scriptId,
         configured: true,
-        proxyFile: 'proxy_handler.gs',
+        proxyFile: '__mcp_gas_run',
         deployment: deployment ? {
           deploymentId: deployment.deploymentId,
-          webAppUrl: deployment.webAppUrl,
+          webAppUrl: gasRunUrl, // Use gas_run URL format  
           versionNumber: deployment.versionNumber
         } : null,
-        instructions: deployment?.webAppUrl ? [
+        instructions: gasRunUrl ? [
           'Proxy setup complete!',
-          `Web App URL: ${deployment.webAppUrl}`,
+          `Web App URL: ${gasRunUrl}`,
+          'Using existing __mcp_gas_run for doGet handler',
           'You can now make HTTP requests to this URL',
-          'Parameters will be forwarded to your doGet handler'
+          'Note: This URL is compatible with gas_run tool'
         ] : [
-          'Proxy files uploaded successfully',
-          'Manual deployment required to get web app URL',
-          'Deploy via Apps Script console for production use'
+          'Proxy setup complete!',
+          'Using existing __mcp_gas_run for doGet handler',
+          'No web app deployment found - use deploy=true to create one',
+          'Note: Compatible with gas_run tool once deployed'
         ]
       };
 
@@ -154,75 +186,5 @@ export class GASProxySetupTool extends BaseTool {
 
       throw error;
     }
-  }
-
-  private generateProxyCode(): string {
-    return `
-/**
- * HTTP Proxy Handler for Google Apps Script
- * Handles incoming HTTP requests and provides proxy functionality
- */
-
-function doGet(e) {
-  try {
-    // Log incoming request
-    console.log('Proxy request received:', {
-      parameters: e.parameter,
-      timestamp: new Date().toISOString()
-    });
-
-    // Get request parameters
-    const params = e.parameter || {};
-    
-    // Default response
-    const response = {
-      status: 'success',
-      timestamp: new Date().toISOString(),
-      message: 'HTTP Proxy is working',
-      receivedParameters: params,
-      instructions: [
-        'This is a basic HTTP proxy handler',
-        'Customize this function for your specific needs',
-        'Parameters are available in the e.parameter object'
-      ]
-    };
-
-    // Return JSON response
-    return ContentService
-      .createTextOutput(JSON.stringify(response, null, 2))
-      .setMimeType(ContentService.MimeType.JSON);
-      
-  } catch (error) {
-    console.error('Proxy error:', error);
-    
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        status: 'error',
-        message: error.toString(),
-        timestamp: new Date().toISOString()
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-function doPost(e) {
-  // Handle POST requests similarly to GET
-  return doGet(e);
-}
-
-/**
- * Test function to verify proxy setup
- */
-function testProxy() {
-  const mockEvent = {
-    parameter: {
-      test: 'value',
-      timestamp: new Date().toISOString()
-    }
-  };
-  
-  return doGet(mockEvent);
-}
-`;
   }
 } 

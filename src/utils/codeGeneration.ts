@@ -7,7 +7,7 @@
  * - GASRunTool.getProxyFunctionCode() (140 lines) -> Web app proxy
  * 
  * Architecture: Self-contained system with dynamic execution
- * - __mcp_gas_run.gs: System shim ONLY - never modified after creation
+ * - __mcp_gas_run: System shim ONLY - never modified after creation
  * - User code: Separate .gs files (e.g., Code.gs, UserFunctions.gs)
  * - Dynamic code execution via Function constructor
  */
@@ -15,7 +15,7 @@
 import { GASFile } from '../api/gasClient.js';
 
 export interface ProxyCodeOptions {
-  type: 'head_deployment' | 'web_app_proxy' | 'execution_api';
+  type: 'head_deployment' | 'execution_api';
   userCode?: string;
   timezone?: string;
   includeTestFunctions?: boolean;
@@ -33,7 +33,7 @@ export interface CodeGenerationResult {
  * Consolidated Google Apps Script Code Generator
  * 
  * **System Architecture:**
- * - `__mcp_gas_run.gs` - System with built-in dynamic execution
+ * - `__mcp_gas_run` - System with built-in dynamic execution
  * - Built-in `__gas_run` function for runtime code execution
  * - Dynamic function execution via Function constructor
  * 
@@ -55,34 +55,31 @@ export class GASCodeGenerator {
    * 
    * **Unified API** that replaces multiple specialized functions:
    * - HEAD deployment: Generates system with built-in dynamic execution + manifest
-   * - Web App proxy: Generates doGet() proxy with dynamic routing
    * - Execution API: Generates API executable code
    * 
    * @param options - Configuration for code generation type and features
    * @returns Generated files with metadata
    */
   static generateCode(options: ProxyCodeOptions): CodeGenerationResult {
-    const {
-      type,
-      userCode = '',
-      timezone = 'America/Los_Angeles',
-      includeTestFunctions = true,
-      mcpVersion = '1.0.0',
-      responseFormat = 'structured'
-    } = options;
+    const timezone = options.timezone || 'America/Los_Angeles';
+    const mcpVersion = options.mcpVersion || '1.0.0';
+    const responseFormat = options.responseFormat || 'structured';
+    const includeTestFunctions = options.includeTestFunctions !== false;
 
-    switch (type) {
+    switch (options.type) {
       case 'head_deployment':
-        return this.generateHeadDeployment(userCode, timezone, includeTestFunctions, mcpVersion);
-      
-      case 'web_app_proxy':
-        return this.generateWebAppProxy(responseFormat, mcpVersion);
-      
+        return this.generateHeadDeployment(
+          options.userCode || '', 
+          timezone, 
+          includeTestFunctions,
+          mcpVersion
+        );
+
       case 'execution_api':
         return this.generateExecutionApi(mcpVersion);
-      
+
       default:
-        throw new Error(`Unknown code generation type: ${type}`);
+        throw new Error(`Unsupported code generation type: ${options.type}`);
     }
   }
 
@@ -127,7 +124,7 @@ export class GASCodeGenerator {
       
       // Well-known MCP class file (loaded first) - SYSTEM SHIM ONLY
       {
-        name: '__mcp_gas_run.gs',
+        name: '__mcp_gas_run',
         type: 'SERVER_JS',
         source: this.generateMcpClassFile(timezone, mcpVersion)
       }
@@ -142,164 +139,6 @@ export class GASCodeGenerator {
       files,
       totalLines,
       description: `HEAD deployment with ${files.length} files (${totalLines} total lines) - system with built-in dynamic execution`
-    };
-  }
-
-  /**
-   * Generate Web App proxy code (replaces GASRunTool.getProxyFunctionCode)
-   * 
-   * **Improvements over original:**
-   * - Configurable response format (structured vs legacy)
-   * - Better error handling consistency
-   * - More comprehensive parameter extraction
-   * - Enhanced logging and debugging
-   */
-  private static generateWebAppProxy(responseFormat: string, mcpVersion: string): CodeGenerationResult {
-    const proxyCode = `
-/**
- * MCP Web App Proxy Function - Consolidated Implementation
- * 
- * Replaces: GASRunTool.getProxyFunctionCode()
- * Pattern: doGet() → globalThis[functionName](...args)
- * Response Format: ${responseFormat} JSON with type-based payload handling
- * Runtime: V8 (supports JavaScript .gs files, HTML, ES6+)
- * Version: ${mcpVersion}
- */
-function doGet(e) {
-  try {
-    console.log('MCP doGet() proxy called:', JSON.stringify(e));
-    
-    // Enhanced parameter extraction with multiple input format support
-    let params = this.extractParameters(e, arguments);
-    const { functionName, args } = params;
-    
-    if (!functionName) {
-      throw new Error('functionName parameter is required for proxy routing');
-    }
-    
-    console.log(\`Routing to function: \${functionName} with args:\`, JSON.stringify(args));
-    
-    // Dynamic function execution with comprehensive error handling
-    if (typeof globalThis[functionName] === 'function') {
-      const startTime = new Date();
-      const result = globalThis[functionName](...(args || []));
-      const endTime = new Date();
-      
-      // Generate ${responseFormat} response format
-      return this.formatSuccessResponse(functionName, result, startTime, endTime, '${mcpVersion}');
-      
-    } else {
-      throw new Error(\`Function '\${functionName}' not found or not callable on globalThis\`);
-    }
-    
-  } catch (error) {
-    console.error('MCP doGet() proxy error:', error.toString());
-    return this.formatErrorResponse(error, arguments[0], '${mcpVersion}');
-  }
-}
-
-/**
- * Enhanced parameter extraction supporting multiple input formats
- */
-function extractParameters(e, args) {
-  // URL parameters (web app style)
-  if (e && e.parameter) {
-    let params = e.parameter;
-    if (typeof params.functionName === 'string' && params.args) {
-      try {
-        params.args = JSON.parse(params.args);
-      } catch (parseError) {
-        // Keep args as string if not valid JSON
-      }
-    }
-    return params;
-  }
-  
-  // MCP direct call style
-  if (e && typeof e === 'object' && e.functionName) {
-    return e;
-  }
-  
-  // Function call arguments
-  if (args.length > 0 && typeof args[0] === 'object') {
-    return args[0];
-  }
-  
-  throw new Error('No valid parameters provided to doGet()');
-}
-
-/**
- * Format successful execution response
- */
-function formatSuccessResponse(functionName, result, startTime, endTime, version) {
-  const response = {
-    type: 'data',
-    payload: {
-      functionName: functionName,
-      result: result,
-      timestamp: new Date().toISOString(),
-      executionTime: endTime.getTime() - startTime.getTime(),
-      proxyPattern: 'doGet() → globalThis[functionName](...args)',
-      runtime: 'V8',
-      supportedLanguages: ['JavaScript (.gs)', 'HTML', 'ES6+'],
-      version: version
-    }
-  };
-  
-  console.log('MCP execution successful:', JSON.stringify(response));
-  return response;
-}
-
-/**
- * Format error response with comprehensive error information
- */
-function formatErrorResponse(error, originalParams, version) {
-  const errorResponse = {
-    type: 'exception',
-    payload: {
-      functionName: (originalParams && originalParams.functionName) || 'unknown',
-      error: {
-        message: error.toString(),
-        name: error.name || 'Error',
-        stack: error.stack || '',
-        type: error.constructor.name || 'ProxyError'
-      },
-      timestamp: new Date().toISOString(),
-      proxyPattern: 'doGet() → globalThis[functionName](...args)',
-      runtime: 'V8',
-      version: version
-    }
-  };
-  
-  console.log('MCP execution failed:', JSON.stringify(errorResponse));
-  return errorResponse;
-}
-
-/**
- * POST request handler - delegates to doGet for consistency
- */
-function doPost(e) {
-  return doGet(e);
-}
-
-/**
- * Alternative entry point for direct proxy calls
- */
-function _mcpProxy(proxyData) {
-  return doGet(proxyData);
-}
-`;
-
-    const files: GASFile[] = [{
-      name: 'proxy_handler.gs',
-      type: 'SERVER_JS',
-      source: proxyCode
-    }];
-
-    return {
-      files,
-      totalLines: proxyCode.split('\n').length,
-      description: `Web App proxy with ${responseFormat} response format and enhanced error handling`
     };
   }
 
@@ -342,337 +181,295 @@ function _mcpProxy(proxyData) {
    * - ALL USER CODE MUST BE IN SEPARATE .GS FILES
    */
   private static generateMcpClassFile(timezone: string, mcpVersion: string): string {
-    return `
-/**
- * MCP Gas Run System with Built-in Dynamic Execution
+    return `/**
+ * MCP Gas Run System - Dynamic JavaScript Execution for Google Apps Script
  * 
- * This file contains system infrastructure with built-in function execution.
- * Provides dynamic JavaScript code execution via Function constructor.
+ * SECURITY: Designed for HEAD deployments, allows redirect handling (/dev → /exec)
+ * USAGE: Send JavaScript code via GET params or POST body for execution
+ * VERSION: 1.3.1
  * 
- * ⚠️  LANGUAGE SUPPORT: JavaScript only (ES6+ with V8 runtime)
- *    Google Apps Script does NOT natively support TypeScript files.
- *    Only .gs files with JavaScript are supported.
- * 
- * ⚠️  ARCHITECTURE: Clean separation of parameter parsing and execution
- *    - doGet/doPost: Web app entry points
- *    - __gas_run_get: Parse GET parameters (?func= or ?function_plus_args=)
- *    - __gas_run_post_json: Parse POST JSON data
- *    - __gas_run_post_raw: Parse raw POST content
- *    - __gas_run: Core execution engine (no parsing)
- * 
- * ⚠️  USER CODE LOCATION: All user functions must be in separate .gs files
- *    (e.g., Code.gs, UserFunctions.gs)
- * 
- * File: __mcp_gas_run.gs (System with Built-in Execution)
- * Timezone: ${timezone}
- * Version: ${mcpVersion}
- * Generated: ${new Date().toISOString()}
+ * Examples:
+ * GET:  ?func=Math.max(10,20,30)
+ * POST: {"func": "new Date().getTime()"}
+ * POST: const x = 5; const y = 10; x * y;
  */
 
 /**
- * Web App Entry Point - GET requests
- * Routes to GET parameter parser for dynamic JavaScript execution
+ * GET endpoint - executes JavaScript from URL parameters
+ * 
+ * @param {Object} e - Event object from Google Apps Script
+ * @param {Object} e.parameter - URL parameters
+ * @returns {TextOutput} JSON response with execution result or error
+ * 
+ * @example
+ * ?func=Math.max(10,20,30)
+ * ?func=new Date().getTime()
+ * ?func=Session.getActiveUser().getEmail()
+ * ?func=JSON.stringify({hello: "world"})
+ * ?func=nonExistentFunction()  // Will throw exception
+ * 
+ * Success Response:
+ *   {"function_called":"Math.max(10,20,30)","result":30,"success":true,"execution_time_ms":1.234}
+ * 
+ * Error Response:
+ *   {"error":true,"context":"execution","function_called":"badCode()","message":"ReferenceError: badCode is not defined"}
  */
 function doGet(e) {
   try {
-    console.log('MCP doGet called with parameters:', JSON.stringify(e.parameter));
-    console.log('MCP doGet timestamp:', new Date().toISOString());
-    
-    // Route to GET parameter parser
-    return __gas_run_get(e);
-    
+    validateDevMode();
+    const js_statement = extractGetParams(e.parameter);
+    if (!js_statement) {
+      throw new Error('No JavaScript code provided. Use ?func=yourCode');
+    }
+    return __gas_run(js_statement);
   } catch (error) {
-    return __mcp_handleMcpException(error, 'doGet');
+    return errorResponse(error, 'doGet');
   }
 }
 
 /**
- * Web App Entry Point - POST requests
- * Routes to appropriate POST parser (JSON first, then raw) for dynamic JavaScript execution
+ * POST endpoint - executes JavaScript from POST body
+ * 
+ * @param {Object} e - Event object from Google Apps Script
+ * @param {Object} e.postData - POST data object
+ * @param {string} e.postData.contents - Raw POST body content
+ * @returns {TextOutput} JSON response with execution result or error
+ * 
+ * @example
+ * JSON Examples:
+ *   {"func": "Math.PI * 2"}                           → result: 6.283185307179586
+ *   {"func": "new Date().toISOString()"}              → result: "2025-06-15T10:30:45.123Z"
+ *   {"func": "DriveApp.getRootFolder().getName()"}    → result: "My Drive"
+ * 
+ * Raw JavaScript Examples (returns result of last expression):
+ *   const x = 5; const y = 10; x * y;                 → result: 50
+ *   function greet(name) { return \`Hello \${name}!\`; } greet("World");  → result: "Hello World!"
+ *   (() => { const arr = [1,2,3]; return arr.reduce((a,b) => a+b); })()  → result: 6
+ *   (() => { throw new Error("Custom error"); })()   → Will throw exception
+ * 
+ * Success Response:
+ *   {"function_called":"const x = 5; x * 2","result":10,"success":true,"execution_time_ms":0.891}
+ * 
+ * Error Response:
+ *   {"error":true,"context":"execution","function_called":"badCode","message":"Error: Custom error"}
  */
 function doPost(e) {
   try {
-    console.log('MCP doPost called with parameters:', JSON.stringify(e.parameter));
-    console.log('MCP doPost postData length:', e.postData ? e.postData.contents.length : 0);
-    console.log('MCP doPost timestamp:', new Date().toISOString());
-    
-    // Route to POST JSON parser (which falls back to raw parser if needed)
-    return __gas_run_post_json(e);
-    
+    validateDevMode();
+    const js_statement = extractPostData(e.postData?.contents);
+    if (!js_statement) {
+      throw new Error('No JavaScript code provided. Send JSON {"func": "code"} or raw JavaScript');
+    }
+    return __gas_run(js_statement);
   } catch (error) {
-    return __mcp_handleMcpException(error, 'doPost');
+    return errorResponse(error, 'doPost');
   }
 }
 
 /**
- * Parse GET parameters and route to execution
- * Handles: ?function_plus_args=code() or ?func=code()
- */
-function __gas_run_get(e) {
-  try {
-    let function_plus_args = '';
-    
-    if (e && e.parameter) {
-      if (e.parameter.function_plus_args) {
-        function_plus_args = e.parameter.function_plus_args;
-      } else if (e.parameter.func) {
-        function_plus_args = e.parameter.func;
-      }
-    }
-    
-    if (!function_plus_args || function_plus_args.trim() === '') {
-      return __gas_run_usage();
-    }
-    
-    return __gas_run(function_plus_args);
-    
-  } catch (error) {
-    return __gas_run_error(error, 'GET parameter parsing');
-  }
-}
-
-/**
- * Parse POST JSON data and route to execution
- * Handles: {"function_plus_args": "code()"} or {"func": "code()"}
- */
-function __gas_run_post_json(e) {
-  try {
-    let function_plus_args = '';
-    
-    if (e && e.postData && e.postData.contents) {
-      const postData = JSON.parse(e.postData.contents);
-      if (postData.function_plus_args) {
-        function_plus_args = postData.function_plus_args;
-      } else if (postData.func) {
-        function_plus_args = postData.func;
-      }
-    }
-    
-    if (!function_plus_args || function_plus_args.trim() === '') {
-      return __gas_run_usage();
-    }
-    
-    return __gas_run(function_plus_args);
-    
-  } catch (parseError) {
-    // If JSON parsing fails, try raw content
-    return __gas_run_post_raw(e);
-  }
-}
-
-/**
- * Parse raw POST content and route to execution
- * Handles: Raw JavaScript code as POST body
- */
-function __gas_run_post_raw(e) {
-  try {
-    let function_plus_args = '';
-    
-    if (e && e.postData && e.postData.contents) {
-      function_plus_args = e.postData.contents.trim();
-    }
-    
-    if (!function_plus_args) {
-      return __gas_run_usage();
-    }
-    
-    return __gas_run(function_plus_args);
-    
-  } catch (error) {
-    return __gas_run_error(error, 'POST raw content parsing');
-  }
-}
-
-/**
- * Core dynamic function execution handler
+ * Security check - validates execution context
  * 
- * ⚠️  SYSTEM FUNCTION - CLEAN EXECUTION ONLY
- * ⚠️  NO PARAMETER PARSING - Receives clean function_plus_args string
+ * Only allows /dev URLs (HEAD deployments) for dynamic execution
+ * Fetch logic will handle any redirects automatically
  * 
- * This function executes JavaScript code dynamically via Function constructor.
- * All parameter parsing is handled by specific input method handlers.
+ * @throws {Error} If not a /dev URL (HEAD deployment)
+ * 
+ * @example
+ * // HEAD deployment (allowed):     https://script.google.com/macros/s/ABC123/dev
+ * // Domain-specific (allowed):     https://script.google.com/a/macros/domain.com/s/ABC123/dev
+ * // Versioned deployment (blocked): https://script.google.com/macros/s/ABC123/exec
  */
-function __gas_run(function_plus_args) {
-  try {
-    console.log(\`Executing function_plus_args: \${function_plus_args}\`);
-    
-    // Create and execute the function
-    const body = \`return \${function_plus_args}\`;
-    const fn = new Function(body);
-    const result = fn();
-
-    // Return structured success response
-    return ContentService.createTextOutput(JSON.stringify({
-      function_called: function_plus_args,
-      result: result,
-      message: \`Successfully executed: \${function_plus_args}\`,
-      timestamp: new Date().toISOString(),
-      timezone: '${timezone}',
-      systemFunction: true,
-      mcpVersion: '${mcpVersion}'
-    })).setMimeType(ContentService.MimeType.JSON);
-    
-  } catch (error) {
-    return __gas_run_error(error, 'code execution', function_plus_args);
-  }
-}
-
-/**
- * Return usage information when no function specified
- */
-function __gas_run_usage() {
-  return ContentService.createTextOutput(JSON.stringify({
-    status: 'system_ready',
-    message: 'MCP Gas Run system ready for dynamic JavaScript execution',
-    usage: {
-      get: 'Add ?function_plus_args=yourCode() or ?func=yourCode() to URL',
-      post_json: 'Send JSON: {"function_plus_args": "yourCode()"}',
-      post_raw: 'Send raw JavaScript code as POST body',
-      examples: [
-        '?function_plus_args=Math.max(10,20,30)',
-        '?func=new Date().getTime()',
-        '{"function_plus_args": "Math.PI * 2"}',
-        'Session.getActiveUser().getEmail()',
-        'add(5, 10)'
-      ]
-    },
-    supported: {
-      language: 'JavaScript (ES6+)',
-      runtime: 'V8',
-      services: 'All Google Apps Script services (SpreadsheetApp, DriveApp, GmailApp, etc.)'
-    },
-    timestamp: new Date().toISOString(),
-    systemShim: '__mcp_gas_run.gs',
-    userCodeLocation: 'Separate .gs files (e.g., Code.gs, UserFunctions.gs)',
-    version: '${mcpVersion}'
-  })).setMimeType(ContentService.MimeType.JSON);
-}
-
-/**
- * Centralized error response formatting
- */
-function __gas_run_error(error, context, function_plus_args) {
-  console.error(\`Error in \${context}: \${error.toString()}\`);
+function validateDevMode() {
+  const url = ScriptApp.getService().getUrl();
   
-  return ContentService.createTextOutput(JSON.stringify({
+  // Strict validation: Only allow /dev URLs (HEAD deployments)
+  if (!url.endsWith('/dev')) {
+    throw new Error('Dynamic execution only available in dev mode (HEAD deployments ending in /dev). Current URL: ' + url);
+  }
+  
+  console.log('[MCP_GAS_RUN] Executing on HEAD deployment (/dev URL)');
+}
+
+/**
+ * Extract JavaScript code from GET parameters
+ * 
+ * @param {Object} params - URL parameters object
+ * @param {string} [params.func] - JavaScript code to execute
+ * @returns {string} JavaScript code or empty string if not found
+ * 
+ * @example
+ * extractGetParams({func: "Math.max(1,2,3)"}) // returns "Math.max(1,2,3)"
+ * extractGetParams({other: "value"}) // returns ""
+ */
+function extractGetParams(params = {}) {
+  return params.func || '';
+}
+
+/**
+ * Extract JavaScript code from POST data (JSON or raw)
+ * 
+ * @param {string} postData - Raw POST body content
+ * @returns {string} JavaScript code or empty string if not found
+ * 
+ * @example
+ * // JSON format
+ * extractPostData('{"func": "Math.PI"}') // returns "Math.PI"
+ * 
+ * // Raw JavaScript - returns result of last expression
+ * extractPostData('const x = 5; x * 2;') // returns "const x = 5; x * 2;" → evaluates to 10
+ * extractPostData('function add(a,b) { return a+b; } add(3,4);') // returns the code → evaluates to 7
+ * 
+ * // Empty/invalid
+ * extractPostData('') // returns ""
+ */
+function extractPostData(postData) {
+  if (!postData) return '';
+  
+  try {
+    // Try JSON parsing first
+    const parsed = JSON.parse(postData);
+    return parsed.func || '';
+  } catch (e) {
+    // Fall back to raw JavaScript code
+    return postData.trim();
+  }
+}
+
+/**
+ * Creates a function from a JS string, returning the value of the 
+ * last expression. This robust version correctly handles 'return'
+ * as a whole word, distinguishing it from variable names.
+ * @param {string} code - The JavaScript code snippet.
+ * @returns {Function} A new function that executes the code.
+ */
+function createFunction(code) {
+  const trimmedCode = code.trim();
+  if (trimmedCode === '') return new Function('');
+
+  // Regex to test for a standalone 'return' keyword at the start.
+  const isReturnStatement = /^return($|[\s;])/.test(trimmedCode);
+  
+  const lastSemicolon = trimmedCode.lastIndexOf(';');
+
+  // Case 1: No semicolon
+  if (lastSemicolon === -1) {
+    return new Function(
+      isReturnStatement ? trimmedCode : \`return \${trimmedCode}\`
+    );
+  }
+
+  // Case 2: Semicolon exists
+  const declarations = trimmedCode.substring(0, lastSemicolon + 1);
+  const finalPart = trimmedCode.substring(lastSemicolon + 1).trim();
+
+  const finalPartIsReturn = /^return($|[\s;])/.test(finalPart);
+
+  const functionBody = (finalPart === '' || finalPartIsReturn)
+    ? trimmedCode
+    : \`\${declarations} return \${finalPart}\`;
+
+  return new Function(functionBody);
+}
+
+/**
+ * Core execution engine - runs JavaScript code dynamically
+ * Uses sophisticated createFunction logic to handle declarations and expressions
+ * 
+ * @param {string} js_statement - JavaScript code to execute
+ * @returns {TextOutput} JSON response with result and execution time
+ * 
+ * @example
+ * // Simple expressions
+ * __gas_run("Math.max(1,2,3)")
+ * // Returns: {"function_called":"Math.max(1,2,3)","result":3,"success":true,"execution_time_ms":0.123}
+ * 
+ * // Multi-statement code - returns result of last expression
+ * __gas_run("const x = 5; x * 2")
+ * // Returns: {"function_called":"const x = 5; x * 2","result":10,"success":true,"execution_time_ms":0.234}
+ * 
+ * // Function definition and call
+ * __gas_run("function add(a,b) { return a+b; } add(3,4)")
+ * // Returns: {"function_called":"function add(a,b) { return a+b; } add(3,4)","result":7,"success":true,"execution_time_ms":0.156}
+ * 
+ * // Declarations only (returns undefined)
+ * __gas_run("const x = 5;")
+ * // Returns: {"function_called":"const x = 5;","result":undefined,"success":true,"execution_time_ms":0.089}
+ * 
+ * // Error case
+ * __gas_run("invalidCode()")
+ * // Returns: {"error":true,"context":"execution","function_called":"invalidCode()","message":"ReferenceError: invalidCode is not defined"}
+ */
+function __gas_run(js_statement) {
+  const timerLabel = \`GAS_RUN_\${Date.now()}\`;
+  
+  console.log(\`[GAS_RUN] Executing: \${js_statement}\`);
+
+  let duration = "0";
+  console.time(timerLabel);
+
+  try {
+    const fn = createFunction(js_statement);
+    const result = fn();
+    
+    duration = console.timeEnd(timerLabel);
+    
+    return jsonResponse({
+      function_called: js_statement,
+      result: result,
+      success: true,
+      execution_time_ms: duration
+    });
+  } catch (error) {
+    console.timeEnd(timerLabel);
+    return errorResponse(error, 'execution', js_statement);
+  }
+}
+
+/**
+ * Standardized JSON response helper
+ * 
+ * @param {Object} data - Data object to serialize as JSON
+ * @returns {TextOutput} Google Apps Script TextOutput with JSON MIME type
+ * 
+ * @example
+ * jsonResponse({success: true, result: 42})
+ * // Returns TextOutput with: {"success":true,"result":42}
+ */
+function jsonResponse(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Standardized error response
+ * 
+ * @param {Error} error - Error object to format
+ * @param {string} context - Context where error occurred (e.g., 'doGet', 'execution')
+ * @param {string} [code='unknown'] - JavaScript code that caused the error
+ * @returns {TextOutput} JSON error response
+ * 
+ * @example
+ * errorResponse(new Error("Test error"), "execution", "badCode()")
+ * // Returns: {"error":true,"context":"execution","function_called":"badCode()","message":"Error: Test error"}
+ */
+function errorResponse(error, context, code = 'unknown') {
+  console.error(\`Error in \${context}:\`, error.toString());
+  
+  const currentUrl = ScriptApp.getService().getUrl();
+  
+  return jsonResponse({
     error: true,
     context: context,
-    function_called: function_plus_args || 'unknown',
+    function_called: code,
     message: error.toString(),
-    stack: error.stack || 'No stack trace',
-    timestamp: new Date().toISOString(),
-    timezone: '${timezone}',
-    systemFunction: true,
-    mcpVersion: '${mcpVersion}'
-  })).setMimeType(ContentService.MimeType.JSON);
-}
-
-/**
- * System test function to verify MCP Gas Run deployment
- * SYSTEM FUNCTION - Tests system infrastructure and built-in functions
- */
-function testMcpGasRun() {
-  return ContentService
-    .createTextOutput(JSON.stringify({
-      status: 'mcp_gas_run_system_working',
+    accessed_url: currentUrl,
+    url_type: currentUrl.endsWith('/dev') ? 'HEAD deployment (testing)' : currentUrl.endsWith('/exec') ? 'Deployment (may be redirected from /dev)' : 'Unknown deployment type',
+    debug_info: {
       timestamp: new Date().toISOString(),
-      timezone: '${timezone}',
-      message: 'MCP Gas Run system with built-in dynamic execution ready',
-      systemShim: '__mcp_gas_run.gs',
-      builtInFunctions: ['__gas_run', '__gas_run_get', '__gas_run_post_json', '__gas_run_post_raw', '__mcp_test_args', '__mcp_test_exception', 'testMcpGasRun'],
-      dynamicExecution: 'Available via __gas_run(function_plus_args)',
-      deployment: 'HEAD',
-      access: 'DOMAIN',
-      executeAs: 'USER_DEPLOYING',
-      type: 'system_test_response',
-      mcpVersion: '${mcpVersion}',
-      runtime: 'V8',
-      language: 'JavaScript (ES6+)',
-      generatedBy: 'GASCodeGenerator (system with built-in execution)'
-    }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-/**
- * System test functions for MCP infrastructure
- * SYSTEM FUNCTIONS - No user code dependencies
- */
-function __mcp_test_args(x, y, operation) {
-  const operations = {
-    add: (x || 0) + (y || 0),
-    multiply: (x || 0) * (y || 0),
-    subtract: (x || 0) - (y || 0),
-    divide: (y || 1) !== 0 ? (x || 0) / (y || 1) : 'division_by_zero',
-    power: Math.pow(x || 0, y || 0),
-    modulo: (y || 1) !== 0 ? (x || 0) % (y || 1) : 'division_by_zero'
-  };
-  
-  return {
-    operation: operation || 'add',
-    inputs: { x: x || 0, y: y || 0 },
-    result: operations[operation] || operations.add,
-    timestamp: new Date().toISOString(),
-    timezone: '${timezone}',
-    testType: 'system_argument_test',
-    success: true,
-    mcpVersion: '${mcpVersion}',
-    runtime: 'V8',
-    language: 'JavaScript (ES6+)',
-    availableOperations: Object.keys(operations),
-    systemFunction: true
-  };
-}
-
-function __mcp_test_exception(shouldThrow) {
-  if (shouldThrow === true || shouldThrow === 'true') {
-    const error = new Error('System MCP test exception for error handling verification');
-    error.name = 'MCPSystemTestException';
-    error.testType = 'system_exception_handling';
-    error.mcpVersion = '${mcpVersion}';
-    throw error;
-  }
-  
-  return {
-    message: 'System exception test completed - no error thrown',
-    shouldThrow: shouldThrow,
-    timestamp: new Date().toISOString(),
-    timezone: '${timezone}',
-    testType: 'system_exception_handling',
-    success: true,
-    mcpVersion: '${mcpVersion}',
-    runtime: 'V8',
-    language: 'JavaScript (ES6+)',
-    systemFunction: true
-  };
-}
-
-/**
- * Centralized system exception handling utility
- * 
- * ⚠️  SYSTEM FUNCTION - STATIC IMPLEMENTATION
- * Provides consistent error response format for system-level exceptions
- */
-function __mcp_handleMcpException(error, entryPoint) {
-  console.error(\`MCP System \${entryPoint} error:\`, error.toString());
-  console.error(\`MCP System \${entryPoint} stack:\`, error.stack || 'No stack trace');
-  
-  return ContentService
-    .createTextOutput(JSON.stringify({
-      error: true,
-      type: 'system_' + entryPoint + '_exception',
-      message: error.toString(),
-      stack: error.stack || 'No stack trace',
-      timestamp: new Date().toISOString(),
-      timezone: '${timezone}',
-      entryPoint: entryPoint + ' -> system_shim',
-      systemShim: '__mcp_gas_run.gs',
-      userCodeLocation: 'Separate .gs files (e.g., Code.gs, UserFunctions.gs)',
-      mcpVersion: '${mcpVersion}',
-      runtime: 'V8',
-      language: 'JavaScript (ES6+)',
-      generatedBy: 'GASCodeGenerator (system with built-in execution)'
-    }))
-    .setMimeType(ContentService.MimeType.JSON);
+      deployment_mode: currentUrl.endsWith('/dev') ? 'development' : currentUrl.endsWith('/exec') ? 'redirected' : 'unknown'
+    }
+  });
 }
 `;
   }
@@ -685,7 +482,7 @@ function __mcp_handleMcpException(error, entryPoint) {
    * Helpful for documentation and validation
    */
   static getAvailableTypes(): string[] {
-    return ['head_deployment', 'web_app_proxy', 'execution_api'];
+    return ['head_deployment', 'execution_api'];
   }
 
   /**

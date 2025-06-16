@@ -1480,11 +1480,7 @@ function calculateStatistics(inputNumbers) {
 
         // Test function with object parameters
         console.log('👤 Testing user data processing...');
-        const userResult = await gas.runFunction(testProjectId!, 'processUserData', [
-          'Alice Smith',
-          25,
-          ['reading', 'coding', 'hiking']
-        ]);
+        const userResult = await gas.runFunction(testProjectId!, 'processUserData("Alice Smith", 25, ["reading", "coding", "hiking"])');
 
         const userData = userResult.response.result;
         expect(userData.user.name).to.equal('Alice Smith');
@@ -1498,9 +1494,7 @@ function calculateStatistics(inputNumbers) {
 
         // Test function with array parameters and complex calculations
         console.log('📊 Testing statistics calculation...');
-        const statsResult = await gas.runFunction(testProjectId!, 'calculateStatistics', [
-          [15, 23, 8, 42, 16, 31, 9]
-        ]);
+        const statsResult = await gas.runFunction(testProjectId!, 'calculateStatistics([15, 23, 8, 42, 16, 31, 9])');
 
         const stats = statsResult.response.result;
         expect(stats.statistics.count).to.equal(7);

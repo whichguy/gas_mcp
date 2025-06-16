@@ -7,6 +7,9 @@ import { AuthStateManager, TokenInfo, UserInfo } from './authState.js';
 import { OAuthError } from '../errors/mcpErrors.js';
 import { PKCEGenerator, PKCEChallenge } from './pkce.js';
 
+// Import the signaling functions from auth.ts
+import { signalAuthCompletion, signalAuthError } from '../tools/auth.js';
+
 /**
  * Google Apps Script OAuth Client for UWP Applications
  * 
@@ -34,13 +37,10 @@ export interface AuthConfig {
 }
 
 /**
- * UWP OAuth client for Google Apps Script API
+ * OAuth client for Google Apps Script API
  * 
- * UWP PKCE-ONLY AUTHENTICATION IMPLEMENTATION:
- * - Works with UWP OAuth clients configured in Google Cloud Console
- * - Pure PKCE flow without client_secret requirement
- * - Follows OAuth 2.0 PKCE standards properly
- * - Enhanced security with code challenge/verifier
+ * Implements UWP OAuth 2.0 flow with PKCE (Proof Key for Code Exchange)
+ * No client_secret required for UWP apps - uses PKCE instead
  */
 export class GASAuthClient {
     private oauth2Client: OAuth2Client;
@@ -51,31 +51,39 @@ export class GASAuthClient {
     private server?: http.Server;
     private serverPort?: number;
     private redirectUri?: string;
-    private callbackResult?: { code: string; state: string | null; success: boolean };
+    private currentAuthKey?: string; // Track the current auth key for signaling
+    
+    // RACE CONDITION FIX: Callback processing guard
+    private callbackProcessed = false;
+    private callbackProcessing = false;
+    
+    // RACE CONDITION FIX: Server cleanup protection
+    private cleanupInProgress = false;
 
     constructor(config: AuthConfig) {
         this.config = config;
         
-        // Configure OAuth2Client - client_secret is optional for UWP
-        const clientConfig: any = {
+        // Initialize OAuth2Client with PKCE configuration
+        this.oauth2Client = new OAuth2Client({
             clientId: config.client_id,
-        };
+            clientSecret: config.client_secret, // Optional for UWP clients
+            redirectUri: 'http://127.0.0.1:*' // Dynamic port will be set during auth flow
+        });
         
-        // Only add client_secret if provided (optional for UWP)
-        if (config.client_secret) {
-            clientConfig.clientSecret = config.client_secret;
-        }
-        
-        this.oauth2Client = new OAuth2Client(clientConfig);
-
-        console.log('🔧 UWP PKCE AUTH: Google Auth Library initialized');
-        console.log(`🔑 Client ID: ${config.client_id.substring(0, 20)}...`);
-        console.log(`🔐 Client Secret: ${config.client_secret ? 'PROVIDED (optional)' : 'NOT PROVIDED (UWP PKCE-only)'}`);
-        console.log(`🏷️  Auth Type: ${config.type?.toUpperCase() || 'UWP'} (PKCE-enabled)`);
+        console.log('🔐 OAuth client initialized with UWP configuration');
+        console.log(`🔑 Client ID: ${config.client_id.substring(0, 30)}...`);
+        console.log(`🏷️  Type: ${config.type?.toUpperCase()}`);
     }
 
     /**
-     * Start the OAuth authentication flow
+     * Set the current auth key for signaling completion
+     */
+    setAuthKey(authKey: string): void {
+        this.currentAuthKey = authKey;
+    }
+
+    /**
+     * Start the OAuth authentication flow with race condition protection
      * 
      * This method sets up a local callback server, generates PKCE parameters and state,
      * creates the authorization URL, and optionally opens it in the browser.
@@ -88,6 +96,11 @@ export class GASAuthClient {
         console.log('🔐 Starting Google OAuth 2.0 flow with PKCE...');
 
         try {
+            // Reset callback state for new flow
+            this.callbackProcessed = false;
+            this.callbackProcessing = false;
+            this.cleanupInProgress = false;
+            
             // Generate PKCE parameters using the imported helper
             const pkceChallenge = PKCEGenerator.generateChallenge();
             this.codeVerifier = pkceChallenge.codeVerifier;
@@ -98,7 +111,7 @@ export class GASAuthClient {
             
             console.log('🔑 Generated PKCE challenge and state parameter');
 
-            // Set up callback server with OS-assigned port AND handlers to eliminate race condition
+            // Set up callback server with race condition protection
             await this.setupCallbackServerWithHandlers();
 
             // Generate authorization URL with all security parameters
@@ -126,68 +139,20 @@ export class GASAuthClient {
     }
 
     /**
-     * Set up the local callback server with OS-assigned port AND request handlers
-     * 
-     * This eliminates the race condition by having the OS assign a free port
-     * and setting up request handlers immediately, so the server can respond
-     * to OAuth callbacks right away.
-     * 
-     * @private
+     * Set up callback server with race condition protection
+     * RACE CONDITION FIX: Prevents duplicate callback processing and server conflicts
      */
     private async setupCallbackServerWithHandlers(): Promise<void> {
         return new Promise((resolve, reject) => {
-            // Create server with request handler
+            // Create server with callback processing protection
             this.server = http.createServer(async (req, res) => {
                 try {
                     if (req.url?.startsWith('/callback')) {
-                        const url = new URL(req.url, `http://${req.headers.host}`);
-                        const code = url.searchParams.get('code');
-                        const error = url.searchParams.get('error');
-                        const returnedState = url.searchParams.get('state');
-
-                        console.log('🔄 OAuth callback received:', { hasCode: !!code, hasState: !!returnedState, hasError: !!error });
-
-                        // CRITICAL: Validate state parameter to prevent CSRF attacks
-                        if (returnedState !== this.state) {
-                            console.error('❌ Invalid state parameter. Possible CSRF attack.');
-                            const errorMsg = 'Invalid state parameter - possible CSRF attack detected';
-                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
-                            return;
-                        }
-
-                        if (error) {
-                            console.error('❌ OAuth error:', error);
-                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(`OAuth Error: ${error}`));
-                            return;
-                        }
-
-                        if (!code) {
-                            console.error('❌ No authorization code received');
-                            const errorMsg = 'No authorization code found';
-                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
-                            return;
-                        }
-
-                        console.log('✅ Authorization callback received successfully');
-                        console.log('✅ State parameter validated - CSRF protection confirmed');
-                        console.log('🔄 Processing OAuth callback...');
-
-                        // Show success page immediately
-                        res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
-
-                        // Store callback result for retrieval
-                        this.callbackResult = {
-                            code,
-                            state: returnedState,
-                            success: true
-                        };
-
+                        await this.handleAuthCallback(req, res);
                     } else if (req.url === '/health') {
-                        // Health check endpoint
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ status: 'ok', port: this.serverPort }));
                     } else if (req.url === '/favicon.ico') {
-                        // Ignore favicon requests
                         res.writeHead(404).end();
                     } else {
                         res.writeHead(404).end('Not found');
@@ -195,10 +160,14 @@ export class GASAuthClient {
                 } catch (error: any) {
                     console.error('❌ Server error:', error.message);
                     res.writeHead(500).end('Internal server error');
+                    
+                    if (this.currentAuthKey) {
+                        signalAuthError(this.currentAuthKey, new OAuthError(`Server error: ${error.message}`, 'authorization'));
+                    }
                 }
             });
             
-            // Listen on port 0 to let OS assign a free port
+            // Listen on OS-assigned port
             this.server.listen(0, '127.0.0.1', () => {
                 const address = this.server!.address();
                 if (address && typeof address === 'object') {
@@ -214,6 +183,151 @@ export class GASAuthClient {
                 reject(new Error(`Failed to start callback server: ${error.message}`));
             });
         });
+    }
+
+    /**
+     * Handle OAuth callback with duplicate processing protection
+     * RACE CONDITION FIX: Prevents multiple callback processing
+     */
+    private async handleAuthCallback(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        // ATOMIC CHECK: Prevent duplicate callback processing
+        if (this.callbackProcessed) {
+            console.log('⚠️ Callback already processed, ignoring duplicate request');
+            res.writeHead(200, { 'Content-Type': 'text/html' })
+               .end('<html><body><h2>Authentication already processed</h2><p>You can close this window.</p></body></html>');
+            return;
+        }
+
+        // ATOMIC CHECK: Prevent concurrent callback processing
+        if (this.callbackProcessing) {
+            console.log('⚠️ Callback processing in progress, ignoring concurrent request');
+            res.writeHead(200, { 'Content-Type': 'text/html' })
+               .end('<html><body><h2>Authentication in progress</h2><p>Please wait...</p></body></html>');
+            return;
+        }
+
+        // Set processing flag to prevent concurrency
+        this.callbackProcessing = true;
+
+        try {
+            const url = new URL(req.url!, `http://${req.headers.host}`);
+            const code = url.searchParams.get('code');
+            const error = url.searchParams.get('error');
+            const returnedState = url.searchParams.get('state');
+
+            console.log('🔄 OAuth callback received:', { hasCode: !!code, hasState: !!returnedState, hasError: !!error });
+
+            // Validate state parameter to prevent CSRF attacks
+            if (returnedState !== this.state) {
+                const errorMsg = 'Invalid state parameter - possible CSRF attack detected';
+                console.error('❌', errorMsg);
+                res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
+                
+                if (this.currentAuthKey) {
+                    signalAuthError(this.currentAuthKey, new OAuthError(errorMsg, 'authorization'));
+                }
+                return;
+            }
+
+            if (error) {
+                console.error('❌ OAuth error:', error);
+                res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(`OAuth Error: ${error}`));
+                
+                if (this.currentAuthKey) {
+                    signalAuthError(this.currentAuthKey, new OAuthError(`OAuth error: ${error}`, 'authorization'));
+                }
+                return;
+            }
+
+            if (!code) {
+                const errorMsg = 'No authorization code found';
+                console.error('❌', errorMsg);
+                res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
+                
+                if (this.currentAuthKey) {
+                    signalAuthError(this.currentAuthKey, new OAuthError(errorMsg, 'authorization'));
+                }
+                return;
+            }
+
+            // Mark callback as processed AFTER validation but BEFORE token exchange
+            this.callbackProcessed = true;
+
+            console.log('✅ Authorization callback received successfully');
+            console.log('✅ State parameter validated - CSRF protection confirmed');
+            console.log('🔄 Processing OAuth callback...');
+
+            // Show success page immediately
+            res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
+
+            // Exchange code for tokens
+            try {
+                const tokenResponse = await this.exchangeCodeForTokens(code);
+                console.log('✅ Token exchange successful');
+                
+                // Signal completion to waiting gas_auth call
+                if (this.currentAuthKey) {
+                    signalAuthCompletion(this.currentAuthKey, {
+                        status: 'authenticated',
+                        message: 'Authentication completed successfully',
+                        authenticated: true,
+                        tokenResponse: tokenResponse,
+                        authKey: this.currentAuthKey
+                    });
+                }
+                
+                // Clean up server after successful authentication
+                this.cleanupServer();
+                
+            } catch (tokenError: any) {
+                console.error('❌ Token exchange failed:', tokenError);
+                
+                if (this.currentAuthKey) {
+                    signalAuthError(this.currentAuthKey, new OAuthError(`Token exchange failed: ${tokenError.message}`, 'token_exchange'));
+                }
+                
+                this.cleanupServer();
+            }
+
+        } finally {
+            // Always reset processing flag
+            this.callbackProcessing = false;
+        }
+    }
+
+    /**
+     * Clean up the callback server with race condition protection
+     * RACE CONDITION FIX: Prevents multiple cleanup calls from interfering
+     */
+    private cleanupServer(): void {
+        // ATOMIC CHECK: Prevent multiple cleanup operations
+        if (this.cleanupInProgress || !this.server) {
+            return;
+        }
+        
+        this.cleanupInProgress = true;
+        console.log(`🧹 Cleaning up OAuth callback server on port ${this.serverPort}...`);
+        
+        // Store server reference and clear instance variable
+        const server = this.server;
+        const port = this.serverPort;
+        
+        this.server = undefined;
+        this.serverPort = undefined;
+        
+        // Close server gracefully
+        server.close(() => {
+            console.log(`✅ OAuth callback server on port ${port} closed successfully`);
+            this.cleanupInProgress = false;
+        });
+        
+        // Force close after timeout to prevent hanging
+        setTimeout(() => {
+            if (!server.listening && this.cleanupInProgress) {
+                console.log('⚠️ Force completing cleanup after timeout');
+                this.cleanupInProgress = false;
+            }
+        }, 2000);
     }
 
     /**
@@ -235,96 +349,6 @@ export class GASAuthClient {
         authUrl.searchParams.set('code_challenge_method', 'S256');
 
         return authUrl.toString();
-    }
-
-    /**
-     * Wait for the OAuth callback and exchange the code for tokens
-     * 
-     * This method sets up request handlers for the callback server and processes
-     * the OAuth response with proper security validations including state parameter
-     * verification to prevent CSRF attacks.
-     * 
-     * @returns Promise that resolves to the token response
-     * @throws OAuthError if the callback fails or tokens cannot be exchanged
-     */
-    async waitForCallback(): Promise<TokenResponse> {
-        return new Promise((resolve, reject) => {
-            if (!this.server || !this.redirectUri || !this.codeVerifier || !this.state) {
-                reject(new OAuthError('Auth flow not properly initialized. Call startAuthFlow() first.', 'authorization'));
-                return;
-            }
-
-            console.log(`🔒 OAuth server waiting for callback on ${this.redirectUri}`);
-
-            // Remove any existing listeners to avoid duplicates
-            this.server.removeAllListeners('request');
-
-            this.server.on('request', async (req, res) => {
-                try {
-                    if (req.url?.startsWith('/callback')) {
-                        const url = new URL(req.url, `http://${req.headers.host}`);
-                        const code = url.searchParams.get('code');
-                        const error = url.searchParams.get('error');
-                        const returnedState = url.searchParams.get('state');
-
-                        // CRITICAL: Validate state parameter to prevent CSRF attacks
-                        if (returnedState !== this.state) {
-                            console.error('❌ Invalid state parameter. Possible CSRF attack.');
-                            const errorMsg = 'Invalid state parameter - possible CSRF attack detected';
-                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
-                            reject(new OAuthError(errorMsg, 'authorization'));
-                            return;
-                        }
-
-                        if (error) {
-                            console.error('❌ OAuth error:', error);
-                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(`OAuth Error: ${error}`));
-                            reject(new OAuthError(`OAuth authorization failed: ${error}`, 'authorization'));
-                            return;
-                        }
-
-                        if (!code) {
-                            console.error('❌ No authorization code received');
-                            const errorMsg = 'No authorization code found';
-                            res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
-                            reject(new OAuthError(errorMsg, 'authorization'));
-                            return;
-                        }
-
-                        console.log('✅ Authorization callback received successfully');
-                        console.log('✅ State parameter validated - CSRF protection confirmed');
-                        console.log('🔄 Exchanging authorization code for tokens with PKCE...');
-
-                        try {
-                            // Exchange code for tokens using Google's library with PKCE
-                            const tokenResponse = await this.exchangeCodeForTokens(code);
-                            
-                            // Show success page
-                            res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
-
-                            resolve(tokenResponse);
-
-                        } catch (tokenError: any) {
-                            console.error('❌ Token exchange failed:', tokenError);
-                            res.writeHead(500, { 'Content-Type': 'text/html' }).end(this.createTokenErrorPage(tokenError));
-                            reject(new OAuthError(`Token exchange failed: ${tokenError.message}`, 'token_exchange'));
-                        }
-                    } else if (req.url === '/favicon.ico') {
-                        // Ignore favicon requests
-                        res.writeHead(404).end();
-                    } else {
-                        res.writeHead(404).end('Not found');
-                    }
-                } catch (error: any) {
-                    console.error('❌ Server error:', error.message);
-                    res.writeHead(500).end('Internal server error');
-                    reject(new OAuthError(`Server error: ${error.message}`, 'authorization'));
-                } finally {
-                    // Close server after handling the callback
-                    this.server?.close();
-                }
-            });
-        });
     }
 
     /**
@@ -395,60 +419,6 @@ export class GASAuthClient {
     }
 
     /**
-     * Get the callback result (non-blocking)
-     * 
-     * @returns The callback result if available, null otherwise
-     */
-    getCallbackResult(): { code: string; state: string | null; success: boolean } | null {
-        return this.callbackResult || null;
-    }
-
-    /**
-     * Wait for callback result with polling
-     * 
-     * @param timeoutMs - Timeout in milliseconds (default: 5 minutes)
-     * @returns Promise that resolves to callback result
-     */
-    async waitForCallbackResult(timeoutMs: number = 300000): Promise<{ code: string; state: string | null; success: boolean }> {
-        const startTime = Date.now();
-        
-        while (Date.now() - startTime < timeoutMs) {
-            if (this.callbackResult) {
-                return this.callbackResult;
-            }
-            
-            // Poll every 500ms
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        
-        throw new OAuthError('OAuth callback timeout after 5 minutes', 'authorization');
-    }
-
-    /**
-     * Perform the complete OAuth authentication flow
-     * 
-     * This is a convenience method that combines startAuthFlow and waitForCallbackResult
-     * to handle the entire authentication process in a single call.
-     * 
-     * @param openBrowser - Whether to automatically open the browser for authentication
-     * @returns Promise that resolves to the token response
-     * @throws OAuthError if authentication fails at any step
-     */
-    async performCompleteAuthFlow(openBrowser: boolean = true): Promise<TokenResponse> {
-        await this.startAuthFlow(openBrowser);
-        
-        // Wait for callback result
-        const callbackResult = await this.waitForCallbackResult();
-        
-        if (!callbackResult.success || !callbackResult.code) {
-            throw new OAuthError('OAuth callback failed', 'authorization');
-        }
-        
-        // Exchange code for tokens
-        return await this.exchangeCodeForTokens(callbackResult.code);
-    }
-
-    /**
      * Get the configured OAuth2Client for advanced usage
      * 
      * @returns The Google Auth Library OAuth2Client instance
@@ -468,6 +438,8 @@ export class GASAuthClient {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                 },
+                redirect: 'follow',
+                credentials: 'include'
             });
 
             if (!response.ok) {
@@ -516,6 +488,8 @@ export class GASAuthClient {
                 body: new URLSearchParams({
                     token: accessToken,
                 }),
+                redirect: 'follow',
+                credentials: 'include'
             });
 
             if (!response.ok) {
@@ -540,6 +514,8 @@ export class GASAuthClient {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
                 },
+                redirect: 'follow',
+                credentials: 'include'
             });
 
             if (!response.ok) {

@@ -377,7 +377,7 @@ export class GASRunApiExecTool extends BaseTool {
  * - autoRedeploy=false: Uses existing deployment only (requires manual deployment)
  * 
  * ✅  AUTOMATIC SHIM CODE CREATION:
- * - This tool AUTOMATICALLY creates __mcp_gas_run.gs shim code if missing
+ * - This tool AUTOMATICALLY creates __mcp_gas_run shim code if missing
  * - Provides dynamic code execution via Function constructor
  * - Enables execution of any JavaScript expression (e.g., fib(13), Math.PI * 2)
  * - Shim is added before deployment for zero-setup dynamic execution
@@ -403,13 +403,13 @@ export class GASRunApiExecTool extends BaseTool {
  * 
  * Requirements:
  * - Script project will be auto-deployed as Web App by default
- * - Execution shim (__mcp_gas_run.gs) will be auto-added if missing
+ * - Execution shim (__mcp_gas_run) will be auto-added if missing
  * - Returns JSON responses that can be properly dehydrated/rehydrated
  * - Must have script.scriptapp OAuth scope
  */
 export class GASRunTool extends BaseTool {
   public name = 'gas_run';
-  public description = 'Execute any JavaScript/Apps Script statement or function call directly using HEAD deployment for testing. Uses /dev URLs that automatically serve latest saved content without redeployment. Creates shim code (__mcp_gas_run.gs) automatically if missing. Supports dynamic code execution via Function constructor.';
+  public description = 'Core dynamic JavaScript/Apps Script execution handler. ⚠️ CLEAN EXECUTION ONLY - Executes JavaScript code dynamically via Function constructor. Supports function calls, expressions, and complete statements. Uses HEAD deployment for testing with automatic content updates.';
   
   public inputSchema = {
     type: 'object',
@@ -418,17 +418,9 @@ export class GASRunTool extends BaseTool {
         type: 'string',
         description: 'Google Apps Script project ID. Tool will use or create HEAD deployment with /dev URL for testing latest content.'
       },
-      functionName: {
+      js_statement: {
         type: 'string',
-        description: 'Name of the function to execute via doGet() proxy (must be accessible via globalThis)'
-      },
-      parameters: {
-        type: 'array',
-        items: {
-          type: 'object'
-        },
-        description: 'Array of parameters to pass to the target function (optional)',
-        default: []
+        description: 'JavaScript statement to execute dynamically (e.g., "Math.PI * 2", "myFunction(1, 2, 3)", "function foo() { return \'bar\'; } foo()", "[1,2,3].map(x => x * 2)")'
       },
       devMode: {
         type: 'boolean',
@@ -440,13 +432,12 @@ export class GASRunTool extends BaseTool {
         description: 'Enable automatic HEAD deployment setup: ensures HEAD deployment exists with /dev URL for testing. Content updates are automatic without redeployment. Set to false to use existing deployments only. (default: true)',
         default: true
       },
-
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['scriptId', 'functionName']
+    required: ['scriptId', 'js_statement']
   };
 
   private gasClient: GASClient;
@@ -456,43 +447,133 @@ export class GASRunTool extends BaseTool {
     this.gasClient = new GASClient();
   }
 
-  /**
-   * Get the standard doGet() proxy function code using consolidated code generator
-   * **Replaces hardcoded proxy function with generated code**
-   */
-  public static getProxyFunctionCode(): string {
-    // Use consolidated code generator for web app proxy
-    const proxyCodeResult = GASCodeGenerator.generateCode({
-      type: 'web_app_proxy',
-      responseFormat: 'structured',
-      mcpVersion: '1.0.0'
-    });
-
-    // Return the first (and only) file's source code
-    return proxyCodeResult.files[0].source || '';
-  }
-
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
     
     // Use new validation utilities
-    const scriptId = this.validate.scriptId(params.scriptId, 'doGet proxy execution');
-    const functionName = this.validate.functionName(params.functionName, 'doGet proxy execution');
-    const parameters = params.parameters || [];
+    const scriptId = this.validate.scriptId(params.scriptId, 'dynamic JS execution');
+    const js_statement = this.validate.string(params.js_statement, 'JavaScript statement');
     const devMode = params.devMode !== false; // Default to true
-    const autoRedeploy = params.autoRedeploy !== false; // Default to true (changed)
+    let autoRedeploy = params.autoRedeploy !== false; // Default to true
 
-
-    // Validate parameters is an array
-    if (!Array.isArray(parameters)) {
-      throw new ValidationError('parameters', parameters, 'array of function parameters');
+    // Validate js_statement is not empty
+    if (!js_statement || js_statement.trim().length === 0) {
+      throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
     }
 
+    // 🚀 SMART PERFORMANCE OPTIMIZATION:
+    // Try fast path first (existing deployment), fallback to full deployment if needed
+    console.log(`🎯 SMART EXECUTION: Trying fast path first, fallback to deployment if needed`);
+    
     try {
-      console.log(`🌐 Executing function via doGet() proxy: ${functionName} in script: ${scriptId}`);
-      console.log(`📋 Target function: ${functionName}`);
-      console.log(`📋 Parameters: ${JSON.stringify(parameters)}`);
-      console.log(`🔧 Using doGet() → globalThis[${functionName}](...args) pattern`);
+      // STEP 1: Try fast execution first (unless explicitly disabled)
+      if (autoRedeploy !== false) {
+        console.log(`⚡ FAST PATH: Attempting execution with existing deployment...`);
+        
+        const fastResult = await this.executeWithDeployment(
+          scriptId, js_statement, accessToken, devMode, false // autoRedeploy=false
+        );
+        
+        console.log(`✅ FAST PATH SUCCESS: Execution completed without redeployment`);
+        return fastResult;
+      }
+    } catch (fastError: any) {
+      // Check if error indicates missing/broken deployment
+      const shouldRetryWithDeployment = this.shouldRetryWithDeployment(fastError);
+      
+      if (shouldRetryWithDeployment) {
+        console.log(`🔄 FAST PATH FAILED: ${fastError.message}`);
+        console.log(`🚀 FALLBACK: Retrying with full deployment...`);
+        
+        // STEP 2: Retry with full deployment
+        try {
+          const deployResult = await this.executeWithDeployment(
+            scriptId, js_statement, accessToken, devMode, true // autoRedeploy=true
+          );
+          
+          console.log(`✅ FALLBACK SUCCESS: Execution completed after deployment`);
+          return deployResult;
+        } catch (deployError: any) {
+          console.error(`❌ BOTH PATHS FAILED: Fast path and deployment both failed`);
+          throw deployError; // Throw the deployment error as it's more informative
+        }
+      } else {
+        // Error is not deployment-related, throw original error
+        console.error(`❌ FAST PATH FAILED: Non-deployment error, not retrying`);
+        throw fastError;
+      }
+    }
+
+    // This should never be reached due to the logic above, but just in case
+    return await this.executeWithDeployment(scriptId, js_statement, accessToken, devMode, autoRedeploy);
+  }
+
+  /**
+   * Check if an error indicates we should retry with full deployment
+   */
+  private shouldRetryWithDeployment(error: any): boolean {
+    // Check for HTTP status codes that indicate missing deployment/doGet
+    const statusCode = error.statusCode || error.data?.statusCode || error.response?.status;
+    
+    // 404 = doGet function not found or deployment doesn't exist
+    // 403 = Permission issues that might be resolved with fresh deployment
+    // 500 = Internal server error, possibly due to broken deployment
+    if ([404, 403, 500].includes(statusCode)) {
+      console.log(`🔍 HTTP ${statusCode} detected - likely deployment issue`);
+      return true;
+    }
+    
+    // Check for specific error messages indicating deployment issues
+    const errorMessage = error.message?.toLowerCase() || '';
+    const deploymentIndicators = [
+      'html error page',
+      'doget function not found',
+      'deployment not found',
+      'no web app deployment found',
+      'function not deployed',
+      'authentication issues or deployment problems'
+    ];
+    
+    const hasDeploymentIndicator = deploymentIndicators.some(indicator => 
+      errorMessage.includes(indicator)
+    );
+    
+    if (hasDeploymentIndicator) {
+      console.log(`🔍 Error message indicates deployment issue: ${error.message}`);
+      return true;
+    }
+    
+    // Check if error has deployment-related troubleshooting info
+    if (error.setupInstructions && Array.isArray(error.setupInstructions)) {
+      const hasDeploymentInstructions = error.setupInstructions.some((instruction: string) =>
+        instruction.toLowerCase().includes('deploy') || 
+        instruction.toLowerCase().includes('doget')
+      );
+      
+      if (hasDeploymentInstructions) {
+        console.log(`🔍 Error has deployment-related instructions - retrying with deployment`);
+        return true;
+      }
+    }
+    
+    console.log(`🔍 Error does not indicate deployment issue - not retrying`);
+    return false;
+  }
+
+  /**
+   * Execute with specified deployment strategy
+   */
+  private async executeWithDeployment(
+    scriptId: string, 
+    js_statement: string, 
+    accessToken: string, 
+    devMode: boolean, 
+    autoRedeploy: boolean
+  ): Promise<any> {
+    try {
+      console.log(`🌐 Executing JavaScript statement via doGet() proxy in script: ${scriptId}`);
+      console.log(`📋 JS Statement: ${js_statement}`);
+      console.log(`🔧 Using Function() constructor for dynamic execution`);
       console.log(`🔧 Auto-redeploy: ${autoRedeploy} (default: true)`);
       console.log(`🔧 Deploy as Web App: always (web-app-only implementation)`);
       console.log(`🚀 Runtime: V8 (supports GS, TS, HTML, ES6)`);
@@ -505,13 +586,13 @@ export class GASRunTool extends BaseTool {
         console.log(`🚀 Auto-redeployment enabled, setting up web app infrastructure...`);
         
         // 🔧 CRITICAL FIX: Add execution shim before deployment
-          console.log(`🔧 Checking for execution shim (__mcp_gas_run.gs)...`);
+          console.log(`🔧 Checking for execution shim (__mcp_gas_run)...`);
           
           // Check if shim already exists
           let shimExists = false;
           try {
             const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-            shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run.gs') || false;
+            shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run') || false;
             console.log(`📁 Shim exists: ${shimExists}`);
           } catch (checkError: any) {
             console.log(`⚠️ Could not check existing files, will add shim: ${checkError.message}`);
@@ -519,7 +600,7 @@ export class GASRunTool extends BaseTool {
           
           // Add execution shim if not present
           if (!shimExists) {
-            console.log(`🔧 Adding execution shim (__mcp_gas_run.gs) for dynamic code execution...`);
+            console.log(`🔧 Adding execution shim (__mcp_gas_run) for dynamic code execution...`);
             
             const shimCode = GASCodeGenerator.generateCode({
               type: 'head_deployment',
@@ -529,7 +610,7 @@ export class GASRunTool extends BaseTool {
             });
             
             // Find the shim file in generated files
-            const shimFile = shimCode.files.find(file => file.name === '__mcp_gas_run.gs');
+            const shimFile = shimCode.files.find(file => file.name === '__mcp_gas_run');
             if (!shimFile || !shimFile.source) {
               throw new Error('Failed to generate execution shim code');
             }
@@ -537,13 +618,13 @@ export class GASRunTool extends BaseTool {
             // Add the shim file to the project using updateFile method
             await this.gasClient.updateFile(
               scriptId, 
-              '__mcp_gas_run.gs', 
+              '__mcp_gas_run', 
               shimFile.source, 
               0, // Position 0 to load first
               accessToken
             );
             
-            console.log(`✅ Added execution shim (__mcp_gas_run.gs) - ${shimFile.source.split('\n').length} lines`);
+            console.log(`✅ Added execution shim (__mcp_gas_run) - ${shimFile.source.split('\n').length} lines`);
             
             // Wait a moment for the file to be processed
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -584,10 +665,17 @@ export class GASRunTool extends BaseTool {
           console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
           console.log(`📝 URL type: ${headResult.webAppUrl?.includes('/dev') ? '/dev (testing endpoint)' : '/exec (versioned)'}`);
           
+          // Get the Google web app URL and convert to gas_run format
+          const googleWebAppUrl = headResult.webAppUrl;
+          const gasRunUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+          
+          console.log(`🌐 Google Web App URL: ${googleWebAppUrl}`);
+          console.log(`🔧 Gas_run URL (using scriptId format): ${gasRunUrl}`);
+          
           // Store the deployment info for immediate use
           immediateDeployment = {
             deploymentId: deployment.deploymentId,
-            webAppUrl: headResult.webAppUrl!,
+            webAppUrl: gasRunUrl!,
             versionNumber: deployment.versionNumber, // null for HEAD
             updateTime: deployment.updateTime
           };
@@ -599,7 +687,7 @@ export class GASRunTool extends BaseTool {
       console.log(`🌐 Executing via web app URL with bearer token...`);
       
       let webAppUrl = null;
-      let webAppDeployment = null;
+      let webAppDeployment: any = null;
       
       // If we just created a deployment, use it immediately
       if (autoRedeploy && immediateDeployment) {
@@ -607,137 +695,49 @@ export class GASRunTool extends BaseTool {
         webAppUrl = immediateDeployment.webAppUrl;
         webAppDeployment = immediateDeployment;
         console.log(`✅ Using Web App URL from immediate deployment: ${webAppUrl}`);
-      } else {
-        // STEP 1: Check for existing HEAD deployment first (preferred for testing)
-        console.log(`🔍 Step 1: Looking for existing HEAD deployment (/dev URL)...`);
-        const headDeployment = await this.gasClient.findHeadDeployment(scriptId, accessToken);
+            } else {
+        // Get existing deployment and find web app URL
+        console.log(`🔍 Looking up existing deployments to get web app URL`);
         
-        if (headDeployment && headDeployment.entryPoints) {
-          const webAppEntry = headDeployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-          if (webAppEntry?.webApp?.url) {
-            webAppUrl = webAppEntry.webApp.url;
-            webAppDeployment = headDeployment;
-            console.log(`✅ Found existing HEAD deployment: ${headDeployment.deploymentId}`);
-            console.log(`🌐 HEAD Web App URL: ${webAppUrl}`);
-            console.log(`📝 URL type: ${webAppUrl.includes('/dev') ? '/dev (testing endpoint)' : 'unknown'}`);
-            console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
-          } else if (headDeployment.deploymentId) {
-            // Construct /dev URL for HEAD deployment if not available from API
-            webAppUrl = this.gasClient.constructWebAppUrl(headDeployment.deploymentId, true);
-            webAppDeployment = headDeployment;
-            console.log(`✅ Found HEAD deployment, constructed /dev URL: ${webAppUrl}`);
-            console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
-          }
-          
-          // Force /dev URL for any HEAD deployment (API often returns incorrect /exec URLs)
-          if (headDeployment && webAppUrl && webAppUrl.includes('/exec')) {
-            const correctedUrl = this.gasClient.constructWebAppUrl(headDeployment.deploymentId, true);
-            console.log(`🔧 Correcting HEAD deployment URL: ${webAppUrl} → ${correctedUrl}`);
-            webAppUrl = correctedUrl;
-          }
-        }
-        
-        // STEP 2: If no HEAD deployment found, list all deployments
-        if (!webAppUrl) {
-          console.log(`🔍 Step 2: No HEAD deployment found, checking other deployments...`);
-          const deploymentsList = await this.gasClient.listDeployments(scriptId, accessToken);
-          console.log(`📋 Found ${deploymentsList.length} deployments`);
-          
-          // Sort deployments by update time (most recent first)
-          const sortedDeployments = deploymentsList.sort((a, b) => 
-            new Date(b.updateTime || 0).getTime() - new Date(a.updateTime || 0).getTime()
+        try {
+          const deployments = await this.gasClient.listDeployments(scriptId, accessToken);
+          const foundDeployment = deployments.find(d => 
+            d.entryPoints?.some(ep => ep.entryPointType === 'WEB_APP')
           );
           
-          if (deploymentsList.length > 0) {
+          if (foundDeployment) {
+            // Find the web app entry point and get its URL
+            const webAppEntry = foundDeployment.entryPoints?.find(ep => ep.entryPointType === 'WEB_APP');
+            const googleWebAppUrl = (webAppEntry as any)?.webApp?.url;
             
-            // Get detailed information for each deployment to check for web app URLs
-            console.log(`🔍 Getting detailed information for each deployment...`);
-            
-            for (const basicDeployment of sortedDeployments) {
-              console.log(`🔍 Checking deployment ${basicDeployment.deploymentId} (${basicDeployment.updateTime})`);
+            if (googleWebAppUrl) {
+              // Replace /exec with /dev in Google's URL
+              webAppUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+              console.log(`✅ Using existing deployment: ${foundDeployment.deploymentId}`);
+              console.log(`🌐 Google Web App URL: ${googleWebAppUrl}`);
+              console.log(`🔧 Gas_run URL (replaced /exec with /dev): ${webAppUrl}`);
+              console.log(`📝 URL type: /dev (gas_run format)`);
               
-              try {
-                // Get detailed deployment info with complete entry points
-                const detailedDeployment = await this.gasClient.getDeployment(
-                  scriptId, 
-                  basicDeployment.deploymentId, 
-                  accessToken
-                );
-                
-                console.log(`📦 Deployment ${basicDeployment.deploymentId} entry points:`, 
-                           detailedDeployment.entryPoints?.length || 0);
-                
-                // Check if this is a functional web app deployment with a URL
-                if (detailedDeployment.entryPoints && Array.isArray(detailedDeployment.entryPoints)) {
-                  const webAppEntry = detailedDeployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-                  
-                  if (webAppEntry?.webApp?.url) {
-                    webAppUrl = webAppEntry.webApp.url;
-                    webAppDeployment = detailedDeployment;
-                    const isHead = this.gasClient.isHeadDeployment(detailedDeployment);
-                    console.log(`✅ Found functional Web App deployment with URL: ${webAppUrl}`);
-                    console.log(`📝 Deployment type: ${isHead ? 'HEAD (/dev)' : 'Versioned (/exec)'}`);
-                    console.log(`🔑 Access: ${webAppEntry.webApp.entryPointConfig?.access || 'Unknown'}, Execute as: ${webAppEntry.webApp.entryPointConfig?.executeAs || 'Unknown'}`);
-                    break; // Found a working web app, use it
-                  } else if (webAppEntry) {
-                    console.log(`⚠️  Web App entry point found but missing URL in deployment ${basicDeployment.deploymentId}`);
-                  } else {
-                    console.log(`📝 Deployment ${basicDeployment.deploymentId} has no Web App entry point`);
-                  }
-                } else {
-                  console.log(`📝 Deployment ${basicDeployment.deploymentId} has no entry points configured`);
-                }
-              } catch (deploymentError: any) {
-                console.log(`⚠️  Failed to get details for deployment ${basicDeployment.deploymentId}: ${deploymentError.message}`);
-              }
+              webAppDeployment = {
+                deploymentId: foundDeployment.deploymentId,
+                webAppUrl: webAppUrl,
+                versionNumber: foundDeployment.versionNumber,
+                updateTime: foundDeployment.updateTime
+              };
+            } else {
+              throw new Error('Web app deployment found but no URL available');
             }
+          } else {
+            throw new Error('No web app deployment found');
           }
-        }
-        
-        // STEP 3: If no functional web app deployment found, create HEAD deployment
-        if (!webAppUrl) {
-          console.log(`🚀 Step 3: No functional web app deployment found, creating HEAD deployment...`);
+        } catch (deploymentError: any) {
+          console.log(`⚠️ Failed to find existing deployment: ${deploymentError.message}`);
+          console.log(`🚀 Enabling auto-redeploy to create deployment...`);
           
-          // STEP 3a: Update the appsscript.json manifest to ensure web app entry points
-          console.log(`🔧 Step 3a: Updating appsscript.json manifest for Web App deployment...`);
-          await ensureManifestEntryPoints(this.gasClient, scriptId, 'WEB_APP', 'MYSELF', accessToken);
-          
-          // Wait for manifest update to be processed
-          console.log(`⏳ Waiting for manifest update to be processed...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // STEP 3b: Create HEAD deployment for testing
-          console.log(`🔧 Step 3b: Creating HEAD deployment with /dev URL for testing...`);
-          const deploymentOptions = {
-            entryPointType: 'WEB_APP' as const,
-            webAppConfig: {
-              access: 'MYSELF' as const,
-              executeAs: 'USER_ACCESSING' as const
-            }
-          };
-          
-          const headResult = await this.gasClient.ensureHeadDeployment(
-            scriptId,
-            `HEAD deployment for testing - serves latest content`,
-            deploymentOptions,
-            accessToken
-          );
-          
-          const deployment = headResult.deployment;
-          console.log(`✅ ${headResult.wasCreated ? 'Created' : 'Found existing'} HEAD deployment: ${deployment.deploymentId}`);
-          console.log(`🌐 HEAD Web App URL: ${headResult.webAppUrl}`);
-          console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
-          console.log(`📝 URL type: ${headResult.webAppUrl?.includes('/dev') ? '/dev (testing endpoint)' : '/exec (versioned)'}`);
-          
-          // Store the deployment info
-          webAppUrl = headResult.webAppUrl!;
-          webAppDeployment = deployment;
-          immediateDeployment = {
-            deploymentId: deployment.deploymentId,
-            webAppUrl: webAppUrl,
-            versionNumber: deployment.versionNumber, // null for HEAD
-            updateTime: deployment.updateTime
-          };
+          // Fall back to auto-redeploy if no existing deployment found
+          autoRedeploy = true;
+          // Continue to auto-redeploy logic at top of function
+          throw new Error('No deployment found - auto-redeploy required');
         }
       }
       
@@ -757,34 +757,38 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
       // Build query parameters for execution
       const queryParams = new URLSearchParams();
       
-      // Handle complete statements directly
-      let statement: string;
-      if (functionName.includes('(') || functionName.includes('.') || functionName === 'Math.PI') {
-        // Already a complete statement/expression like "fib(7)", "Math.PI", "new Date()"
-        statement = functionName;
-      } else {
-        // Function name only, add parameters to create complete statement
-        statement = `${functionName}(${parameters.map(p => JSON.stringify(p)).join(', ')})`;
-      }
-      
-      queryParams.set('function_plus_args', statement);
+      // Use the js_statement directly as it's already a complete JavaScript statement
+      queryParams.set('func', js_statement);
       
       const executionUrl = `${webAppUrl}?${queryParams.toString()}`;
       console.log(`🌐 Execution URL: ${executionUrl}`);
       
       // Make HTTP request to web app with bearer token for authentication
       console.log(`🔐 Using bearer token for authenticated web app access`);
+      console.log(`🔄 Following redirects automatically (redirect: 'follow')`);
       
       const response = await fetch(executionUrl, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+          'Authorization': `Bearer ${accessToken}`,
+          'User-Agent': 'MCP-Gas-Client/1.0',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        redirect: 'follow', // Explicitly follow redirects
+        credentials: 'include', // Include credentials in redirected requests
+        mode: 'cors' // Enable CORS for cross-domain redirects
       });
       
       const responseText = await response.text();
-      console.log(`📥 Response status: ${response.status}`);
-      console.log(`📥 Response text: ${responseText}`);
+      console.log(`📥 Response status: ${response.status} ${response.statusText}`);
+      console.log(`📥 Response URL: ${response.url}`);
+      console.log(`📥 Response redirected: ${response.redirected}`);
+      console.log(`📥 Response headers:`, {
+        'content-type': response.headers.get('content-type'),
+        'location': response.headers.get('location'),
+        'set-cookie': response.headers.get('set-cookie')
+      });
+      console.log(`📥 Response text (first 500 chars): ${responseText.substring(0, 500)}`);
       
       let result;
       try {
@@ -801,23 +805,28 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
       if (!response.ok) {
         console.error(`❌ Web app execution failed with status ${response.status}`);
         
-        // Return JSON error response
-        return {
-          status: 'error',
-          scriptId,
-          functionName,
-          proxyFunction: 'doGet',
-          parameters,
-          error: {
-            type: 'WebAppError',
-            message: `HTTP ${response.status}: ${response.statusText}`,
-            responseText: responseText
-          },
-          executedAt: new Date().toISOString(),
-          proxyPattern: 'doGet() → globalThis[functionName](...args)',
-          autoRedeploy: autoRedeploy,
-          runtime: 'V8'
-        };
+              // Return JSON error response with URL information
+      return {
+        status: 'error',
+        scriptId,
+        js_statement,
+        proxyFunction: 'doGet',
+        error: {
+          type: 'WebAppError',
+          message: `HTTP ${response.status}: ${response.statusText}`,
+          responseText: responseText
+        },
+        executedAt: new Date().toISOString(),
+        proxyPattern: 'doGet() → Function() constructor execution',
+        autoRedeploy: autoRedeploy,
+        runtime: 'V8',
+        urlInfo: {
+          webAppUrl: webAppUrl,
+          executionUrl: executionUrl,
+          redirected: response.redirected,
+          finalUrl: response.url
+        }
+      };
       }
 
       console.log(`✅ Web app execution successful`);
@@ -835,9 +844,8 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
           return {
             status: 'success',
             scriptId,
-            functionName,
+            js_statement,
             proxyFunction: 'doGet',
-            parameters,
             result: dehydratedResult.payload,
             webAppDeployment: {
               webAppUrl,
@@ -850,8 +858,8 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
             devMode,
             autoRedeploy: autoRedeploy,
             proxyInfo: {
-              proxyPattern: 'doGet() → globalThis[functionName](...args)',
-              targetFunction: functionName,
+              proxyPattern: 'doGet() → Function() constructor execution',
+              targetStatement: js_statement,
               proxyFunction: 'doGet',
               description: 'Structured JSON payload with type data/exception',
               resultFormat: 'JSON with type-based payload handling',
@@ -870,7 +878,7 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
           error.stack = exceptionPayload.error.stack || '';
           
           // Add additional error properties
-          (error as any).functionName = exceptionPayload.functionName;
+          (error as any).js_statement = js_statement;
           (error as any).timestamp = exceptionPayload.timestamp;
           (error as any).errorType = exceptionPayload.error.type;
           (error as any).proxyPattern = exceptionPayload.proxyPattern;
@@ -887,10 +895,10 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
       } else {
         // Wrap raw result in our standard format
         dehydratedResult = {
-          functionName: functionName,
+          js_statement: js_statement,
           result: dehydratedResult,
           timestamp: new Date().toISOString(),
-          proxyPattern: 'doGet() → globalThis[functionName](...args)',
+          proxyPattern: 'doGet() → Function() constructor execution',
           runtime: 'V8',
           version: '1.0.0'
         };
@@ -899,9 +907,8 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
       return {
         status: 'success',
         scriptId,
-        functionName,
+        js_statement,
         proxyFunction: 'doGet',
-        parameters,
         result: dehydratedResult,
         webAppDeployment: {
           webAppUrl,
@@ -914,10 +921,10 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
         devMode,
         autoRedeploy: autoRedeploy,
         proxyInfo: {
-          proxyPattern: 'doGet() → globalThis[functionName](...args)',
-          targetFunction: functionName,
+          proxyPattern: 'doGet() → Function() constructor execution',
+          targetStatement: js_statement,
           proxyFunction: 'doGet',
-          description: 'JSON-serializable web app pattern with globalThis routing',
+          description: 'JSON-serializable web app pattern with Function() constructor execution',
           resultFormat: 'JSON with structured payload handling',
           runtime: 'V8',
           supportedLanguages: ['GS', 'TS', 'HTML', 'ES6']
@@ -957,7 +964,7 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
           '1. Verify project exists: gas_ls(path="your-project")',
           '2. Add doGet() proxy: gas_proxy_setup(scriptId="your-project")',
           '3. Check deployments: gas_deploy_list(scriptId="your-project")',
-          '4. Retry with autoRedeploy enabled: gas_run(scriptId="your-project", functionName="yourFunction", autoRedeploy=true)',
+          '4. Retry with autoRedeploy enabled: gas_run(scriptId="your-project", js_statement="yourFunction()", autoRedeploy=true)',
           '',
           '💡 ALTERNATIVE - MANUAL DEPLOYMENT:',
           '   • Visit https://script.google.com',
@@ -984,9 +991,8 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
       return {
         status: 'error',
         scriptId,
-        functionName,
+        js_statement,
         proxyFunction: 'doGet',
-        parameters,
         error: {
           type: 'GASApiError',
           message: error.message,
@@ -1015,7 +1021,7 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
             'Responses should be JSON-serializable'
           ],
           autoDeploymentWorkflow: [
-            '1. gas_run(scriptId="project", functionName="targetFunction") - that\'s it!',
+            '1. gas_run(scriptId="project", js_statement="targetFunction()") - that\'s it!',
             '   Auto-deployment is enabled by default',
             '2. Optional: gas_proxy_setup(scriptId="project") if doGet() missing',
             '3. The tool automatically:',
@@ -1024,7 +1030,7 @@ Try running with autoRedeploy=true to create a fresh deployment.`);
             '   • Executes your function',
             '   • Returns structured JSON response'
           ],
-          proxyPattern: 'doGet() → globalThis[functionName](...args) with JSON responses',
+          proxyPattern: 'doGet() → __gas_run(js_statement) with JSON responses',
           jsonHandling: 'Returns success/error objects that can be dehydrated/rehydrated'
         },
         executedAt: new Date().toISOString(),

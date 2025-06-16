@@ -372,13 +372,12 @@ export class GASTestHelper {
   }
 
   /**
-   * Run a function in a project
+   * Run a JavaScript statement in a project
    */
-  async runFunction(projectId: string, functionName: string, parameters?: any[]): Promise<any> {
+  async runFunction(projectId: string, js_statement: string): Promise<any> {
     return await this.client.callAndParse('gas_run', {
       scriptId: projectId,
-      functionName: functionName,
-      parameters: parameters || []
+      js_statement: js_statement
     });
   }
 
