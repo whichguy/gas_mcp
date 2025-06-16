@@ -213,22 +213,75 @@ export class GASClient {
     
     await rateLimiter.checkLimit();
     
+    const startTime = Date.now();
+    let operationName = 'Unknown Google API Call';
+    let apiEndpoint = 'Unknown endpoint';
+    
     try {
       // Initialize client before making the API call
       console.log(`🔧 About to initialize client...`);
       await this.initializeClient(accessToken);
       console.log(`✅ Client initialized, calling API...`);
-      return await apiCall();
-    } catch (error: any) {
-      console.error(`❌ API call failed:`, error);
-      const statusCode = error.response?.status || error.code;
-      const message = error.response?.data?.error?.message || error.message;
       
-      throw new GASApiError(
+      // Extract operation context from stack trace for better logging
+      const stack = new Error().stack;
+      const callerMatch = stack?.match(/at GASClient\.(\w+)/);
+      operationName = callerMatch ? callerMatch[1] : 'Unknown operation';
+      
+      console.log(`📡 [GOOGLE API REQUEST] Starting: ${operationName}`);
+      console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+      console.log(`   🔑 Auth: ${accessToken ? 'Token present (' + accessToken.substring(0, 10) + '...)' : 'No token'}`);
+      
+      const result = await apiCall();
+      
+      const duration = Date.now() - startTime;
+      console.log(`✅ [GOOGLE API SUCCESS] Completed: ${operationName}`);
+      console.log(`   ⏱️  Duration: ${duration}ms`);
+      console.log(`   📊 Result type: ${typeof result}`);
+      console.log(`   📏 Result size: ${JSON.stringify(result).length} characters`);
+      
+      return result;
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      console.error(`❌ [GOOGLE API ERROR] Failed: ${operationName} after ${duration}ms`);
+      console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+      console.error(`   🔍 Error type: ${error.constructor?.name || 'Unknown'}`);
+      console.error(`   📍 API endpoint: ${error.config?.url || apiEndpoint}`);
+      console.error(`   🔢 Status code: ${error.response?.status || error.status || error.statusCode || 'Unknown'}`);
+      console.error(`   💬 Error message: ${error.message}`);
+      console.error(`   📋 Full error:`, error);
+      
+      // Enhanced error information extraction
+      const statusCode = error.response?.status || 
+                         error.status || 
+                         error.statusCode || 
+                         error.code;
+      
+      const message = error.response?.data?.error?.message || 
+                     error.response?.data?.message ||
+                     error.response?.statusText ||
+                     error.message ||
+                     'Unknown API error';
+      
+      // Create comprehensive error object with all available information
+      const enhancedError = new GASApiError(
         `Apps Script API error: ${message}`,
         statusCode,
-        error
+        {
+          originalError: error,
+          response: error.response,
+          config: error.config,
+          request: error.request,
+          statusCode: statusCode,
+          errorData: error.response?.data,
+          headers: error.response?.headers,
+          operationName: operationName,
+          duration: duration,
+          timestamp: new Date().toISOString()
+        }
       );
+      
+      throw enhancedError;
     }
   }
 
@@ -564,20 +617,19 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Always use gas_run URL format for consistency
+      // Convert web app URL to gas_run format if present
       if (response.data.entryPoints) {
         console.log(`🔍 Entry points found in deployment:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
-          console.log(`🌐 Web App URL found from API: ${webAppEntry.webApp.url}`);
+          const originalUrl = webAppEntry.webApp.url;
+          console.log(`🌐 Web App URL found from API: ${originalUrl}`);
           console.log(`🔧 Converting to gas_run URL format...`);
-          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          deployment.webAppUrl = this.constructGasRunUrlFromWebApp(originalUrl);
           console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
         } else if (webAppEntry) {
-          console.log(`🔧 Web App entry point found, using gas_run URL format`);
-          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
-          console.log(`✅ Gas_run URL: ${deployment.webAppUrl}`);
+          console.log(`🔧 Web App entry point found but no URL`);
         } else {
           console.log(`⚠️  No Web App entry point found`);
         }
@@ -682,20 +734,19 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Always use gas_run URL format for consistency
+      // Convert web app URL to gas_run format if present  
       if (response.data.entryPoints) {
         console.log(`🔍 Entry points found:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
-          console.log(`🌐 Web App URL detected from API: ${webAppEntry.webApp.url}`);
+          const originalUrl = webAppEntry.webApp.url;
+          console.log(`🌐 Web App URL detected from API: ${originalUrl}`);
           console.log(`🔧 Converting to gas_run URL format...`);
-          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          deployment.webAppUrl = this.constructGasRunUrlFromWebApp(originalUrl);
           console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
         } else if (webAppEntry) {
-          console.log(`🔧 Web App entry point found, using gas_run URL format`);
-          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
-          console.log(`✅ Gas_run URL: ${deployment.webAppUrl}`);
+          console.log(`🔧 Web App entry point found but no URL`);
         }
       }
 
@@ -714,42 +765,177 @@ export class GASClient {
   }
 
   /**
-   * Construct gas_run URL - Checks deployments to determine if domain format is needed
-   * If deployments use domain format (like fortifiedstrength.org), uses that with /dev
-   * Otherwise uses standard format: https://script.google.com/macros/s/SCRIPT_ID/dev
+   * Construct gas_run URL following explicit flow:
+   * 1. Get deployment details via API
+   * 2. Find the web app entry point
+   * 3. Get the actual URL endpoint from that web app
+   * 4. Swap /exec to /dev
    */
   async constructGasRunUrl(scriptId: string, accessToken?: string): Promise<string> {
+    const startTime = Date.now();
+    console.log(`\n🚀 [GAS_URL_CONSTRUCTION] Starting URL construction for script: ${scriptId}`);
+    console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+    console.log(`   🔑 Auth Token: ${accessToken ? `Present (${accessToken.substring(0, 10)}...)` : 'Not provided'}`);
+    
     try {
-      // Check existing deployments to see if they use domain format
-      const deployments = await this.listDeployments(scriptId, accessToken);
+      // ========== STEP 1: GET BASIC DEPLOYMENT LIST ==========
+      console.log(`\n📋 [STEP 1] Getting basic deployment list for script: ${scriptId}`);
+      const step1StartTime = Date.now();
       
-      // Look for a WEB_APP deployment with a domain URL
-      for (const deployment of deployments) {
-        if (deployment.entryPoints) {
-          const webAppEntry = deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-          if (webAppEntry?.webApp?.url) {
-            const originalUrl = webAppEntry.webApp.url;
-            console.log(`🔍 Found WEB_APP URL: ${originalUrl}`);
-            
-            // Check if it uses domain format (contains /a/macros/)
-            if (originalUrl.includes('/a/macros/')) {
-              // Replace /exec with /dev in the domain format URL
-              const gasRunUrl = originalUrl.replace('/exec', '/dev');
-              console.log(`🌐 Using domain format gas_run URL: ${gasRunUrl}`);
-              return gasRunUrl;
-            }
-          }
-        }
+      await this.initializeClient(accessToken);
+      console.log(`   ✅ API client initialized successfully`);
+      
+      const response = await this.scriptApi.projects.deployments.list({
+        scriptId
+      });
+      
+      const basicDeployments = response.data.deployments || [];
+      const step1Duration = Date.now() - step1StartTime;
+      
+      console.log(`   📊 API Response received in ${step1Duration}ms`);
+      console.log(`   📦 Found ${basicDeployments.length} total deployments`);
+      
+      if (basicDeployments.length === 0) {
+        console.log(`   ⚠️  No deployments found - will use fallback URL`);
+      } else {
+        console.log(`   📋 Deployment IDs found:`);
+                 basicDeployments.forEach((dep: any, index: number) => {
+           console.log(`      ${index + 1}. ${dep.deploymentId} (version: ${dep.versionNumber || 'HEAD'})`);
+         });
       }
       
-      // Fallback to standard format if no domain deployments found
-      console.log(`📋 No domain format deployments found, using standard format`);
-      return `https://script.google.com/macros/s/${scriptId}/dev`;
+      // ========== STEP 2 & 3: GET DETAILED DEPLOYMENT INFO AND FIND WEB APP ==========
+      console.log(`\n🔍 [STEP 2+3] Checking each deployment for web app entry points`);
+      
+      for (let i = 0; i < basicDeployments.length; i++) {
+        const basicDeployment = basicDeployments[i];
+        const step2StartTime = Date.now();
+        
+        console.log(`\n   📦 [DEPLOYMENT ${i + 1}/${basicDeployments.length}] Examining: ${basicDeployment.deploymentId}`);
+        console.log(`      📋 Description: ${basicDeployment.description || 'No description'}`);
+        console.log(`      🔢 Version: ${basicDeployment.versionNumber || 'HEAD'}`);
+        console.log(`      📅 Updated: ${basicDeployment.updateTime || 'Unknown'}`);
+        
+        try {
+          console.log(`      🌐 Getting detailed deployment information...`);
+          
+          // Get detailed deployment info including entry points
+          const detailResponse = await this.scriptApi.projects.deployments.get({
+            scriptId,
+            deploymentId: basicDeployment.deploymentId
+          });
+          
+          const step2Duration = Date.now() - step2StartTime;
+          console.log(`      ✅ Deployment details retrieved in ${step2Duration}ms`);
+          
+          // Step 3: Find the web app entry point
+          if (detailResponse.data.entryPoints) {
+            const entryPoints = detailResponse.data.entryPoints;
+            console.log(`      📋 Found ${entryPoints.length} entry point(s):`);
+            
+                         entryPoints.forEach((ep: any, epIndex: number) => {
+               console.log(`         ${epIndex + 1}. Type: ${ep.entryPointType}`);
+               if (ep.entryPointType === 'WEB_APP' && (ep as any).webApp?.url) {
+                 console.log(`            🌐 Web App URL: ${(ep as any).webApp.url}`);
+               }
+             });
+            
+            const webAppEntry = entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+            
+            if (webAppEntry?.webApp?.url) {
+              const originalUrl = webAppEntry.webApp.url;
+              console.log(`      ✅ [SUCCESS] Found WEB_APP entry point with URL!`);
+              console.log(`         📍 Original URL: ${originalUrl}`);
+              
+              // ========== STEP 4: SWAP /exec TO /dev ==========
+              console.log(`\n🔧 [STEP 4] Converting URL for gas_run format`);
+              console.log(`   📝 Rule: Replace '/exec' with '/dev' for development endpoint`);
+              
+              const gasRunUrl = originalUrl.replace('/exec', '/dev');
+              const totalDuration = Date.now() - startTime;
+              
+              if (gasRunUrl !== originalUrl) {
+                console.log(`   ✅ [SUCCESS] URL conversion completed`);
+                console.log(`      📍 Original:  ${originalUrl}`);
+                console.log(`      🔄 Converted: ${gasRunUrl}`);
+                console.log(`      🎯 Change: Replaced '/exec' → '/dev'`);
+              } else {
+                console.log(`   ℹ️  URL already in correct format (no /exec found)`);
+                console.log(`      📍 Final URL: ${gasRunUrl}`);
+              }
+              
+              console.log(`\n🎉 [CONSTRUCTION_COMPLETE] Gas_run URL ready!`);
+              console.log(`   🔗 Final URL: ${gasRunUrl}`);
+              console.log(`   ⏱️  Total time: ${totalDuration}ms`);
+              console.log(`   📊 Deployments checked: ${i + 1}/${basicDeployments.length}`);
+              console.log(`   🎯 Source: Deployment ${basicDeployment.deploymentId}`);
+              
+              return gasRunUrl;
+              
+            } else if (webAppEntry) {
+              console.log(`      ⚠️  WEB_APP entry point found but missing URL property`);
+              console.log(`         🔍 Entry point data:`, JSON.stringify(webAppEntry, null, 10));
+            } else {
+              console.log(`      ❌ No WEB_APP entry point found in this deployment`);
+                             console.log(`         📋 Available types: ${entryPoints.map((ep: any) => ep.entryPointType).join(', ')}`);
+            }
+          } else {
+            console.log(`      ❌ No entry points found in deployment response`);
+            console.log(`         📋 Response structure:`, JSON.stringify(detailResponse.data, null, 6));
+          }
+          
+        } catch (detailError: any) {
+          const step2Duration = Date.now() - step2StartTime;
+          console.log(`      ❌ Failed to get deployment details (${step2Duration}ms)`);
+          console.log(`         💬 Error: ${detailError.message}`);
+          console.log(`         🔍 Error type: ${detailError.name || 'Unknown'}`);
+          if (detailError.code) {
+            console.log(`         🔢 Error code: ${detailError.code}`);
+          }
+        }
+        
+        console.log(`      ⏭️  Moving to next deployment...`);
+      }
+      
+      // ========== FALLBACK: STANDARD FORMAT ==========
+      console.log(`\n📋 [FALLBACK] No web app deployments found with URLs`);
+      console.log(`   📊 Summary: Checked ${basicDeployments.length} deployments, none had web app URLs`);
+      console.log(`   🔄 Using standard gas_run URL format as fallback`);
+      
+      const fallbackUrl = `https://script.google.com/macros/s/${scriptId}/dev`;
+      const totalDuration = Date.now() - startTime;
+      
+      console.log(`\n🎯 [FALLBACK_COMPLETE] Standard format gas_run URL ready!`);
+      console.log(`   🔗 Fallback URL: ${fallbackUrl}`);
+      console.log(`   ⏱️  Total time: ${totalDuration}ms`);
+      console.log(`   📝 Note: This uses scriptId directly (no custom domain)`);
+      
+      return fallbackUrl;
       
     } catch (error: any) {
-      console.log(`⚠️ Could not check deployments for domain format: ${error.message}`);
-      console.log(`📋 Falling back to standard gas_run URL format`);
-      return `https://script.google.com/macros/s/${scriptId}/dev`;
+      const totalDuration = Date.now() - startTime;
+      console.log(`\n❌ [CONSTRUCTION_ERROR] URL construction failed`);
+      console.log(`   ⏱️  Duration: ${totalDuration}ms`);
+      console.log(`   💬 Error message: ${error.message}`);
+      console.log(`   🔍 Error type: ${error.name || 'Unknown'}`);
+      console.log(`   📋 Error details:`, error);
+      
+      if (error.code) {
+        console.log(`   🔢 Error code: ${error.code}`);
+      }
+      if (error.status) {
+        console.log(`   📊 HTTP status: ${error.status}`);
+      }
+      
+      console.log(`\n🛡️  [ERROR_FALLBACK] Using emergency fallback URL`);
+      const fallbackUrl = `https://script.google.com/macros/s/${scriptId}/dev`;
+      
+      console.log(`\n🎯 [ERROR_FALLBACK_COMPLETE] Emergency gas_run URL ready!`);
+      console.log(`   🔗 Emergency URL: ${fallbackUrl}`);
+      console.log(`   ⏱️  Total time: ${totalDuration}ms`);
+      console.log(`   📝 Note: Error fallback - uses scriptId directly`);
+      
+      return fallbackUrl;
     }
   }
 
@@ -862,20 +1048,19 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Always use gas_run URL format for HEAD deployments
+      // Convert web app URL to gas_run format for HEAD deployments
       if (response.data.entryPoints) {
         console.log(`🔍 HEAD deployment entry points:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
-          console.log(`🌐 HEAD Web App URL from API: ${webAppEntry.webApp.url}`);
+          const originalUrl = webAppEntry.webApp.url;
+          console.log(`🌐 HEAD Web App URL from API: ${originalUrl}`);
           console.log(`🔧 Converting to gas_run URL format for HEAD deployment...`);
-          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          deployment.webAppUrl = this.constructGasRunUrlFromWebApp(originalUrl);
           console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
         } else if (webAppEntry) {
-          console.log(`🔧 Web App entry point found, using gas_run URL format`);
-          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
-          console.log(`✅ Gas_run URL for HEAD: ${deployment.webAppUrl}`);
+          console.log(`🔧 Web App entry point found but no URL`);
         }
         console.log(`🔄 This URL will serve the latest content automatically`);
       }
@@ -902,13 +1087,13 @@ export class GASClient {
     if (existingHead) {
       console.log(`✅ Using existing HEAD deployment: ${existingHead.deploymentId}`);
       
-      // Always use gas_run URL format for HEAD deployments
+      // Convert web app URL to gas_run format for HEAD deployments
       let webAppUrl = existingHead.webAppUrl;
       if (existingHead.entryPoints) {
         const webAppEntry = existingHead.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-        if (webAppEntry) {
-          // Always use gas_run URL format for consistency
-          webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+        if (webAppEntry?.webApp?.url) {
+          // Convert existing URL to gas_run format
+          webAppUrl = this.constructGasRunUrlFromWebApp(webAppEntry.webApp.url);
           console.log(`🔧 Using gas_run URL format for HEAD: ${webAppUrl}`);
         }
       }

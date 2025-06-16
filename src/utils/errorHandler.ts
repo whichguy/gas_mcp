@@ -63,11 +63,48 @@ export class GASErrorHandler {
    * @returns Processed error with help information
    */
   static handleApiError(error: any, context: ErrorContext): never {
-    const statusCode = error.status || error.statusCode || error.response?.status || 500;
-    const errorMessage = error.message || error.toString();
+    // Enhanced HTTP status code extraction - check all possible sources
+    const statusCode = error.status || 
+                       error.statusCode || 
+                       error.response?.status || 
+                       error.response?.statusCode ||
+                       error.data?.statusCode ||
+                       error.code ||
+                       (error.message && error.message.includes('HTTP ') ? 
+                         parseInt(error.message.match(/HTTP (\d+)/)?.[1] || '500') : 500);
+    
+    // Enhanced error message extraction - get most detailed message available
+    const errorMessage = error.response?.data?.error?.message ||
+                         error.response?.data?.message ||
+                         error.response?.statusText ||
+                         error.message ||
+                         error.error?.message ||
+                         error.error ||
+                         error.toString() ||
+                         'Unknown error';
+    
+    // Extract additional error details for debugging
+    const errorDetails = {
+      originalError: error,
+      httpStatusCode: statusCode,
+      httpStatusText: error.response?.statusText,
+      errorMessage: errorMessage,
+      responseData: error.response?.data,
+      googleErrorCode: error.response?.data?.error?.code,
+      googleErrorStatus: error.response?.data?.error?.status,
+      apiEndpoint: error.config?.url || error.request?.url,
+      requestMethod: error.config?.method || error.request?.method,
+      context: context
+    };
+    
+    // Log comprehensive error information for debugging
+    console.error(`🔍 Google API Error Details:`, errorDetails);
     
     // Process the error based on status code and context
-    const result = this.processError(statusCode, errorMessage, context);
+    const result = this.processError(statusCode, errorMessage, context, errorDetails);
+    
+    // Enhance the error with additional debugging information
+    (result.error as any).debugInfo = errorDetails;
     
     // Throw the appropriate error type
     throw result.error;
@@ -82,46 +119,50 @@ export class GASErrorHandler {
   private static processError(
     statusCode: number, 
     errorMessage: string, 
-    context: ErrorContext
+    context: ErrorContext,
+    errorDetails: Record<string, any>
   ): ErrorHandlingResult {
     
     switch (statusCode) {
       case 401:
-        return this.handleAuthenticationError(errorMessage, context);
+        return this.handleAuthenticationError(errorMessage, context, errorDetails);
       
       case 403:
-        return this.handlePermissionError(errorMessage, context);
+        return this.handlePermissionError(errorMessage, context, errorDetails);
       
       case 404:
-        return this.handleNotFoundError(errorMessage, context);
+        return this.handleNotFoundError(errorMessage, context, errorDetails);
       
       case 429:
-        return this.handleRateLimitError(errorMessage, context);
+        return this.handleRateLimitError(errorMessage, context, errorDetails);
       
       case 500:
       case 502:
       case 503:
-        return this.handleServerError(statusCode, errorMessage, context);
+        return this.handleServerError(statusCode, errorMessage, context, errorDetails);
       
       default:
-        return this.handleUnknownError(statusCode, errorMessage, context);
+        return this.handleUnknownError(statusCode, errorMessage, context, errorDetails);
     }
   }
 
   /**
    * Handle 401 authentication errors (consolidates auth error patterns)
    */
-  private static handleAuthenticationError(message: string, context: ErrorContext): ErrorHandlingResult {
+  private static handleAuthenticationError(message: string, context: ErrorContext, errorDetails: Record<string, any>): ErrorHandlingResult {
     const helpMessage = `Authentication required for ${context.operation}. Token may be expired or invalid.`;
     
     const troubleshootingSteps = [
       '🔑 AUTHENTICATION REQUIRED:',
+      `   HTTP Status: ${errorDetails.httpStatusCode} ${errorDetails.httpStatusText || ''}`,
+      `   API Endpoint: ${errorDetails.apiEndpoint || 'Unknown'}`,
       `   Re-authenticate with: ${AUTH_MESSAGES.START_FLOW_INSTRUCTION}`,
       '',
       '🔍 COMMON CAUSES:',
       '   • OAuth token has expired',
       '   • Invalid or malformed access token',
       '   • Authentication session was revoked',
+      '   • Google API error: ' + (errorDetails.googleErrorCode || 'Unknown'),
       '',
       '🛠️ SOLUTIONS:',
       '   1. Run gas_auth(mode="logout") to clear current session',
@@ -131,9 +172,15 @@ export class GASErrorHandler {
     ];
 
     const error = new AuthenticationError(
-      `${helpMessage} Context: ${context.operation} in ${context.tool}`,
+      `${helpMessage} Context: ${context.operation} in ${context.tool}. HTTP ${errorDetails.httpStatusCode}: ${message}`,
       undefined // Auth URL will be generated by the error class
     );
+
+    // Include full HTTP details in error data
+    (error as any).data = {
+      ...(error as any).data,
+      httpDetails: errorDetails
+    };
 
     return {
       error,
@@ -146,14 +193,17 @@ export class GASErrorHandler {
   /**
    * Handle 403 permission errors (consolidates permission patterns)
    */
-  private static handlePermissionError(message: string, context: ErrorContext): ErrorHandlingResult {
+  private static handlePermissionError(message: string, context: ErrorContext, errorDetails: Record<string, any>): ErrorHandlingResult {
     const helpMessage = this.getPermissionHelpMessage(context);
     
     const troubleshootingSteps = [
       '🚫 PERMISSION DENIED:',
+      `   HTTP Status: ${errorDetails.httpStatusCode} ${errorDetails.httpStatusText || ''}`,
+      `   API Endpoint: ${errorDetails.apiEndpoint || 'Unknown'}`,
       `   Operation: ${context.operation}`,
       `   Tool: ${context.tool}`,
       context.scriptId ? `   Script ID: ${context.scriptId}` : '',
+      `   Google Error: ${errorDetails.googleErrorCode || 'Unknown'}`,
       '',
       '🔍 COMMON CAUSES:',
       '   • Insufficient OAuth scopes for this operation',
@@ -172,9 +222,14 @@ export class GASErrorHandler {
     ].filter(step => step !== ''); // Remove empty strings
 
     const error = new GASApiError(
-      `${helpMessage} Context: ${context.operation} in ${context.tool}. ${message}`,
-      403,
-      { context, troubleshootingSteps }
+      `${helpMessage} Context: ${context.operation} in ${context.tool}. HTTP ${errorDetails.httpStatusCode}: ${message}`,
+      errorDetails.httpStatusCode,
+      { 
+        context, 
+        troubleshootingSteps,
+        httpDetails: errorDetails,
+        originalError: errorDetails.originalError
+      }
     );
 
     return {
@@ -188,15 +243,18 @@ export class GASErrorHandler {
   /**
    * Handle 404 not found errors (consolidates not found patterns)
    */
-  private static handleNotFoundError(message: string, context: ErrorContext): ErrorHandlingResult {
+  private static handleNotFoundError(message: string, context: ErrorContext, errorDetails: Record<string, any>): ErrorHandlingResult {
     const helpMessage = this.getNotFoundHelpMessage(context);
     
     const troubleshootingSteps = [
       '📭 RESOURCE NOT FOUND:',
+      `   HTTP Status: ${errorDetails.httpStatusCode} ${errorDetails.httpStatusText || ''}`,
+      `   API Endpoint: ${errorDetails.apiEndpoint || 'Unknown'}`,
       `   Operation: ${context.operation}`,
       `   Tool: ${context.tool}`,
       context.scriptId ? `   Script ID: ${context.scriptId}` : '',
       context.functionName ? `   Function: ${context.functionName}` : '',
+      `   Google Error: ${errorDetails.googleErrorCode || 'Unknown'}`,
       '',
       '🔍 VERIFICATION STEPS:',
       '   1. Verify the script ID is correct and accessible',
@@ -218,6 +276,12 @@ export class GASErrorHandler {
       `valid ${context.operation.split(' ')[0]} that exists and is accessible`
     );
 
+    // Include full HTTP details in error data
+    (error as any).data = {
+      ...(error as any).data,
+      httpDetails: errorDetails
+    };
+
     return {
       error,
       shouldThrow: true,
@@ -229,11 +293,14 @@ export class GASErrorHandler {
   /**
    * Handle 429 rate limit errors
    */
-  private static handleRateLimitError(message: string, context: ErrorContext): ErrorHandlingResult {
+  private static handleRateLimitError(message: string, context: ErrorContext, errorDetails: Record<string, any>): ErrorHandlingResult {
     const helpMessage = `Rate limit exceeded for ${context.operation}. Please wait before retrying.`;
     
     const troubleshootingSteps = [
       '⏱️ RATE LIMIT EXCEEDED:',
+      `   HTTP Status: ${errorDetails.httpStatusCode} ${errorDetails.httpStatusText || ''}`,
+      `   API Endpoint: ${errorDetails.apiEndpoint || 'Unknown'}`,
+      `   Google Error: ${errorDetails.googleErrorCode || 'Unknown'}`,
       '   Google Apps Script API has rate limits to prevent abuse',
       '',
       '🔍 LIMITS:',
@@ -249,9 +316,14 @@ export class GASErrorHandler {
     ];
 
     const error = new GASApiError(
-      `${helpMessage} ${message}`,
-      429,
-      { retryAfterSeconds: 60, context }
+      `${helpMessage} HTTP ${errorDetails.httpStatusCode}: ${message}`,
+      errorDetails.httpStatusCode,
+      { 
+        retryAfterSeconds: 60, 
+        context,
+        httpDetails: errorDetails,
+        originalError: errorDetails.originalError
+      }
     );
 
     return {
@@ -265,11 +337,14 @@ export class GASErrorHandler {
   /**
    * Handle 500/502/503 server errors
    */
-  private static handleServerError(statusCode: number, message: string, context: ErrorContext): ErrorHandlingResult {
+  private static handleServerError(statusCode: number, message: string, context: ErrorContext, errorDetails: Record<string, any>): ErrorHandlingResult {
     const helpMessage = `Google Apps Script API server error (${statusCode}). This is usually temporary.`;
     
     const troubleshootingSteps = [
       `🔧 SERVER ERROR (${statusCode}):`,
+      `   HTTP Status: ${errorDetails.httpStatusCode} ${errorDetails.httpStatusText || ''}`,
+      `   API Endpoint: ${errorDetails.apiEndpoint || 'Unknown'}`,
+      `   Google Error: ${errorDetails.googleErrorCode || 'Unknown'}`,
       '   This is typically a temporary issue with Google\'s servers',
       '',
       '🛠️ SOLUTIONS:',
@@ -280,9 +355,14 @@ export class GASErrorHandler {
     ];
 
     const error = new GASApiError(
-      `${helpMessage} Operation: ${context.operation}. ${message}`,
+      `${helpMessage} Operation: ${context.operation}. HTTP ${errorDetails.httpStatusCode}: ${message}`,
       statusCode,
-      { temporary: true, context }
+      { 
+        temporary: true, 
+        context,
+        httpDetails: errorDetails,
+        originalError: errorDetails.originalError
+      }
     );
 
     return {
@@ -296,14 +376,18 @@ export class GASErrorHandler {
   /**
    * Handle unknown/unexpected errors
    */
-  private static handleUnknownError(statusCode: number, message: string, context: ErrorContext): ErrorHandlingResult {
+  private static handleUnknownError(statusCode: number, message: string, context: ErrorContext, errorDetails: Record<string, any>): ErrorHandlingResult {
     const helpMessage = `Unexpected error during ${context.operation} (status: ${statusCode}).`;
     
     const troubleshootingSteps = [
       `❓ UNEXPECTED ERROR (${statusCode}):`,
+      `   HTTP Status: ${errorDetails.httpStatusCode} ${errorDetails.httpStatusText || ''}`,
+      `   API Endpoint: ${errorDetails.apiEndpoint || 'Unknown'}`,
+      `   Request Method: ${errorDetails.requestMethod || 'Unknown'}`,
       `   Operation: ${context.operation}`,
       `   Tool: ${context.tool}`,
       `   Message: ${message}`,
+      `   Google Error: ${errorDetails.googleErrorCode || 'Unknown'}`,
       '',
       '🛠️ GENERAL SOLUTIONS:',
       '   1. Check the original error message for specific details',
@@ -314,9 +398,14 @@ export class GASErrorHandler {
     ];
 
     const error = new GASApiError(
-      `${helpMessage} ${message}`,
+      `${helpMessage} HTTP ${errorDetails.httpStatusCode}: ${message}`,
       statusCode,
-      { context, originalMessage: message }
+      { 
+        context, 
+        originalMessage: message,
+        httpDetails: errorDetails,
+        originalError: errorDetails.originalError
+      }
     );
 
     return {

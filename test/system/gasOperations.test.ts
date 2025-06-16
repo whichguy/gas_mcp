@@ -877,7 +877,7 @@ function getData() {
           const runTool = tools.find(tool => tool.name === 'gas_run');
           expect(runTool).to.exist;
           expect(runTool?.inputSchema?.properties?.scriptId).to.exist;
-          expect(runTool?.inputSchema?.properties?.code).to.exist;
+          expect(runTool?.inputSchema?.properties?.js_statement).to.exist;
           console.log('✅ Function execution infrastructure available');
           return;
         }

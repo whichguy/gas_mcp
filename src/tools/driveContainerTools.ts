@@ -192,25 +192,45 @@ export class GASFindDriveScriptTool extends BaseTool {
   /**
    * Search Google Drive for files matching the query
    */
-  private async searchDriveFiles(query: string, accessToken: string) {
+  private async searchDriveFiles(query: string, accessToken: string): Promise<any> {
     const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime)&pageSize=100`;
     
+    console.log(`📡 [GOOGLE DRIVE API] Starting search request`);
+    console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+    console.log(`   📍 URL: ${url}`);
+    console.log(`   🔍 Query: ${query}`);
+    console.log(`   🔑 Auth: Token present (${accessToken.substring(0, 10)}...)`);
+    
+    const startTime = Date.now();
+    
     const response = await fetch(url, {
-      method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
-      },
-      redirect: 'follow',
-      credentials: 'include'
+      }
     });
+
+    const duration = Date.now() - startTime;
+    console.log(`📥 [GOOGLE DRIVE API] Search response received after ${duration}ms`);
+    console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
+    console.log(`   📍 URL: ${response.url}`);
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`❌ [GOOGLE DRIVE API ERROR] Search failed`);
+      console.error(`   🔢 Status: ${response.status} ${response.statusText}`);
+      console.error(`   📄 Error body: ${errorText}`);
+      console.error(`   ⏱️  Duration: ${duration}ms`);
       throw new Error(`Drive API search failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log(`✅ [GOOGLE DRIVE API SUCCESS] Search completed`);
+    console.log(`   📊 Files found: ${(result as any).files?.length || 0}`);
+    console.log(`   📏 Response size: ${JSON.stringify(result).length} characters`);
+    console.log(`   ⏱️  Total duration: ${duration}ms`);
+    
+    return result;
   }
 
   /**
@@ -222,13 +242,10 @@ export class GASFindDriveScriptTool extends BaseTool {
       const scriptsUrl = 'https://script.googleapis.com/v1/projects?pageSize=100';
       
       const scriptsResponse = await fetch(scriptsUrl, {
-        method: 'GET',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
-        },
-        redirect: 'follow',
-        credentials: 'include'
+        }
       });
 
       if (!scriptsResponse.ok) {
@@ -371,7 +388,8 @@ export class GASBindScriptTool extends BaseTool {
     for (const mimeType of containerTypes) {
       const searchQuery = `name='${containerName.replace(/'/g, "\\'")}' and mimeType='${mimeType}' and trashed=false`;
       
-      const searchResult = await this.searchDriveFiles(searchQuery, accessToken);
+      // @ts-ignore - TypeScript incorrectly infers unknown type for Promise<any> return
+      const searchResult: any = await this.searchDriveFiles(searchQuery, accessToken);
       
       if (searchResult.files && searchResult.files.length > 0) {
         const file = searchResult.files[0];
@@ -398,13 +416,10 @@ export class GASBindScriptTool extends BaseTool {
     const scriptsUrl = 'https://script.googleapis.com/v1/projects?pageSize=100';
     
     const response = await fetch(scriptsUrl, {
-      method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
-      },
-      redirect: 'follow',
-      credentials: 'include'
+      }
     });
 
     if (!response.ok) {
@@ -444,39 +459,13 @@ export class GASBindScriptTool extends BaseTool {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(updateData),
-      redirect: 'follow',
-      credentials: 'include'
+      body: JSON.stringify(updateData)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Failed to bind script: ${response.status} ${response.statusText} - ${errorText}`);
     }
-  }
-
-  /**
-   * Search Google Drive for files matching the query
-   */
-  private async searchDriveFiles(query: string, accessToken: string) {
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&pageSize=10`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      redirect: 'follow',
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Drive API search failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    return await response.json();
   }
 }
 
@@ -593,7 +582,8 @@ export class GASCreateScriptTool extends BaseTool {
     for (const containerType of containerTypes) {
       const searchQuery = `name='${containerName.replace(/'/g, "\\'")}' and mimeType='${containerType.mimeType}' and trashed=false`;
       
-      const searchResult = await this.searchDriveFiles(searchQuery, accessToken);
+      // @ts-ignore - TypeScript incorrectly infers unknown type for Promise<any> return
+      const searchResult: any = await this.searchDriveFiles(searchQuery, accessToken);
       
       if (searchResult.files && searchResult.files.length > 0) {
         const file = searchResult.files[0];
@@ -634,9 +624,7 @@ export class GASCreateScriptTool extends BaseTool {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(projectData),
-      redirect: 'follow',
-      credentials: 'include'
+      body: JSON.stringify(projectData)
     });
 
     if (!createResponse.ok) {
@@ -679,9 +667,7 @@ export class GASCreateScriptTool extends BaseTool {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(contentData),
-      redirect: 'follow',
-      credentials: 'include'
+      body: JSON.stringify(contentData)
     });
 
     if (!response.ok) {
@@ -1161,29 +1147,5 @@ function main() {
       case 'site': return 'Site';
       default: return 'Container';
     }
-  }
-
-  /**
-   * Search Google Drive for files matching the query
-   */
-  private async searchDriveFiles(query: string, accessToken: string) {
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType)&pageSize=10`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      redirect: 'follow',
-      credentials: 'include'
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Drive API search failed: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    return await response.json();
   }
 } 

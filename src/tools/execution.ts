@@ -224,7 +224,6 @@ export class GASRunApiExecTool extends BaseTool {
         result: result.result,
         executedAt: new Date().toISOString(),
         sessionId: this.sessionAuthManager?.getSessionId(),
-        devMode,
         apiInfo: {
           apiVersion: 'v1',
           executionTime: 'See Apps Script quotas for maximum execution time',
@@ -409,27 +408,22 @@ export class GASRunApiExecTool extends BaseTool {
  */
 export class GASRunTool extends BaseTool {
   public name = 'gas_run';
-  public description = 'Core dynamic JavaScript/Apps Script execution handler. ⚠️ CLEAN EXECUTION ONLY - Executes JavaScript code dynamically via Function constructor. Supports function calls, expressions, and complete statements. Uses HEAD deployment for testing with automatic content updates.';
+  public description = 'Execute JavaScript code dynamically in Google Apps Script projects';
   
   public inputSchema = {
     type: 'object',
     properties: {
       scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID. Tool will use or create HEAD deployment with /dev URL for testing latest content.'
+        description: 'Google Apps Script project ID'
       },
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute dynamically (e.g., "Math.PI * 2", "myFunction(1, 2, 3)", "function foo() { return \'bar\'; } foo()", "[1,2,3].map(x => x * 2)")'
-      },
-      devMode: {
-        type: 'boolean',
-        description: 'Run in development mode (default: true)',
-        default: true
+        description: 'JavaScript statement to execute (e.g., "Math.PI * 2", "myFunction(1, 2, 3)")'
       },
       autoRedeploy: {
         type: 'boolean',
-        description: 'Enable automatic HEAD deployment setup: ensures HEAD deployment exists with /dev URL for testing. Content updates are automatic without redeployment. Set to false to use existing deployments only. (default: true)',
+        description: 'Enable automatic infrastructure setup (default: true)',
         default: true
       },
       accessToken: {
@@ -449,592 +443,350 @@ export class GASRunTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    
-    // Use new validation utilities
     const scriptId = this.validate.scriptId(params.scriptId, 'dynamic JS execution');
     const js_statement = this.validate.string(params.js_statement, 'JavaScript statement');
-    const devMode = params.devMode !== false; // Default to true
-    let autoRedeploy = params.autoRedeploy !== false; // Default to true
+    const autoRedeploy = params.autoRedeploy !== false;
 
-    // Validate js_statement is not empty
-    if (!js_statement || js_statement.trim().length === 0) {
+    if (!js_statement?.trim()) {
       throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
     }
 
-    // 🚀 SMART PERFORMANCE OPTIMIZATION:
-    // Try fast path first (existing deployment), fallback to full deployment if needed
-    console.log(`🎯 SMART EXECUTION: Trying fast path first, fallback to deployment if needed`);
-    
     try {
-      // STEP 1: Try fast execution first (unless explicitly disabled)
-      if (autoRedeploy !== false) {
-        console.log(`⚡ FAST PATH: Attempting execution with existing deployment...`);
-        
-        const fastResult = await this.executeWithDeployment(
-          scriptId, js_statement, accessToken, devMode, false // autoRedeploy=false
-        );
-        
-        console.log(`✅ FAST PATH SUCCESS: Execution completed without redeployment`);
-        return fastResult;
+      // Simple optimistic execution - just try the basic fetch
+      return await this.executeOptimistic(scriptId, js_statement, accessToken);
+    } catch (error: any) {
+      if (this.needsInfrastructureSetup(error) && autoRedeploy) {
+        // Set up infrastructure and retry
+        await this.setupInfrastructure(scriptId, accessToken);
+        return await this.executeOptimistic(scriptId, js_statement, accessToken);
       }
-    } catch (fastError: any) {
-      // Check if error indicates missing/broken deployment
-      const shouldRetryWithDeployment = this.shouldRetryWithDeployment(fastError);
-      
-      if (shouldRetryWithDeployment) {
-        console.log(`🔄 FAST PATH FAILED: ${fastError.message}`);
-        console.log(`🚀 FALLBACK: Retrying with full deployment...`);
-        
-        // STEP 2: Retry with full deployment
-        try {
-          const deployResult = await this.executeWithDeployment(
-            scriptId, js_statement, accessToken, devMode, true // autoRedeploy=true
-          );
-          
-          console.log(`✅ FALLBACK SUCCESS: Execution completed after deployment`);
-          return deployResult;
-        } catch (deployError: any) {
-          console.error(`❌ BOTH PATHS FAILED: Fast path and deployment both failed`);
-          throw deployError; // Throw the deployment error as it's more informative
-        }
-      } else {
-        // Error is not deployment-related, throw original error
-        console.error(`❌ FAST PATH FAILED: Non-deployment error, not retrying`);
-        throw fastError;
+      if (!autoRedeploy) {
+        throw new Error(`Execution failed and autoRedeploy is disabled. ${error.message}`);
       }
+      throw error;
     }
-
-    // This should never be reached due to the logic above, but just in case
-    return await this.executeWithDeployment(scriptId, js_statement, accessToken, devMode, autoRedeploy);
   }
 
-  /**
-   * Check if an error indicates we should retry with full deployment
-   */
-  private shouldRetryWithDeployment(error: any): boolean {
-    // Check for HTTP status codes that indicate missing deployment/doGet
+  private needsInfrastructureSetup(error: any): boolean {
     const statusCode = error.statusCode || error.data?.statusCode || error.response?.status;
-    
-    // 404 = doGet function not found or deployment doesn't exist
-    // 403 = Permission issues that might be resolved with fresh deployment
-    // 500 = Internal server error, possibly due to broken deployment
-    if ([404, 403, 500].includes(statusCode)) {
-      console.log(`🔍 HTTP ${statusCode} detected - likely deployment issue`);
-      return true;
-    }
-    
-    // Check for specific error messages indicating deployment issues
-    const errorMessage = error.message?.toLowerCase() || '';
-    const deploymentIndicators = [
-      'html error page',
-      'doget function not found',
-      'deployment not found',
-      'no web app deployment found',
-      'function not deployed',
-      'authentication issues or deployment problems'
-    ];
-    
-    const hasDeploymentIndicator = deploymentIndicators.some(indicator => 
-      errorMessage.includes(indicator)
-    );
-    
-    if (hasDeploymentIndicator) {
-      console.log(`🔍 Error message indicates deployment issue: ${error.message}`);
-      return true;
-    }
-    
-    // Check if error has deployment-related troubleshooting info
-    if (error.setupInstructions && Array.isArray(error.setupInstructions)) {
-      const hasDeploymentInstructions = error.setupInstructions.some((instruction: string) =>
-        instruction.toLowerCase().includes('deploy') || 
-        instruction.toLowerCase().includes('doget')
-      );
-      
-      if (hasDeploymentInstructions) {
-        console.log(`🔍 Error has deployment-related instructions - retrying with deployment`);
-        return true;
-      }
-    }
-    
-    console.log(`🔍 Error does not indicate deployment issue - not retrying`);
-    return false;
+    return [404, 403, 500].includes(statusCode);
   }
 
-  /**
-   * Execute with specified deployment strategy
-   */
-  private async executeWithDeployment(
-    scriptId: string, 
-    js_statement: string, 
-    accessToken: string, 
-    devMode: boolean, 
-    autoRedeploy: boolean
-  ): Promise<any> {
+  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
+    const executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+    
+    console.log(`📡 [GOOGLE APPS SCRIPT EXECUTION] Starting direct HTTP call`);
+    console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+    console.log(`   🆔 Script ID: ${scriptId}`);
+    console.log(`   📍 URL: ${executionUrl}`);
+    console.log(`   💻 Statement: ${js_statement}`);
+    console.log(`   🔑 Auth: Token present (${accessToken.substring(0, 10)}...)`);
+    
+    const startTime = Date.now();
+    
+    // HANGING FIX: Add timeout protection to prevent indefinite hangs
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Request timed out after 30 seconds`);
+      console.error(`   📍 URL: ${executionUrl}`);
+      console.error(`   💻 Statement: ${js_statement}`);
+      abortController.abort();
+    }, 30000); // 30-second timeout
+
     try {
-      console.log(`🌐 Executing JavaScript statement via doGet() proxy in script: ${scriptId}`);
-      console.log(`📋 JS Statement: ${js_statement}`);
-      console.log(`🔧 Using Function() constructor for dynamic execution`);
-      console.log(`🔧 Auto-redeploy: ${autoRedeploy} (default: true)`);
-      console.log(`🔧 Deploy as Web App: always (web-app-only implementation)`);
-      console.log(`🚀 Runtime: V8 (supports GS, TS, HTML, ES6)`);
-
-      // Variables to store deployment info
-      let immediateDeployment: any = null;
+      // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
+      const urlWithParams = new URL(executionUrl);
+      urlWithParams.searchParams.set('func', js_statement);
+      const finalUrl = urlWithParams.toString();
       
-      // Check if we need to redeploy
-      if (autoRedeploy) {
-        console.log(`🚀 Auto-redeployment enabled, setting up web app infrastructure...`);
-        
-        // 🔧 CRITICAL FIX: Add execution shim before deployment
-          console.log(`🔧 Checking for execution shim (__mcp_gas_run)...`);
-          
-          // Check if shim already exists
-          let shimExists = false;
-          try {
-            const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-            shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run') || false;
-            console.log(`📁 Shim exists: ${shimExists}`);
-          } catch (checkError: any) {
-            console.log(`⚠️ Could not check existing files, will add shim: ${checkError.message}`);
-          }
-          
-          // Add execution shim if not present
-          if (!shimExists) {
-            console.log(`🔧 Adding execution shim (__mcp_gas_run) for dynamic code execution...`);
-            
-            const shimCode = GASCodeGenerator.generateCode({
-              type: 'head_deployment',
-              timezone: 'America/Los_Angeles',
-              includeTestFunctions: true,
-              mcpVersion: '1.0.0'
-            });
-            
-            // Find the shim file in generated files
-            const shimFile = shimCode.files.find(file => file.name === '__mcp_gas_run');
-            if (!shimFile || !shimFile.source) {
-              throw new Error('Failed to generate execution shim code');
-            }
-            
-            // Add the shim file to the project using updateFile method
-            await this.gasClient.updateFile(
-              scriptId, 
-              '__mcp_gas_run', 
-              shimFile.source, 
-              0, // Position 0 to load first
-              accessToken
-            );
-            
-            console.log(`✅ Added execution shim (__mcp_gas_run) - ${shimFile.source.split('\n').length} lines`);
-          } else {
-            console.log(`✅ Execution shim already exists, proceeding with deployment...`);
-          }
-
-          // Ensure manifest has proper entry point configuration for Web App deployment
-          console.log(`🔧 Updating manifest for WEB_APP deployment...`);
-          await ensureManifestEntryPoints(this.gasClient, scriptId, 'WEB_APP', 'MYSELF', accessToken);
-          
-          // REDUCED: Wait for manifest update to be processed (reduced from 2s to 500ms)
-          console.log(`⏳ Brief wait for manifest update processing...`);
-          await new Promise(resolve => setTimeout(resolve, 500));
-
-          // STEP 3: Ensure HEAD deployment exists (creates stable /dev URL for testing)
-          console.log(`🎯 Ensuring HEAD deployment exists for testing...`);
-          console.log(`📋 Testing Mode: Using HEAD deployment (/dev URL) for latest content`);
-          
-          const deploymentOptions = {
-            entryPointType: 'WEB_APP' as const,
-            webAppConfig: {
-              access: 'MYSELF' as const,
-              executeAs: 'USER_ACCESSING' as const
-            }
-          };
-
-          const headResult = await this.gasClient.ensureHeadDeployment(
-            scriptId,
-            `HEAD deployment for testing - serves latest content`,
-            deploymentOptions,
-            accessToken
-          );
-          
-          const deployment = headResult.deployment;
-          console.log(`✅ ${headResult.wasCreated ? 'Created' : 'Using existing'} HEAD deployment: ${deployment.deploymentId}`);
-          console.log(`🌐 HEAD Web App URL: ${headResult.webAppUrl}`);
-          console.log(`🔄 Content updates: Automatic (no redeployment needed)`);
-          console.log(`📝 URL type: ${headResult.webAppUrl?.includes('/dev') ? '/dev (testing endpoint)' : '/exec (versioned)'}`);
-          
-          // Get the Google web app URL and convert to gas_run format
-          const googleWebAppUrl = headResult.webAppUrl;
-          const gasRunUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
-          
-          console.log(`🌐 Google Web App URL: ${googleWebAppUrl}`);
-          console.log(`🔧 Gas_run URL (using scriptId format): ${gasRunUrl}`);
-          
-          // Store the deployment info for immediate use
-          immediateDeployment = {
-            deploymentId: deployment.deploymentId,
-            webAppUrl: gasRunUrl!,
-            versionNumber: deployment.versionNumber, // null for HEAD
-            updateTime: deployment.updateTime
-          };
-
-
-      }
-
-      // Execute via web app URL with bearer token authentication
-      console.log(`🌐 Executing via web app URL with bearer token...`);
+      console.log(`🔗 [AUTOMATIC REDIRECT] Final URL with parameters: ${finalUrl}`);
       
-      let webAppUrl = null;
-      let webAppDeployment: any = null;
-      
-      // If we just created a deployment, use it immediately
-      if (autoRedeploy && immediateDeployment) {
-        console.log(`🚀 Using immediately created deployment: ${immediateDeployment.deploymentId}`);
-        webAppUrl = immediateDeployment.webAppUrl;
-        webAppDeployment = immediateDeployment;
-        console.log(`✅ Using Web App URL from immediate deployment: ${webAppUrl}`);
-            } else {
-        // Get existing deployment and find web app URL
-        console.log(`🔍 Looking up existing deployments to get web app URL`);
-        
-        try {
-          const deployments = await this.gasClient.listDeployments(scriptId, accessToken);
-          const foundDeployment = deployments.find(d => 
-            d.entryPoints?.some(ep => ep.entryPointType === 'WEB_APP')
-          );
-          
-          if (foundDeployment) {
-            // Find the web app entry point and get its URL
-            const webAppEntry = foundDeployment.entryPoints?.find(ep => ep.entryPointType === 'WEB_APP');
-            const googleWebAppUrl = (webAppEntry as any)?.webApp?.url;
-            
-            if (googleWebAppUrl) {
-              // Replace /exec with /dev in Google's URL
-              webAppUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
-              console.log(`✅ Using existing deployment: ${foundDeployment.deploymentId}`);
-              console.log(`🌐 Google Web App URL: ${googleWebAppUrl}`);
-              console.log(`🔧 Gas_run URL (replaced /exec with /dev): ${webAppUrl}`);
-              console.log(`📝 URL type: /dev (gas_run format)`);
-              
-              webAppDeployment = {
-                deploymentId: foundDeployment.deploymentId,
-                webAppUrl: webAppUrl,
-                versionNumber: foundDeployment.versionNumber,
-                updateTime: foundDeployment.updateTime
-              };
-            } else {
-              throw new Error('Web app deployment found but no URL available');
-            }
-          } else {
-            throw new Error('No web app deployment found');
-          }
-        } catch (deploymentError: any) {
-          console.log(`⚠️ Failed to find existing deployment: ${deploymentError.message}`);
-          console.log(`🚀 Enabling auto-redeploy to create deployment...`);
-          
-          // Fall back to auto-redeploy if no existing deployment found
-          autoRedeploy = true;
-          // Continue to auto-redeploy logic at top of function
-          throw new Error('No deployment found - auto-redeploy required');
-        }
-      }
-      
-      if (!webAppUrl) {
-        throw new Error(`No functional web app deployment found. Auto-deployment may have failed.
-
-This usually indicates:
-1. Deployment creation succeeded but entry points weren't properly configured
-2. Missing web app entry point in deployment response from GET API
-3. Manifest file missing webapp configuration
-4. All deployments lack proper web app configuration
-5. API entry points may not be populated yet (try again in a few seconds)
-
-Try running with autoRedeploy=true to create a fresh deployment.`);
-      }
-      
-      // Build query parameters for execution
-      const queryParams = new URLSearchParams();
-      
-      // Use the js_statement directly as it's already a complete JavaScript statement
-      queryParams.set('func', js_statement);
-      
-      const executionUrl = `${webAppUrl}?${queryParams.toString()}`;
-      console.log(`🌐 Execution URL: ${executionUrl}`);
-      
-      // Make HTTP request to web app with bearer token for authentication
-      console.log(`🔐 Using bearer token for authenticated web app access`);
-      console.log(`🔄 Following redirects automatically (redirect: 'follow')`);
-      
-      const response = await fetch(executionUrl, {
-        method: 'GET',
+      // AUTOMATIC REDIRECT: Use native browser redirect handling
+      const response = await fetch(finalUrl, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'User-Agent': 'MCP-Gas-Client/1.0',
-          'Accept': 'application/json, text/plain, */*'
+          'User-Agent': 'MCP-GAS-Server/1.0.0'
         },
-        redirect: 'follow', // Explicitly follow redirects
-        credentials: 'include', // Include credentials in redirected requests
-        mode: 'cors' // Enable CORS for cross-domain redirects
+        signal: abortController.signal,
+        redirect: 'follow' // Automatically follow redirects
       });
       
-      const responseText = await response.text();
-      console.log(`📥 Response status: ${response.status} ${response.statusText}`);
-      console.log(`📥 Response URL: ${response.url}`);
-      console.log(`📥 Response redirected: ${response.redirected}`);
-      console.log(`📥 Response headers:`, {
-        'content-type': response.headers.get('content-type'),
-        'location': response.headers.get('location'),
-        'set-cookie': response.headers.get('set-cookie')
-      });
-      console.log(`📥 Response text (first 500 chars): ${responseText.substring(0, 500)}`);
+      const fetchDuration = Date.now() - startTime;
+      console.log(`📥 [GOOGLE APPS SCRIPT RESPONSE] Received response after ${fetchDuration}ms`);
+      console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
+      console.log(`   📍 URL: ${response.url}`);
+      console.log(`   📏 Response type: ${response.headers.get('content-type') || 'Unknown'}`);
       
-      let result;
-      try {
-        result = { result: JSON.parse(responseText) };
-      } catch (parseError) {
-        // If not JSON, treat as HTML error page
-        if (responseText.includes('DOCTYPE html') || responseText.includes('<html')) {
-          throw new Error(`Web app returned HTML error page instead of JSON. This usually indicates authentication issues or deployment problems.`);
-        }
-        result = { result: responseText };
-      }
-
-      // Check if the response indicates an error
       if (!response.ok) {
-        console.error(`❌ Web app execution failed with status ${response.status}`);
-        
-              // Return JSON error response with URL information
-      return {
-        status: 'error',
-        scriptId,
-        js_statement,
-        proxyFunction: 'doGet',
-        error: {
-          type: 'WebAppError',
-          message: `HTTP ${response.status}: ${response.statusText}`,
-          responseText: responseText
-        },
-        executedAt: new Date().toISOString(),
-        proxyPattern: 'doGet() → Function() constructor execution',
-        autoRedeploy: autoRedeploy,
-        runtime: 'V8',
-        urlInfo: {
-          webAppUrl: webAppUrl,
-          executionUrl: executionUrl,
-          redirected: response.redirected,
-          finalUrl: response.url
+        let errorBody = '';
+        try {
+          errorBody = await response.text();
+          console.error(`❌ [GOOGLE APPS SCRIPT ERROR] HTTP ${response.status} error response`);
+          console.error(`   📄 Error body: ${errorBody}`);
+        } catch (bodyError) {
+          console.warn('Failed to read error response body:', bodyError);
         }
-      };
-      }
-
-      console.log(`✅ Web app execution successful`);
-      console.log(`📤 Raw result:`, result.result);
-
-      // Handle the structured JSON response from web app
-      let dehydratedResult = result.result;
-      
-      // Check for new structured response format {type: "data"|"exception", payload: ...}
-      if (dehydratedResult && typeof dehydratedResult === 'object' && dehydratedResult.type) {
-        console.log(`📦 Processing structured response with type: ${dehydratedResult.type}`);
         
-        if (dehydratedResult.type === 'data') {
-          console.log(`✅ Function executed successfully, returning data payload`);
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+        (error as any).statusCode = response.status;
+        (error as any).response = {
+          status: response.status,
+          statusText: response.statusText,
+          headers: {}, // Headers object is complex to serialize, keeping essential info in status fields
+          url: response.url
+        };
+        (error as any).responseBody = errorBody;
+        (error as any).config = {
+          url: executionUrl,
+          method: 'GET'
+        };
+        throw error;
+      }
+      
+      // HANGING FIX: Keep timeout active during response reading with separate timeout
+      // Use Promise.race to ensure response.text() doesn't hang indefinitely
+      console.log(`📖 [GOOGLE APPS SCRIPT RESPONSE] Reading response body...`);
+      const responseStartTime = Date.now();
+      
+      const responseText = await Promise.race([
+        response.text(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Response body reading timed out after 15 seconds`);
+            reject(new Error('Response body reading timeout after 15 seconds'));
+          }, 15000); // 15-second timeout for response reading
+        })
+      ]);
+      
+      const responseReadDuration = Date.now() - responseStartTime;
+      const totalDuration = Date.now() - startTime;
+      
+      console.log(`✅ [GOOGLE APPS SCRIPT SUCCESS] Response body read after ${responseReadDuration}ms`);
+      console.log(`   📏 Body size: ${responseText.length} characters`);
+      console.log(`   ⏱️  Total duration: ${totalDuration}ms`);
+      
+      // Only clear timeout after complete response processing
+      clearTimeout(timeoutId);
+      
+      // Parse response
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+        console.log(`📊 [GOOGLE APPS SCRIPT RESULT] Parsed JSON response successfully`);
+        console.log(`   🔍 Result type: ${typeof result}`);
+      } catch {
+        console.log(`📊 [GOOGLE APPS SCRIPT RESULT] Response is not JSON, checking for HTML error page`);
+        if (responseText.includes('DOCTYPE html') || responseText.includes('<html')) {
+          console.error(`❌ [GOOGLE APPS SCRIPT ERROR] Web app returned HTML error page instead of JSON`);
+          console.error(`   📄 HTML preview: ${responseText.substring(0, 200)}...`);
+          const error = new Error('Web app returned HTML error page instead of JSON');
+          (error as any).statusCode = 404; // Treat as needs infrastructure setup
+          throw error;
+        }
+        console.log(`📄 [GOOGLE APPS SCRIPT RESULT] Using raw text response`);
+        result = responseText;
+      }
+      
+      // Handle structured response format {type: "data"|"exception", payload: ...}
+      if (result && typeof result === 'object' && result.type) {
+        if (result.type === 'data') {
+          console.log(`✅ [GOOGLE APPS SCRIPT SUCCESS] Structured data response received`);
+          console.log(`   📊 Payload: ${JSON.stringify(result.payload)}`);
           return {
             status: 'success',
             scriptId,
             js_statement,
-            proxyFunction: 'doGet',
-            result: dehydratedResult.payload,
-            webAppDeployment: {
-              webAppUrl,
-              executionUrl,
-              entryPointType: 'WEB_APP',
-              wasCreated: autoRedeploy
-            },
-            executedAt: new Date().toISOString(),
-            sessionId: this.sessionAuthManager?.getSessionId(),
-            devMode,
-            autoRedeploy: autoRedeploy,
-            proxyInfo: {
-              proxyPattern: 'doGet() → Function() constructor execution',
-              targetStatement: js_statement,
-              proxyFunction: 'doGet',
-              description: 'Structured JSON payload with type data/exception',
-              resultFormat: 'JSON with type-based payload handling',
-              runtime: 'V8',
-              supportedLanguages: ['GS', 'TS', 'HTML', 'ES6']
-            }
+            result: result.payload,
+            executedAt: new Date().toISOString()
           };
-          
-        } else if (dehydratedResult.type === 'exception') {
-          console.log(`❌ Function execution failed, throwing dehydrated exception`);
-          
-          // Create a proper error object from the exception payload
-          const exceptionPayload = dehydratedResult.payload;
-          const error = new Error(exceptionPayload.error.message);
-          error.name = exceptionPayload.error.name || 'FunctionExecutionError';
-          error.stack = exceptionPayload.error.stack || '';
-          
-          // Add additional error properties
-          (error as any).js_statement = js_statement;
-          (error as any).timestamp = exceptionPayload.timestamp;
-          (error as any).errorType = exceptionPayload.error.type;
-          (error as any).proxyPattern = exceptionPayload.proxyPattern;
-          
-          // Throw the dehydrated exception
+        } else if (result.type === 'exception') {
+          console.error(`❌ [GOOGLE APPS SCRIPT EXCEPTION] Script execution exception`);
+          console.error(`   🔍 Exception name: ${result.payload.error.name || 'Unknown'}`);
+          console.error(`   💬 Exception message: ${result.payload.error.message}`);
+          const error = new Error(result.payload.error.message);
+          error.name = result.payload.error.name || 'FunctionExecutionError';
           throw error;
         }
       }
       
-      // Handle legacy response format for backward compatibility
-      if (dehydratedResult && typeof dehydratedResult === 'object' && 
-          'success' in dehydratedResult && 'proxyPattern' in dehydratedResult) {
-        console.log(`📦 Using legacy structured proxy response`);
-      } else {
-        // Wrap raw result in our standard format
-        dehydratedResult = {
-          js_statement: js_statement,
-          result: dehydratedResult,
-          timestamp: new Date().toISOString(),
-          proxyPattern: 'doGet() → Function() constructor execution',
-          runtime: 'V8',
-          version: '1.0.0'
-        };
-      }
-
+      // Return simple success response
+      console.log(`✅ [GOOGLE APPS SCRIPT SUCCESS] Simple response format`);
       return {
         status: 'success',
         scriptId,
         js_statement,
-        proxyFunction: 'doGet',
-        result: dehydratedResult,
-        webAppDeployment: {
-          webAppUrl,
-          executionUrl,
-          entryPointType: 'WEB_APP',
-          wasCreated: autoRedeploy
-        },
-        executedAt: new Date().toISOString(),
-        sessionId: this.sessionAuthManager?.getSessionId(),
-        devMode,
-        autoRedeploy: autoRedeploy,
-        proxyInfo: {
-          proxyPattern: 'doGet() → Function() constructor execution',
-          targetStatement: js_statement,
-          proxyFunction: 'doGet',
-          description: 'JSON-serializable web app pattern with Function() constructor execution',
-          resultFormat: 'JSON with structured payload handling',
-          runtime: 'V8',
-          supportedLanguages: ['GS', 'TS', 'HTML', 'ES6']
-        }
+        result,
+        executedAt: new Date().toISOString()
       };
-
     } catch (error: any) {
-      console.error(`❌ doGet() proxy execution error:`, error);
+      const duration = Date.now() - startTime;
       
-      // Extract HTTP status code from various error sources
-      const statusCode = error.data?.statusCode || 
-                         error.response?.status || 
-                         error.statusCode ||
-                         error.code || 
-                         500;
+      // Clear timeout on any error
+      clearTimeout(timeoutId);
       
-      // Log detailed error information for debugging
-      console.error(`📊 Error details:`, {
-        name: error.name,
-        message: error.message,
-        statusCode,
-        errorData: error.data,
-        responseStatus: error.response?.status,
-        errorCode: error.code
+      console.error(`❌ [GOOGLE APPS SCRIPT ERROR] Execution failed after ${duration}ms`);
+      console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+      console.error(`   🆔 Script ID: ${scriptId}`);
+      console.error(`   💻 Statement: ${js_statement}`);
+      console.error(`   🔍 Error type: ${error.name || 'Unknown'}`);
+      console.error(`   💬 Error message: ${error.message}`);
+      
+      // Handle timeout specifically
+      if (error.name === 'AbortError') {
+        console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Request was aborted due to timeout`);
+        const timeoutError = new Error(`Request timeout: Google Apps Script did not respond within 30 seconds`);
+        (timeoutError as any).statusCode = 408;
+        throw timeoutError;
+      }
+      
+      // Handle response reading timeout
+      if (error.message?.includes('Response body reading timeout')) {
+        console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Response body reading timed out`);
+        const timeoutError = new Error(`Response reading timeout: Google Apps Script response body took longer than 15 seconds to read`);
+        (timeoutError as any).statusCode = 408;
+        throw timeoutError;
+      }
+      
+      // Re-throw other errors
+      throw error;
+    }
+  }
+
+
+
+  private async setupInfrastructure(scriptId: string, accessToken: string): Promise<void> {
+    // HANGING FIX: Add timeout wrapper for all Google API calls
+    const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number, operationName: string): Promise<T> => {
+      return Promise.race([
+        operation,
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`${operationName} timeout after ${timeoutMs}ms`));
+          }, timeoutMs);
+        })
+      ]);
+    };
+    
+    // Check if shim exists
+    let shimExists = false;
+    try {
+      console.log('🔍 Checking if execution shim exists...');
+      const existingFiles = await withTimeout(
+        this.gasClient.getProjectContent(scriptId, accessToken),
+        15000, // 15-second timeout
+        'Get project content'
+      );
+      shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run');
+      console.log(`📁 Shim exists: ${shimExists}`);
+    } catch (error: any) {
+      if (error.message?.includes('timeout')) {
+        console.error(`⏰ Timeout checking for shim: ${error.message}`);
+        throw new Error(`Setup failed: Unable to check project files - ${error.message}`);
+      }
+      // Assume shim doesn't exist if we can't check
+      console.warn('⚠️ Could not check for existing shim, assuming it does not exist');
+    }
+    
+    // Add execution shim if needed
+    if (!shimExists) {
+      console.log('📝 Creating execution shim...');
+      const shimCode = GASCodeGenerator.generateCode({
+        type: 'head_deployment',
+        timezone: 'America/Los_Angeles',
+        includeTestFunctions: true,
+        mcpVersion: '1.0.0'
       });
       
-      let helpMessage = `HTTP ${statusCode}: ${error.message || 'Unknown error occurred during doGet() proxy execution'}`;
-      let setupInstructions: string[] = [];
-
-      if (statusCode === 404) {
-        helpMessage = `doGet() function not found - auto-deployment may have failed or deployment does not include latest files with doGet() proxy`;
-        setupInstructions = [
-          '🚨 AUTO-DEPLOYMENT ISSUE:',
-          '   Auto-deployment may have failed to create or deploy the Web App properly',
-          '',
-          '📋 TROUBLESHOOTING STEPS:',
-          '1. Verify project exists: gas_ls(path="your-project")',
-          '2. Add doGet() proxy: gas_proxy_setup(scriptId="your-project")',
-          '3. Check deployments: gas_deploy_list(scriptId="your-project")',
-          '4. Retry with autoRedeploy enabled: gas_run(scriptId="your-project", js_statement="yourFunction()", autoRedeploy=true)',
-          '',
-          '💡 ALTERNATIVE - MANUAL DEPLOYMENT:',
-          '   • Visit https://script.google.com',
-          '   • Open your project',
-          '   • Ensure doGet() function is present',
-          '   • Deploy → New deployment → Web app',
-          '   • Set Execute as: Me, Who has access: Anyone',
-          '   • Deploy and note the deployment URL',
-          '',
-          '🚀 RUNTIME SUPPORT: GS, TS, HTML, ES6 with V8 runtime',
-          '⚡ AUTO-DEPLOY: Enabled by default for seamless execution'
-        ];
-      } else if (statusCode === 403) {
-        helpMessage = 'Permission denied - Cloud Platform project mismatch or insufficient scopes';
-        setupInstructions = [
-          '1. Ensure your Google Cloud Project is linked to the Apps Script project',
-          '2. Check that you have sufficient OAuth scopes',
-          '3. Re-authenticate with updated scopes if needed',
-          '4. Verify the script project is deployed for API use'
-        ];
+      const shimFile = shimCode.files.find(file => file.name === '__mcp_gas_run');
+      if (!shimFile?.source) {
+        throw new Error('Failed to generate execution shim code');
       }
-
-      // Return JSON error response
-      return {
-        status: 'error',
-        scriptId,
-        js_statement,
-        proxyFunction: 'doGet',
-        error: {
-          type: 'GASApiError',
-          message: error.message,
-          statusCode,
-          helpMessage,
-          setupInstructions
-        },
-        troubleshooting: {
-          autoDeploymentFeatures: [
-            '🚀 AUTO-DEPLOY: gas_run() automatically deploys as Web App by default',
-            '🔄 AUTO-VERSION: Creates new version with latest code changes',
-            '⚡ SEAMLESS: No manual deployment needed - just call gas_run()',
-            '🛠️ PROXY-SETUP: Automatically handles doGet() proxy function setup'
-          ],
-          runtimeSupport: [
-            '📝 Google Apps Script (.gs files)',
-            '🔷 JavaScript (.gs files) - Native Google Apps Script support',
-            '🌐 HTML files for web app UI',
-            '⚡ ES6+ JavaScript with V8 runtime',
-            '🔧 Modern JavaScript features and syntax'
-          ],
-          doGetRequirements: [
-            'Script must have a doGet() function (use gas_proxy_setup to add)',
-            'doGet() must handle dynamic function routing with globalThis',
-            'All target functions must be accessible from globalThis',
-            'Responses should be JSON-serializable'
-          ],
-          autoDeploymentWorkflow: [
-            '1. gas_run(scriptId="project", js_statement="targetFunction()") - that\'s it!',
-            '   Auto-deployment is enabled by default',
-            '2. Optional: gas_proxy_setup(scriptId="project") if doGet() missing',
-            '3. The tool automatically:',
-            '   • Creates new version with latest code',
-            '   • Deploys as Web App',
-            '   • Executes your function',
-            '   • Returns structured JSON response'
-          ],
-          proxyPattern: 'doGet() → __gas_run(js_statement) with JSON responses',
-          jsonHandling: 'Returns success/error objects that can be dehydrated/rehydrated'
-        },
-        executedAt: new Date().toISOString(),
-        sessionId: this.sessionAuthManager?.getSessionId(),
-        autoRedeploy: autoRedeploy,
-        runtime: 'V8'
-      };
+      
+      try {
+        await withTimeout(
+          this.gasClient.updateFile(scriptId, '__mcp_gas_run', shimFile.source, 0, accessToken),
+          20000, // 20-second timeout for file upload
+          'Update shim file'
+        );
+        console.log('✅ Execution shim created successfully');
+      } catch (error: any) {
+        if (error.message?.includes('timeout')) {
+          throw new Error(`Setup failed: Unable to create execution shim - ${error.message}`);
+        }
+        throw error;
+      }
     }
+    
+    // Update manifest
+    console.log('📋 Updating manifest entry points...');
+    try {
+      await withTimeout(
+        ensureManifestEntryPoints(this.gasClient, scriptId, 'WEB_APP', 'MYSELF', accessToken),
+        10000, // 10-second timeout
+        'Update manifest entry points'
+      );
+      console.log('✅ Manifest updated successfully');
+    } catch (error: any) {
+      if (error.message?.includes('timeout')) {
+        console.warn(`⚠️ Manifest update timeout: ${error.message} - continuing anyway`);
+      } else {
+        console.warn(`⚠️ Manifest update failed: ${error.message} - continuing anyway`);
+      }
+    }
+    
+    // Brief wait for processing
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Create HEAD deployment
+    console.log('🚀 Creating HEAD deployment...');
+    const deploymentOptions = {
+      entryPointType: 'WEB_APP' as const,
+      webAppConfig: {
+        access: 'MYSELF' as const,
+        executeAs: 'USER_ACCESSING' as const
+      }
+    };
+    
+    try {
+      await withTimeout(
+        this.gasClient.ensureHeadDeployment(
+          scriptId,
+          'HEAD deployment for testing',
+          deploymentOptions,
+          accessToken
+        ),
+        30000, // 30-second timeout for deployment
+        'Create HEAD deployment'
+      );
+      console.log('✅ HEAD deployment created successfully');
+    } catch (error: any) {
+      if (error.message?.includes('timeout')) {
+        throw new Error(`Setup failed: Unable to create deployment - ${error.message}`);
+      }
+      throw error;
+    }
+    
+    // Cache the deployment URL
+    console.log('🔗 Constructing deployment URL...');
+    try {
+      const gasRunUrl = await withTimeout(
+        this.gasClient.constructGasRunUrl(scriptId, accessToken),
+        10000, // 10-second timeout
+        'Construct gas run URL'
+      );
+      
+      if (this.sessionAuthManager && gasRunUrl) {
+        await this.sessionAuthManager.setCachedDeploymentUrl(scriptId, gasRunUrl);
+        console.log('✅ Deployment URL cached successfully');
+      }
+    } catch (error: any) {
+      if (error.message?.includes('timeout')) {
+        console.warn(`⚠️ URL construction timeout: ${error.message} - continuing anyway`);
+      } else {
+        console.warn(`⚠️ URL construction failed: ${error.message} - continuing anyway`);
+      }
+    }
+    
+    console.log('🎉 Infrastructure setup completed');
   }
 } 
