@@ -197,53 +197,73 @@ export async function gas_auth({
   try {
     switch (mode) {
       case 'status':
-        console.log('📊 Checking authentication status...');
-        const authStatus = authStateManager instanceof SessionAuthManager 
-          ? await authStateManager.getAuthStatus()
-          : authStateManager.getAuthStatus();
-        
-        if (authStatus.authenticated) {
-          return {
-            status: 'authenticated',
-            message: `Authenticated as ${authStatus.user?.email}`,
-            authenticated: true,
-            user: authStatus.user,
-            tokenValid: authStatus.tokenValid,
-            expiresIn: authStatus.expiresIn
-          };
-        } else {
+        try {
+          console.log('📊 Checking authentication status...');
+          const authStatus = authStateManager instanceof SessionAuthManager 
+            ? await authStateManager.getAuthStatus()
+            : authStateManager.getAuthStatus();
+          
+          if (authStatus.authenticated) {
+            return {
+              status: 'authenticated',
+              message: `Authenticated as ${authStatus.user?.email}`,
+              authenticated: true,
+              user: authStatus.user,
+              tokenValid: authStatus.tokenValid,
+              expiresIn: authStatus.expiresIn
+            };
+          } else {
+            return {
+              status: 'not_authenticated',
+              message: 'Not currently authenticated',
+              authenticated: false
+            };
+          }
+        } catch (statusError: any) {
+          // CRITICAL: Never throw auth errors from status mode to prevent auto-auth trigger
+          console.warn('⚠️ Error checking auth status (non-fatal):', statusError.message);
           return {
             status: 'not_authenticated',
-            message: 'Not currently authenticated',
+            message: 'Not currently authenticated (status check failed)',
             authenticated: false
           };
         }
 
       case 'logout':
-        console.log('🔓 Logging out...');
-        
-        // CLEANUP: Clear any active flows and resolvers for this auth key
-        activeAuthFlows.delete(authKey);
-        authFlowMutex.delete(authKey);
-        
-        const resolver = authCompletionResolvers.get(authKey);
-        if (resolver) {
-          clearTimeout(resolver.timeout);
-          authCompletionResolvers.delete(authKey);
-          resolverStates.delete(authKey);
+        try {
+          console.log('🔓 Logging out...');
+          
+          // CLEANUP: Clear any active flows and resolvers for this auth key
+          activeAuthFlows.delete(authKey);
+          authFlowMutex.delete(authKey);
+          
+          const resolver = authCompletionResolvers.get(authKey);
+          if (resolver) {
+            clearTimeout(resolver.timeout);
+            authCompletionResolvers.delete(authKey);
+            resolverStates.delete(authKey);
+          }
+          
+          if (authStateManager instanceof SessionAuthManager) {
+            await authStateManager.clearAuth();
+          } else {
+            authStateManager.clearAuth();
+          }
+          
+          return {
+            status: 'logged_out',
+            message: 'Successfully logged out',
+            authenticated: false
+          };
+        } catch (logoutError: any) {
+          // CRITICAL: Never throw auth errors from logout mode to prevent auto-auth trigger
+          console.warn('⚠️ Error during logout (non-fatal):', logoutError.message);
+          return {
+            status: 'logged_out',
+            message: 'Logout completed (with some cleanup errors)',
+            authenticated: false
+          };
         }
-        
-        if (authStateManager instanceof SessionAuthManager) {
-          await authStateManager.clearAuth();
-        } else {
-          authStateManager.clearAuth();
-        }
-        
-        return {
-          status: 'logged_out',
-          message: 'Successfully logged out',
-          authenticated: false
-        };
 
       case 'start':
       default:

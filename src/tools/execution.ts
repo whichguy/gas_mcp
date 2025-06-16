@@ -625,9 +625,6 @@ export class GASRunTool extends BaseTool {
             );
             
             console.log(`✅ Added execution shim (__mcp_gas_run) - ${shimFile.source.split('\n').length} lines`);
-            
-            // Wait a moment for the file to be processed
-            await new Promise(resolve => setTimeout(resolve, 1000));
           } else {
             console.log(`✅ Execution shim already exists, proceeding with deployment...`);
           }
@@ -636,9 +633,9 @@ export class GASRunTool extends BaseTool {
           console.log(`🔧 Updating manifest for WEB_APP deployment...`);
           await ensureManifestEntryPoints(this.gasClient, scriptId, 'WEB_APP', 'MYSELF', accessToken);
           
-          // Wait for manifest update to be processed by Google Apps Script
-          console.log(`⏳ Waiting for manifest update to be processed...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // REDUCED: Wait for manifest update to be processed (reduced from 2s to 500ms)
+          console.log(`⏳ Brief wait for manifest update processing...`);
+          await new Promise(resolve => setTimeout(resolve, 500));
 
           // STEP 3: Ensure HEAD deployment exists (creates stable /dev URL for testing)
           console.log(`🎯 Ensuring HEAD deployment exists for testing...`);

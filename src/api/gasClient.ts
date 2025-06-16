@@ -138,6 +138,9 @@ export class GASClient {
   private authClient: GASAuthClient;
   private scriptApi: any;
   private driveApi: any;
+  // PERFORMANCE OPTIMIZATION: Cache initialized clients by token
+  private clientCache = new Map<string, { scriptApi: any; driveApi: any; expires: number }>();
+  private readonly CLIENT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
   constructor() {
     // Use simplified OAuth configuration from JSON file only
@@ -160,7 +163,8 @@ export class GASClient {
   }
 
   /**
-   * Initialize the Google APIs client
+   * Initialize the Google APIs client with caching
+   * PERFORMANCE OPTIMIZED: Reuses clients for same token
    */
   private async initializeClient(accessToken?: string): Promise<void> {
     // accessToken must be provided for API calls since GASAuthClient doesn't manage tokens directly
@@ -170,7 +174,18 @@ export class GASClient {
     
     const token = accessToken;
     
-    console.log(`🔧 Initializing GAS client with token: ${token.substring(0, 20)}...`);
+    // OPTIMIZATION: Check cache first
+    const tokenHash = token.substring(0, 20); // Use first 20 chars as cache key
+    const cached = this.clientCache.get(tokenHash);
+    
+    if (cached && Date.now() < cached.expires) {
+      console.log(`🚀 Using cached API clients for token: ${tokenHash}...`);
+      this.scriptApi = cached.scriptApi;
+      this.driveApi = cached.driveApi;
+      return;
+    }
+    
+    console.log(`🔧 Initializing new API clients for token: ${tokenHash}...`);
     
     const auth = new google.auth.OAuth2();
     auth.setCredentials({ access_token: token });
@@ -178,7 +193,14 @@ export class GASClient {
     this.scriptApi = google.script({ version: 'v1', auth });
     this.driveApi = google.drive({ version: 'v3', auth });
     
-    console.log(`✅ GAS client initialized`);
+    // Cache the clients
+    this.clientCache.set(tokenHash, {
+      scriptApi: this.scriptApi,
+      driveApi: this.driveApi,
+      expires: Date.now() + this.CLIENT_CACHE_TTL
+    });
+    
+    console.log(`✅ API clients initialized and cached`);
     console.log(`   scriptApi available: ${!!this.scriptApi}`);
     console.log(`   driveApi available: ${!!this.driveApi}`);
   }
