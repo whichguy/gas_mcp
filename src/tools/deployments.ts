@@ -237,8 +237,8 @@ export class GASDeployCreateTool extends BaseTool {
           executeAs: webAppExecuteAs
         };
         
-        // If we got a Web App URL from the deployment, use it. Otherwise, construct the standard URL
-        const webAppUrl = deployment.webAppUrl || `https://script.google.com/macros/s/${deployment.deploymentId}/exec`;
+        // Always use gas_run URL format for consistency
+        const webAppUrl = deployment.webAppUrl;
         
         result.webAppUrl = webAppUrl;
         result.usage = [
@@ -406,14 +406,14 @@ export class GASDeployListTool extends BaseTool {
       const deployments = await this.gasClient.listDeployments(scriptId, accessToken);
 
       // Enhanced deployment analysis
-      const analysis = this.analyzeDeployments(deployments);
+      const analysis = this.analyzeDeployments(deployments, scriptId);
       
       return {
         scriptId,
         totalCount: deployments.length,
         
         // Raw deployment data (enhanced with detailed entry points)
-        deployments: this.formatDeployments(deployments),
+        deployments: this.formatDeployments(deployments, scriptId),
         
         // Enhanced categorization and analysis
         summary: {
@@ -462,7 +462,7 @@ export class GASDeployListTool extends BaseTool {
   /**
    * Comprehensive deployment analysis
    */
-  private analyzeDeployments(deployments: any[]): any {
+  private analyzeDeployments(deployments: any[], scriptId: string): any {
     const analysis = {
       webAppCount: 0,
       apiExecutableCount: 0,
@@ -517,7 +517,11 @@ export class GASDeployListTool extends BaseTool {
       if (hasWebApp) {
         analysis.webAppCount++;
         const webAppEntry = entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-        const webAppUrl = deployment.webAppUrl || webAppEntry?.webApp?.url;
+        // Get webAppUrl from entry point and convert to gas_run format if available
+        let webAppUrl = `https://script.google.com/macros/s/${scriptId}/dev`; // fallback
+        if (webAppEntry?.webApp?.url) {
+          webAppUrl = this.gasClient.constructGasRunUrlFromWebApp(webAppEntry.webApp.url);
+        }
         
         const webAppInfo = {
           deploymentId: deployment.deploymentId,
@@ -532,14 +536,9 @@ export class GASDeployListTool extends BaseTool {
         
         analysis.webApps.push(webAppInfo);
         
-        if (webAppUrl) {
-          analysis.urlCount++;
-          analysis.webAppUrls.push(webAppUrl);
-          analysis.testCommands.push(`curl "${webAppUrl}?func=myFunction"`);
-        } else {
-          analysis.issues.push(`Web App deployment ${deployment.deploymentId} missing URL`);
-          analysis.issueCount++;
-        }
+        analysis.urlCount++;
+        analysis.webAppUrls.push(webAppUrl);
+        analysis.testCommands.push(`curl "${webAppUrl}?func=myFunction"`);
       }
 
       // API Executable analysis
@@ -571,35 +570,43 @@ export class GASDeployListTool extends BaseTool {
   /**
    * Format deployments with enhanced information
    */
-  private formatDeployments(deployments: any[]): any[] {
-    return deployments.map(deployment => ({
-      deploymentId: deployment.deploymentId,
-      versionNumber: deployment.versionNumber,
-      description: deployment.description,
-      updateTime: deployment.updateTime,
-      createTime: deployment.createTime,
+  private async formatDeployments(deployments: any[], scriptId: string, accessToken?: string): Promise<any[]> {
+    return Promise.all(deployments.map(async deployment => {
+      const hasWebApp = (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'WEB_APP');
       
-      // Entry point analysis
-      entryPoints: (deployment.entryPoints || []).map((ep: any) => ({
-        type: ep.entryPointType,
-        webApp: ep.entryPointType === 'WEB_APP' ? {
-          url: ep.webApp?.url,
-          access: ep.webApp?.access,
-          executeAs: ep.webApp?.executeAs
-        } : undefined,
-        executionApi: ep.entryPointType === 'EXECUTION_API' ? {
-          access: ep.executionApi?.access
-        } : undefined
-      })),
-      
-      // Quick identifiers
-      isHead: deployment.versionNumber === null || deployment.versionNumber === undefined || deployment.versionNumber === 0,
-      hasWebApp: (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'WEB_APP'),
-      hasApiExecutable: (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'EXECUTION_API'),
-      webAppUrl: deployment.webAppUrl,
-      
-      // Deployment config
-      deploymentConfig: deployment.deploymentConfig
+      return {
+        deploymentId: deployment.deploymentId,
+        versionNumber: deployment.versionNumber,
+        description: deployment.description,
+        updateTime: deployment.updateTime,
+        createTime: deployment.createTime,
+        
+        // Entry point analysis
+        entryPoints: (deployment.entryPoints || []).map((ep: any) => ({
+          type: ep.entryPointType,
+          webApp: ep.entryPointType === 'WEB_APP' ? {
+            url: ep.webApp?.url,
+            access: ep.webApp?.access,
+            executeAs: ep.webApp?.executeAs
+          } : undefined,
+          executionApi: ep.entryPointType === 'EXECUTION_API' ? {
+            access: ep.executionApi?.access
+          } : undefined
+        })),
+        
+        // Quick identifiers
+        isHead: deployment.versionNumber === null || deployment.versionNumber === undefined || deployment.versionNumber === 0,
+        hasWebApp: hasWebApp,
+        hasApiExecutable: (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'EXECUTION_API'),
+        webAppUrl: hasWebApp && deployment.entryPoints ? 
+          (deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP')?.webApp?.url ? 
+            this.gasClient.constructGasRunUrlFromWebApp(deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP').webApp.url) : 
+            deployment.webAppUrl) : 
+          deployment.webAppUrl,
+        
+        // Deployment config
+        deploymentConfig: deployment.deploymentConfig
+      };
     }));
   }
 

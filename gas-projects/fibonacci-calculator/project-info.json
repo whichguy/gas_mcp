@@ -28,9 +28,11 @@
       "description": "String utility functions including double_string function with test cases"
     },
     {
-      "name": "__mcp_gas_run.gs",
+      "name": "__mcp_gas_run",
       "type": "SERVER_JS",
-      "description": "MCP runtime shim for dynamic function execution (fixed double extension issue)"
+      "purpose": "MCP runtime shim for dynamic execution",
+      "functions": ["doGet", "doPost", "__gas_run", "__gas_run_get", "__gas_run_post_json", "__gas_run_post_raw", "testMcpGasRun"],
+      "auto_generated": true
     }
   ],
   "functions": {

@@ -627,13 +627,34 @@ export class MCPGasServer {
   /**
    * Get server statistics
    */
-  getStats(): any {
-    const activeSessions = Array.from(this.sessions.values()).map(session => ({
-      sessionId: session.sessionId,
-      authenticated: session.authManager.isAuthenticated(),
-      lastUsed: session.lastUsed,
-      user: session.authManager.getUserInfo()?.email
-    }));
+  async getStats(): Promise<any> {
+    const activeSessions = await Promise.all(
+      Array.from(this.sessions.values()).map(async (session) => {
+        const authManager = session.authManager;
+        let isAuthenticated: boolean;
+        let userInfo: any;
+
+        if ('isAuthenticated' in authManager && typeof authManager.isAuthenticated === 'function') {
+          // Handle async SessionAuthManager
+          const authResult = authManager.isAuthenticated();
+          isAuthenticated = authResult instanceof Promise ? await authResult : authResult;
+          
+          const userResult = authManager.getUserInfo();
+          userInfo = userResult instanceof Promise ? await userResult : userResult;
+        } else {
+          // Handle sync AuthStateManager
+          isAuthenticated = false;
+          userInfo = null;
+        }
+
+        return {
+          sessionId: session.sessionId,
+          authenticated: isAuthenticated,
+          lastUsed: session.lastUsed,
+          user: userInfo?.email
+        };
+      })
+    );
 
     return {
       activeSessions: this.sessions.size,

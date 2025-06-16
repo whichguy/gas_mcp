@@ -50,7 +50,7 @@ mcp_gas/
 │   │   │   ├── appsscript.json         # GAS manifest
 │   │   │   ├── fibonacci.gs            # Main Fibonacci functions
 │   │   │   ├── test-stringUtils.gs     # String utility functions
-│   │   │   └── __mcp_gas_run.gs        # MCP runtime shim
+│   │   │   └── __mcp_gas_run           # MCP runtime shim
 │   │   └── deployments/                # Deployment configs
 │   │       └── deployment-info.json    # Deployment metadata
 │   │

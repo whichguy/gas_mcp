@@ -542,16 +542,22 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Extract Web App URL if available from entry points
+      // Always use gas_run URL format for consistency
       if (response.data.entryPoints) {
         console.log(`🔍 Entry points found in deployment:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
-          console.log(`🌐 Web App URL found: ${webAppEntry.webApp.url}`);
-          deployment.webAppUrl = webAppEntry.webApp.url;
+          console.log(`🌐 Web App URL found from API: ${webAppEntry.webApp.url}`);
+          console.log(`🔧 Converting to gas_run URL format...`);
+          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
+        } else if (webAppEntry) {
+          console.log(`🔧 Web App entry point found, using gas_run URL format`);
+          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          console.log(`✅ Gas_run URL: ${deployment.webAppUrl}`);
         } else {
-          console.log(`⚠️  Web App entry point found but no URL:`, webAppEntry);
+          console.log(`⚠️  No Web App entry point found`);
         }
       } else {
         console.log(`⚠️  No entry points found in deployment response`);
@@ -654,20 +660,20 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Extract Web App URL if available, or construct appropriate URL
+      // Always use gas_run URL format for consistency
       if (response.data.entryPoints) {
         console.log(`🔍 Entry points found:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
           console.log(`🌐 Web App URL detected from API: ${webAppEntry.webApp.url}`);
-          deployment.webAppUrl = webAppEntry.webApp.url;
-        } else if (deployment.deploymentId && webAppEntry) {
-          // Construct appropriate URL based on deployment type
-          const isHead = this.isHeadDeployment(deployment);
-          const constructedUrl = this.constructWebAppUrl(deployment.deploymentId, isHead);
-          console.log(`🌐 Constructed Web App URL: ${constructedUrl} (${isHead ? 'HEAD/dev' : 'versioned/exec'})`);
-          deployment.webAppUrl = constructedUrl;
+          console.log(`🔧 Converting to gas_run URL format...`);
+          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
+        } else if (webAppEntry) {
+          console.log(`🔧 Web App entry point found, using gas_run URL format`);
+          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          console.log(`✅ Gas_run URL: ${deployment.webAppUrl}`);
         }
       }
 
@@ -683,6 +689,58 @@ export class GASClient {
   constructWebAppUrl(deploymentId: string, isHeadDeployment: boolean = false): string {
     const urlSuffix = isHeadDeployment ? 'dev' : 'exec';
     return `https://script.google.com/macros/s/${deploymentId}/${urlSuffix}`;
+  }
+
+  /**
+   * Construct gas_run URL - Checks deployments to determine if domain format is needed
+   * If deployments use domain format (like fortifiedstrength.org), uses that with /dev
+   * Otherwise uses standard format: https://script.google.com/macros/s/SCRIPT_ID/dev
+   */
+  async constructGasRunUrl(scriptId: string, accessToken?: string): Promise<string> {
+    try {
+      // Check existing deployments to see if they use domain format
+      const deployments = await this.listDeployments(scriptId, accessToken);
+      
+      // Look for a WEB_APP deployment with a domain URL
+      for (const deployment of deployments) {
+        if (deployment.entryPoints) {
+          const webAppEntry = deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+          if (webAppEntry?.webApp?.url) {
+            const originalUrl = webAppEntry.webApp.url;
+            console.log(`🔍 Found WEB_APP URL: ${originalUrl}`);
+            
+            // Check if it uses domain format (contains /a/macros/)
+            if (originalUrl.includes('/a/macros/')) {
+              // Replace /exec with /dev in the domain format URL
+              const gasRunUrl = originalUrl.replace('/exec', '/dev');
+              console.log(`🌐 Using domain format gas_run URL: ${gasRunUrl}`);
+              return gasRunUrl;
+            }
+          }
+        }
+      }
+      
+      // Fallback to standard format if no domain deployments found
+      console.log(`📋 No domain format deployments found, using standard format`);
+      return `https://script.google.com/macros/s/${scriptId}/dev`;
+      
+    } catch (error: any) {
+      console.log(`⚠️ Could not check deployments for domain format: ${error.message}`);
+      console.log(`📋 Falling back to standard gas_run URL format`);
+      return `https://script.google.com/macros/s/${scriptId}/dev`;
+    }
+  }
+
+  /**
+   * Construct gas_run URL from existing web app URL - synchronous version
+   * Takes a web app URL and converts it to gas_run format by replacing /exec with /dev
+   */
+  constructGasRunUrlFromWebApp(webAppUrl: string): string {
+    if (webAppUrl.includes('/exec')) {
+      return webAppUrl.replace('/exec', '/dev');
+    }
+    // If it's already /dev or unknown format, return as-is
+    return webAppUrl;
   }
 
   /**
@@ -782,23 +840,20 @@ export class GASClient {
         entryPoints: response.data.entryPoints
       };
 
-      // Extract Web App URL if available, or construct /dev URL for HEAD deployment
+      // Always use gas_run URL format for HEAD deployments
       if (response.data.entryPoints) {
         console.log(`🔍 HEAD deployment entry points:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
           console.log(`🌐 HEAD Web App URL from API: ${webAppEntry.webApp.url}`);
-          // Note: API often returns /exec URLs even for HEAD deployments
-          // Always construct proper /dev URL for HEAD deployments
-          const headUrl = this.constructWebAppUrl(deployment.deploymentId, true);
-          console.log(`🔧 Corrected HEAD URL (/exec → /dev): ${headUrl}`);
-          deployment.webAppUrl = headUrl;
-        } else if (deployment.deploymentId) {
-          // Construct /dev URL for HEAD deployment
-          const headUrl = this.constructWebAppUrl(deployment.deploymentId, true);
-          console.log(`🌐 Constructed HEAD Web App URL: ${headUrl}`);
-          deployment.webAppUrl = headUrl;
+          console.log(`🔧 Converting to gas_run URL format for HEAD deployment...`);
+          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
+        } else if (webAppEntry) {
+          console.log(`🔧 Web App entry point found, using gas_run URL format`);
+          deployment.webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          console.log(`✅ Gas_run URL for HEAD: ${deployment.webAppUrl}`);
         }
         console.log(`🔄 This URL will serve the latest content automatically`);
       }
@@ -825,15 +880,14 @@ export class GASClient {
     if (existingHead) {
       console.log(`✅ Using existing HEAD deployment: ${existingHead.deploymentId}`);
       
-      // Get the web app URL if it's a web app deployment
-      // For HEAD deployments, always construct /dev URL instead of using API-provided /exec URL
+      // Always use gas_run URL format for HEAD deployments
       let webAppUrl = existingHead.webAppUrl;
       if (existingHead.entryPoints) {
         const webAppEntry = existingHead.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-        if (webAppEntry && existingHead.deploymentId) {
-          // Force /dev URL for HEAD deployment (API often returns incorrect /exec URLs)
-          webAppUrl = this.constructWebAppUrl(existingHead.deploymentId, true);
-          console.log(`🔧 Using corrected HEAD URL: ${webAppUrl} (forced /dev for testing)`);
+        if (webAppEntry) {
+          // Always use gas_run URL format for consistency
+          webAppUrl = await this.constructGasRunUrl(scriptId, accessToken);
+          console.log(`🔧 Using gas_run URL format for HEAD: ${webAppUrl}`);
         }
       }
       

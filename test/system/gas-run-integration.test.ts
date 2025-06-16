@@ -66,7 +66,7 @@ describe('Real gas_run Integration Tests', () => {
         try {
           await client.callTool('gas_run', {
             scriptId: 'test-script-id',
-            code: 'function test() { return "hello"; }'
+            js_statement: '"hello"'
           });
           expect.fail('Should require authentication');
         } catch (error: any) {
@@ -200,7 +200,7 @@ function testLATimezone() {
         console.log('\n🧮 Test 1: Basic Calculation');
         const calcResult = await client.callAndParse('gas_run', {
           scriptId: project.scriptId,
-          code: 'function run() { return testBasicCalculation(); }',
+          js_statement: 'testBasicCalculation()',
           autoRedeploy: true
         });
         
@@ -212,7 +212,7 @@ function testLATimezone() {
         console.log('\n📝 Test 2: String Manipulation');
         const stringResult = await client.callAndParse('gas_run', {
           scriptId: project.scriptId,
-          code: 'function run() { return testStringManipulation(); }',
+          js_statement: 'testStringManipulation()',
           autoRedeploy: true
         });
         
@@ -224,7 +224,7 @@ function testLATimezone() {
         console.log('\n🔢 Test 3: Array Operations');
         const arrayResult = await client.callAndParse('gas_run', {
           scriptId: project.scriptId,
-          code: 'function run() { return testArrayOperations(); }',
+          js_statement: 'testArrayOperations()',
           autoRedeploy: true
         });
         
@@ -236,7 +236,7 @@ function testLATimezone() {
         console.log('\n📅 Test 4: Date Operations with LA Timezone');
         const dateResult = await client.callAndParse('gas_run', {
           scriptId: project.scriptId,
-          code: 'function run() { return testLATimezone(); }',
+          js_statement: 'testLATimezone()',
           autoRedeploy: true
         });
         
@@ -248,7 +248,7 @@ function testLATimezone() {
         console.log('\n🧠 Test 5: Complex Logic');
         const complexResult = await client.callAndParse('gas_run', {
           scriptId: project.scriptId,
-          code: 'function run() { return testComplexLogic(); }',
+          js_statement: 'testComplexLogic()',
           autoRedeploy: true
         });
         
@@ -260,7 +260,7 @@ function testLATimezone() {
         console.log('\n🚨 Test 6: Error Handling');
         const errorResult = await client.callAndParse('gas_run', {
           scriptId: project.scriptId,
-          code: 'function run() { return testErrorHandling(); }',
+          js_statement: 'testErrorHandling()',
           autoRedeploy: true
         });
         
@@ -278,7 +278,7 @@ function testLATimezone() {
          const gasRunTool = tools.find(tool => tool.name === 'gas_run');
          expect(gasRunTool).to.exist;
          expect(gasRunTool?.inputSchema?.properties?.scriptId).to.exist;
-         expect(gasRunTool?.inputSchema?.properties?.code).to.exist;
+         expect(gasRunTool?.inputSchema?.properties?.js_statement).to.exist;
         
         console.log('✅ gas_run tool schema validated');
         console.log('✅ Infrastructure test completed (real project creation failed)');
@@ -299,7 +299,7 @@ function testLATimezone() {
         try {
           await client.callTool('gas_run', {
             scriptId: 'invalid-script-id',
-            code: 'function test() { return "test"; }'
+            js_statement: '"test"'
           });
           expect.fail('Should fail with invalid script ID');
         } catch (error: any) {
@@ -333,7 +333,7 @@ function testSyntaxError() {
       try {
         const errorResult = await client.callAndParse('gas_run', {
           scriptId: project.scriptId,
-          code: 'function run() { return testSyntaxError(); }',
+          js_statement: 'testSyntaxError()',
           autoRedeploy: true
         });
         
@@ -393,7 +393,7 @@ function dynamicTest() {
       // Test 1: Initial execution
       const result1 = await client.callAndParse('gas_run', {
         scriptId: project.scriptId,
-        code: 'function run() { return dynamicTest(); }',
+        js_statement: 'dynamicTest()',
         autoRedeploy: true
       });
       
@@ -419,7 +419,7 @@ function dynamicTest() {
       // Test 2: Should pick up changes with autoRedeploy
       const result2 = await client.callAndParse('gas_run', {
         scriptId: project.scriptId,
-        code: 'function run() { return dynamicTest(); }',
+        js_statement: 'dynamicTest()',
         autoRedeploy: true
       });
       

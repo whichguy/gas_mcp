@@ -200,7 +200,9 @@ export class GASFindDriveScriptTool extends BaseTool {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
-      }
+      },
+      redirect: 'follow',
+      credentials: 'include'
     });
 
     if (!response.ok) {
@@ -224,7 +226,9 @@ export class GASFindDriveScriptTool extends BaseTool {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
-        }
+        },
+        redirect: 'follow',
+        credentials: 'include'
       });
 
       if (!scriptsResponse.ok) {
@@ -398,7 +402,9 @@ export class GASBindScriptTool extends BaseTool {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
-      }
+      },
+      redirect: 'follow',
+      credentials: 'include'
     });
 
     if (!response.ok) {
@@ -438,7 +444,9 @@ export class GASBindScriptTool extends BaseTool {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(updateData)
+      body: JSON.stringify(updateData),
+      redirect: 'follow',
+      credentials: 'include'
     });
 
     if (!response.ok) {
@@ -458,7 +466,9 @@ export class GASBindScriptTool extends BaseTool {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
-      }
+      },
+      redirect: 'follow',
+      credentials: 'include'
     });
 
     if (!response.ok) {
@@ -624,7 +634,9 @@ export class GASCreateScriptTool extends BaseTool {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(projectData)
+      body: JSON.stringify(projectData),
+      redirect: 'follow',
+      credentials: 'include'
     });
 
     if (!createResponse.ok) {
@@ -667,7 +679,9 @@ export class GASCreateScriptTool extends BaseTool {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(contentData)
+      body: JSON.stringify(contentData),
+      redirect: 'follow',
+      credentials: 'include'
     });
 
     if (!response.ok) {
@@ -1160,7 +1174,9 @@ function main() {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
-      }
+      },
+      redirect: 'follow',
+      credentials: 'include'
     });
 
     if (!response.ok) {

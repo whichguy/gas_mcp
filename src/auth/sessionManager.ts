@@ -1,13 +1,11 @@
-import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// IN-MEMORY AUTHENTICATION STORAGE
+// Global Map to store all authentication sessions across MCP server instances
+const MEMORY_AUTH_SESSIONS = new Map<string, AuthSession>();
 
-// Store auth sessions in individual files by session ID
-const AUTH_DIR = join(__dirname, '../../.sessions');
+// RACE CONDITION FIX: Session operation locks to prevent concurrent Map access
+const sessionOperationLocks = new Map<string, Promise<void>>();
 
 /**
  * OAuth token information
@@ -43,17 +41,42 @@ export interface AuthSession {
 }
 
 /**
- * Session-based authentication manager
+ * Execute operation with session-specific lock to prevent race conditions
+ * RACE CONDITION FIX: Prevents concurrent access to session data
+ */
+async function withSessionLock<T>(sessionId: string, operation: () => T | Promise<T>): Promise<T> {
+  // Wait for any existing operation on this session
+  while (sessionOperationLocks.has(sessionId)) {
+    await sessionOperationLocks.get(sessionId);
+  }
+  
+  // Create new lock for this operation
+  let releaseLock: () => void;
+  const lockPromise = new Promise<void>(resolve => {
+    releaseLock = resolve;
+  });
+  sessionOperationLocks.set(sessionId, lockPromise);
+  
+  try {
+    return await operation();
+  } finally {
+    sessionOperationLocks.delete(sessionId);
+    releaseLock!();
+  }
+}
+
+/**
+ * In-Memory Session-based authentication manager
  * Supports concurrent MCP clients with proper isolation
- * NO SINGLETON PATTERN - each client gets its own instance
+ * NO FILE SYSTEM - all sessions stored in memory
+ * Sessions are lost on server restart (requires re-authentication)
+ * RACE CONDITION FIXES: Added session operation locking
  */
 export class SessionAuthManager {
   private sessionId: string;
-  private authSession: AuthSession | null = null;
-  private loaded = false;
 
   constructor(sessionId?: string) {
-    console.log(`🔧 SessionAuthManager constructor called with sessionId: ${sessionId || 'undefined'}`);
+    console.log(`🔧 SessionAuthManager (IN-MEMORY) constructor called with sessionId: ${sessionId || 'undefined'}`);
     
     // If no session ID provided, try to reuse existing valid session
     if (!sessionId) {
@@ -77,21 +100,12 @@ export class SessionAuthManager {
    */
   private findExistingValidSession(): string | null {
     try {
-      console.log(`🔍 Looking for existing sessions in: ${AUTH_DIR}`);
-      if (!existsSync(AUTH_DIR)) {
-        console.log(`⚠️  AUTH_DIR doesn't exist: ${AUTH_DIR}`);
-        return null;
-      }
+      console.log(`🔍 Looking for existing sessions in memory...`);
+      console.log(`💾 Found ${MEMORY_AUTH_SESSIONS.size} sessions in memory`);
       
-      const files = readdirSync(AUTH_DIR).filter((f: string) => f.endsWith('.json'));
-      console.log(`📁 Found ${files.length} session files: ${files.join(', ')}`);
-      
-      for (const file of files) {
+      for (const [sessionId, sessionData] of MEMORY_AUTH_SESSIONS.entries()) {
         try {
-          const filePath = join(AUTH_DIR, file);
-          console.log(`📄 Checking session file: ${filePath}`);
-          const sessionData = JSON.parse(readFileSync(filePath, 'utf8')) as AuthSession;
-          console.log(`   Session ID: ${sessionData.sessionId}`);
+          console.log(`📄 Checking session: ${sessionId}`);
           console.log(`   User: ${sessionData.user?.email}`);
           console.log(`   Expires at: ${sessionData.tokens?.expires_at} (${new Date(sessionData.tokens?.expires_at).toLocaleString()})`);
           
@@ -111,13 +125,16 @@ export class SessionAuthManager {
               return sessionData.sessionId;
             } else {
               console.log(`⏰ Session expired for ${sessionData.user.email}`);
+              // Clean up expired session
+              MEMORY_AUTH_SESSIONS.delete(sessionId);
             }
           } else {
             console.log(`⚠️  Session missing required fields`);
           }
         } catch (error) {
-          // Skip corrupted session files
-          console.warn(`⚠️  Skipping corrupted session file: ${file}`, error);
+          // Skip corrupted session data
+          console.warn(`⚠️  Skipping corrupted session: ${sessionId}`, error);
+          MEMORY_AUTH_SESSIONS.delete(sessionId);
         }
       }
       
@@ -137,239 +154,203 @@ export class SessionAuthManager {
   }
 
   /**
-   * Get session file path
+   * Store authentication session in memory with race condition protection
    */
-  private getSessionFilePath(): string {
-    return join(AUTH_DIR, `${this.sessionId}.json`);
-  }
-
-  /**
-   * Ensure auth directory exists
-   */
-  private ensureAuthDir(): void {
-    if (!existsSync(AUTH_DIR)) {
-      mkdirSync(AUTH_DIR, { recursive: true });
-    }
-  }
-
-  /**
-   * Load authentication session from file
-   */
-  private loadAuthSession(): void {
-    if (this.loaded) return;
-    
-    try {
-      const sessionFile = this.getSessionFilePath();
+  async setAuthSession(tokens: TokenInfo, user: UserInfo): Promise<void> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession: AuthSession = {
+        sessionId: this.sessionId,
+        tokens,
+        user,
+        createdAt: Date.now(),
+        lastUsed: Date.now()
+      };
       
-      if (existsSync(sessionFile)) {
-        const data = readFileSync(sessionFile, 'utf8');
-        const session = JSON.parse(data) as AuthSession;
-        
-        // Validate session structure and session ID match
-        if (session.tokens && session.user && session.createdAt && 
-            session.lastUsed && session.sessionId === this.sessionId) {
-          this.authSession = session;
-          console.log(`✅ Loaded session ${this.sessionId} for ${session.user.email}`);
-        } else {
-          console.log(`⚠️  Invalid session file for ${this.sessionId}, ignoring`);
-        }
-      }
-    } catch (error: any) {
-      console.warn(`⚠️  Failed to load session ${this.sessionId}:`, error.message);
-    }
-    
-    this.loaded = true;
+      MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
+      console.log(`✅ Stored session ${this.sessionId} for ${user.email} in memory`);
+    });
   }
 
   /**
-   * Force reload authentication session from file
-   * This bypasses the loaded cache and re-reads from disk
+   * Get current authentication session from memory with race condition protection
    */
-  public reloadAuthSession(): void {
-    this.loaded = false;
-    this.authSession = null;
-    this.loadAuthSession();
-  }
-
-  /**
-   * Save authentication session to file
-   */
-  private saveAuthSession(): void {
-    try {
-      this.ensureAuthDir();
-      const sessionFile = this.getSessionFilePath();
+  async getAuthSession(): Promise<AuthSession | null> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
       
-      if (this.authSession) {
-        writeFileSync(sessionFile, JSON.stringify(this.authSession, null, 2));
-        console.log(`✅ Saved session ${this.sessionId} for ${this.authSession.user.email}`);
-      } else {
-        // Remove file when clearing auth
-        if (existsSync(sessionFile)) {
-          try {
-            unlinkSync(sessionFile);
-            console.log(`✅ Cleared session file for ${this.sessionId}`);
-          } catch (error) {
-            console.warn(`⚠️  Failed to clear session file for ${this.sessionId}:`, error);
-          }
-        }
+      if (authSession) {
+        // Update last used timestamp
+        authSession.lastUsed = Date.now();
+        MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
       }
-    } catch (error: any) {
-      console.warn(`⚠️  Failed to save session ${this.sessionId}:`, error.message);
-    }
+      
+      return authSession || null;
+    });
   }
 
   /**
-   * Store authentication session
+   * Force reload authentication session (no-op for in-memory, just here for compatibility)
    */
-  setAuthSession(tokens: TokenInfo, user: UserInfo): void {
-    this.loadAuthSession();
-    
-    this.authSession = {
-      sessionId: this.sessionId,
-      tokens,
-      user,
-      createdAt: Date.now(),
-      lastUsed: Date.now()
-    };
-    
-    this.saveAuthSession();
+  public async reloadAuthSession(): Promise<void> {
+    console.log(`🔄 Reload session ${this.sessionId} (no-op for in-memory)`);
   }
 
   /**
-   * Get current authentication session
+   * Check if current token is valid (not expired) - INTERNAL METHOD (no locking)
    */
-  getAuthSession(): AuthSession | null {
-    this.loadAuthSession();
-    
-    if (this.authSession) {
-      this.authSession.lastUsed = Date.now();
-      this.saveAuthSession(); // Update lastUsed timestamp
-    }
-    return this.authSession;
-  }
-
-  /**
-   * Check if currently authenticated
-   */
-  isAuthenticated(): boolean {
-    this.loadAuthSession();
-    
-    if (!this.authSession) return false;
-    
-    // Check if token is valid
-    const tokenValid = this.isTokenValid();
-    
-    // Auto-delete expired tokens
-    if (!tokenValid) {
-      console.log(`🗑️  Auto-deleting expired session tokens for ${this.sessionId}`);
-      this.clearAuth();
-      return false;
-    }
-    
-    return true;
-  }
-
-  /**
-   * Check if current token is valid (not expired)
-   */
-  isTokenValid(): boolean {
-    this.loadAuthSession();
-    
-    if (!this.authSession) return false;
+  private isTokenValidInternal(authSession: AuthSession): boolean {
+    if (!authSession || !authSession.tokens) return false;
     
     // Add 5 minute buffer before expiration
     const bufferMs = 5 * 60 * 1000;
-    const isValid = Date.now() < (this.authSession.tokens.expires_at - bufferMs);
-    
-    // Auto-cleanup expired sessions
-    if (!isValid && this.authSession) {
-      console.log(`⏰ Session ${this.sessionId} token expired at ${new Date(this.authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
-      this.clearAuth();
-    }
+    const isValid = Date.now() < (authSession.tokens.expires_at - bufferMs);
     
     return isValid;
   }
 
   /**
-   * Get current access token if valid
+   * Check if currently authenticated with race condition protection
+   * FIXED: Removed double-locking by making token validation internal
    */
-  getValidToken(): string | null {
-    // This will auto-delete expired tokens via isAuthenticated()
-    if (!this.isAuthenticated()) return null;
-    return this.authSession!.tokens.access_token;
+  async isAuthenticated(): Promise<boolean> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      if (!authSession) return false;
+      
+      // Check if token is valid using internal method (no additional locking)
+      const tokenValid = this.isTokenValidInternal(authSession);
+      
+      // Auto-delete expired tokens
+      if (!tokenValid) {
+        console.log(`🗑️  Auto-deleting expired session tokens for ${this.sessionId}`);
+        MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+        return false;
+      }
+      
+      return true;
+    });
   }
 
   /**
-   * Get refresh token for renewal
+   * Check if current token is valid (not expired) with race condition protection
    */
-  getRefreshToken(): string | null {
-    this.loadAuthSession();
-    
-    if (!this.authSession?.tokens.refresh_token) return null;
-    return this.authSession.tokens.refresh_token;
+  async isTokenValid(): Promise<boolean> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      if (!authSession) return false;
+      
+      const isValid = this.isTokenValidInternal(authSession);
+      
+      // Auto-cleanup expired sessions
+      if (!isValid && authSession) {
+        console.log(`⏰ Session ${this.sessionId} token expired at ${new Date(authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
+        MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+      }
+      
+      return isValid;
+    });
   }
 
   /**
-   * Update tokens after refresh
+   * Get current access token if valid with race condition protection
    */
-  updateTokens(tokens: TokenInfo): void {
-    this.loadAuthSession();
-    
-    if (this.authSession) {
-      this.authSession.tokens = tokens;
-      this.authSession.lastUsed = Date.now();
-      this.saveAuthSession();
-    }
+  async getValidToken(): Promise<string | null> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      if (!authSession) return null;
+      
+      // Check token validity using internal method
+      if (!this.isTokenValidInternal(authSession)) {
+        console.log(`🗑️  Token expired for session ${this.sessionId}, removing session`);
+        MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+        return null;
+      }
+      
+      return authSession.tokens.access_token;
+    });
   }
 
   /**
-   * Get current user info
+   * Get refresh token for renewal with race condition protection
    */
-  getUserInfo(): UserInfo | null {
-    this.loadAuthSession();
-    return this.authSession?.user || null;
+  async getRefreshToken(): Promise<string | null> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      return authSession?.tokens.refresh_token || null;
+    });
   }
 
   /**
-   * Clear authentication session (logout)
+   * Update tokens after refresh with race condition protection
    */
-  clearAuth(): void {
-    this.authSession = null;
-    this.saveAuthSession();
+  async updateTokens(tokens: TokenInfo): Promise<void> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      
+      if (authSession) {
+        authSession.tokens = tokens;
+        authSession.lastUsed = Date.now();
+        MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
+        console.log(`✅ Updated tokens for session ${this.sessionId}`);
+      }
+    });
   }
 
   /**
-   * Get authentication status for reporting
+   * Get current user info with race condition protection
    */
-  getAuthStatus(): {
+  async getUserInfo(): Promise<UserInfo | null> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      return authSession?.user || null;
+    });
+  }
+
+  /**
+   * Clear authentication session (logout) with race condition protection
+   */
+  async clearAuth(): Promise<void> {
+    return await withSessionLock(this.sessionId, () => {
+      MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+      console.log(`✅ Cleared session ${this.sessionId} from memory`);
+    });
+  }
+
+  /**
+   * Get authentication status for reporting with race condition protection
+   * FIXED: Simplified to avoid double-locking issues
+   */
+  async getAuthStatus(): Promise<{
     sessionId: string;
     authenticated: boolean;
     user?: UserInfo;
     tokenValid: boolean;
     expiresIn?: number;
-  } {
-    this.loadAuthSession();
-    
-    if (!this.authSession) {
-      return { 
+  }> {
+    return await withSessionLock(this.sessionId, () => {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      
+      if (!authSession) {
+        return { 
+          sessionId: this.sessionId,
+          authenticated: false, 
+          tokenValid: false 
+        };
+      }
+
+      const tokenValid = this.isTokenValidInternal(authSession);
+      const expiresIn = tokenValid 
+        ? Math.max(0, Math.floor((authSession.tokens.expires_at - Date.now()) / 1000))
+        : 0;
+
+      return {
         sessionId: this.sessionId,
-        authenticated: false, 
-        tokenValid: false 
+        authenticated: true,
+        user: authSession.user,
+        tokenValid,
+        expiresIn
       };
-    }
-
-    const tokenValid = this.isTokenValid();
-    const expiresIn = tokenValid 
-      ? Math.max(0, Math.floor((this.authSession.tokens.expires_at - Date.now()) / 1000))
-      : 0;
-
-    return {
-      sessionId: this.sessionId,
-      authenticated: true,
-      user: this.authSession.user,
-      tokenValid,
-      expiresIn
-    };
+    });
   }
 
   /**
@@ -384,100 +365,75 @@ export class SessionAuthManager {
    * List all active sessions (for debugging/admin)
    */
   static listActiveSessions(): string[] {
-    try {
-      if (!existsSync(AUTH_DIR)) return [];
-      
-      return readdirSync(AUTH_DIR)
-        .filter((file: string) => file.endsWith('.json'))
-        .map((file: string) => file.replace('.json', ''));
-    } catch {
-      return [];
-    }
+    return Array.from(MEMORY_AUTH_SESSIONS.keys());
   }
 
   /**
    * Clean up expired sessions and tokens
    */
   static cleanupExpiredSessions(): number {
-    try {
-      if (!existsSync(AUTH_DIR)) return 0;
+    let cleaned = 0;
+    const currentTime = Date.now();
+    
+    for (const [sessionId, sessionData] of MEMORY_AUTH_SESSIONS.entries()) {
+      let shouldDelete = false;
       
-      const files = readdirSync(AUTH_DIR).filter((f: string) => f.endsWith('.json'));
-      let cleaned = 0;
-      
-      for (const file of files) {
-        try {
-          const sessionPath = join(AUTH_DIR, file);
-          const sessionData = JSON.parse(readFileSync(sessionPath, 'utf8'));
-          
-          let shouldDelete = false;
-          
-          // Clean up sessions older than 30 days
-          if (Date.now() - sessionData.lastUsed > 30 * 24 * 60 * 60 * 1000) {
-            console.log(`🗑️  Cleaning up old session: ${file} (last used: ${new Date(sessionData.lastUsed).toISOString()})`);
-            shouldDelete = true;
-          }
-          
-          // Clean up sessions with expired tokens
-          if (sessionData.tokens && sessionData.tokens.expires_at) {
-            const bufferMs = 5 * 60 * 1000; // 5 minute buffer
-            if (Date.now() >= (sessionData.tokens.expires_at - bufferMs)) {
-              console.log(`🗑️  Cleaning up expired token session: ${file} (expired: ${new Date(sessionData.tokens.expires_at).toISOString()})`);
-              shouldDelete = true;
-            }
-          }
-          
-          if (shouldDelete) {
-            unlinkSync(sessionPath);
-            cleaned++;
-          }
-        } catch (error) {
-          // Remove corrupted session files
-          console.log(`🗑️  Removing corrupted session file: ${file}`);
-          unlinkSync(join(AUTH_DIR, file));
-          cleaned++;
-        }
+      // Clean up sessions older than 30 days
+      if (currentTime - sessionData.lastUsed > 30 * 24 * 60 * 60 * 1000) {
+        console.log(`🗑️  Cleaning up old session: ${sessionId} (last used: ${new Date(sessionData.lastUsed).toISOString()})`);
+        shouldDelete = true;
       }
       
-      if (cleaned > 0) {
-        console.log(`✅ Cleaned up ${cleaned} expired/invalid session(s)`);
+      // Clean up expired tokens
+      if (sessionData.tokens?.expires_at && currentTime > sessionData.tokens.expires_at) {
+        console.log(`🗑️  Cleaning up expired session: ${sessionId} (expired: ${new Date(sessionData.tokens.expires_at).toISOString()})`);
+        shouldDelete = true;
       }
       
-      return cleaned;
-    } catch {
-      return 0;
+      if (shouldDelete) {
+        MEMORY_AUTH_SESSIONS.delete(sessionId);
+        cleaned++;
+      }
     }
+    
+    console.log(`🧹 Cleaned up ${cleaned} expired sessions from memory`);
+    return cleaned;
   }
 
   /**
-   * Clear ALL cached session tokens (for startup cleanup)
+   * Clear all sessions (for testing/debugging)
    */
   static clearAllSessions(): number {
-    try {
-      if (!existsSync(AUTH_DIR)) return 0;
-      
-      const files = readdirSync(AUTH_DIR).filter((f: string) => f.endsWith('.json'));
-      let cleared = 0;
-      
-      for (const file of files) {
-        try {
-          const sessionPath = join(AUTH_DIR, file);
-          unlinkSync(sessionPath);
-          cleared++;
-          console.log(`🗑️  Cleared session: ${file}`);
-        } catch (error) {
-          console.warn(`⚠️  Failed to clear session file: ${file}`, error);
-        }
+    const count = MEMORY_AUTH_SESSIONS.size;
+    MEMORY_AUTH_SESSIONS.clear();
+    console.log(`🗑️  Cleared ${count} sessions from memory`);
+    return count;
+  }
+
+  /**
+   * Get memory usage statistics
+   */
+  static getMemoryStats(): {
+    totalSessions: number;
+    activeSessions: number;
+    expiredSessions: number;
+  } {
+    const currentTime = Date.now();
+    let activeSessions = 0;
+    let expiredSessions = 0;
+    
+    for (const sessionData of MEMORY_AUTH_SESSIONS.values()) {
+      if (sessionData.tokens?.expires_at && currentTime < sessionData.tokens.expires_at) {
+        activeSessions++;
+      } else {
+        expiredSessions++;
       }
-      
-      if (cleared > 0) {
-        console.log(`✅ Cleared ${cleared} cached session token(s)`);
-      }
-      
-      return cleared;
-    } catch (error) {
-      console.warn('⚠️  Failed to clear sessions:', error);
-      return 0;
     }
+    
+    return {
+      totalSessions: MEMORY_AUTH_SESSIONS.size,
+      activeSessions,
+      expiredSessions
+    };
   }
 } 

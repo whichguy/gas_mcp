@@ -51,7 +51,7 @@ src/
 ├── appsscript.json          # GAS manifest configuration
 ├── fibonacci.gs             # Fibonacci calculation functions
 ├── test-stringUtils.gs      # String utility functions
-└── __mcp_gas_run.gs        # MCP runtime shim (fixed version)
+└── __mcp_gas_run           # MCP runtime shim (correct naming)
 ```
 
 ## **Usage Examples**
@@ -88,8 +88,8 @@ curl "https://script.google.com/macros/.../exec?function_plus_args=fib(9)"
 ## **Development Notes**
 
 ### **Fixed Issues**
-- ✅ **Double Extension Bug**: Fixed `__mcp_gas_run.gs.gs` → `__mcp_gas_run.gs`
-- ✅ **Extension Handling**: Proper gas_write integration for file creation
+- ✅ **Extension Handling**: Fixed naming consistency - `__mcp_gas_run` has no extension (gas_write strips .gs automatically)
+- ✅ **Code Generation**: Updated all references to use correct filename without extension
 - ✅ **Version Tracking**: Updated to v1.0.1 with fix indicators
 
 ### **Architecture**

@@ -249,9 +249,10 @@ export abstract class BaseTool implements Tool {
   protected async requireAuthentication(): Promise<string> {
     // Try session auth first if available
     if (this.sessionAuthManager) {
+      // RACE CONDITION FIX: Use async session manager methods
       // First attempt - use cached auth state
-      if (this.sessionAuthManager.isAuthenticated()) {
-        const token = this.sessionAuthManager.getValidToken();
+      if (await this.sessionAuthManager.isAuthenticated()) {
+        const token = await this.sessionAuthManager.getValidToken();
         if (token) {
           return token;
         }
@@ -260,11 +261,11 @@ export abstract class BaseTool implements Tool {
       // If first attempt failed, reload auth state from disk
       // This ensures we see authentication saved by other tools (like gas_auth)
       console.log(`🔄 [${this.name}] Reloading auth state to check for fresh authentication...`);
-      this.sessionAuthManager.reloadAuthSession();
+      await this.sessionAuthManager.reloadAuthSession();
       
       // Second attempt - try again with fresh state
-      if (this.sessionAuthManager.isAuthenticated()) {
-        const token = this.sessionAuthManager.getValidToken();
+      if (await this.sessionAuthManager.isAuthenticated()) {
+        const token = await this.sessionAuthManager.getValidToken();
         if (token) {
           console.log(`✅ [${this.name}] Found fresh authentication after reload`);
           return token;
@@ -439,9 +440,9 @@ export abstract class BaseTool implements Tool {
    * @protected
    * @returns Authentication status information
    */
-  protected getAuthStatus() {
+  protected async getAuthStatus() {
     if (this.sessionAuthManager) {
-      return this.sessionAuthManager.getAuthStatus();
+      return await this.sessionAuthManager.getAuthStatus();
     }
     return this.authStateManager.getAuthStatus();
   }
