@@ -336,44 +336,31 @@ export class MCPGasServer {
 
       console.log(`✅ [Session ${sessionId}] Auto-auth flow initiated successfully`);
       
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(response, null, 2)
-          }
-        ],
-        isError: false // Not treating as error since we're helping resolve it
-      };
+      // SCHEMA FIX: Return plain object, let server handle MCP wrapping
+      return response;
 
     } catch (authError: any) {
       console.error(`❌ [Session ${sessionId}] Failed to auto-launch auth flow:`, authError);
       
       // Fall back to original error handling if auto-auth fails
+      // SCHEMA FIX: Return plain object with isError flag for server to handle
       return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              error: {
-                type: error.constructor.name,
-                message: error.message,
-                code: error.code,
-                data: error.data
-              },
-              autoAuthFailed: {
-                error: authError.message,
-                fallback: 'Manual authentication required'
-              },
-              sessionId,
-              instructions: [
-                '🔑 Authentication required',
-                '❌ Auto-authentication failed - please authenticate manually',
-                '🚀 Use: gas_auth(mode="start") to authenticate',
-                '📝 Then retry your original request'
-              ]
-            }, null, 2)
-          }
+        error: {
+          type: error.constructor.name,
+          message: error.message,
+          code: error.code,
+          data: error.data
+        },
+        autoAuthFailed: {
+          error: authError.message,
+          fallback: 'Manual authentication required'
+        },
+        sessionId,
+        instructions: [
+          '🔑 Authentication required',
+          '❌ Auto-authentication failed - please authenticate manually',
+          '🚀 Use: gas_auth(mode="start") to authenticate',
+          '📝 Then retry your original request'
         ],
         isError: true
       };
@@ -497,14 +484,26 @@ export class MCPGasServer {
 
         console.log(`[Session ${session.sessionId}] Tool ${name} completed successfully`);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(responseWithSession, null, 2)
-            }
-          ]
-        };
+        // SCHEMA FIX: Check if tool already returned proper MCP format
+        // Some tools (like gas_auth) return { content: [...], isError: false }
+        // Others return plain objects that need wrapping
+        if (result && Array.isArray(result.content)) {
+          // Tool already returned proper MCP format, just add sessionId
+          return {
+            ...result,
+            sessionId: session.sessionId
+          };
+        } else {
+          // Tool returned plain object, wrap it in MCP format
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(responseWithSession, null, 2)
+              }
+            ]
+          };
+        }
       } catch (error: any) {
         const sessionId = this.currentSessionId || 'unknown';
         console.error(`[Session ${sessionId}] Tool ${name} failed:`, error);
@@ -515,7 +514,29 @@ export class MCPGasServer {
             process.env.MCP_TEST_MODE !== 'true') {
           // Get session for auto-auth (fallback to current session if needed)
           const currentSession = this.sessions.get(sessionId) || this.getOrCreateSession(sessionId);
-          return await this.handleAuthenticationError(error, currentSession, sessionId);
+          const authResponse = await this.handleAuthenticationError(error, currentSession, sessionId);
+          
+          // Handle auth response which might have isError flag
+          if (authResponse.isError) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(authResponse, null, 2)
+                }
+              ],
+              isError: true
+            };
+          } else {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(authResponse, null, 2)
+                }
+              ]
+            };
+          }
         }
 
         // Handle MCP Gas errors with structured information

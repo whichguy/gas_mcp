@@ -249,27 +249,32 @@ export abstract class BaseTool implements Tool {
   protected async requireAuthentication(): Promise<string> {
     // Try session auth first if available
     if (this.sessionAuthManager) {
-      // RACE CONDITION FIX: Use async session manager methods
-      // First attempt - use cached auth state
-      if (await this.sessionAuthManager.isAuthenticated()) {
-        const token = await this.sessionAuthManager.getValidToken();
-        if (token) {
-          return token;
+      try {
+        // SIMPLIFIED: Basic async operations since MCP is half-duplex
+        // First attempt - use cached auth state
+        if (await this.sessionAuthManager.isAuthenticated()) {
+          const token = await this.sessionAuthManager.getValidToken();
+          if (token) {
+            return token;
+          }
         }
-      }
 
-      // If first attempt failed, reload auth state from disk
-      // This ensures we see authentication saved by other tools (like gas_auth)
-      console.log(`🔄 [${this.name}] Reloading auth state to check for fresh authentication...`);
-      await this.sessionAuthManager.reloadAuthSession();
-      
-      // Second attempt - try again with fresh state
-      if (await this.sessionAuthManager.isAuthenticated()) {
-        const token = await this.sessionAuthManager.getValidToken();
-        if (token) {
-          console.log(`✅ [${this.name}] Found fresh authentication after reload`);
-          return token;
+        // If first attempt failed, reload auth state from disk
+        // This ensures we see authentication saved by other tools (like gas_auth)
+        console.log(`🔄 [${this.name}] Reloading auth state to check for fresh authentication...`);
+        await this.sessionAuthManager.reloadAuthSession();
+        
+        // Second attempt - try again with fresh state
+        if (await this.sessionAuthManager.isAuthenticated()) {
+          const token = await this.sessionAuthManager.getValidToken();
+          if (token) {
+            console.log(`✅ [${this.name}] Found fresh authentication after reload`);
+            return token;
+          }
         }
+      } catch (error: any) {
+        // Log auth errors but continue to fallback
+        console.warn(`⚠️ [${this.name}] Session auth error:`, error.message);
       }
 
       // Both attempts failed

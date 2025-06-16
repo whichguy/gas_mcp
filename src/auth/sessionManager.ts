@@ -4,9 +4,6 @@ import { randomUUID } from 'crypto';
 // Global Map to store all authentication sessions across MCP server instances
 const MEMORY_AUTH_SESSIONS = new Map<string, AuthSession>();
 
-// RACE CONDITION FIX: Session operation locks to prevent concurrent Map access
-const sessionOperationLocks = new Map<string, Promise<void>>();
-
 /**
  * OAuth token information
  */
@@ -38,49 +35,15 @@ export interface AuthSession {
   user: UserInfo;
   createdAt: number;
   lastUsed: number;
+  deploymentUrls?: Map<string, string>; // Map of scriptId -> gas_run URL
 }
 
 /**
- * Execute operation with session-specific lock to prevent race conditions
- * RACE CONDITION FIX: Prevents concurrent access to session data
- * PERFORMANCE OPTIMIZED: Reduced lock contention with efficient waiting
- */
-async function withSessionLock<T>(sessionId: string, operation: () => T | Promise<T>): Promise<T> {
-  // OPTIMIZED: More efficient lock waiting with bounded retry
-  const maxWaitAttempts = 50; // Max 5 seconds at 100ms intervals
-  let waitAttempts = 0;
-  
-  while (sessionOperationLocks.has(sessionId) && waitAttempts < maxWaitAttempts) {
-    await new Promise(resolve => setTimeout(resolve, 100)); // 100ms intervals
-    waitAttempts++;
-  }
-  
-  // If still locked after max wait, proceed anyway to prevent infinite hangs
-  if (sessionOperationLocks.has(sessionId)) {
-    console.warn(`⚠️ Session ${sessionId} lock timeout after ${maxWaitAttempts * 100}ms, proceeding anyway`);
-  }
-  
-  // Create new lock for this operation
-  let releaseLock: () => void;
-  const lockPromise = new Promise<void>(resolve => {
-    releaseLock = resolve;
-  });
-  sessionOperationLocks.set(sessionId, lockPromise);
-  
-  try {
-    return await operation();
-  } finally {
-    sessionOperationLocks.delete(sessionId);
-    releaseLock!();
-  }
-}
-
-/**
- * In-Memory Session-based authentication manager
- * Supports concurrent MCP clients with proper isolation
+ * Simplified Session-based authentication manager
+ * Supports concurrent MCP clients with basic isolation
  * NO FILE SYSTEM - all sessions stored in memory
  * Sessions are lost on server restart (requires re-authentication)
- * RACE CONDITION FIXES: Added session operation locking
+ * SIMPLIFIED: Removed complex locking since MCP is half-duplex
  */
 export class SessionAuthManager {
   private sessionId: string;
@@ -164,38 +127,36 @@ export class SessionAuthManager {
   }
 
   /**
-   * Store authentication session in memory with race condition protection
+   * Store authentication session in memory
+   * SIMPLIFIED: Removed complex locking since MCP is half-duplex
    */
   async setAuthSession(tokens: TokenInfo, user: UserInfo): Promise<void> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession: AuthSession = {
-        sessionId: this.sessionId,
-        tokens,
-        user,
-        createdAt: Date.now(),
-        lastUsed: Date.now()
-      };
-      
-      MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
-      console.log(`✅ Stored session ${this.sessionId} for ${user.email} in memory`);
-    });
+    const authSession: AuthSession = {
+      sessionId: this.sessionId,
+      tokens,
+      user,
+      createdAt: Date.now(),
+      lastUsed: Date.now()
+    };
+    
+    MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
+    console.log(`✅ Stored session ${this.sessionId} for ${user.email} in memory`);
   }
 
   /**
-   * Get current authentication session from memory with race condition protection
+   * Get current authentication session from memory
+   * SIMPLIFIED: Basic Map operation since MCP is half-duplex
    */
   async getAuthSession(): Promise<AuthSession | null> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      
-      if (authSession) {
-        // Update last used timestamp
-        authSession.lastUsed = Date.now();
-        MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
-      }
-      
-      return authSession || null;
-    });
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    
+    if (authSession) {
+      // Update last used timestamp
+      authSession.lastUsed = Date.now();
+      MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
+    }
+    
+    return authSession || null;
   }
 
   /**
@@ -206,7 +167,7 @@ export class SessionAuthManager {
   }
 
   /**
-   * Check if current token is valid (not expired) - INTERNAL METHOD (no locking)
+   * Check if current token is valid (not expired) - INTERNAL METHOD
    */
   private isTokenValidInternal(authSession: AuthSession): boolean {
     if (!authSession || !authSession.tokens) return false;
@@ -219,116 +180,104 @@ export class SessionAuthManager {
   }
 
   /**
-   * Check if currently authenticated with race condition protection
-   * FIXED: Removed double-locking by making token validation internal
+   * Check if currently authenticated
+   * SIMPLIFIED: Basic operation since MCP is half-duplex
    */
   async isAuthenticated(): Promise<boolean> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      if (!authSession) return false;
-      
-      // Check if token is valid using internal method (no additional locking)
-      const tokenValid = this.isTokenValidInternal(authSession);
-      
-      // Auto-delete expired tokens
-      if (!tokenValid) {
-        console.log(`🗑️  Auto-deleting expired session tokens for ${this.sessionId}`);
-        MEMORY_AUTH_SESSIONS.delete(this.sessionId);
-        return false;
-      }
-      
-      return true;
-    });
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    if (!authSession) return false;
+    
+    // Check if token is valid
+    const tokenValid = this.isTokenValidInternal(authSession);
+    
+    // Auto-delete expired tokens
+    if (!tokenValid) {
+      console.log(`🗑️  Auto-deleting expired session tokens for ${this.sessionId}`);
+      MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+      return false;
+    }
+    
+    return true;
   }
 
   /**
-   * Check if current token is valid (not expired) with race condition protection
+   * Check if current token is valid (not expired)
+   * SIMPLIFIED: Basic operation since MCP is half-duplex
    */
   async isTokenValid(): Promise<boolean> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      if (!authSession) return false;
-      
-      const isValid = this.isTokenValidInternal(authSession);
-      
-      // Auto-cleanup expired sessions
-      if (!isValid && authSession) {
-        console.log(`⏰ Session ${this.sessionId} token expired at ${new Date(authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
-        MEMORY_AUTH_SESSIONS.delete(this.sessionId);
-      }
-      
-      return isValid;
-    });
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    if (!authSession) return false;
+    
+    const isValid = this.isTokenValidInternal(authSession);
+    
+    // Auto-cleanup expired sessions
+    if (!isValid && authSession) {
+      console.log(`⏰ Session ${this.sessionId} token expired at ${new Date(authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
+      MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+    }
+    
+    return isValid;
   }
 
   /**
-   * Get current access token if valid with race condition protection
+   * Get current access token if valid
+   * SIMPLIFIED: Basic operation since MCP is half-duplex
    */
   async getValidToken(): Promise<string | null> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      if (!authSession) return null;
-      
-      // Check token validity using internal method
-      if (!this.isTokenValidInternal(authSession)) {
-        console.log(`🗑️  Token expired for session ${this.sessionId}, removing session`);
-        MEMORY_AUTH_SESSIONS.delete(this.sessionId);
-        return null;
-      }
-      
-      return authSession.tokens.access_token;
-    });
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    if (!authSession) return null;
+    
+    // Check token validity
+    if (!this.isTokenValidInternal(authSession)) {
+      console.log(`🗑️  Token expired for session ${this.sessionId}, removing session`);
+      MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+      return null;
+    }
+    
+    return authSession.tokens.access_token;
   }
 
   /**
-   * Get refresh token for renewal with race condition protection
+   * Get refresh token for renewal
    */
   async getRefreshToken(): Promise<string | null> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      return authSession?.tokens.refresh_token || null;
-    });
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    return authSession?.tokens.refresh_token || null;
   }
 
   /**
-   * Update tokens after refresh with race condition protection
+   * Update tokens after refresh
    */
   async updateTokens(tokens: TokenInfo): Promise<void> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      
-      if (authSession) {
-        authSession.tokens = tokens;
-        authSession.lastUsed = Date.now();
-        MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
-        console.log(`✅ Updated tokens for session ${this.sessionId}`);
-      }
-    });
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    
+    if (authSession) {
+      authSession.tokens = tokens;
+      authSession.lastUsed = Date.now();
+      MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
+      console.log(`✅ Updated tokens for session ${this.sessionId}`);
+    }
   }
 
   /**
-   * Get current user info with race condition protection
+   * Get current user info
    */
   async getUserInfo(): Promise<UserInfo | null> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      return authSession?.user || null;
-    });
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    return authSession?.user || null;
   }
 
   /**
-   * Clear authentication session (logout) with race condition protection
+   * Clear authentication session (logout)
    */
   async clearAuth(): Promise<void> {
-    return await withSessionLock(this.sessionId, () => {
-      MEMORY_AUTH_SESSIONS.delete(this.sessionId);
-      console.log(`✅ Cleared session ${this.sessionId} from memory`);
-    });
+    MEMORY_AUTH_SESSIONS.delete(this.sessionId);
+    console.log(`✅ Cleared session ${this.sessionId} from memory`);
   }
 
   /**
-   * Get authentication status for reporting with race condition protection
-   * FIXED: Simplified to avoid double-locking issues
+   * Get authentication status for reporting
+   * SIMPLIFIED: Basic operation since MCP is half-duplex
    */
   async getAuthStatus(): Promise<{
     sessionId: string;
@@ -337,30 +286,28 @@ export class SessionAuthManager {
     tokenValid: boolean;
     expiresIn?: number;
   }> {
-    return await withSessionLock(this.sessionId, () => {
-      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
-      
-      if (!authSession) {
-        return { 
-          sessionId: this.sessionId,
-          authenticated: false, 
-          tokenValid: false 
-        };
-      }
-
-      const tokenValid = this.isTokenValidInternal(authSession);
-      const expiresIn = tokenValid 
-        ? Math.max(0, Math.floor((authSession.tokens.expires_at - Date.now()) / 1000))
-        : 0;
-
-      return {
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    
+    if (!authSession) {
+      return { 
         sessionId: this.sessionId,
-        authenticated: true,
-        user: authSession.user,
-        tokenValid,
-        expiresIn
+        authenticated: false, 
+        tokenValid: false 
       };
-    });
+    }
+
+    const tokenValid = this.isTokenValidInternal(authSession);
+    const expiresIn = tokenValid 
+      ? Math.max(0, Math.floor((authSession.tokens.expires_at - Date.now()) / 1000))
+      : 0;
+
+    return {
+      sessionId: this.sessionId,
+      authenticated: true,
+      user: authSession.user,
+      tokenValid,
+      expiresIn
+    };
   }
 
   /**
@@ -418,6 +365,48 @@ export class SessionAuthManager {
     MEMORY_AUTH_SESSIONS.clear();
     console.log(`🗑️  Cleared ${count} sessions from memory`);
     return count;
+  }
+
+  /**
+   * Cache deployment URL for a script ID
+   */
+  async setCachedDeploymentUrl(scriptId: string, gasRunUrl: string): Promise<void> {
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    
+    if (authSession) {
+      if (!authSession.deploymentUrls) {
+        authSession.deploymentUrls = new Map();
+      }
+      authSession.deploymentUrls.set(scriptId, gasRunUrl);
+      MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
+      console.log(`✅ Cached deployment URL for ${scriptId}: ${gasRunUrl}`);
+    }
+  }
+
+  /**
+   * Get cached deployment URL for a script ID
+   */
+  async getCachedDeploymentUrl(scriptId: string): Promise<string | null> {
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    
+    if (authSession?.deploymentUrls) {
+      return authSession.deploymentUrls.get(scriptId) || null;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Clear cached deployment URLs for this session
+   */
+  async clearCachedDeploymentUrls(): Promise<void> {
+    const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+    
+    if (authSession) {
+      authSession.deploymentUrls = new Map();
+      MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
+      console.log(`✅ Cleared cached deployment URLs for session ${this.sessionId}`);
+    }
   }
 
   /**

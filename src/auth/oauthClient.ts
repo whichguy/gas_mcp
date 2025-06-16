@@ -432,22 +432,39 @@ export class GASAuthClient {
      */
     async getUserInfo(accessToken: string): Promise<UserInfo> {
         try {
-            console.log('🔄 Fetching user information...');
+            console.log(`📡 [GOOGLE OAUTH API] Starting getUserInfo request`);
+            console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+            console.log(`   📍 URL: https://www.googleapis.com/oauth2/v2/userinfo`);
+            console.log(`   🔑 Auth: Token present (${accessToken.substring(0, 10)}...)`);
+            
+            const startTime = Date.now();
             
             const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
-                },
-                redirect: 'follow',
-                credentials: 'include'
+                }
             });
+
+            const duration = Date.now() - startTime;
+            console.log(`📥 [GOOGLE OAUTH API] getUserInfo response received after ${duration}ms`);
+            console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
 
             if (!response.ok) {
                 const errorText = await response.text();
+                console.error(`❌ [GOOGLE OAUTH API ERROR] getUserInfo failed`);
+                console.error(`   🔢 Status: ${response.status} ${response.statusText}`);
+                console.error(`   📄 Error body: ${errorText}`);
+                console.error(`   ⏱️  Duration: ${duration}ms`);
                 throw new Error(`User info fetch failed: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
             const data = await response.json();
+
+            console.log(`✅ [GOOGLE OAUTH API SUCCESS] getUserInfo completed`);
+            console.log(`   📊 User email: ${data.email || 'No email'}`);
+            console.log(`   📊 User name: ${data.name || 'No name'}`);
+            console.log(`   📏 Response size: ${JSON.stringify(data).length} characters`);
+            console.log(`   ⏱️  Total duration: ${duration}ms`);
 
             if (!data.email) {
                 throw new Error('No email address in user info response');
@@ -478,7 +495,12 @@ export class GASAuthClient {
      */
     async revokeTokens(accessToken: string): Promise<void> {
         try {
-            console.log('🔄 Revoking access token...');
+            console.log(`📡 [GOOGLE OAUTH API] Starting token revocation`);
+            console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+            console.log(`   📍 URL: https://oauth2.googleapis.com/revoke`);
+            console.log(`   🔑 Token: ${accessToken.substring(0, 10)}...`);
+            
+            const startTime = Date.now();
             
             const response = await fetch('https://oauth2.googleapis.com/revoke', {
                 method: 'POST',
@@ -487,16 +509,19 @@ export class GASAuthClient {
                 },
                 body: new URLSearchParams({
                     token: accessToken,
-                }),
-                redirect: 'follow',
-                credentials: 'include'
+                })
             });
 
+            const duration = Date.now() - startTime;
+            console.log(`📥 [GOOGLE OAUTH API] Token revocation response received after ${duration}ms`);
+            console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
+
             if (!response.ok) {
-                console.warn(`Token revocation failed: ${response.status} ${response.statusText}`);
+                console.warn(`⚠️ [GOOGLE OAUTH API] Token revocation failed: ${response.status} ${response.statusText}`);
+                console.warn(`   ⏱️  Duration: ${duration}ms`);
                 // Don't throw error - revocation failure shouldn't block logout
             } else {
-                console.log('✅ Token revoked successfully');
+                console.log(`✅ [GOOGLE OAUTH API SUCCESS] Token revoked successfully after ${duration}ms`);
             }
 
         } catch (error: any) {
@@ -510,19 +535,34 @@ export class GASAuthClient {
      */
     async validateToken(accessToken: string): Promise<boolean> {
         try {
+            console.log(`📡 [GOOGLE OAUTH API] Starting token validation`);
+            console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+            console.log(`   📍 URL: https://www.googleapis.com/oauth2/v1/tokeninfo`);
+            console.log(`   🔑 Token: ${accessToken.substring(0, 10)}...`);
+            
+            const startTime = Date.now();
+            
             const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo', {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
-                },
-                redirect: 'follow',
-                credentials: 'include'
+                }
             });
 
+            const duration = Date.now() - startTime;
+            console.log(`📥 [GOOGLE OAUTH API] Token validation response received after ${duration}ms`);
+            console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
+
             if (!response.ok) {
+                console.log(`❌ [GOOGLE OAUTH API] Token validation failed: ${response.status} ${response.statusText}`);
+                console.log(`   ⏱️  Duration: ${duration}ms`);
                 return false;
             }
 
             const data = await response.json();
+            
+            console.log(`✅ [GOOGLE OAUTH API SUCCESS] Token validation completed after ${duration}ms`);
+            console.log(`   📊 Token scope: ${data.scope || 'No scope info'}`);
+            console.log(`   📊 Token expires in: ${data.expires_in || 'Unknown'} seconds`);
             
             // Check if token has required scopes
             const requiredScopes = ['script.projects', 'script.processes', 'script.deployments', 'script.scriptapp'];
@@ -532,10 +572,11 @@ export class GASAuthClient {
                 tokenScope.includes(scope)
             );
 
+            console.log(`📊 Required scopes present: ${hasRequiredScopes}`);
             return hasRequiredScopes;
 
         } catch (error) {
-            console.error('Token validation error:', error);
+            console.error('❌ [GOOGLE OAUTH API ERROR] Token validation error:', error);
             return false;
         }
     }
@@ -805,7 +846,7 @@ export class GASAuthClient {
             '',
             '📋 DETAILED STEPS:',
             '1. Open Google Cloud Console Credentials page',
-            '2. Look for client ID: 428972970708-jtm1ou5838lv7vbjdv5kgp5222s7d8f0.apps.googleusercontent.com',
+            '2. Look for client ID: 428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com',
             '3. Click on the client name (should open edit dialog)',
             '4. At the top, find "Application type" dropdown',
             '5. Change from "Web application" to "Desktop application"',
