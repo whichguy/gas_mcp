@@ -261,14 +261,14 @@ export abstract class BaseTool implements Tool {
 
         // If first attempt failed, reload auth state from disk
         // This ensures we see authentication saved by other tools (like gas_auth)
-        console.log(`🔄 [${this.name}] Reloading auth state to check for fresh authentication...`);
+        console.error(`🔄 [${this.name}] Reloading auth state to check for fresh authentication...`);
         await this.sessionAuthManager.reloadAuthSession();
         
         // Second attempt - try again with fresh state
         if (await this.sessionAuthManager.isAuthenticated()) {
           const token = await this.sessionAuthManager.getValidToken();
           if (token) {
-            console.log(`✅ [${this.name}] Found fresh authentication after reload`);
+            console.error(`✅ [${this.name}] Found fresh authentication after reload`);
             return token;
           }
         }

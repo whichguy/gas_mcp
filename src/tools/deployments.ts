@@ -21,7 +21,7 @@ async function ensureManifestEntryPoints(
     const manifestFile = files.find(f => f.name === 'appsscript' || f.name === 'appsscript.json');
     
     if (!manifestFile || !manifestFile.source) {
-      console.log('⚠️  No manifest file found, creating one with proper entry points...');
+      console.error('⚠️  No manifest file found, creating one with proper entry points...');
       
       // Create new manifest with proper entry points
       const newManifest = {
@@ -39,7 +39,7 @@ async function ensureManifestEntryPoints(
       };
       
       await gasClient.updateFile(scriptId, 'appsscript', JSON.stringify(newManifest, null, 2), undefined, accessToken);
-      console.log('✅ Created manifest with proper entry points');
+      console.error('✅ Created manifest with proper entry points');
       return;
     }
     
@@ -65,7 +65,7 @@ async function ensureManifestEntryPoints(
       };
       
       await gasClient.updateFile(scriptId, 'appsscript', JSON.stringify(newManifest, null, 2), undefined, accessToken);
-      console.log('✅ Recreated manifest with proper entry points');
+      console.error('✅ Recreated manifest with proper entry points');
       return;
     }
     
@@ -80,7 +80,7 @@ async function ensureManifestEntryPoints(
           executeAs: 'USER_DEPLOYING'
         };
         needsUpdate = true;
-        console.log('📝 Added webapp entry point configuration');
+        console.error('📝 Added webapp entry point configuration');
       }
     }
     
@@ -91,16 +91,16 @@ async function ensureManifestEntryPoints(
           access: accessLevel
         };
         needsUpdate = true;
-        console.log('📝 Added executionApi entry point configuration');
+        console.error('📝 Added executionApi entry point configuration');
       }
     }
     
     // Update manifest if needed
     if (needsUpdate) {
       await gasClient.updateFile(scriptId, 'appsscript', JSON.stringify(manifest, null, 2), undefined, accessToken);
-      console.log('✅ Updated manifest with proper entry points');
+      console.error('✅ Updated manifest with proper entry points');
     } else {
-      console.log('✅ Manifest already has proper entry point configuration');
+      console.error('✅ Manifest already has proper entry point configuration');
     }
     
   } catch (error: any) {
@@ -222,14 +222,14 @@ export class GASDeployCreateTool extends BaseTool {
         deploymentType: entryPointType
       };
 
-      console.log(`🔍 Debug - entryPointType: ${entryPointType}`);
-      console.log(`🔍 Debug - deployment object:`, JSON.stringify(deployment, null, 2));
-      console.log(`🔍 Debug - webAppAccess: ${webAppAccess}`);
-      console.log(`🔍 Debug - webAppExecuteAs: ${webAppExecuteAs}`);
+      console.error(`🔍 Debug - entryPointType: ${entryPointType}`);
+      console.error(`🔍 Debug - deployment object:`, JSON.stringify(deployment, null, 2));
+      console.error(`🔍 Debug - webAppAccess: ${webAppAccess}`);
+      console.error(`🔍 Debug - webAppExecuteAs: ${webAppExecuteAs}`);
 
       // Add specific instructions and endpoints based on deployment type
       if (entryPointType === 'WEB_APP') {
-        console.log(`🌐 Processing Web App deployment configuration...`);
+        console.error(`🌐 Processing Web App deployment configuration...`);
         result.instructions = 'Web App deployment created successfully. Use the web app URL to access your functions via HTTP.';
         result.webAppUrl = deployment.webAppUrl;
         result.webAppConfig = {
@@ -253,7 +253,7 @@ export class GASDeployCreateTool extends BaseTool {
           `curl "${webAppUrl}?func=factorialFunction"`
         ];
       } else {
-        console.log(`⚙️ Processing API Executable deployment configuration...`);
+        console.error(`⚙️ Processing API Executable deployment configuration...`);
         result.instructions = 'API Executable deployment created successfully. Functions can now be executed via gas_run tool.';
         result.apiEndpoint = `https://script.googleapis.com/v1/scripts/${scriptId}:run`;
       }

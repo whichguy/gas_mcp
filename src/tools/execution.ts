@@ -17,7 +17,7 @@ async function ensureManifestEntryPoints(
   accessToken?: string
 ): Promise<void> {
   try {
-    console.log(`🔧 Ensuring manifest configured for ${entryPointType} deployment...`);
+    console.error(`🔧 Ensuring manifest configured for ${entryPointType} deployment...`);
     
     // Get current project content
     const files = await gasClient.getProjectContent(scriptId, accessToken);
@@ -32,13 +32,13 @@ async function ensureManifestEntryPoints(
     let manifestFileName = 'appsscript'; // Always use 'appsscript' to prevent .json.json issues
     
     if (!manifestFile || !manifestFile.source) {
-      console.log('⚠️  No manifest file found, creating new appsscript file...');
+      console.error('⚠️  No manifest file found, creating new appsscript file...');
       manifest = {};
     } else {
-      console.log(`📁 Found existing manifest: ${manifestFile.name}`);
+      console.error(`📁 Found existing manifest: ${manifestFile.name}`);
       try {
         manifest = JSON.parse(manifestFile.source);
-        console.log('📁 Parsed existing manifest successfully');
+        console.error('📁 Parsed existing manifest successfully');
       } catch (parseError) {
         console.warn('⚠️  Failed to parse existing manifest, starting fresh...');
         manifest = {};
@@ -47,7 +47,7 @@ async function ensureManifestEntryPoints(
       // If we found appsscript.json but we're going to save as appsscript, 
       // we should clean up the duplicate later
       if (manifestFile.name === 'appsscript.json') {
-        console.log('🔧 Will use standard "appsscript" filename to prevent duplicates');
+        console.error('🔧 Will use standard "appsscript" filename to prevent duplicates');
       }
     }
     
@@ -60,7 +60,7 @@ async function ensureManifestEntryPoints(
     let needsUpdate = false;
     
     if (entryPointType === 'WEB_APP') {
-      console.log('🌐 Configuring manifest for WEB_APP deployment only...');
+      console.error('🌐 Configuring manifest for WEB_APP deployment only...');
       
       // Force web app configuration
       if (!manifest.webapp || manifest.webapp.access !== accessLevel) {
@@ -69,25 +69,25 @@ async function ensureManifestEntryPoints(
           executeAs: 'USER_ACCESSING'
         };
         needsUpdate = true;
-        console.log(`📝 Set webapp configuration: access=${accessLevel}, executeAs=USER_ACCESSING`);
+        console.error(`📝 Set webapp configuration: access=${accessLevel}, executeAs=USER_ACCESSING`);
       }
       
       // CRITICAL: Remove executionApi to prevent library deployment confusion
       if (manifest.executionApi) {
         delete manifest.executionApi;
         needsUpdate = true;
-        console.log('🗑️  Removed executionApi configuration to force web app deployment');
+        console.error('🗑️  Removed executionApi configuration to force web app deployment');
       }
       
       // Remove library configuration if present
       if (manifest.library) {
         delete manifest.library;
         needsUpdate = true;
-        console.log('🗑️  Removed library configuration to force web app deployment');
+        console.error('🗑️  Removed library configuration to force web app deployment');
       }
       
     } else if (entryPointType === 'EXECUTION_API') {
-      console.log('⚙️ Configuring manifest for EXECUTION_API deployment...');
+      console.error('⚙️ Configuring manifest for EXECUTION_API deployment...');
       
       // Ensure executionApi entry point exists for API Executable deployments
       if (!manifest.executionApi || manifest.executionApi.access !== accessLevel) {
@@ -95,7 +95,7 @@ async function ensureManifestEntryPoints(
           access: accessLevel
         };
         needsUpdate = true;
-        console.log(`📝 Set executionApi configuration: access=${accessLevel}`);
+        console.error(`📝 Set executionApi configuration: access=${accessLevel}`);
       }
     }
     
@@ -105,17 +105,17 @@ async function ensureManifestEntryPoints(
       
       try {
         // Always use 'appsscript' filename to prevent .json.json double extensions
-        console.log(`🔧 Updating manifest file: ${manifestFileName}`);
+        console.error(`🔧 Updating manifest file: ${manifestFileName}`);
         await gasClient.updateFile(scriptId, manifestFileName, manifestContent, undefined, accessToken);
-        console.log(`✅ Updated manifest (${manifestFileName}) with proper entry points for ${entryPointType}`);
-        console.log(`📄 Final manifest:`, manifestContent);
+        console.error(`✅ Updated manifest (${manifestFileName}) with proper entry points for ${entryPointType}`);
+        console.error(`📄 Final manifest:`, manifestContent);
       } catch (updateError: any) {
         console.error(`❌ Failed to update manifest: ${updateError.message}`);
         // Don't try alternatives to prevent creating duplicate manifest files
-        console.log('⚠️  Manifest update failed, but deployment can still proceed');
+        console.error('⚠️  Manifest update failed, but deployment can still proceed');
       }
     } else {
-      console.log(`✅ Manifest already has proper ${entryPointType} configuration`);
+      console.error(`✅ Manifest already has proper ${entryPointType} configuration`);
     }
     
   } catch (error: any) {
@@ -190,9 +190,9 @@ export class GASRunApiExecTool extends BaseTool {
     }
 
     try {
-      console.log(`🚀 Executing function: ${functionName} in script: ${scriptId}`);
-      console.log(`📋 Parameters: ${JSON.stringify(parameters)}`);
-      console.log(`🔧 Dev mode: ${devMode}`);
+      console.error(`🚀 Executing function: ${functionName} in script: ${scriptId}`);
+      console.error(`📋 Parameters: ${JSON.stringify(parameters)}`);
+      console.error(`🔧 Dev mode: ${devMode}`);
 
       const result = await this.gasClient.executeFunction(scriptId, functionName, parameters, accessToken);
 
@@ -213,8 +213,8 @@ export class GASRunApiExecTool extends BaseTool {
         };
       }
 
-      console.log(`✅ Function executed successfully`);
-      console.log(`📤 Result:`, result.result);
+      console.error(`✅ Function executed successfully`);
+      console.error(`📤 Result:`, result.result);
 
       return {
         status: 'success',
@@ -458,7 +458,9 @@ export class GASRunTool extends BaseTool {
       if (this.needsInfrastructureSetup(error) && autoRedeploy) {
         // Set up infrastructure and retry
         await this.setupInfrastructure(scriptId, accessToken);
-        return await this.executeOptimistic(scriptId, js_statement, accessToken);
+        
+        // NEW: Retry logic for deployment delays with test function validation
+        return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken);
       }
       if (!autoRedeploy) {
         throw new Error(`Execution failed and autoRedeploy is disabled. ${error.message}`);
@@ -467,73 +469,346 @@ export class GASRunTool extends BaseTool {
     }
   }
 
-  private needsInfrastructureSetup(error: any): boolean {
-    const statusCode = error.statusCode || error.data?.statusCode || error.response?.status;
-    return [404, 403, 500].includes(statusCode);
+  /**
+   * Execute with retry logic for deployment delays
+   * Tests with a simple function first, then retries the actual function
+   */
+  private async executeWithDeploymentRetry(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
+    const maxRetryDuration = 60000; // 60 seconds total
+    const retryInterval = 2000; // 2 seconds between retries
+    const startTime = Date.now();
+    
+    console.error(`🔄 [DEPLOYMENT RETRY] Starting retry logic for potential deployment delay`);
+    console.error(`   Script ID: ${scriptId}`);
+    console.error(`   Max retry duration: ${maxRetryDuration}ms`);
+    console.error(`   Retry interval: ${retryInterval}ms`);
+    
+    while (Date.now() - startTime < maxRetryDuration) {
+      try {
+        // First try the actual function
+        return await this.executeOptimistic(scriptId, js_statement, accessToken);
+      } catch (error: any) {
+        const statusCode = error.statusCode || error.response?.status;
+        
+        // Only retry for HTTP 500 errors (deployment not ready)
+        if (statusCode === 500) {
+          const elapsedTime = Date.now() - startTime;
+          console.error(`⚠️  [DEPLOYMENT RETRY] HTTP ${statusCode} error, testing deployment readiness`);
+          console.error(`   Elapsed time: ${elapsedTime}ms`);
+          console.error(`   Error: ${error.message}`);
+          
+          // Test if deployment is ready with a simple function that requests JSON
+          try {
+            console.error(`🧪 [DEPLOYMENT TEST] Testing deployment with doGet function - requesting JSON response`);
+            await this.executeOptimisticWithJsonRequest(scriptId, 'new Date().toISOString()', accessToken);
+            console.error(`✅ [DEPLOYMENT TEST] Test function succeeded with HTTP 200, deployment is ready`);
+            
+            // Deployment is ready, try the actual function one more time
+            try {
+              return await this.executeOptimistic(scriptId, js_statement, accessToken);
+            } catch (actualError: any) {
+              console.error(`❌ [DEPLOYMENT RETRY] Actual function still failed after test succeeded`);
+              console.error(`   Error: ${actualError.message}`);
+              throw actualError;
+            }
+          } catch (testError: any) {
+            const testStatusCode = testError.statusCode || testError.response?.status;
+            console.error(`🧪 [DEPLOYMENT TEST] Test function result: HTTP ${testStatusCode} - ${testError.message}`);
+            
+            // If we got HTTP 200, consider it successful and retry original function
+            if (testStatusCode === 200) {
+              console.error(`✅ [DEPLOYMENT TEST] HTTP 200 received, deployment is ready - retrying original function`);
+              try {
+                return await this.executeOptimistic(scriptId, js_statement, accessToken);
+              } catch (actualError: any) {
+                console.error(`❌ [DEPLOYMENT RETRY] Original function failed even after HTTP 200 test: ${actualError.message}`);
+                throw actualError;
+              }
+            } else if (testStatusCode === 500) {
+              // Still not ready, wait and retry
+              if (Date.now() - startTime + retryInterval < maxRetryDuration) {
+                console.error(`⏳ [DEPLOYMENT RETRY] HTTP ${testStatusCode} - deployment not ready, waiting ${retryInterval}ms before retry`);
+                await new Promise(resolve => setTimeout(resolve, retryInterval));
+                continue;
+              } else {
+                console.error(`⏰ [DEPLOYMENT RETRY] Timeout reached, deployment still returning HTTP ${testStatusCode}`);
+                throw new Error(`Deployment timeout: Google Apps Script project not ready after ${maxRetryDuration}ms. Last error: ${error.message}`);
+              }
+            } else {
+              // Different error, stop retrying
+              console.error(`❌ [DEPLOYMENT TEST] Test function failed with HTTP ${testStatusCode} error: ${testError.message}`);
+              throw testError;
+            }
+          }
+        } else {
+          // Not a 500 error, don't retry
+          console.error(`❌ [DEPLOYMENT RETRY] HTTP ${statusCode} error - not retrying: ${error.message}`);
+          throw error;
+        }
+      }
+    }
+    
+    // Should not reach here, but just in case
+    throw new Error(`Deployment timeout: Maximum retry duration of ${maxRetryDuration}ms exceeded`);
   }
 
-  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
+  // Special version for deployment testing that explicitly requests JSON
+  private async executeOptimisticWithJsonRequest(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
     const executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
-    
-    console.log(`📡 [GOOGLE APPS SCRIPT EXECUTION] Starting direct HTTP call`);
-    console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-    console.log(`   🆔 Script ID: ${scriptId}`);
-    console.log(`   📍 URL: ${executionUrl}`);
-    console.log(`   💻 Statement: ${js_statement}`);
-    console.log(`   🔑 Auth: Token present (${accessToken.substring(0, 10)}...)`);
-    
     const startTime = Date.now();
     
     // HANGING FIX: Add timeout protection to prevent indefinite hangs
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => {
-      console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Request timed out after 30 seconds`);
-      console.error(`   📍 URL: ${executionUrl}`);
-      console.error(`   💻 Statement: ${js_statement}`);
       abortController.abort();
     }, 30000); // 30-second timeout
 
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
-      const urlWithParams = new URL(executionUrl);
-      urlWithParams.searchParams.set('func', js_statement);
-      const finalUrl = urlWithParams.toString();
+      // IMPORTANT: Don't use URLSearchParams.set() as it URL-encodes the parameter
+      // Google Apps Script expects raw JavaScript code, not URL-encoded
+      const separator = executionUrl.includes('?') ? '&' : '?';
+      const finalUrl = `${executionUrl}${separator}func=${js_statement}`;
       
-      console.log(`🔗 [AUTOMATIC REDIRECT] Final URL with parameters: ${finalUrl}`);
+      // Convert /exec to /dev if needed for testing
+      const testUrl = finalUrl.replace('/exec', '/dev');
       
-      // AUTOMATIC REDIRECT: Use native browser redirect handling
-      const response = await fetch(finalUrl, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'User-Agent': 'MCP-GAS-Server/1.0.0'
+      // Enhanced request headers for deployment testing
+      const requestHeaders = {
+        'Authorization': `Bearer ${accessToken}`,
+        'User-Agent': 'MCP-GAS-Server/1.0.0',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      };
+      
+      // ENHANCED DEBUG LOG - Show URL conversion and headers before request
+      const debugInfo = {
+        timestamp: new Date().toISOString(),
+        operation: 'DEPLOYMENT_TEST',
+        scriptId: scriptId,
+        jsStatement: js_statement,
+        baseUrl: executionUrl,
+        originalUrl: finalUrl,
+        testUrl: testUrl,
+        urlConversion: finalUrl !== testUrl ? '/exec → /dev' : 'no conversion needed',
+        requestHeaders: {
+          ...requestHeaders,
+          'Authorization': `Bearer ${accessToken.substring(0, 10)}...***`
         },
+        redirectPolicy: 'follow (automatic)',
+        timeout: '30 seconds',
+        requestStart: new Date().toISOString()
+      };
+      
+      console.error(`🧪 [DEPLOYMENT_TEST ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+      
+      // AUTOMATIC REDIRECT: Use native browser redirect handling with JSON Accept header
+      const response = await fetch(testUrl, {
+        headers: requestHeaders,
         signal: abortController.signal,
         redirect: 'follow' // Automatically follow redirects
       });
       
+      // Build complete headers object for logging
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      
       const fetchDuration = Date.now() - startTime;
-      console.log(`📥 [GOOGLE APPS SCRIPT RESPONSE] Received response after ${fetchDuration}ms`);
-      console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
-      console.log(`   📍 URL: ${response.url}`);
-      console.log(`   📏 Response type: ${response.headers.get('content-type') || 'Unknown'}`);
+      const contentType = response.headers.get('content-type') || 'Unknown';
+      
+      // Enhanced response logging with HTTP codes
+      const responseDebugInfo = {
+        httpStatus: `HTTP ${response.status} ${response.statusText}`,
+        duration: `${fetchDuration}ms`,
+        finalUrl: response.url,
+        contentType: contentType,
+        responseHeaders: responseHeaders,
+        redirectsFollowed: response.url !== testUrl ? 'YES' : 'NO',
+        responseTime: new Date().toISOString()
+      };
+      
+      console.error(`📡 [DEPLOYMENT_TEST RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
       
       if (!response.ok) {
         let errorBody = '';
         try {
           errorBody = await response.text();
-          console.error(`❌ [GOOGLE APPS SCRIPT ERROR] HTTP ${response.status} error response`);
-          console.error(`   📄 Error body: ${errorBody}`);
         } catch (bodyError) {
-          console.warn('Failed to read error response body:', bodyError);
+          errorBody = `[Failed to read error body: ${bodyError}]`;
         }
+        
+        // ENHANCED ERROR DEBUG with HTTP codes
+        const errorDebugInfo = {
+          httpStatus: `HTTP ${response.status} ${response.statusText}`,
+          duration: `${fetchDuration}ms`,
+          finalUrl: response.url,
+          contentType: contentType,
+          responseHeaders: responseHeaders,
+          errorBody: errorBody || '(empty)',
+          bodyLength: errorBody.length,
+          errorTime: new Date().toISOString(),
+          bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`
+        };
+        
+        console.error(`❌ [DEPLOYMENT_TEST ERROR] HTTP ${response.status} error details:\n${JSON.stringify(errorDebugInfo, null, 2)}`);
         
         const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
         (error as any).statusCode = response.status;
+        (error as any).statusText = response.statusText;
         (error as any).response = {
           status: response.status,
           statusText: response.statusText,
-          headers: {}, // Headers object is complex to serialize, keeping essential info in status fields
-          url: response.url
+          headers: responseHeaders,
+          url: response.url,
+          body: errorBody
+        };
+        (error as any).responseBody = errorBody;
+        (error as any).config = {
+          url: testUrl,
+          method: 'GET'
+        };
+        throw error;
+      }
+      
+      // If we reach here, we got HTTP 200 - deployment is ready
+      clearTimeout(timeoutId);
+      console.error(`✅ [DEPLOYMENT_TEST SUCCESS] HTTP ${response.status} - Deployment is ready`);
+      
+      return {
+        status: 'deployment_ready',
+        httpStatus: response.status,
+        message: 'Deployment test successful'
+      };
+      
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        const timeoutError = new Error('Deployment test timeout after 30 seconds');
+        (timeoutError as any).statusCode = 408;
+        throw timeoutError;
+      }
+      throw error;
+    }
+  }
+
+  private needsInfrastructureSetup(error: any): boolean {
+    const statusCode = error.statusCode || error.data?.statusCode || error.response?.status;
+    const isHtmlError = error.message?.includes('Web app returned HTML error page');
+    return [404, 403, 500].includes(statusCode) || isHtmlError;
+  }
+
+  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
+    const executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+    const startTime = Date.now();
+    
+    // HANGING FIX: Add timeout protection to prevent indefinite hangs
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      abortController.abort();
+    }, 30000); // 30-second timeout
+
+    try {
+      // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
+      // IMPORTANT: Don't use URLSearchParams.set() as it URL-encodes the parameter
+      // Google Apps Script expects raw JavaScript code, not URL-encoded
+      const separator = executionUrl.includes('?') ? '&' : '?';
+      const finalUrl = `${executionUrl}${separator}func=${js_statement}`;
+      
+      // Enhanced request headers
+      const requestHeaders = {
+        'Authorization': `Bearer ${accessToken}`,
+        'User-Agent': 'MCP-GAS-Server/1.0.0',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      };
+      
+      // ENHANCED DEBUG LOG - Show URL and headers before request
+      const debugInfo = {
+        timestamp: new Date().toISOString(),
+        operation: 'GAS_RUN_EXECUTION',
+        scriptId: scriptId,
+        jsStatement: js_statement,
+        baseUrl: executionUrl,
+        finalUrl: finalUrl,
+        urlConversion: executionUrl.includes('/exec') ? 
+          `${executionUrl} → ${finalUrl.replace('/exec', '/dev')} (if redirected)` : 
+          'no conversion needed',
+        requestHeaders: {
+          ...requestHeaders,
+          'Authorization': `Bearer ${accessToken.substring(0, 10)}...***`
+        },
+        redirectPolicy: 'follow (automatic)',
+        timeout: '30 seconds',
+        requestStart: new Date().toISOString()
+      };
+      
+      console.error(`🚀 [GAS_RUN ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+      
+      // AUTOMATIC REDIRECT: Use native browser redirect handling
+      const response = await fetch(finalUrl, {
+        headers: requestHeaders,
+        signal: abortController.signal,
+        redirect: 'follow' // Automatically follow redirects
+      });
+      
+      // Build complete headers object for logging
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      
+      const fetchDuration = Date.now() - startTime;
+      const contentType = response.headers.get('content-type') || 'Unknown';
+      
+      // Enhanced response logging with HTTP codes and redirect detection
+      const responseDebugInfo = {
+        httpStatus: `HTTP ${response.status} ${response.statusText}`,
+        duration: `${fetchDuration}ms`,
+        finalUrl: response.url,
+        redirectsFollowed: response.url !== finalUrl ? 'YES' : 'NO',
+        urlConversion: response.url !== finalUrl ? 
+          `${finalUrl} → ${response.url}` : 'no redirect',
+        contentType: contentType,
+        responseHeaders: responseHeaders,
+        responseTime: new Date().toISOString()
+      };
+      
+      console.error(`📡 [GAS_RUN RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
+      
+      if (!response.ok) {
+        let errorBody = '';
+        try {
+          errorBody = await response.text();
+        } catch (bodyError) {
+          errorBody = `[Failed to read error body: ${bodyError}]`;
+        }
+        
+        // ENHANCED ERROR DEBUG with HTTP codes
+        const errorDebugInfo = {
+          httpStatus: `HTTP ${response.status} ${response.statusText}`,
+          duration: `${fetchDuration}ms`,
+          finalUrl: response.url,
+          contentType: contentType,
+          responseHeaders: responseHeaders,
+          errorBody: errorBody || '(empty)',
+          bodyLength: errorBody.length,
+          errorTime: new Date().toISOString(),
+          bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`
+        };
+        
+        console.error(`❌ [GAS_RUN ERROR] HTTP ${response.status} error details:\n${JSON.stringify(errorDebugInfo, null, 2)}`);
+        
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+        (error as any).statusCode = response.status;
+        (error as any).statusText = response.statusText;
+        (error as any).response = {
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          url: response.url,
+          body: errorBody
         };
         (error as any).responseBody = errorBody;
         (error as any).config = {
@@ -545,53 +820,97 @@ export class GASRunTool extends BaseTool {
       
       // HANGING FIX: Keep timeout active during response reading with separate timeout
       // Use Promise.race to ensure response.text() doesn't hang indefinitely
-      console.log(`📖 [GOOGLE APPS SCRIPT RESPONSE] Reading response body...`);
       const responseStartTime = Date.now();
       
-      const responseText = await Promise.race([
-        response.text(),
-        new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Response body reading timed out after 15 seconds`);
-            reject(new Error('Response body reading timeout after 15 seconds'));
-          }, 15000); // 15-second timeout for response reading
-        })
-      ]);
+      let result: any;
+      let responseText = '';
+      let isJson = false;
+      try {
+        if (contentType.includes('application/json')) {
+          // Try to parse as JSON directly
+          result = await Promise.race([
+            response.json(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => {
+                reject(new Error('Response body reading timeout after 15 seconds'));
+              }, 15000);
+            })
+          ]);
+          isJson = true;
+          responseText = JSON.stringify(result);
+        } else {
+          // Fallback to text
+          responseText = await Promise.race([
+            response.text(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => {
+                reject(new Error('Response body reading timeout after 15 seconds'));
+              }, 15000);
+            })
+          ]);
+          try {
+            result = JSON.parse(responseText);
+            isJson = true;
+          } catch {
+            isJson = false;
+          }
+        }
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+      }
       
       const responseReadDuration = Date.now() - responseStartTime;
       const totalDuration = Date.now() - startTime;
-      
-      console.log(`✅ [GOOGLE APPS SCRIPT SUCCESS] Response body read after ${responseReadDuration}ms`);
-      console.log(`   📏 Body size: ${responseText.length} characters`);
-      console.log(`   ⏱️  Total duration: ${totalDuration}ms`);
       
       // Only clear timeout after complete response processing
       clearTimeout(timeoutId);
       
       // Parse response
-      let result: any;
-      try {
-        result = JSON.parse(responseText);
-        console.log(`📊 [GOOGLE APPS SCRIPT RESULT] Parsed JSON response successfully`);
-        console.log(`   🔍 Result type: ${typeof result}`);
-      } catch {
-        console.log(`📊 [GOOGLE APPS SCRIPT RESULT] Response is not JSON, checking for HTML error page`);
+      if (!isJson) {
         if (responseText.includes('DOCTYPE html') || responseText.includes('<html')) {
-          console.error(`❌ [GOOGLE APPS SCRIPT ERROR] Web app returned HTML error page instead of JSON`);
-          console.error(`   📄 HTML preview: ${responseText.substring(0, 200)}...`);
+          // ENHANCED HTML ERROR DEBUG with HTTP codes
+          const htmlErrorDebugInfo = {
+            httpStatus: `HTTP ${response.status} ${response.statusText}`,
+            finalUrl: response.url,
+            contentType: contentType,
+            responseHeaders: responseHeaders,
+            htmlPreview: responseText.substring(0, 200) + '...',
+            totalDuration: `${totalDuration}ms`,
+            errorTime: new Date().toISOString(),
+            bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`,
+            diagnosis: 'Web app returned HTML error page instead of JSON - likely deployment not ready'
+          };
+          
+          console.error(`🌐 [GAS_RUN HTML ERROR] HTTP ${response.status} - Web app returned HTML instead of JSON:\n${JSON.stringify(htmlErrorDebugInfo, null, 2)}`);
+          
           const error = new Error('Web app returned HTML error page instead of JSON');
-          (error as any).statusCode = 404; // Treat as needs infrastructure setup
+          (error as any).statusCode = 500; // Treat as deployment not ready - triggers retry logic
           throw error;
         }
-        console.log(`📄 [GOOGLE APPS SCRIPT RESULT] Using raw text response`);
         result = responseText;
       }
+      
+      // ENHANCED SUCCESS DEBUG with HTTP codes
+      const successDebugInfo = {
+        httpStatus: `HTTP ${response.status} ${response.statusText}`,
+        payloadReadDuration: `${responseReadDuration}ms`,
+        totalRequestDuration: `${totalDuration}ms`,
+        finalUrl: response.url,
+        contentType: contentType,
+        responseHeaders: responseHeaders,
+        responsePayload: responseText,
+        payloadLength: responseText.length,
+        payloadType: isJson ? 'JSON' : 'Text',
+        successTime: new Date().toISOString(),
+        bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`
+      };
+      
+      console.error(`✅ [GAS_RUN SUCCESS] HTTP ${response.status} success details:\n${JSON.stringify(successDebugInfo, null, 2)}`);
       
       // Handle structured response format {type: "data"|"exception", payload: ...}
       if (result && typeof result === 'object' && result.type) {
         if (result.type === 'data') {
-          console.log(`✅ [GOOGLE APPS SCRIPT SUCCESS] Structured data response received`);
-          console.log(`   📊 Payload: ${JSON.stringify(result.payload)}`);
           return {
             status: 'success',
             scriptId,
@@ -600,9 +919,6 @@ export class GASRunTool extends BaseTool {
             executedAt: new Date().toISOString()
           };
         } else if (result.type === 'exception') {
-          console.error(`❌ [GOOGLE APPS SCRIPT EXCEPTION] Script execution exception`);
-          console.error(`   🔍 Exception name: ${result.payload.error.name || 'Unknown'}`);
-          console.error(`   💬 Exception message: ${result.payload.error.message}`);
           const error = new Error(result.payload.error.message);
           error.name = result.payload.error.name || 'FunctionExecutionError';
           throw error;
@@ -610,7 +926,6 @@ export class GASRunTool extends BaseTool {
       }
       
       // Return simple success response
-      console.log(`✅ [GOOGLE APPS SCRIPT SUCCESS] Simple response format`);
       return {
         status: 'success',
         scriptId,
@@ -624,16 +939,22 @@ export class GASRunTool extends BaseTool {
       // Clear timeout on any error
       clearTimeout(timeoutId);
       
-      console.error(`❌ [GOOGLE APPS SCRIPT ERROR] Execution failed after ${duration}ms`);
-      console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-      console.error(`   🆔 Script ID: ${scriptId}`);
-      console.error(`   💻 Statement: ${js_statement}`);
-      console.error(`   🔍 Error type: ${error.name || 'Unknown'}`);
-      console.error(`   💬 Error message: ${error.message}`);
+      // ENHANCED ERROR DEBUG with HTTP codes
+      const catchErrorDebugInfo = {
+        timestamp: new Date().toISOString(),
+        scriptId: scriptId,
+        jsStatement: js_statement,
+        errorType: error.name || 'Unknown',
+        errorMessage: error.message,
+        httpStatus: error.statusCode ? `HTTP ${error.statusCode} ${error.statusText || ''}` : 'No HTTP status',
+        duration: `${duration}ms`,
+        bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`
+      };
+      
+      console.error(`💥 [GAS_RUN CATCH ERROR] Complete error information:\n${JSON.stringify(catchErrorDebugInfo, null, 2)}`);
       
       // Handle timeout specifically
       if (error.name === 'AbortError') {
-        console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Request was aborted due to timeout`);
         const timeoutError = new Error(`Request timeout: Google Apps Script did not respond within 30 seconds`);
         (timeoutError as any).statusCode = 408;
         throw timeoutError;
@@ -641,7 +962,6 @@ export class GASRunTool extends BaseTool {
       
       // Handle response reading timeout
       if (error.message?.includes('Response body reading timeout')) {
-        console.error(`⏰ [GOOGLE APPS SCRIPT TIMEOUT] Response body reading timed out`);
         const timeoutError = new Error(`Response reading timeout: Google Apps Script response body took longer than 15 seconds to read`);
         (timeoutError as any).statusCode = 408;
         throw timeoutError;
@@ -651,8 +971,6 @@ export class GASRunTool extends BaseTool {
       throw error;
     }
   }
-
-
 
   private async setupInfrastructure(scriptId: string, accessToken: string): Promise<void> {
     // HANGING FIX: Add timeout wrapper for all Google API calls
@@ -670,26 +988,26 @@ export class GASRunTool extends BaseTool {
     // Check if shim exists
     let shimExists = false;
     try {
-      console.log('🔍 Checking if execution shim exists...');
+      console.error('Checking if execution shim exists...');
       const existingFiles = await withTimeout(
         this.gasClient.getProjectContent(scriptId, accessToken),
         15000, // 15-second timeout
         'Get project content'
       );
       shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run');
-      console.log(`📁 Shim exists: ${shimExists}`);
+      console.error(`Shim exists: ${shimExists}`);
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
-        console.error(`⏰ Timeout checking for shim: ${error.message}`);
+        console.error(`Timeout checking for shim: ${error.message}`);
         throw new Error(`Setup failed: Unable to check project files - ${error.message}`);
       }
       // Assume shim doesn't exist if we can't check
-      console.warn('⚠️ Could not check for existing shim, assuming it does not exist');
+      console.warn('Could not check for existing shim, assuming it does not exist');
     }
     
     // Add execution shim if needed
     if (!shimExists) {
-      console.log('📝 Creating execution shim...');
+      console.error('Creating execution shim...');
       const shimCode = GASCodeGenerator.generateCode({
         type: 'head_deployment',
         timezone: 'America/Los_Angeles',
@@ -708,7 +1026,7 @@ export class GASRunTool extends BaseTool {
           20000, // 20-second timeout for file upload
           'Update shim file'
         );
-        console.log('✅ Execution shim created successfully');
+        console.error('Execution shim created successfully');
       } catch (error: any) {
         if (error.message?.includes('timeout')) {
           throw new Error(`Setup failed: Unable to create execution shim - ${error.message}`);
@@ -718,19 +1036,19 @@ export class GASRunTool extends BaseTool {
     }
     
     // Update manifest
-    console.log('📋 Updating manifest entry points...');
+    console.error('Updating manifest entry points...');
     try {
       await withTimeout(
         ensureManifestEntryPoints(this.gasClient, scriptId, 'WEB_APP', 'MYSELF', accessToken),
         10000, // 10-second timeout
         'Update manifest entry points'
       );
-      console.log('✅ Manifest updated successfully');
+      console.error('Manifest updated successfully');
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
-        console.warn(`⚠️ Manifest update timeout: ${error.message} - continuing anyway`);
+        console.warn(`Manifest update timeout: ${error.message} - continuing anyway`);
       } else {
-        console.warn(`⚠️ Manifest update failed: ${error.message} - continuing anyway`);
+        console.warn(`Manifest update failed: ${error.message} - continuing anyway`);
       }
     }
     
@@ -738,7 +1056,7 @@ export class GASRunTool extends BaseTool {
     await new Promise(resolve => setTimeout(resolve, 500));
     
     // Create HEAD deployment
-    console.log('🚀 Creating HEAD deployment...');
+    console.error('Creating HEAD deployment...');
     const deploymentOptions = {
       entryPointType: 'WEB_APP' as const,
       webAppConfig: {
@@ -758,7 +1076,7 @@ export class GASRunTool extends BaseTool {
         30000, // 30-second timeout for deployment
         'Create HEAD deployment'
       );
-      console.log('✅ HEAD deployment created successfully');
+      console.error('HEAD deployment created successfully');
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
         throw new Error(`Setup failed: Unable to create deployment - ${error.message}`);
@@ -767,7 +1085,7 @@ export class GASRunTool extends BaseTool {
     }
     
     // Cache the deployment URL
-    console.log('🔗 Constructing deployment URL...');
+    console.error('Constructing deployment URL...');
     try {
       const gasRunUrl = await withTimeout(
         this.gasClient.constructGasRunUrl(scriptId, accessToken),
@@ -777,16 +1095,16 @@ export class GASRunTool extends BaseTool {
       
       if (this.sessionAuthManager && gasRunUrl) {
         await this.sessionAuthManager.setCachedDeploymentUrl(scriptId, gasRunUrl);
-        console.log('✅ Deployment URL cached successfully');
+        console.error('Deployment URL cached successfully');
       }
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
-        console.warn(`⚠️ URL construction timeout: ${error.message} - continuing anyway`);
+        console.warn(`URL construction timeout: ${error.message} - continuing anyway`);
       } else {
-        console.warn(`⚠️ URL construction failed: ${error.message} - continuing anyway`);
+        console.warn(`URL construction failed: ${error.message} - continuing anyway`);
       }
     }
     
-    console.log('🎉 Infrastructure setup completed');
+    console.error('Infrastructure setup completed');
   }
 } 

@@ -287,7 +287,7 @@ function validateDevMode() {
     throw new Error('Dynamic execution only available in dev mode (HEAD deployments ending in /dev). Current URL: ' + url);
   }
   
-  console.log('[MCP_GAS_RUN] Executing on HEAD deployment (/dev URL)');
+  console.error('[MCP_GAS_RUN] Executing on HEAD deployment (/dev URL)');
 }
 
 /**
@@ -402,7 +402,7 @@ function createFunction(code) {
 function __gas_run(js_statement) {
   const timerLabel = \`GAS_RUN_\${Date.now()}\`;
   
-  console.log(\`[GAS_RUN] Executing: \${js_statement}\`);
+  console.error(\`[GAS_RUN] Executing: \${js_statement}\`);
 
   let duration = "0";
   console.time(timerLabel);

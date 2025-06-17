@@ -91,6 +91,16 @@ interface ClientSession {
  * - **Structured Responses**: Returns helpful guidance and instructions to users
  * - **Test Mode Support**: Disables auto-auth in test mode to prevent browser conflicts
  * 
+ * ### 📡 stdout/stderr Protocol Architecture
+ * - **stdout**: Exclusive MCP JSON-RPC protocol communication with clients
+ * - **stderr**: Rich diagnostic logging, performance metrics, and operational monitoring
+ * - **Protocol Compliance**: Ensures MCP specification adherence while enabling debugging
+ * - **Client Separation**: Diagnostic logs don't interfere with tool responses
+ * - **Emoji Conventions**: Visual log parsing with 🚀🔧📡✅❌ prefixes for operation types
+ * - **Security**: Token masking and sanitized error reporting in production
+ * 
+ * See `docs/STDOUT_STDERR_DOCUMENTATION.md` for complete implementation details.
+ * 
     * ### 🛠️ Tool Architecture
    * - **11 Core Tools**: Complete Google Apps Script API coverage
    * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
@@ -295,7 +305,7 @@ export class MCPGasServer {
    * ```
    */
   private async handleAuthenticationError(error: AuthenticationError | OAuthError, session: ClientSession, sessionId: string): Promise<any> {
-    console.log(`🔑 [Session ${sessionId}] Authentication required - auto-launching auth flow`);
+            console.error(`[Session ${sessionId}] Authentication required - auto-launching auth flow`);
     
     try {
       // Get the auth tool from the session
@@ -305,7 +315,7 @@ export class MCPGasServer {
       }
 
       // Automatically start the authentication flow
-      console.log(`🚀 [Session ${sessionId}] Auto-starting OAuth authentication...`);
+              console.error(`[Session ${sessionId}] Auto-starting OAuth authentication...`);
       const authResult = await authTool.execute({ 
         mode: 'start', 
         openBrowser: true,
@@ -327,20 +337,20 @@ export class MCPGasServer {
         },
         sessionId,
         instructions: [
-          '🔑 Authentication required - OAuth flow has been automatically started',
-          '🌐 Please complete authentication in the browser window that opened',
-          '✅ Once authenticated, retry your original request',
-          '💡 This auto-auth feature helps streamline the authentication process'
+          'Authentication required - OAuth flow has been automatically started',
+          'Please complete authentication in the browser window that opened',
+          'Once authenticated, retry your original request',
+          'This auto-auth feature helps streamline the authentication process'
         ]
       };
 
-      console.log(`✅ [Session ${sessionId}] Auto-auth flow initiated successfully`);
+              console.error(`[Session ${sessionId}] Auto-auth flow initiated successfully`);
       
       // SCHEMA FIX: Return plain object, let server handle MCP wrapping
       return response;
 
     } catch (authError: any) {
-      console.error(`❌ [Session ${sessionId}] Failed to auto-launch auth flow:`, authError);
+      console.error(`[Session ${sessionId}] Failed to auto-launch auth flow:`, authError);
       
       // Fall back to original error handling if auto-auth fails
       // SCHEMA FIX: Return plain object with isError flag for server to handle
@@ -357,10 +367,10 @@ export class MCPGasServer {
         },
         sessionId,
         instructions: [
-          '🔑 Authentication required',
-          '❌ Auto-authentication failed - please authenticate manually',
-          '🚀 Use: gas_auth(mode="start") to authenticate',
-          '📝 Then retry your original request'
+          'Authentication required',
+          'Auto-authentication failed - please authenticate manually',
+          'Use: gas_auth(mode="start") to authenticate',
+          'Then retry your original request'
         ],
         isError: true
       };
@@ -408,7 +418,7 @@ export class MCPGasServer {
     let session = this.sessions.get(id || '');
     
     if (!session) {
-      console.log(`🔒 Creating new client session...`);
+      console.error(`Creating new client session...`);
       
       // Let SessionAuthManager handle session ID generation and reuse logic
       const authManager = new SessionAuthManager(id);
@@ -425,7 +435,7 @@ export class MCPGasServer {
       };
       
       this.sessions.set(actualSessionId, session);
-      console.log(`✅ Session created/reused: ${actualSessionId}`);
+      console.error(`Session created/reused: ${actualSessionId}`);
     } else {
       session.lastUsed = Date.now();
     }
@@ -468,7 +478,7 @@ export class MCPGasServer {
           throw new Error(`Unknown tool: ${name}`);
         }
 
-        console.log(`[Session ${session.sessionId}] Executing tool: ${name}`);
+        console.error(`[Session ${session.sessionId}] Executing tool: ${name}`);
 
         // Remove sessionId from args before passing to tool
         const toolArgs = { ...args };
@@ -482,7 +492,7 @@ export class MCPGasServer {
           sessionId: session.sessionId
         };
 
-        console.log(`[Session ${session.sessionId}] Tool ${name} completed successfully`);
+        console.error(`[Session ${session.sessionId}] Tool ${name} completed successfully`);
 
         // SCHEMA FIX: Check if tool already returned proper MCP format
         // Some tools (like gas_auth) return { content: [...], isError: false }
@@ -585,22 +595,22 @@ export class MCPGasServer {
    * Start the MCP server
    */
   async start(): Promise<void> {
-    console.log('Starting MCP Gas Server with Session Isolation...');
+    console.error('Starting MCP Gas Server with Session Isolation...');
     
     // Clear ALL cached session tokens on startup (user requested)
-    console.log('🧹 Clearing all cached session tokens on startup...');
+    console.error('Clearing all cached session tokens on startup...');
     const clearedSessions = SessionAuthManager.clearAllSessions();
-    console.log(`✅ Cleared ${clearedSessions} cached session token(s)`);
+    console.error(`Cleared ${clearedSessions} cached session token(s)`);
     
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     
-    console.log('✅ MCP Gas Server connected and ready');
-    console.log('🔒 Each client gets isolated authentication sessions');
-    console.log('📝 Use sessionId parameter to manage multiple sessions');
-    console.log('🚀 Use gas_auth(mode="start") to authenticate with Google Apps Script');
-    console.log('🔑 Auto-authentication: Server automatically launches auth flow when auth errors occur');
-    console.log('⚡ Direct execution: gas_run can execute ANY statement without wrapper functions');
+    console.error('MCP Gas Server connected and ready');
+    console.error('Each client gets isolated authentication sessions');
+    console.error('Use sessionId parameter to manage multiple sessions');
+    console.error('Use gas_auth(mode="start") to authenticate with Google Apps Script');
+    console.error('Auto-authentication: Server automatically launches auth flow when auth errors occur');
+    console.error('Direct execution: gas_run can execute ANY statement without wrapper functions');
     
     // Clean up expired sessions on startup
     this.cleanupExpiredSessions();
@@ -610,13 +620,13 @@ export class MCPGasServer {
    * Stop the server gracefully
    */
   async stop(): Promise<void> {
-    console.log('Stopping MCP Gas Server...');
+    console.error('Stopping MCP Gas Server...');
     
     // Clean up all sessions
     this.sessions.clear();
     
     await this.server.close();
-    console.log('MCP Gas Server stopped');
+    console.error('MCP Gas Server stopped');
   }
 
   /**
@@ -635,13 +645,13 @@ export class MCPGasServer {
     }
     
     if (cleaned > 0) {
-      console.log(`🧹 Cleaned up ${cleaned} expired sessions`);
+      console.error(`Cleaned up ${cleaned} expired sessions`);
     }
     
     // Also clean up file-based sessions
     const filesCleaned = SessionAuthManager.cleanupExpiredSessions();
     if (filesCleaned > 0) {
-      console.log(`🧹 Cleaned up ${filesCleaned} expired session files`);
+      console.error(`Cleaned up ${filesCleaned} expired session files`);
     }
   }
 

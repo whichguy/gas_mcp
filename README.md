@@ -118,6 +118,7 @@ npm run lint              # ESLint code checking
 ## 📚 Documentation
 
 - **[Cursor Integration Guide](CURSOR_INTEGRATION.md)** - Complete setup for Cursor IDE
+- **[stdout/stderr Architecture](docs/STDOUT_STDERR_DOCUMENTATION.md)** - Protocol communication and diagnostic logging
 - **[Repository Structure](REPOSITORY_STRUCTURE.md)** - Project organization and principles
 - **[Gas Projects](gas-projects/README.md)** - Managing GAS projects locally
 - **[Examples](examples/README.md)** - Usage patterns and examples

@@ -179,13 +179,13 @@ export class GASClient {
     const cached = this.clientCache.get(tokenHash);
     
     if (cached && Date.now() < cached.expires) {
-      console.log(`🚀 Using cached API clients for token: ${tokenHash}...`);
+      console.error(`🚀 Using cached API clients for token: ${tokenHash}...`);
       this.scriptApi = cached.scriptApi;
       this.driveApi = cached.driveApi;
       return;
     }
     
-    console.log(`🔧 Initializing new API clients for token: ${tokenHash}...`);
+    console.error(`🔧 Initializing new API clients for token: ${tokenHash}...`);
     
     const auth = new google.auth.OAuth2();
     auth.setCredentials({ access_token: token });
@@ -200,16 +200,16 @@ export class GASClient {
       expires: Date.now() + this.CLIENT_CACHE_TTL
     });
     
-    console.log(`✅ API clients initialized and cached`);
-    console.log(`   scriptApi available: ${!!this.scriptApi}`);
-    console.log(`   driveApi available: ${!!this.driveApi}`);
+    console.error(`✅ API clients initialized and cached`);
+    console.error(`   scriptApi available: ${!!this.scriptApi}`);
+    console.error(`   driveApi available: ${!!this.driveApi}`);
   }
 
   /**
    * Make rate-limited API call with error handling
    */
   private async makeApiCall<T>(apiCall: () => Promise<T>, accessToken?: string): Promise<T> {
-    console.log(`🚀 makeApiCall called with accessToken: ${accessToken ? accessToken.substring(0, 20) + '...' : 'undefined'}`);
+    console.error(`🚀 makeApiCall called with accessToken: ${accessToken ? accessToken.substring(0, 20) + '...' : 'undefined'}`);
     
     await rateLimiter.checkLimit();
     
@@ -219,26 +219,26 @@ export class GASClient {
     
     try {
       // Initialize client before making the API call
-      console.log(`🔧 About to initialize client...`);
+      console.error(`🔧 About to initialize client...`);
       await this.initializeClient(accessToken);
-      console.log(`✅ Client initialized, calling API...`);
+      console.error(`✅ Client initialized, calling API...`);
       
       // Extract operation context from stack trace for better logging
       const stack = new Error().stack;
       const callerMatch = stack?.match(/at GASClient\.(\w+)/);
       operationName = callerMatch ? callerMatch[1] : 'Unknown operation';
       
-      console.log(`📡 [GOOGLE API REQUEST] Starting: ${operationName}`);
-      console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-      console.log(`   🔑 Auth: ${accessToken ? 'Token present (' + accessToken.substring(0, 10) + '...)' : 'No token'}`);
+      console.error(`📡 [GOOGLE API REQUEST] Starting: ${operationName}`);
+      console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+      console.error(`   🔑 Auth: ${accessToken ? 'Token present (' + accessToken.substring(0, 10) + '...)' : 'No token'}`);
       
       const result = await apiCall();
       
       const duration = Date.now() - startTime;
-      console.log(`✅ [GOOGLE API SUCCESS] Completed: ${operationName}`);
-      console.log(`   ⏱️  Duration: ${duration}ms`);
-      console.log(`   📊 Result type: ${typeof result}`);
-      console.log(`   📏 Result size: ${JSON.stringify(result).length} characters`);
+      console.error(`✅ [GOOGLE API SUCCESS] Completed: ${operationName}`);
+      console.error(`   ⏱️  Duration: ${duration}ms`);
+      console.error(`   📊 Result type: ${typeof result}`);
+      console.error(`   📏 Result size: ${JSON.stringify(result).length} characters`);
       
       return result;
     } catch (error: any) {
@@ -290,7 +290,7 @@ export class GASClient {
    */
   async listProjects(pageSize: number = 10, accessToken?: string): Promise<GASProject[]> {
     return this.makeApiCall(async () => {
-      console.log(`📋 Listing Apps Script projects via Drive API...`);
+      console.error(`📋 Listing Apps Script projects via Drive API...`);
       
       // Apps Script projects are Drive files with MIME type 'application/vnd.google-apps.script'
       const response = await this.driveApi.files.list({
@@ -300,7 +300,7 @@ export class GASClient {
       });
       
       const files = response.data.files || [];
-      console.log(`📊 Found ${files.length} Apps Script projects`);
+      console.error(`📊 Found ${files.length} Apps Script projects`);
       
       return files.map((file: any) => ({
         scriptId: file.id,
@@ -536,7 +536,7 @@ export class GASClient {
     await this.initializeClient(accessToken);
     
     return this.makeApiCall(async () => {
-      console.log(`📋 Listing deployments for script: ${scriptId}`);
+      console.error(`📋 Listing deployments for script: ${scriptId}`);
       
       // Get basic deployment list
       const response = await this.scriptApi.projects.deployments.list({
@@ -544,14 +544,14 @@ export class GASClient {
       });
       
       const basicDeployments = response.data.deployments || [];
-      console.log(`🔍 Found ${basicDeployments.length} deployments, enriching with detailed information...`);
+      console.error(`🔍 Found ${basicDeployments.length} deployments, enriching with detailed information...`);
       
       // Enrich each deployment with detailed information
       const enrichedDeployments: GASDeployment[] = [];
       
       for (const basicDeployment of basicDeployments) {
         try {
-          console.log(`🔍 Enriching deployment ${basicDeployment.deploymentId}...`);
+          console.error(`🔍 Enriching deployment ${basicDeployment.deploymentId}...`);
           
           // Get detailed deployment info including entry points
           const detailedDeployment = await this.getDeployment(
@@ -563,7 +563,7 @@ export class GASClient {
           enrichedDeployments.push(detailedDeployment);
           
         } catch (enrichError: any) {
-          console.log(`⚠️  Failed to enrich deployment ${basicDeployment.deploymentId}: ${enrichError.message}`);
+          console.error(`⚠️  Failed to enrich deployment ${basicDeployment.deploymentId}: ${enrichError.message}`);
           
           // Fallback to basic deployment info if detailed fetch fails
           enrichedDeployments.push({
@@ -578,13 +578,13 @@ export class GASClient {
         }
       }
       
-      console.log(`✅ Enriched ${enrichedDeployments.length} deployments with detailed information`);
+      console.error(`✅ Enriched ${enrichedDeployments.length} deployments with detailed information`);
       
       // Log summary of web app URLs found
       const webAppCount = enrichedDeployments.filter(d => 
         d.entryPoints?.some(ep => ep.entryPointType === 'WEB_APP' && (ep as any).webApp?.url)
       ).length;
-      console.log(`🌐 Found ${webAppCount} deployments with web app URLs`);
+      console.error(`🌐 Found ${webAppCount} deployments with web app URLs`);
       
       return enrichedDeployments;
     }, accessToken);
@@ -598,14 +598,14 @@ export class GASClient {
     await this.initializeClient(accessToken);
     
     return this.makeApiCall(async () => {
-      console.log(`🔍 Fetching deployment details: ${deploymentId}`);
+      console.error(`🔍 Fetching deployment details: ${deploymentId}`);
       
       const response = await this.scriptApi.projects.deployments.get({
         scriptId,
         deploymentId
       });
       
-      console.log(`📦 Deployment details response:`, JSON.stringify(response.data, null, 2));
+      console.error(`📦 Deployment details response:`, JSON.stringify(response.data, null, 2));
       
       const deployment: GASDeployment = {
         deploymentId: response.data.deploymentId,
@@ -619,22 +619,22 @@ export class GASClient {
 
       // Convert web app URL to gas_run format if present
       if (response.data.entryPoints) {
-        console.log(`🔍 Entry points found in deployment:`, JSON.stringify(response.data.entryPoints, null, 2));
+        console.error(`🔍 Entry points found in deployment:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
           const originalUrl = webAppEntry.webApp.url;
-          console.log(`🌐 Web App URL found from API: ${originalUrl}`);
-          console.log(`🔧 Converting to gas_run URL format...`);
+          console.error(`🌐 Web App URL found from API: ${originalUrl}`);
+          console.error(`🔧 Converting to gas_run URL format...`);
           deployment.webAppUrl = this.constructGasRunUrlFromWebApp(originalUrl);
-          console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
+          console.error(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
         } else if (webAppEntry) {
-          console.log(`🔧 Web App entry point found but no URL`);
+          console.error(`🔧 Web App entry point found but no URL`);
         } else {
-          console.log(`⚠️  No Web App entry point found`);
+          console.error(`⚠️  No Web App entry point found`);
         }
       } else {
-        console.log(`⚠️  No entry points found in deployment response`);
+        console.error(`⚠️  No entry points found in deployment response`);
       }
 
       return deployment;
@@ -680,10 +680,10 @@ export class GASClient {
       // If no version number provided, create a new version
       let targetVersion = versionNumber;
       if (!targetVersion) {
-        console.log('📦 No version specified, creating new version...');
+        console.error('📦 No version specified, creating new version...');
         const version = await this.createVersion(scriptId, `Version for ${description}`, accessToken);
         targetVersion = version.versionNumber;
-        console.log(`✅ Created version ${targetVersion}`);
+        console.error(`✅ Created version ${targetVersion}`);
       }
 
       // Default to API Executable if no entry point type specified
@@ -703,26 +703,26 @@ export class GASClient {
           access: accessLevel,
           executeAs: 'USER_DEPLOYING'
         };
-        console.log(`🌐 Creating Web App deployment with access: ${webAppConfig.access}, executeAs: ${webAppConfig.executeAs}`);
+        console.error(`🌐 Creating Web App deployment with access: ${webAppConfig.access}, executeAs: ${webAppConfig.executeAs}`);
       } else if (entryPointType === 'EXECUTION_API') {
-        console.log(`⚙️ Creating API Executable deployment with access: ${accessLevel}`);
+        console.error(`⚙️ Creating API Executable deployment with access: ${accessLevel}`);
       }
 
       // Note: Entry points are configured automatically by the API based on the app manifest
       // and cannot be specified directly in the deployment creation request
 
-      console.log(`🔧 Creating ${entryPointType} deployment`);
-      console.log(`📋 Request body:`, JSON.stringify(requestBody, null, 2));
+      console.error(`🔧 Creating ${entryPointType} deployment`);
+      console.error(`📋 Request body:`, JSON.stringify(requestBody, null, 2));
 
       const response = await this.scriptApi.projects.deployments.create({
         scriptId,
         requestBody
       });
       
-      console.log(`📦 Full API Response:`, JSON.stringify(response, null, 2));
-      console.log(`📦 Response Data:`, JSON.stringify(response.data, null, 2));
-      console.log(`📦 Response Status:`, response.status);
-      console.log(`📦 Response Headers:`, JSON.stringify(response.headers, null, 2));
+      console.error(`📦 Full API Response:`, JSON.stringify(response, null, 2));
+      console.error(`📦 Response Data:`, JSON.stringify(response.data, null, 2));
+      console.error(`📦 Response Status:`, response.status);
+      console.error(`📦 Response Headers:`, JSON.stringify(response.headers, null, 2));
 
       const deployment: GASDeployment = {
         deploymentId: response.data.deploymentId,
@@ -736,17 +736,17 @@ export class GASClient {
 
       // Convert web app URL to gas_run format if present  
       if (response.data.entryPoints) {
-        console.log(`🔍 Entry points found:`, JSON.stringify(response.data.entryPoints, null, 2));
+        console.error(`🔍 Entry points found:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
           const originalUrl = webAppEntry.webApp.url;
-          console.log(`🌐 Web App URL detected from API: ${originalUrl}`);
-          console.log(`🔧 Converting to gas_run URL format...`);
+          console.error(`🌐 Web App URL detected from API: ${originalUrl}`);
+          console.error(`🔧 Converting to gas_run URL format...`);
           deployment.webAppUrl = this.constructGasRunUrlFromWebApp(originalUrl);
-          console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
+          console.error(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
         } else if (webAppEntry) {
-          console.log(`🔧 Web App entry point found but no URL`);
+          console.error(`🔧 Web App entry point found but no URL`);
         }
       }
 
@@ -773,17 +773,17 @@ export class GASClient {
    */
   async constructGasRunUrl(scriptId: string, accessToken?: string): Promise<string> {
     const startTime = Date.now();
-    console.log(`\n🚀 [GAS_URL_CONSTRUCTION] Starting URL construction for script: ${scriptId}`);
-    console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-    console.log(`   🔑 Auth Token: ${accessToken ? `Present (${accessToken.substring(0, 10)}...)` : 'Not provided'}`);
+    console.error(`\n🚀 [GAS_URL_CONSTRUCTION] Starting URL construction for script: ${scriptId}`);
+    console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+    console.error(`   🔑 Auth Token: ${accessToken ? `Present (${accessToken.substring(0, 10)}...)` : 'Not provided'}`);
     
     try {
       // ========== STEP 1: GET BASIC DEPLOYMENT LIST ==========
-      console.log(`\n📋 [STEP 1] Getting basic deployment list for script: ${scriptId}`);
+      console.error(`\n📋 [STEP 1] Getting basic deployment list for script: ${scriptId}`);
       const step1StartTime = Date.now();
       
       await this.initializeClient(accessToken);
-      console.log(`   ✅ API client initialized successfully`);
+      console.error(`   ✅ API client initialized successfully`);
       
       const response = await this.scriptApi.projects.deployments.list({
         scriptId
@@ -792,32 +792,32 @@ export class GASClient {
       const basicDeployments = response.data.deployments || [];
       const step1Duration = Date.now() - step1StartTime;
       
-      console.log(`   📊 API Response received in ${step1Duration}ms`);
-      console.log(`   📦 Found ${basicDeployments.length} total deployments`);
+      console.error(`   📊 API Response received in ${step1Duration}ms`);
+      console.error(`   📦 Found ${basicDeployments.length} total deployments`);
       
       if (basicDeployments.length === 0) {
-        console.log(`   ⚠️  No deployments found - will use fallback URL`);
+        console.error(`   ⚠️  No deployments found - will use fallback URL`);
       } else {
-        console.log(`   📋 Deployment IDs found:`);
+        console.error(`   📋 Deployment IDs found:`);
                  basicDeployments.forEach((dep: any, index: number) => {
-           console.log(`      ${index + 1}. ${dep.deploymentId} (version: ${dep.versionNumber || 'HEAD'})`);
+           console.error(`      ${index + 1}. ${dep.deploymentId} (version: ${dep.versionNumber || 'HEAD'})`);
          });
       }
       
       // ========== STEP 2 & 3: GET DETAILED DEPLOYMENT INFO AND FIND WEB APP ==========
-      console.log(`\n🔍 [STEP 2+3] Checking each deployment for web app entry points`);
+      console.error(`\n🔍 [STEP 2+3] Checking each deployment for web app entry points`);
       
       for (let i = 0; i < basicDeployments.length; i++) {
         const basicDeployment = basicDeployments[i];
         const step2StartTime = Date.now();
         
-        console.log(`\n   📦 [DEPLOYMENT ${i + 1}/${basicDeployments.length}] Examining: ${basicDeployment.deploymentId}`);
-        console.log(`      📋 Description: ${basicDeployment.description || 'No description'}`);
-        console.log(`      🔢 Version: ${basicDeployment.versionNumber || 'HEAD'}`);
-        console.log(`      📅 Updated: ${basicDeployment.updateTime || 'Unknown'}`);
+        console.error(`\n   📦 [DEPLOYMENT ${i + 1}/${basicDeployments.length}] Examining: ${basicDeployment.deploymentId}`);
+        console.error(`      📋 Description: ${basicDeployment.description || 'No description'}`);
+        console.error(`      🔢 Version: ${basicDeployment.versionNumber || 'HEAD'}`);
+        console.error(`      📅 Updated: ${basicDeployment.updateTime || 'Unknown'}`);
         
         try {
-          console.log(`      🌐 Getting detailed deployment information...`);
+          console.error(`      🌐 Getting detailed deployment information...`);
           
           // Get detailed deployment info including entry points
           const detailResponse = await this.scriptApi.projects.deployments.get({
@@ -826,17 +826,17 @@ export class GASClient {
           });
           
           const step2Duration = Date.now() - step2StartTime;
-          console.log(`      ✅ Deployment details retrieved in ${step2Duration}ms`);
+          console.error(`      ✅ Deployment details retrieved in ${step2Duration}ms`);
           
           // Step 3: Find the web app entry point
           if (detailResponse.data.entryPoints) {
             const entryPoints = detailResponse.data.entryPoints;
-            console.log(`      📋 Found ${entryPoints.length} entry point(s):`);
+            console.error(`      📋 Found ${entryPoints.length} entry point(s):`);
             
                          entryPoints.forEach((ep: any, epIndex: number) => {
-               console.log(`         ${epIndex + 1}. Type: ${ep.entryPointType}`);
+               console.error(`         ${epIndex + 1}. Type: ${ep.entryPointType}`);
                if (ep.entryPointType === 'WEB_APP' && (ep as any).webApp?.url) {
-                 console.log(`            🌐 Web App URL: ${(ep as any).webApp.url}`);
+                 console.error(`            🌐 Web App URL: ${(ep as any).webApp.url}`);
                }
              });
             
@@ -844,96 +844,96 @@ export class GASClient {
             
             if (webAppEntry?.webApp?.url) {
               const originalUrl = webAppEntry.webApp.url;
-              console.log(`      ✅ [SUCCESS] Found WEB_APP entry point with URL!`);
-              console.log(`         📍 Original URL: ${originalUrl}`);
+              console.error(`      ✅ [SUCCESS] Found WEB_APP entry point with URL!`);
+              console.error(`         📍 Original URL: ${originalUrl}`);
               
               // ========== STEP 4: SWAP /exec TO /dev ==========
-              console.log(`\n🔧 [STEP 4] Converting URL for gas_run format`);
-              console.log(`   📝 Rule: Replace '/exec' with '/dev' for development endpoint`);
+              console.error(`\n🔧 [STEP 4] Converting URL for gas_run format`);
+              console.error(`   📝 Rule: Replace '/exec' with '/dev' for development endpoint`);
               
               const gasRunUrl = originalUrl.replace('/exec', '/dev');
               const totalDuration = Date.now() - startTime;
               
               if (gasRunUrl !== originalUrl) {
-                console.log(`   ✅ [SUCCESS] URL conversion completed`);
-                console.log(`      📍 Original:  ${originalUrl}`);
-                console.log(`      🔄 Converted: ${gasRunUrl}`);
-                console.log(`      🎯 Change: Replaced '/exec' → '/dev'`);
+                console.error(`   ✅ [SUCCESS] URL conversion completed`);
+                console.error(`      📍 Original:  ${originalUrl}`);
+                console.error(`      🔄 Converted: ${gasRunUrl}`);
+                console.error(`      🎯 Change: Replaced '/exec' → '/dev'`);
               } else {
-                console.log(`   ℹ️  URL already in correct format (no /exec found)`);
-                console.log(`      📍 Final URL: ${gasRunUrl}`);
+                console.error(`   ℹ️  URL already in correct format (no /exec found)`);
+                console.error(`      📍 Final URL: ${gasRunUrl}`);
               }
               
-              console.log(`\n🎉 [CONSTRUCTION_COMPLETE] Gas_run URL ready!`);
-              console.log(`   🔗 Final URL: ${gasRunUrl}`);
-              console.log(`   ⏱️  Total time: ${totalDuration}ms`);
-              console.log(`   📊 Deployments checked: ${i + 1}/${basicDeployments.length}`);
-              console.log(`   🎯 Source: Deployment ${basicDeployment.deploymentId}`);
+              console.error(`\n🎉 [CONSTRUCTION_COMPLETE] Gas_run URL ready!`);
+              console.error(`   🔗 Final URL: ${gasRunUrl}`);
+              console.error(`   ⏱️  Total time: ${totalDuration}ms`);
+              console.error(`   📊 Deployments checked: ${i + 1}/${basicDeployments.length}`);
+              console.error(`   🎯 Source: Deployment ${basicDeployment.deploymentId}`);
               
               return gasRunUrl;
               
             } else if (webAppEntry) {
-              console.log(`      ⚠️  WEB_APP entry point found but missing URL property`);
-              console.log(`         🔍 Entry point data:`, JSON.stringify(webAppEntry, null, 10));
+              console.error(`      ⚠️  WEB_APP entry point found but missing URL property`);
+              console.error(`         🔍 Entry point data:`, JSON.stringify(webAppEntry, null, 10));
             } else {
-              console.log(`      ❌ No WEB_APP entry point found in this deployment`);
-                             console.log(`         📋 Available types: ${entryPoints.map((ep: any) => ep.entryPointType).join(', ')}`);
+              console.error(`      ❌ No WEB_APP entry point found in this deployment`);
+                             console.error(`         📋 Available types: ${entryPoints.map((ep: any) => ep.entryPointType).join(', ')}`);
             }
           } else {
-            console.log(`      ❌ No entry points found in deployment response`);
-            console.log(`         📋 Response structure:`, JSON.stringify(detailResponse.data, null, 6));
+            console.error(`      ❌ No entry points found in deployment response`);
+            console.error(`         📋 Response structure:`, JSON.stringify(detailResponse.data, null, 6));
           }
           
         } catch (detailError: any) {
           const step2Duration = Date.now() - step2StartTime;
-          console.log(`      ❌ Failed to get deployment details (${step2Duration}ms)`);
-          console.log(`         💬 Error: ${detailError.message}`);
-          console.log(`         🔍 Error type: ${detailError.name || 'Unknown'}`);
+          console.error(`      ❌ Failed to get deployment details (${step2Duration}ms)`);
+          console.error(`         💬 Error: ${detailError.message}`);
+          console.error(`         🔍 Error type: ${detailError.name || 'Unknown'}`);
           if (detailError.code) {
-            console.log(`         🔢 Error code: ${detailError.code}`);
+            console.error(`         🔢 Error code: ${detailError.code}`);
           }
         }
         
-        console.log(`      ⏭️  Moving to next deployment...`);
+        console.error(`      ⏭️  Moving to next deployment...`);
       }
       
       // ========== FALLBACK: STANDARD FORMAT ==========
-      console.log(`\n📋 [FALLBACK] No web app deployments found with URLs`);
-      console.log(`   📊 Summary: Checked ${basicDeployments.length} deployments, none had web app URLs`);
-      console.log(`   🔄 Using standard gas_run URL format as fallback`);
+      console.error(`\n📋 [FALLBACK] No web app deployments found with URLs`);
+      console.error(`   📊 Summary: Checked ${basicDeployments.length} deployments, none had web app URLs`);
+      console.error(`   🔄 Using standard gas_run URL format as fallback`);
       
       const fallbackUrl = `https://script.google.com/macros/s/${scriptId}/dev`;
       const totalDuration = Date.now() - startTime;
       
-      console.log(`\n🎯 [FALLBACK_COMPLETE] Standard format gas_run URL ready!`);
-      console.log(`   🔗 Fallback URL: ${fallbackUrl}`);
-      console.log(`   ⏱️  Total time: ${totalDuration}ms`);
-      console.log(`   📝 Note: This uses scriptId directly (no custom domain)`);
+      console.error(`\n🎯 [FALLBACK_COMPLETE] Standard format gas_run URL ready!`);
+      console.error(`   🔗 Fallback URL: ${fallbackUrl}`);
+      console.error(`   ⏱️  Total time: ${totalDuration}ms`);
+      console.error(`   📝 Note: This uses scriptId directly (no custom domain)`);
       
       return fallbackUrl;
       
     } catch (error: any) {
       const totalDuration = Date.now() - startTime;
-      console.log(`\n❌ [CONSTRUCTION_ERROR] URL construction failed`);
-      console.log(`   ⏱️  Duration: ${totalDuration}ms`);
-      console.log(`   💬 Error message: ${error.message}`);
-      console.log(`   🔍 Error type: ${error.name || 'Unknown'}`);
-      console.log(`   📋 Error details:`, error);
+      console.error(`\n❌ [CONSTRUCTION_ERROR] URL construction failed`);
+      console.error(`   ⏱️  Duration: ${totalDuration}ms`);
+      console.error(`   💬 Error message: ${error.message}`);
+      console.error(`   🔍 Error type: ${error.name || 'Unknown'}`);
+      console.error(`   📋 Error details:`, error);
       
       if (error.code) {
-        console.log(`   🔢 Error code: ${error.code}`);
+        console.error(`   🔢 Error code: ${error.code}`);
       }
       if (error.status) {
-        console.log(`   📊 HTTP status: ${error.status}`);
+        console.error(`   📊 HTTP status: ${error.status}`);
       }
       
-      console.log(`\n🛡️  [ERROR_FALLBACK] Using emergency fallback URL`);
+      console.error(`\n🛡️  [ERROR_FALLBACK] Using emergency fallback URL`);
       const fallbackUrl = `https://script.google.com/macros/s/${scriptId}/dev`;
       
-      console.log(`\n🎯 [ERROR_FALLBACK_COMPLETE] Emergency gas_run URL ready!`);
-      console.log(`   🔗 Emergency URL: ${fallbackUrl}`);
-      console.log(`   ⏱️  Total time: ${totalDuration}ms`);
-      console.log(`   📝 Note: Error fallback - uses scriptId directly`);
+      console.error(`\n🎯 [ERROR_FALLBACK_COMPLETE] Emergency gas_run URL ready!`);
+      console.error(`   🔗 Emergency URL: ${fallbackUrl}`);
+      console.error(`   ⏱️  Total time: ${totalDuration}ms`);
+      console.error(`   📝 Note: Error fallback - uses scriptId directly`);
       
       return fallbackUrl;
     }
@@ -966,7 +966,7 @@ export class GASClient {
    * HEAD deployments automatically serve the latest saved content
    */
   async findHeadDeployment(scriptId: string, accessToken?: string): Promise<GASDeployment | null> {
-    console.log(`🔍 Checking for existing HEAD deployment in script: ${scriptId}`);
+    console.error(`🔍 Checking for existing HEAD deployment in script: ${scriptId}`);
     
     const deployments = await this.listDeployments(scriptId, accessToken);
     
@@ -978,12 +978,12 @@ export class GASClient {
     );
     
     if (headDeployment) {
-      console.log(`✅ Found existing HEAD deployment: ${headDeployment.deploymentId}`);
-      console.log(`   Description: ${headDeployment.description}`);
-      console.log(`   Updated: ${headDeployment.updateTime}`);
+      console.error(`✅ Found existing HEAD deployment: ${headDeployment.deploymentId}`);
+      console.error(`   Description: ${headDeployment.description}`);
+      console.error(`   Updated: ${headDeployment.updateTime}`);
       return headDeployment;
     } else {
-      console.log(`📭 No HEAD deployment found`);
+      console.error(`📭 No HEAD deployment found`);
       return null;
     }
   }
@@ -998,7 +998,7 @@ export class GASClient {
     options: DeploymentOptions = {},
     accessToken?: string
   ): Promise<GASDeployment> {
-    console.log(`🚀 Creating HEAD deployment for script: ${scriptId}`);
+    console.error(`🚀 Creating HEAD deployment for script: ${scriptId}`);
     
     await this.initializeClient(accessToken);
     
@@ -1020,23 +1020,23 @@ export class GASClient {
           access: accessLevel,
           executeAs: 'USER_ACCESSING'
         };
-        console.log(`🌐 Creating HEAD Web App deployment`);
-        console.log(`   Access: ${webAppConfig.access}`);
-        console.log(`   Execute As: ${webAppConfig.executeAs}`);
-        console.log(`   Serves: Latest saved content automatically (no redeployment needed)`);
-        console.log(`   URL Type: /dev (testing endpoint)`);
+        console.error(`🌐 Creating HEAD Web App deployment`);
+        console.error(`   Access: ${webAppConfig.access}`);
+        console.error(`   Execute As: ${webAppConfig.executeAs}`);
+        console.error(`   Serves: Latest saved content automatically (no redeployment needed)`);
+        console.error(`   URL Type: /dev (testing endpoint)`);
       }
 
-      console.log(`🔧 Creating HEAD deployment (versionNumber=null for latest content)`);
-      console.log(`📋 Request body:`, JSON.stringify(requestBody, null, 2));
+      console.error(`🔧 Creating HEAD deployment (versionNumber=null for latest content)`);
+      console.error(`📋 Request body:`, JSON.stringify(requestBody, null, 2));
 
       const response = await this.scriptApi.projects.deployments.create({
         scriptId,
         requestBody
       });
       
-      console.log(`📦 HEAD deployment created successfully`);
-      console.log(`📦 Response Data:`, JSON.stringify(response.data, null, 2));
+      console.error(`📦 HEAD deployment created successfully`);
+      console.error(`📦 Response Data:`, JSON.stringify(response.data, null, 2));
 
       const deployment: GASDeployment = {
         deploymentId: response.data.deploymentId,
@@ -1050,19 +1050,19 @@ export class GASClient {
 
       // Convert web app URL to gas_run format for HEAD deployments
       if (response.data.entryPoints) {
-        console.log(`🔍 HEAD deployment entry points:`, JSON.stringify(response.data.entryPoints, null, 2));
+        console.error(`🔍 HEAD deployment entry points:`, JSON.stringify(response.data.entryPoints, null, 2));
         
         const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
         if (webAppEntry?.webApp?.url) {
           const originalUrl = webAppEntry.webApp.url;
-          console.log(`🌐 HEAD Web App URL from API: ${originalUrl}`);
-          console.log(`🔧 Converting to gas_run URL format for HEAD deployment...`);
+          console.error(`🌐 HEAD Web App URL from API: ${originalUrl}`);
+          console.error(`🔧 Converting to gas_run URL format for HEAD deployment...`);
           deployment.webAppUrl = this.constructGasRunUrlFromWebApp(originalUrl);
-          console.log(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
+          console.error(`✅ Using gas_run URL format: ${deployment.webAppUrl}`);
         } else if (webAppEntry) {
-          console.log(`🔧 Web App entry point found but no URL`);
+          console.error(`🔧 Web App entry point found but no URL`);
         }
-        console.log(`🔄 This URL will serve the latest content automatically`);
+        console.error(`🔄 This URL will serve the latest content automatically`);
       }
 
       return deployment;
@@ -1079,13 +1079,13 @@ export class GASClient {
     options: DeploymentOptions = {},
     accessToken?: string
   ): Promise<{ deployment: GASDeployment; wasCreated: boolean; webAppUrl?: string }> {
-    console.log(`🎯 Ensuring HEAD deployment exists for script: ${scriptId}`);
+    console.error(`🎯 Ensuring HEAD deployment exists for script: ${scriptId}`);
     
     // Check for existing HEAD deployment
     const existingHead = await this.findHeadDeployment(scriptId, accessToken);
     
     if (existingHead) {
-      console.log(`✅ Using existing HEAD deployment: ${existingHead.deploymentId}`);
+      console.error(`✅ Using existing HEAD deployment: ${existingHead.deploymentId}`);
       
       // Convert web app URL to gas_run format for HEAD deployments
       let webAppUrl = existingHead.webAppUrl;
@@ -1094,7 +1094,7 @@ export class GASClient {
         if (webAppEntry?.webApp?.url) {
           // Convert existing URL to gas_run format
           webAppUrl = this.constructGasRunUrlFromWebApp(webAppEntry.webApp.url);
-          console.log(`🔧 Using gas_run URL format for HEAD: ${webAppUrl}`);
+          console.error(`🔧 Using gas_run URL format for HEAD: ${webAppUrl}`);
         }
       }
       
@@ -1106,12 +1106,12 @@ export class GASClient {
     }
 
     // Create new HEAD deployment
-    console.log(`🚀 Creating new HEAD deployment...`);
+    console.error(`🚀 Creating new HEAD deployment...`);
     const newHeadDeployment = await this.createHeadDeployment(scriptId, description, options, accessToken);
     
-    console.log(`✅ HEAD deployment created successfully`);
-    console.log(`🌐 Constant URL: ${newHeadDeployment.webAppUrl}`);
-    console.log(`🔄 Updates: Use updateProjectContent() to push code changes`);
+    console.error(`✅ HEAD deployment created successfully`);
+    console.error(`🌐 Constant URL: ${newHeadDeployment.webAppUrl}`);
+    console.error(`🔄 Updates: Use updateProjectContent() to push code changes`);
     
     return {
       deployment: newHeadDeployment,
@@ -1133,8 +1133,8 @@ export class GASClient {
     headDeploymentUrl?: string;
     message: string;
   }> {
-    console.log(`📝 Updating content for HEAD deployment in script: ${scriptId}`);
-    console.log(`📊 Files to update: ${files.length}`);
+    console.error(`📝 Updating content for HEAD deployment in script: ${scriptId}`);
+    console.error(`📊 Files to update: ${files.length}`);
     
     // Update the script content
     const updatedFiles = await this.updateProjectContent(scriptId, files, accessToken);
@@ -1154,7 +1154,7 @@ export class GASClient {
       ? `Content updated successfully. HEAD deployment will serve new content automatically at: ${headDeploymentUrl}`
       : `Content updated successfully. No HEAD deployment found - create one with ensureHeadDeployment()`;
     
-    console.log(`✅ ${message}`);
+    console.error(`✅ ${message}`);
     
     return {
       files: updatedFiles,

@@ -46,7 +46,7 @@ export class DesktopOAuthServer {
       this.server.listen(0, '127.0.0.1', () => {
         const address = this.server!.address() as AddressInfo;
         this.port = address.port;
-        console.log(`🔐 Desktop OAuth server listening on http://127.0.0.1:${this.port}`);
+        console.error(`🔐 Desktop OAuth server listening on http://127.0.0.1:${this.port}`);
         resolve(this.port);
       });
     });
@@ -66,7 +66,7 @@ export class DesktopOAuthServer {
           console.error('Error stopping OAuth callback server:', error);
           reject(error);
         } else {
-          console.log('✅ Desktop OAuth server stopped');
+          console.error('✅ Desktop OAuth server stopped');
           this.server = null;
           this.port = 0;
           resolve();
@@ -144,7 +144,7 @@ export class DesktopOAuthServer {
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url || '', `http://127.0.0.1:${this.port}`);
     
-    console.log(`📥 OAuth callback request: ${req.method} ${url.pathname}`);
+    console.error(`📥 OAuth callback request: ${req.method} ${url.pathname}`);
 
     if (url.pathname === '/callback') {
       this.handleOAuthCallback(url, res);
@@ -165,7 +165,7 @@ export class DesktopOAuthServer {
     const error = params.get('error');
     const errorDescription = params.get('error_description');
 
-    console.log(`🔄 OAuth callback received:`, {
+    console.error(`🔄 OAuth callback received:`, {
       hasCode: !!code,
       hasState: !!state,
       hasError: !!error,
