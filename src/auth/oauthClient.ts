@@ -70,9 +70,9 @@ export class GASAuthClient {
             redirectUri: 'http://127.0.0.1:*' // Dynamic port will be set during auth flow
         });
         
-        console.log('🔐 OAuth client initialized with UWP configuration');
-        console.log(`🔑 Client ID: ${config.client_id.substring(0, 30)}...`);
-        console.log(`🏷️  Type: ${config.type?.toUpperCase()}`);
+        console.error('🔐 OAuth client initialized with UWP configuration');
+        console.error(`🔑 Client ID: ${config.client_id.substring(0, 30)}...`);
+        console.error(`🏷️  Type: ${config.type?.toUpperCase()}`);
     }
 
     /**
@@ -93,7 +93,7 @@ export class GASAuthClient {
      * @throws OAuthError if the flow cannot be started
      */
     async startAuthFlow(openBrowser: boolean = true): Promise<string> {
-        console.log('🔐 Starting Google OAuth 2.0 flow with PKCE...');
+        console.error('🔐 Starting Google OAuth 2.0 flow with PKCE...');
 
         try {
             // Reset callback state for new flow
@@ -109,7 +109,7 @@ export class GASAuthClient {
             // Generate state parameter for CSRF protection
             this.state = crypto.randomUUID();
             
-            console.log('🔑 Generated PKCE challenge and state parameter');
+            console.error('🔑 Generated PKCE challenge and state parameter');
 
             // Set up callback server with race condition protection
             await this.setupCallbackServerWithHandlers();
@@ -117,11 +117,11 @@ export class GASAuthClient {
             // Generate authorization URL with all security parameters
             const authUrl = this.createAuthorizationUrl();
 
-            console.log(`🔐 OAuth server listening on ${this.redirectUri}`);
-            console.log(`🌐 Authorization URL: ${authUrl}`);
+            console.error(`🔐 OAuth server listening on ${this.redirectUri}`);
+            console.error(`🌐 Authorization URL: ${authUrl}`);
 
             if (openBrowser) {
-                console.log('🚀 Opening browser for authentication...');
+                console.error('🚀 Opening browser for authentication...');
                 try {
                     await open(authUrl);
                 } catch (error) {
@@ -192,7 +192,7 @@ export class GASAuthClient {
     private async handleAuthCallback(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
         // ATOMIC CHECK: Prevent duplicate callback processing
         if (this.callbackProcessed) {
-            console.log('⚠️ Callback already processed, ignoring duplicate request');
+            console.error('⚠️ Callback already processed, ignoring duplicate request');
             res.writeHead(200, { 'Content-Type': 'text/html' })
                .end('<html><body><h2>Authentication already processed</h2><p>You can close this window.</p></body></html>');
             return;
@@ -200,7 +200,7 @@ export class GASAuthClient {
 
         // ATOMIC CHECK: Prevent concurrent callback processing
         if (this.callbackProcessing) {
-            console.log('⚠️ Callback processing in progress, ignoring concurrent request');
+            console.error('⚠️ Callback processing in progress, ignoring concurrent request');
             res.writeHead(200, { 'Content-Type': 'text/html' })
                .end('<html><body><h2>Authentication in progress</h2><p>Please wait...</p></body></html>');
             return;
@@ -215,7 +215,7 @@ export class GASAuthClient {
             const error = url.searchParams.get('error');
             const returnedState = url.searchParams.get('state');
 
-            console.log('🔄 OAuth callback received:', { hasCode: !!code, hasState: !!returnedState, hasError: !!error });
+            console.error('🔄 OAuth callback received:', { hasCode: !!code, hasState: !!returnedState, hasError: !!error });
 
             // Validate state parameter to prevent CSRF attacks
             if (returnedState !== this.state) {
@@ -253,9 +253,9 @@ export class GASAuthClient {
             // Mark callback as processed AFTER validation but BEFORE token exchange
             this.callbackProcessed = true;
 
-            console.log('✅ Authorization callback received successfully');
-            console.log('✅ State parameter validated - CSRF protection confirmed');
-            console.log('🔄 Processing OAuth callback...');
+            console.error('✅ Authorization callback received successfully');
+            console.error('✅ State parameter validated - CSRF protection confirmed');
+            console.error('🔄 Processing OAuth callback...');
 
             // Show success page immediately
             res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
@@ -263,7 +263,7 @@ export class GASAuthClient {
             // Exchange code for tokens
             try {
                 const tokenResponse = await this.exchangeCodeForTokens(code);
-                console.log('✅ Token exchange successful');
+                console.error('✅ Token exchange successful');
                 
                 // Signal completion to waiting gas_auth call
                 if (this.currentAuthKey) {
@@ -306,7 +306,7 @@ export class GASAuthClient {
         }
         
         this.cleanupInProgress = true;
-        console.log(`🧹 Cleaning up OAuth callback server on port ${this.serverPort}...`);
+        console.error(`🧹 Cleaning up OAuth callback server on port ${this.serverPort}...`);
         
         // Store server reference and clear instance variable
         const server = this.server;
@@ -317,14 +317,14 @@ export class GASAuthClient {
         
         // Close server gracefully
         server.close(() => {
-            console.log(`✅ OAuth callback server on port ${port} closed successfully`);
+            console.error(`✅ OAuth callback server on port ${port} closed successfully`);
             this.cleanupInProgress = false;
         });
         
         // Force close after timeout to prevent hanging
         setTimeout(() => {
             if (!server.listening && this.cleanupInProgress) {
-                console.log('⚠️ Force completing cleanup after timeout');
+                console.error('⚠️ Force completing cleanup after timeout');
                 this.cleanupInProgress = false;
             }
         }, 2000);
@@ -359,18 +359,18 @@ export class GASAuthClient {
      * @returns Token response with expiry buffer applied
      */
     private async exchangeCodeForTokens(code: string): Promise<TokenResponse> {
-        console.log('🔍 === UWP PKCE TOKEN EXCHANGE ===');
-        console.log('📤 Request Parameters:');
-        console.log('  - Client ID:', this.config.client_id);
-        console.log('  - Client Secret:', this.config.client_secret ? 'PROVIDED (optional)' : 'NOT PROVIDED (UWP PKCE-only)');
-        console.log('  - Redirect URI:', this.redirectUri);
-        console.log('  - Authorization Code:', code.substring(0, 20) + '...');
-        console.log('  - Code Verifier:', this.codeVerifier?.substring(0, 20) + '...');
-        console.log('  - Code Challenge:', this.codeChallenge?.substring(0, 20) + '...');
+        console.error('🔍 === UWP PKCE TOKEN EXCHANGE ===');
+        console.error('📤 Request Parameters:');
+        console.error('  - Client ID:', this.config.client_id);
+        console.error('  - Client Secret:', this.config.client_secret ? 'PROVIDED (optional)' : 'NOT PROVIDED (UWP PKCE-only)');
+        console.error('  - Redirect URI:', this.redirectUri);
+        console.error('  - Authorization Code:', code.substring(0, 20) + '...');
+        console.error('  - Code Verifier:', this.codeVerifier?.substring(0, 20) + '...');
+        console.error('  - Code Challenge:', this.codeChallenge?.substring(0, 20) + '...');
         
         try {
-            console.log('📡 Exchanging authorization code for tokens...');
-            console.log(`💡 Using UWP PKCE-only flow (standards-compliant)`);
+            console.error('📡 Exchanging authorization code for tokens...');
+            console.error(`💡 Using UWP PKCE-only flow (standards-compliant)`);
             
             // Use Google Auth Library's built-in getToken method with PKCE
             const { tokens } = await this.oauth2Client.getToken({
@@ -379,24 +379,24 @@ export class GASAuthClient {
                 redirect_uri: this.redirectUri!
             });
             
-            console.log('✅ UWP PKCE token exchange successful!');
-            console.log('📥 Received tokens:');
-            console.log('  - Access token:', tokens.access_token?.substring(0, 30) + '...');
-            console.log('  - Refresh token:', tokens.refresh_token ? tokens.refresh_token.substring(0, 30) + '...' : 'none');
-            console.log('  - Token type:', tokens.token_type);
-            console.log('  - Expires in:', tokens.expiry_date ? Math.floor((tokens.expiry_date - Date.now()) / 1000) : 'unknown', 'seconds');
-            console.log('  - Scope:', tokens.scope);
+            console.error('✅ UWP PKCE token exchange successful!');
+            console.error('📥 Received tokens:');
+            console.error('  - Access token:', tokens.access_token?.substring(0, 30) + '...');
+            console.error('  - Refresh token:', tokens.refresh_token ? tokens.refresh_token.substring(0, 30) + '...' : 'none');
+            console.error('  - Token type:', tokens.token_type);
+            console.error('  - Expires in:', tokens.expiry_date ? Math.floor((tokens.expiry_date - Date.now()) / 1000) : 'unknown', 'seconds');
+            console.error('  - Scope:', tokens.scope);
             
             // Apply 60-second buffer to token expiry for clock skew and network latency
             const expiresIn = tokens.expiry_date 
                 ? Math.floor((tokens.expiry_date - Date.now() - 60000) / 1000) // Apply 60-second buffer
                 : undefined;
 
-            console.log('⏰ Token expiry calculation:');
-            console.log('  - Original expiry:', tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : 'none');
-            console.log('  - Buffer applied: 60 seconds');
-            console.log('  - Effective expires_in:', expiresIn, 'seconds');
-            console.log('🔍 === END UWP PKCE TOKEN EXCHANGE ===');
+            console.error('⏰ Token expiry calculation:');
+            console.error('  - Original expiry:', tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : 'none');
+            console.error('  - Buffer applied: 60 seconds');
+            console.error('  - Effective expires_in:', expiresIn, 'seconds');
+            console.error('🔍 === END UWP PKCE TOKEN EXCHANGE ===');
 
             return {
                 access_token: tokens.access_token!,
@@ -407,12 +407,12 @@ export class GASAuthClient {
             };
             
         } catch (error: any) {
-            console.log('❌ === TOKEN EXCHANGE ERROR DEBUG ===');
-            console.log('🚨 Error details:');
-            console.log('  - Error message:', error.message);
-            console.log('  - Error type:', error.constructor.name);
-            console.log('  - Error stack:', error.stack);
-            console.log('🔍 === END ERROR DEBUG ===');
+            console.error('❌ === TOKEN EXCHANGE ERROR DEBUG ===');
+            console.error('🚨 Error details:');
+            console.error('  - Error message:', error.message);
+            console.error('  - Error type:', error.constructor.name);
+            console.error('  - Error stack:', error.stack);
+            console.error('🔍 === END ERROR DEBUG ===');
             
             throw new Error(`Token exchange failed: ${error.message}`);
         }
@@ -432,22 +432,26 @@ export class GASAuthClient {
      */
     async getUserInfo(accessToken: string): Promise<UserInfo> {
         try {
-            console.log(`📡 [GOOGLE OAUTH API] Starting getUserInfo request`);
-            console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-            console.log(`   📍 URL: https://www.googleapis.com/oauth2/v2/userinfo`);
-            console.log(`   🔑 Auth: Token present (${accessToken.substring(0, 10)}...)`);
+            console.error(`📡 [GOOGLE OAUTH API] Starting getUserInfo request`);
+            console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+            console.error(`   📍 URL: https://www.googleapis.com/oauth2/v2/userinfo`);
+            console.error(`   🔑 Auth: Token present (${accessToken.substring(0, 10)}...)`);
             
             const startTime = Date.now();
             
             const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
                 }
             });
 
             const duration = Date.now() - startTime;
-            console.log(`📥 [GOOGLE OAUTH API] getUserInfo response received after ${duration}ms`);
-            console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
+            const contentType = response.headers.get('content-type') || 'Unknown';
+            console.error(`📥 [GOOGLE OAUTH API] getUserInfo response received after ${duration}ms`);
+            console.error(`   🔢 Status: ${response.status} ${response.statusText}`);
+            console.error(`   📏 Content-Type: ${contentType}`);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -458,13 +462,23 @@ export class GASAuthClient {
                 throw new Error(`User info fetch failed: ${response.status} ${response.statusText} - ${errorText}`);
             }
 
-            const data = await response.json();
+            let data: any;
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    throw new Error(`Unexpected response format: ${contentType}`);
+                }
+            }
 
-            console.log(`✅ [GOOGLE OAUTH API SUCCESS] getUserInfo completed`);
-            console.log(`   📊 User email: ${data.email || 'No email'}`);
-            console.log(`   📊 User name: ${data.name || 'No name'}`);
-            console.log(`   📏 Response size: ${JSON.stringify(data).length} characters`);
-            console.log(`   ⏱️  Total duration: ${duration}ms`);
+            console.error(`✅ [GOOGLE OAUTH API SUCCESS] getUserInfo completed`);
+            console.error(`   📊 User email: ${data.email || 'No email'}`);
+            console.error(`   📊 User name: ${data.name || 'No name'}`);
+            console.error(`   📏 Response size: ${JSON.stringify(data).length} characters`);
+            console.error(`   ⏱️  Total duration: ${duration}ms`);
 
             if (!data.email) {
                 throw new Error('No email address in user info response');
@@ -478,7 +492,7 @@ export class GASAuthClient {
                 verified_email: data.verified_email || false,
             };
 
-            console.log(`✅ User info retrieved for: ${userInfo.email}`);
+            console.error(`✅ User info retrieved for: ${userInfo.email}`);
             return userInfo;
 
         } catch (error: any) {
@@ -495,10 +509,10 @@ export class GASAuthClient {
      */
     async revokeTokens(accessToken: string): Promise<void> {
         try {
-            console.log(`📡 [GOOGLE OAUTH API] Starting token revocation`);
-            console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-            console.log(`   📍 URL: https://oauth2.googleapis.com/revoke`);
-            console.log(`   🔑 Token: ${accessToken.substring(0, 10)}...`);
+            console.error(`📡 [GOOGLE OAUTH API] Starting token revocation`);
+            console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+            console.error(`   📍 URL: https://oauth2.googleapis.com/revoke`);
+            console.error(`   🔑 Token: ${accessToken.substring(0, 10)}...`);
             
             const startTime = Date.now();
             
@@ -513,15 +527,15 @@ export class GASAuthClient {
             });
 
             const duration = Date.now() - startTime;
-            console.log(`📥 [GOOGLE OAUTH API] Token revocation response received after ${duration}ms`);
-            console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
+            console.error(`📥 [GOOGLE OAUTH API] Token revocation response received after ${duration}ms`);
+            console.error(`   🔢 Status: ${response.status} ${response.statusText}`);
 
             if (!response.ok) {
                 console.warn(`⚠️ [GOOGLE OAUTH API] Token revocation failed: ${response.status} ${response.statusText}`);
                 console.warn(`   ⏱️  Duration: ${duration}ms`);
                 // Don't throw error - revocation failure shouldn't block logout
             } else {
-                console.log(`✅ [GOOGLE OAUTH API SUCCESS] Token revoked successfully after ${duration}ms`);
+                console.error(`✅ [GOOGLE OAUTH API SUCCESS] Token revoked successfully after ${duration}ms`);
             }
 
         } catch (error: any) {
@@ -535,34 +549,49 @@ export class GASAuthClient {
      */
     async validateToken(accessToken: string): Promise<boolean> {
         try {
-            console.log(`📡 [GOOGLE OAUTH API] Starting token validation`);
-            console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-            console.log(`   📍 URL: https://www.googleapis.com/oauth2/v1/tokeninfo`);
-            console.log(`   🔑 Token: ${accessToken.substring(0, 10)}...`);
+            console.error(`📡 [GOOGLE OAUTH API] Starting token validation`);
+            console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
+            console.error(`   📍 URL: https://www.googleapis.com/oauth2/v1/tokeninfo`);
+            console.error(`   🔑 Token: ${accessToken.substring(0, 10)}...`);
             
             const startTime = Date.now();
             
             const response = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo', {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
                 }
             });
 
             const duration = Date.now() - startTime;
-            console.log(`📥 [GOOGLE OAUTH API] Token validation response received after ${duration}ms`);
-            console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
+            const contentType = response.headers.get('content-type') || 'Unknown';
+            console.error(`📥 [GOOGLE OAUTH API] Token validation response received after ${duration}ms`);
+            console.error(`   🔢 Status: ${response.status} ${response.statusText}`);
+            console.error(`   📏 Content-Type: ${contentType}`);
 
             if (!response.ok) {
-                console.log(`❌ [GOOGLE OAUTH API] Token validation failed: ${response.status} ${response.statusText}`);
-                console.log(`   ⏱️  Duration: ${duration}ms`);
+                console.error(`❌ [GOOGLE OAUTH API] Token validation failed: ${response.status} ${response.statusText}`);
+                console.error(`   ⏱️  Duration: ${duration}ms`);
                 return false;
             }
 
-            const data = await response.json();
+            let data: any;
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    console.error(`❌ [GOOGLE OAUTH API] Unexpected response format: ${contentType}`);
+                    return false;
+                }
+            }
             
-            console.log(`✅ [GOOGLE OAUTH API SUCCESS] Token validation completed after ${duration}ms`);
-            console.log(`   📊 Token scope: ${data.scope || 'No scope info'}`);
-            console.log(`   📊 Token expires in: ${data.expires_in || 'Unknown'} seconds`);
+            console.error(`✅ [GOOGLE OAUTH API SUCCESS] Token validation completed after ${duration}ms`);
+            console.error(`   📊 Token scope: ${data.scope || 'No scope info'}`);
+            console.error(`   📊 Token expires in: ${data.expires_in || 'Unknown'} seconds`);
             
             // Check if token has required scopes
             const requiredScopes = ['script.projects', 'script.processes', 'script.deployments', 'script.scriptapp'];
@@ -572,7 +601,7 @@ export class GASAuthClient {
                 tokenScope.includes(scope)
             );
 
-            console.log(`📊 Required scopes present: ${hasRequiredScopes}`);
+            console.error(`📊 Required scopes present: ${hasRequiredScopes}`);
             return hasRequiredScopes;
 
         } catch (error) {

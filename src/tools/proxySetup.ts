@@ -117,8 +117,8 @@ export class GASProxySetupTool extends BaseTool {
           // Get the Google web app URL and convert to gas_run format
           if (deployment && deployment.webAppUrl) {
             gasRunUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
-            console.log(`🌐 Google Web App URL: ${deployment.webAppUrl}`);
-            console.log(`🔧 Gas_run URL (replaced /exec with /dev): ${gasRunUrl}`);
+            console.error(`🌐 Google Web App URL: ${deployment.webAppUrl}`);
+            console.error(`🔧 Gas_run URL (replaced /exec with /dev): ${gasRunUrl}`);
           }
         } catch (deployError: any) {
           console.warn(`Deployment creation failed: ${deployError.message}`);
@@ -140,8 +140,8 @@ export class GASProxySetupTool extends BaseTool {
             
             if (googleWebAppUrl) {
               gasRunUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
-              console.log(`🌐 Using existing Google Web App URL: ${googleWebAppUrl}`);
-              console.log(`🔧 Gas_run URL (replaced /exec with /dev): ${gasRunUrl}`);
+              console.error(`🌐 Using existing Google Web App URL: ${googleWebAppUrl}`);
+              console.error(`🔧 Gas_run URL (replaced /exec with /dev): ${gasRunUrl}`);
             }
           }
         } catch (listError: any) {

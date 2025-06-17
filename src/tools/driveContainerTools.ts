@@ -108,7 +108,7 @@ export class GASFindDriveScriptTool extends BaseTool {
         throw new Error('fileName cannot be empty');
       }
 
-      console.log(`🔍 Searching for Drive containers: "${fileName}"`);
+      console.error(`🔍 Searching for Drive containers: "${fileName}"`);
 
       // Get access token
       const accessToken = await this.handleApiCall(
@@ -168,7 +168,7 @@ export class GASFindDriveScriptTool extends BaseTool {
         return bTime - aTime;
       });
 
-      console.log(`✅ Found ${allMatches.length} matching containers`);
+      console.error(`✅ Found ${allMatches.length} matching containers`);
 
       return {
         success: true,
@@ -195,40 +195,75 @@ export class GASFindDriveScriptTool extends BaseTool {
   private async searchDriveFiles(query: string, accessToken: string): Promise<any> {
     const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime)&pageSize=100`;
     
-    console.log(`📡 [GOOGLE DRIVE API] Starting search request`);
-    console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-    console.log(`   📍 URL: ${url}`);
-    console.log(`   🔍 Query: ${query}`);
-    console.log(`   🔑 Auth: Token present (${accessToken.substring(0, 10)}...)`);
+    console.error(`[GOOGLE DRIVE API] Starting search request`);
+    console.error(`   Timestamp: ${new Date().toISOString()}`);
+    console.error(`   URL: ${url}`);
+    console.error(`   Query: ${query}`);
+    console.error(`   Auth: Token present (${accessToken.substring(0, 10)}...)`);
     
     const startTime = Date.now();
     
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
         'Content-Type': 'application/json'
       }
     });
 
     const duration = Date.now() - startTime;
-    console.log(`📥 [GOOGLE DRIVE API] Search response received after ${duration}ms`);
-    console.log(`   🔢 Status: ${response.status} ${response.statusText}`);
-    console.log(`   📍 URL: ${response.url}`);
+    const contentType = response.headers.get('content-type') || 'Unknown';
+    console.error(`[GOOGLE DRIVE API] Search response received after ${duration}ms`);
+    console.error(`   Status: ${response.status} ${response.statusText}`);
+    console.error(`   URL: ${response.url}`);
+    console.error(`   Content-Type: ${contentType}`);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ [GOOGLE DRIVE API ERROR] Search failed`);
-      console.error(`   🔢 Status: ${response.status} ${response.statusText}`);
-      console.error(`   📄 Error body: ${errorText}`);
-      console.error(`   ⏱️  Duration: ${duration}ms`);
-      throw new Error(`Drive API search failed: ${response.status} ${response.statusText} - ${errorText}`);
+      let errorText = '';
+      let errorHeaders: Record<string, string> = {};
+      try {
+        errorText = await response.text();
+        response.headers.forEach((value, key) => {
+          errorHeaders[key] = value;
+        });
+        console.error(`[GOOGLE DRIVE API ERROR] Search failed`);
+        console.error(`   Status: ${response.status} ${response.statusText}`);
+        console.error(`   Error body: ${errorText}`);
+        console.error(`   Error headers:`, errorHeaders);
+        console.error(`   Duration: ${duration}ms`);
+      } catch (bodyError) {
+        console.warn('Failed to read error response body:', bodyError);
+      }
+      
+      const error = new Error(`Drive API search failed: ${response.status} ${response.statusText} - ${errorText}`);
+      (error as any).statusCode = response.status;
+      (error as any).statusText = response.statusText;
+      (error as any).response = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: errorHeaders,
+        url: response.url,
+        body: errorText
+      };
+      throw error;
     }
 
-    const result = await response.json();
-    console.log(`✅ [GOOGLE DRIVE API SUCCESS] Search completed`);
-    console.log(`   📊 Files found: ${(result as any).files?.length || 0}`);
-    console.log(`   📏 Response size: ${JSON.stringify(result).length} characters`);
-    console.log(`   ⏱️  Total duration: ${duration}ms`);
+    let result: any;
+    if (contentType.includes('application/json')) {
+      result = await response.json();
+    } else {
+      const text = await response.text();
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new Error(`Unexpected response format from Drive API: ${contentType}`);
+      }
+    }
+    
+    console.error(`[GOOGLE DRIVE API SUCCESS] Search completed`);
+    console.error(`   Files found: ${(result as any).files?.length || 0}`);
+    console.error(`   Response size: ${JSON.stringify(result).length} characters`);
+    console.error(`   Total duration: ${duration}ms`);
     
     return result;
   }
@@ -244,16 +279,29 @@ export class GASFindDriveScriptTool extends BaseTool {
       const scriptsResponse = await fetch(scriptsUrl, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json',
           'Content-Type': 'application/json'
         }
       });
 
       if (!scriptsResponse.ok) {
-        console.log(`⚠️  Unable to list scripts: ${scriptsResponse.status}`);
+        console.error(`Unable to list scripts: ${scriptsResponse.status}`);
         return null;
       }
 
-      const scriptsData = await scriptsResponse.json();
+      const contentType = scriptsResponse.headers.get('content-type') || 'Unknown';
+      let scriptsData: any;
+      if (contentType.includes('application/json')) {
+        scriptsData = await scriptsResponse.json();
+      } else {
+        const text = await scriptsResponse.text();
+        try {
+          scriptsData = JSON.parse(text);
+        } catch {
+          console.error(`Unexpected response format from Scripts API: ${contentType}`);
+          return null;
+        }
+      }
       
       if (scriptsData.projects) {
         for (const project of scriptsData.projects) {
@@ -266,7 +314,7 @@ export class GASFindDriveScriptTool extends BaseTool {
       return null;
 
     } catch (error) {
-      console.log(`⚠️  Error checking for associated script: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Error checking for associated script: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return null;
     }
   }
@@ -330,7 +378,7 @@ export class GASBindScriptTool extends BaseTool {
         throw new Error('containerName and scriptName cannot be empty');
       }
 
-      console.log(`🔗 Binding script "${scriptName}" to container "${containerName}"`);
+      console.error(`Binding script "${scriptName}" to container "${containerName}"`);
 
       // Get access token
       const accessToken = await this.handleApiCall(
@@ -353,7 +401,7 @@ export class GASBindScriptTool extends BaseTool {
       // Bind the script to the container
       await this.bindScriptToContainer(script.scriptId, container.fileId, accessToken);
       
-      console.log(`✅ Successfully bound script to container`);
+      console.error(`Successfully bound script to container`);
 
       return {
         success: true,
@@ -365,7 +413,7 @@ export class GASBindScriptTool extends BaseTool {
 
     } catch (error) {
       const errorMessage = GASErrorHandler.extractErrorMessage(error);
-      console.error(`❌ Script binding failed: ${errorMessage}`);
+      console.error(`Script binding failed: ${errorMessage}`);
       
       return {
         success: false,
@@ -418,15 +466,48 @@ export class GASBindScriptTool extends BaseTool {
     const response = await fetch(scriptsUrl, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
         'Content-Type': 'application/json'
       }
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to list scripts: ${response.status} ${response.statusText}`);
+      let errorText = '';
+      let errorHeaders: Record<string, string> = {};
+      try {
+        errorText = await response.text();
+        response.headers.forEach((value, key) => {
+          errorHeaders[key] = value;
+        });
+      } catch (bodyError) {
+        console.warn('Failed to read error response body:', bodyError);
+      }
+      
+      const error = new Error(`Failed to list scripts: ${response.status} ${response.statusText} - ${errorText}`);
+      (error as any).statusCode = response.status;
+      (error as any).statusText = response.statusText;
+      (error as any).response = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: errorHeaders,
+        url: response.url,
+        body: errorText
+      };
+      throw error;
     }
 
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || 'Unknown';
+    let data: any;
+    if (contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Unexpected response format from Scripts API: ${contentType}`);
+      }
+    }
     
     if (data.projects) {
       for (const project of data.projects) {
@@ -457,14 +538,35 @@ export class GASBindScriptTool extends BaseTool {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(updateData)
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to bind script: ${response.status} ${response.statusText} - ${errorText}`);
+      let errorText = '';
+      let errorHeaders: Record<string, string> = {};
+      try {
+        errorText = await response.text();
+        response.headers.forEach((value, key) => {
+          errorHeaders[key] = value;
+        });
+      } catch (bodyError) {
+        console.warn('Failed to read error response body:', bodyError);
+      }
+      
+      const error = new Error(`Failed to bind script: ${response.status} ${response.statusText} - ${errorText}`);
+      (error as any).statusCode = response.status;
+      (error as any).statusText = response.statusText;
+      (error as any).response = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: errorHeaders,
+        url: response.url,
+        body: errorText
+      };
+      throw error;
     }
   }
 }
@@ -520,7 +622,7 @@ export class GASCreateScriptTool extends BaseTool {
         throw new Error('containerName cannot be empty');
       }
 
-      console.log(`🆕 Creating new script for container "${containerName}"`);
+      console.error(`Creating new script for container "${containerName}"`);
 
       // Get access token
       const accessToken = await this.handleApiCall(
@@ -546,7 +648,7 @@ export class GASCreateScriptTool extends BaseTool {
         accessToken
       );
 
-      console.log(`✅ Created script project: ${scriptProject.scriptId}`);
+      console.error(`Created script project: ${scriptProject.scriptId}`);
 
       return {
         success: true,
@@ -559,7 +661,7 @@ export class GASCreateScriptTool extends BaseTool {
 
     } catch (error) {
       const errorMessage = GASErrorHandler.extractErrorMessage(error);
-      console.error(`❌ Script creation failed: ${errorMessage}`);
+      console.error(`Script creation failed: ${errorMessage}`);
       
       return {
         success: false,
@@ -622,17 +724,49 @@ export class GASCreateScriptTool extends BaseTool {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(projectData)
     });
 
     if (!createResponse.ok) {
-      const errorText = await createResponse.text();
-      throw new Error(`Failed to create script project: ${createResponse.status} ${createResponse.statusText} - ${errorText}`);
+      let errorText = '';
+      let errorHeaders: Record<string, string> = {};
+      try {
+        errorText = await createResponse.text();
+        createResponse.headers.forEach((value, key) => {
+          errorHeaders[key] = value;
+        });
+      } catch (bodyError) {
+        console.warn('Failed to read error response body:', bodyError);
+      }
+      
+      const error = new Error(`Failed to create script project: ${createResponse.status} ${createResponse.statusText} - ${errorText}`);
+      (error as any).statusCode = createResponse.status;
+      (error as any).statusText = createResponse.statusText;
+      (error as any).response = {
+        status: createResponse.status,
+        statusText: createResponse.statusText,
+        headers: errorHeaders,
+        url: createResponse.url,
+        body: errorText
+      };
+      throw error;
     }
 
-    const project = await createResponse.json();
+    const contentType = createResponse.headers.get('content-type') || 'Unknown';
+    let project: any;
+    if (contentType.includes('application/json')) {
+      project = await createResponse.json();
+    } else {
+      const text = await createResponse.text();
+      try {
+        project = JSON.parse(text);
+      } catch {
+        throw new Error(`Unexpected response format from Scripts API: ${contentType}`);
+      }
+    }
 
     // Update the project with starter code
     await this.addStarterCode(project.scriptId, container.containerType, accessToken);
@@ -665,13 +799,26 @@ export class GASCreateScriptTool extends BaseTool {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(contentData)
     });
 
     if (!response.ok) {
-      console.warn(`⚠️  Failed to add starter code: ${response.status}`);
+      let errorText = '';
+      let errorHeaders: Record<string, string> = {};
+      try {
+        errorText = await response.text();
+        response.headers.forEach((value, key) => {
+          errorHeaders[key] = value;
+        });
+        console.warn(`Failed to add starter code: ${response.status} ${response.statusText} - ${errorText}`);
+        console.warn(`Error headers:`, errorHeaders);
+      } catch (bodyError) {
+        console.warn(`Failed to add starter code: ${response.status} ${response.statusText}`);
+        console.warn('Failed to read error response body:', bodyError);
+      }
       // Don't throw error as project was created successfully
     }
   }
@@ -711,7 +858,7 @@ function processData() {
   const data = sheet.getDataRange().getValues();
   
   // Add your data processing logic here
-  console.log('Processing', data.length, 'rows of data');
+  console.error('Processing', data.length, 'rows of data');
   
   // Example: Add timestamp to processed data
   const timestamp = new Date();
@@ -729,7 +876,7 @@ function generateReport() {
   const data = sheet.getDataRange().getValues();
   
   // Add your report generation logic here
-  console.log('Generating report for', data.length, 'rows');
+  console.error('Generating report for', data.length, 'rows');
   
   SpreadsheetApp.getUi().alert('Report generated successfully!');
 }
@@ -752,7 +899,7 @@ function CUSTOM_PROCESS(range) {
  */
 function clearCache() {
   // Add cache clearing logic here
-  console.log('Cache cleared');
+  console.error('Cache cleared');
   SpreadsheetApp.getUi().alert('Cache cleared!');
 }`;
 
@@ -855,7 +1002,7 @@ function onFormSubmit(e) {
   const form = FormApp.getActiveForm();
   const responses = e.response.getItemResponses();
   
-  console.log('New form submission received');
+  console.error('New form submission received');
   
   // Process the form response
   processFormResponse(responses);
@@ -875,8 +1022,8 @@ function processFormResponse(responses) {
     const question = response.getItem().getTitle();
     const answer = response.getResponse();
     
-    console.log('Question:', question);
-    console.log('Answer:', answer);
+    console.error('Question:', question);
+    console.error('Answer:', answer);
     
     // Add your response processing logic here
   });
@@ -902,7 +1049,7 @@ Submitted on: \${new Date().toLocaleDateString()}\`;
 
     try {
       MailApp.sendEmail(email, subject, body);
-      console.log('Confirmation email sent to:', email);
+      console.error('Confirmation email sent to:', email);
     } catch (error) {
       console.error('Failed to send confirmation email:', error);
     }
@@ -953,7 +1100,7 @@ function setupFormAutomation() {
     .onFormSubmit()
     .create();
     
-  console.log('Form automation setup completed');
+  console.error('Form automation setup completed');
 }`;
 
       case 'site':
@@ -971,7 +1118,7 @@ function updateSiteContent() {
   // Note: Google Sites has limited direct API access
   // This script focuses on data management and integration
   
-  console.log('Updating site-related data...');
+  console.error('Updating site-related data...');
   
   // Update site analytics
   updateSiteAnalytics();
@@ -999,7 +1146,7 @@ function updateSiteAnalytics() {
     analyticsSheet.getRange(row, 2).setValue('Site Update');
     analyticsSheet.getRange(row, 3).setValue('Automated check');
     
-    console.log('Site analytics updated');
+    console.error('Site analytics updated');
     
   } catch (error) {
     console.error('Failed to update site analytics:', error);
@@ -1014,7 +1161,7 @@ function refreshExternalContent() {
     // Add logic to fetch and process external content
     // This could include RSS feeds, API data, etc.
     
-    console.log('External content refreshed');
+    console.error('External content refreshed');
     
   } catch (error) {
     console.error('Failed to refresh external content:', error);
@@ -1037,7 +1184,7 @@ function generateSiteReport() {
     reportSheet.getRange(row, 3).setValue('Active');
     reportSheet.getRange(row, 4).setValue('Automated report generated');
     
-    console.log('Site report generated');
+    console.error('Site report generated');
     
   } catch (error) {
     console.error('Failed to generate site report:', error);
@@ -1115,7 +1262,7 @@ function setupSiteAutomation() {
     .atHour(9) // 9 AM
     .create();
     
-  console.log('Site automation triggers setup completed');
+  console.error('Site automation triggers setup completed');
 }`;
 
       default:
@@ -1127,9 +1274,9 @@ function setupSiteAutomation() {
  */
 
 function main() {
-  console.log('Script created successfully!');
-  console.log('Container type: ${containerType}');
-  console.log('Generated at: ${timestamp}');
+  console.error('Script created successfully!');
+  console.error('Container type: ${containerType}');
+  console.error('Generated at: ${timestamp}');
   
   // Add your automation logic here
 }`;

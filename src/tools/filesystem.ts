@@ -244,7 +244,7 @@ export class GASWriteTool extends BaseTool {
       filename = 'appsscript';
       extensionStripped = true;
       strippedExtension = '.json';
-      console.log(`📋 MANIFEST CONVERSION: appsscript.json → appsscript (JSON type for manifest)`);
+      console.error(`📋 MANIFEST CONVERSION: appsscript.json → appsscript (JSON type for manifest)`);
     } else {
       // PRIORITY 2: Handle general known GAS extensions
       const GAS_EXTENSIONS = {
@@ -257,11 +257,11 @@ export class GASWriteTool extends BaseTool {
       // Check if filename ends with any known GAS extension
       for (const [ext, gasFileType] of Object.entries(GAS_EXTENSIONS)) {
         if (filename.toLowerCase().endsWith(ext)) {
-          console.log(`🔧 INTENTIONAL EXTENSION STRIPPING: Found '${ext}' extension (maps to ${gasFileType} type)`);
+          console.error(`🔧 INTENTIONAL EXTENSION STRIPPING: Found '${ext}' extension (maps to ${gasFileType} type)`);
           
           // Strip the extension - GAS will auto-detect type and add appropriate extension
           const strippedFilename = filename.slice(0, -ext.length);
-          console.log(`✂️  Stripping: ${filename} → ${strippedFilename}`);
+          console.error(`✂️  Stripping: ${filename} → ${strippedFilename}`);
           
           filename = strippedFilename;
           extensionStripped = true;
@@ -273,12 +273,12 @@ export class GASWriteTool extends BaseTool {
     
     // Log the final result
     if (extensionStripped) {
-      console.log(`✅ Extension stripping complete. File will be created as: ${filename}`);
-      console.log(`🎯 Google Apps Script will auto-detect type and add appropriate extension`);
-      console.log(`📄 Original extension '${strippedExtension}' removed to prevent double extensions`);
+      console.error(`✅ Extension stripping complete. File will be created as: ${filename}`);
+      console.error(`🎯 Google Apps Script will auto-detect type and add appropriate extension`);
+      console.error(`📄 Original extension '${strippedExtension}' removed to prevent double extensions`);
     } else {
-      console.log(`📝 No known extension found in filename: ${filename}`);
-      console.log(`🎯 Will default to SERVER_JS type (Apps Script server-side code)`);
+      console.error(`📝 No known extension found in filename: ${filename}`);
+      console.error(`🎯 Will default to SERVER_JS type (Apps Script server-side code)`);
     }
 
     // Validate content size (50KB limit)
@@ -289,7 +289,7 @@ export class GASWriteTool extends BaseTool {
     // After validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
-    console.log(`📝 Writing file: ${filename} (extension will be auto-added based on content type)`);
+    console.error(`📝 Writing file: ${filename} (extension will be auto-added based on content type)`);
     
     const updatedFiles = await this.gasClient.updateFile(
       parsedPath.projectId,

@@ -49,22 +49,22 @@ export class SessionAuthManager {
   private sessionId: string;
 
   constructor(sessionId?: string) {
-    console.log(`🔧 SessionAuthManager (IN-MEMORY) constructor called with sessionId: ${sessionId || 'undefined'}`);
+    console.error(`🔧 SessionAuthManager (IN-MEMORY) constructor called with sessionId: ${sessionId || 'undefined'}`);
     
     // If no session ID provided, try to reuse existing valid session
     if (!sessionId) {
-      console.log(`🔍 No session ID provided, looking for existing valid session...`);
+      console.error(`🔍 No session ID provided, looking for existing valid session...`);
       const existingSessionId = this.findExistingValidSession();
       if (existingSessionId) {
         this.sessionId = existingSessionId;
-        console.log(`🔄 Reusing existing session: ${this.sessionId}`);
+        console.error(`🔄 Reusing existing session: ${this.sessionId}`);
       } else {
         this.sessionId = randomUUID();
-        console.log(`🔒 Created new session: ${this.sessionId}`);
+        console.error(`🔒 Created new session: ${this.sessionId}`);
       }
     } else {
       this.sessionId = sessionId;
-      console.log(`🔒 Using specified session: ${this.sessionId}`);
+      console.error(`🔒 Using specified session: ${this.sessionId}`);
     }
   }
 
@@ -73,14 +73,14 @@ export class SessionAuthManager {
    */
   private findExistingValidSession(): string | null {
     try {
-      console.log(`🔍 Looking for existing sessions in memory...`);
-      console.log(`💾 Found ${MEMORY_AUTH_SESSIONS.size} sessions in memory`);
+      console.error(`🔍 Looking for existing sessions in memory...`);
+      console.error(`💾 Found ${MEMORY_AUTH_SESSIONS.size} sessions in memory`);
       
       for (const [sessionId, sessionData] of MEMORY_AUTH_SESSIONS.entries()) {
         try {
-          console.log(`📄 Checking session: ${sessionId}`);
-          console.log(`   User: ${sessionData.user?.email}`);
-          console.log(`   Expires at: ${sessionData.tokens?.expires_at} (${new Date(sessionData.tokens?.expires_at).toLocaleString()})`);
+          console.error(`📄 Checking session: ${sessionId}`);
+          console.error(`   User: ${sessionData.user?.email}`);
+          console.error(`   Expires at: ${sessionData.tokens?.expires_at} (${new Date(sessionData.tokens?.expires_at).toLocaleString()})`);
           
           // Check if session is valid and not expired
           if (sessionData.tokens && sessionData.user && sessionData.tokens.expires_at) {
@@ -89,20 +89,20 @@ export class SessionAuthManager {
             const expiresAt = sessionData.tokens.expires_at;
             const isValid = currentTime < (expiresAt - bufferMs);
             
-            console.log(`   Current time: ${currentTime}`);
-            console.log(`   Expires with buffer: ${expiresAt - bufferMs}`);
-            console.log(`   Is valid: ${isValid}`);
+            console.error(`   Current time: ${currentTime}`);
+            console.error(`   Expires with buffer: ${expiresAt - bufferMs}`);
+            console.error(`   Is valid: ${isValid}`);
             
             if (isValid) {
-              console.log(`✅ Found valid session for ${sessionData.user.email}`);
+              console.error(`✅ Found valid session for ${sessionData.user.email}`);
               return sessionData.sessionId;
             } else {
-              console.log(`⏰ Session expired for ${sessionData.user.email}`);
+              console.error(`⏰ Session expired for ${sessionData.user.email}`);
               // Clean up expired session
               MEMORY_AUTH_SESSIONS.delete(sessionId);
             }
           } else {
-            console.log(`⚠️  Session missing required fields`);
+            console.error(`⚠️  Session missing required fields`);
           }
         } catch (error) {
           // Skip corrupted session data
@@ -111,7 +111,7 @@ export class SessionAuthManager {
         }
       }
       
-      console.log(`❌ No valid sessions found`);
+      console.error(`❌ No valid sessions found`);
       return null;
     } catch (error) {
       console.warn(`⚠️  Failed to find existing sessions:`, error);
@@ -140,7 +140,7 @@ export class SessionAuthManager {
     };
     
     MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
-    console.log(`✅ Stored session ${this.sessionId} for ${user.email} in memory`);
+    console.error(`✅ Stored session ${this.sessionId} for ${user.email} in memory`);
   }
 
   /**
@@ -163,7 +163,7 @@ export class SessionAuthManager {
    * Force reload authentication session (no-op for in-memory, just here for compatibility)
    */
   public async reloadAuthSession(): Promise<void> {
-    console.log(`🔄 Reload session ${this.sessionId} (no-op for in-memory)`);
+    console.error(`🔄 Reload session ${this.sessionId} (no-op for in-memory)`);
   }
 
   /**
@@ -192,7 +192,7 @@ export class SessionAuthManager {
     
     // Auto-delete expired tokens
     if (!tokenValid) {
-      console.log(`🗑️  Auto-deleting expired session tokens for ${this.sessionId}`);
+      console.error(`🗑️  Auto-deleting expired session tokens for ${this.sessionId}`);
       MEMORY_AUTH_SESSIONS.delete(this.sessionId);
       return false;
     }
@@ -212,7 +212,7 @@ export class SessionAuthManager {
     
     // Auto-cleanup expired sessions
     if (!isValid && authSession) {
-      console.log(`⏰ Session ${this.sessionId} token expired at ${new Date(authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
+      console.error(`⏰ Session ${this.sessionId} token expired at ${new Date(authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
       MEMORY_AUTH_SESSIONS.delete(this.sessionId);
     }
     
@@ -229,7 +229,7 @@ export class SessionAuthManager {
     
     // Check token validity
     if (!this.isTokenValidInternal(authSession)) {
-      console.log(`🗑️  Token expired for session ${this.sessionId}, removing session`);
+      console.error(`🗑️  Token expired for session ${this.sessionId}, removing session`);
       MEMORY_AUTH_SESSIONS.delete(this.sessionId);
       return null;
     }
@@ -255,7 +255,7 @@ export class SessionAuthManager {
       authSession.tokens = tokens;
       authSession.lastUsed = Date.now();
       MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
-      console.log(`✅ Updated tokens for session ${this.sessionId}`);
+      console.error(`✅ Updated tokens for session ${this.sessionId}`);
     }
   }
 
@@ -272,7 +272,7 @@ export class SessionAuthManager {
    */
   async clearAuth(): Promise<void> {
     MEMORY_AUTH_SESSIONS.delete(this.sessionId);
-    console.log(`✅ Cleared session ${this.sessionId} from memory`);
+    console.error(`✅ Cleared session ${this.sessionId} from memory`);
   }
 
   /**
@@ -337,13 +337,13 @@ export class SessionAuthManager {
       
       // Clean up sessions older than 30 days
       if (currentTime - sessionData.lastUsed > 30 * 24 * 60 * 60 * 1000) {
-        console.log(`🗑️  Cleaning up old session: ${sessionId} (last used: ${new Date(sessionData.lastUsed).toISOString()})`);
+        console.error(`🗑️  Cleaning up old session: ${sessionId} (last used: ${new Date(sessionData.lastUsed).toISOString()})`);
         shouldDelete = true;
       }
       
       // Clean up expired tokens
       if (sessionData.tokens?.expires_at && currentTime > sessionData.tokens.expires_at) {
-        console.log(`🗑️  Cleaning up expired session: ${sessionId} (expired: ${new Date(sessionData.tokens.expires_at).toISOString()})`);
+        console.error(`🗑️  Cleaning up expired session: ${sessionId} (expired: ${new Date(sessionData.tokens.expires_at).toISOString()})`);
         shouldDelete = true;
       }
       
@@ -353,7 +353,7 @@ export class SessionAuthManager {
       }
     }
     
-    console.log(`🧹 Cleaned up ${cleaned} expired sessions from memory`);
+    console.error(`🧹 Cleaned up ${cleaned} expired sessions from memory`);
     return cleaned;
   }
 
@@ -363,7 +363,7 @@ export class SessionAuthManager {
   static clearAllSessions(): number {
     const count = MEMORY_AUTH_SESSIONS.size;
     MEMORY_AUTH_SESSIONS.clear();
-    console.log(`🗑️  Cleared ${count} sessions from memory`);
+    console.error(`🗑️  Cleared ${count} sessions from memory`);
     return count;
   }
 
@@ -379,7 +379,7 @@ export class SessionAuthManager {
       }
       authSession.deploymentUrls.set(scriptId, gasRunUrl);
       MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
-      console.log(`✅ Cached deployment URL for ${scriptId}: ${gasRunUrl}`);
+      console.error(`✅ Cached deployment URL for ${scriptId}: ${gasRunUrl}`);
     }
   }
 
@@ -405,7 +405,7 @@ export class SessionAuthManager {
     if (authSession) {
       authSession.deploymentUrls = new Map();
       MEMORY_AUTH_SESSIONS.set(this.sessionId, authSession);
-      console.log(`✅ Cleared cached deployment URLs for session ${this.sessionId}`);
+      console.error(`✅ Cleared cached deployment URLs for session ${this.sessionId}`);
     }
   }
 

@@ -82,9 +82,9 @@ export class AuthStateManager {
         // Validate session structure
         if (session.tokens && session.user && session.createdAt && session.lastUsed) {
           this.authSession = session;
-          console.log(`✅ Loaded authentication session for ${session.user.email}`);
+          console.error(`✅ Loaded authentication session for ${session.user.email}`);
         } else {
-          console.log('⚠️  Invalid session file, ignoring');
+          console.error('⚠️  Invalid session file, ignoring');
         }
       }
     } catch (error: any) {
@@ -103,13 +103,13 @@ export class AuthStateManager {
       
       if (this.authSession) {
         writeFileSync(AUTH_FILE, JSON.stringify(this.authSession, null, 2));
-        console.log(`✅ Saved authentication session for ${this.authSession.user.email}`);
+        console.error(`✅ Saved authentication session for ${this.authSession.user.email}`);
       } else {
         // Remove file when clearing auth
         if (existsSync(AUTH_FILE)) {
           import('fs').then(fs => {
             fs.unlinkSync(AUTH_FILE);
-            console.log('✅ Cleared authentication session file');
+            console.error('✅ Cleared authentication session file');
           }).catch(() => {
             // Ignore errors when clearing
           });
@@ -155,7 +155,7 @@ export class AuthStateManager {
     
     // Auto-delete expired tokens
     if (!tokenValid) {
-      console.log('🗑️  Auto-deleting expired authentication tokens');
+      console.error('🗑️  Auto-deleting expired authentication tokens');
       this.clearAuth();
       return false;
     }
@@ -173,7 +173,7 @@ export class AuthStateManager {
     
     // Check if expires_at field exists
     if (!this.authSession.tokens.expires_at) {
-      console.log('⚠️  Token missing expiration time, treating as invalid');
+      console.error('⚠️  Token missing expiration time, treating as invalid');
       this.clearAuth();
       return false;
     }
@@ -184,7 +184,7 @@ export class AuthStateManager {
     
     // Auto-cleanup expired sessions
     if (!isValid && this.authSession) {
-      console.log(`⏰ Token expired at ${new Date(this.authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
+      console.error(`⏰ Token expired at ${new Date(this.authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
       this.clearAuth();
     }
     

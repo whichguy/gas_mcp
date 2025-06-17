@@ -7,18 +7,18 @@ import { SessionAuthManager } from './auth/sessionManager.js';
  * Main entry point for MCP Gas Server
  */
 async function main() {
-  console.log('🚀 Starting MCP Gas Server with forced desktop authentication...');
+  console.error('🚀 Starting MCP Gas Server with forced desktop authentication...');
   
   // FORCE CLEAR ALL CACHED TOKENS ON STARTUP
-  console.log('🗑️  Clearing all cached authentication tokens (forced restart behavior)...');
+  console.error('🗑️  Clearing all cached authentication tokens (forced restart behavior)...');
   const clearedCount = SessionAuthManager.clearAllSessions();
-  console.log(`✅ Cleared ${clearedCount} cached session(s) - fresh authentication required`);
+  console.error(`✅ Cleared ${clearedCount} cached session(s) - fresh authentication required`);
   
   const server = new MCPGasServer();
 
   // Handle graceful shutdown
   const shutdown = async (signal: string) => {
-    console.log(`\nReceived ${signal}, shutting down gracefully...`);
+    console.error(`\nReceived ${signal}, shutting down gracefully...`);
     try {
       await server.stop();
       process.exit(0);

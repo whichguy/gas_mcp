@@ -45,7 +45,7 @@ const resolverStates = new Map<string, 'pending' | 'resolved' | 'rejected'>();
  * Load OAuth configuration (simplified - removed unnecessary complexity)
  */
 export function loadOAuthConfigFromJson(): AuthConfig {
-  console.log('⚠️  Using hardcoded OAuth configuration for testing');
+  console.error('⚠️  Using hardcoded OAuth configuration for testing');
   
   const authConfig: AuthConfig = {
     client_id: '428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com',
@@ -54,9 +54,9 @@ export function loadOAuthConfigFromJson(): AuthConfig {
     scopes: REQUIRED_SCOPES
   };
 
-  console.log('✅ OAuth configuration loaded successfully (hardcoded)');
-  console.log(`🔑 Client ID: ${authConfig.client_id.substring(0, 30)}...`);
-  console.log(`🏷️  Type: ${authConfig.type?.toUpperCase()} (PKCE-enabled)`);
+  console.error('✅ OAuth configuration loaded successfully (hardcoded)');
+  console.error(`🔑 Client ID: ${authConfig.client_id.substring(0, 30)}...`);
+  console.error(`🏷️  Type: ${authConfig.type?.toUpperCase()} (PKCE-enabled)`);
 
   return authConfig;
 }
@@ -79,13 +79,13 @@ export function signalAuthCompletion(authKey: string, result: any): void {
   // ATOMIC STATE CHECK - prevent duplicate signals
   const currentState = resolverStates.get(authKey);
   if (currentState && currentState !== 'pending') {
-    console.log(`⚠️ Ignoring duplicate completion for ${authKey} (state: ${currentState})`);
+    console.error(`⚠️ Ignoring duplicate completion for ${authKey} (state: ${currentState})`);
     return;
   }
   
   const resolver = authCompletionResolvers.get(authKey);
   if (resolver) {
-    console.log(`🎯 Signaling auth completion for ${authKey}:`, result.status);
+    console.error(`🎯 Signaling auth completion for ${authKey}:`, result.status);
     
     // ATOMIC STATE TRANSITION
     resolverStates.set(authKey, 'resolved');
@@ -105,13 +105,13 @@ export function signalAuthError(authKey: string, error: any): void {
   // ATOMIC STATE CHECK - prevent duplicate signals
   const currentState = resolverStates.get(authKey);
   if (currentState && currentState !== 'pending') {
-    console.log(`⚠️ Ignoring duplicate error for ${authKey} (state: ${currentState})`);
+    console.error(`⚠️ Ignoring duplicate error for ${authKey} (state: ${currentState})`);
     return;
   }
   
   const resolver = authCompletionResolvers.get(authKey);
   if (resolver) {
-    console.log(`❌ Signaling auth error for ${authKey}:`, error.message);
+    console.error(`❌ Signaling auth error for ${authKey}:`, error.message);
     
     // ATOMIC STATE TRANSITION
     resolverStates.set(authKey, 'rejected');
@@ -138,7 +138,7 @@ async function executeAtomicAuthFlow(
   
   // Check if flow already completed while waiting
   if (activeAuthFlows.has(authKey)) {
-    console.log(`⏳ Auth flow completed while waiting for ${authKey}`);
+    console.error(`⏳ Auth flow completed while waiting for ${authKey}`);
     return await activeAuthFlows.get(authKey);
   }
   
@@ -176,11 +176,11 @@ async function cacheDeploymentUrlsForSession(
   try {
     // Only cache for session-based auth managers
     if (!(authStateManager instanceof SessionAuthManager)) {
-      console.log('🔍 Skipping deployment URL caching for global auth manager');
+      console.error('🔍 Skipping deployment URL caching for global auth manager');
       return;
     }
 
-    console.log('🔍 Caching deployment URLs for session after authentication...');
+    console.error('🔍 Caching deployment URLs for session after authentication...');
     
     const gasClient = new GASClient();
     
@@ -188,7 +188,7 @@ async function cacheDeploymentUrlsForSession(
     // So for now, we'll implement caching on-demand in gas_run when a script is first used
     // This function is prepared for future enhancements where we might cache known script IDs
     
-    console.log('✅ Deployment URL caching prepared for on-demand use');
+    console.error('✅ Deployment URL caching prepared for on-demand use');
     
   } catch (error: any) {
     // Don't fail authentication if deployment caching fails
@@ -230,7 +230,7 @@ export async function gas_auth({
     switch (mode) {
       case 'status':
         try {
-          console.log('📊 Checking authentication status...');
+          console.error('📊 Checking authentication status...');
           const authStatus = authStateManager instanceof SessionAuthManager 
             ? await authStateManager.getAuthStatus()
             : authStateManager.getAuthStatus();
@@ -263,7 +263,7 @@ export async function gas_auth({
 
       case 'logout':
         try {
-          console.log('🔓 Logging out...');
+          console.error('🔓 Logging out...');
           
           // CLEANUP: Clear any active flows and resolvers for this auth key
           activeAuthFlows.delete(authKey);
@@ -308,7 +308,7 @@ export async function gas_auth({
           const userInfo = authStateManager instanceof SessionAuthManager
             ? await authStateManager.getUserInfo()
             : authStateManager.getUserInfo();
-          console.log(`✅ Already authenticated as ${userInfo?.email}`);
+          console.error(`✅ Already authenticated as ${userInfo?.email}`);
           
           return {
             status: 'already_authenticated', 
@@ -370,7 +370,7 @@ async function performSynchronizedAuthFlow(
   openBrowser: boolean,
   waitForCompletion: boolean
 ): Promise<any> {
-  console.log(`🔐 Starting synchronized OAuth flow for ${authKey}...`);
+  console.error(`🔐 Starting synchronized OAuth flow for ${authKey}...`);
   
   // Get config and create isolated auth client
   const config = getOAuthConfig();
@@ -384,7 +384,7 @@ async function performSynchronizedAuthFlow(
       const timeout = setTimeout(() => {
         const currentState = resolverStates.get(authKey);
         if (currentState === 'pending') {
-          console.log(`⏰ Auth timeout for ${authKey} after 5 minutes`);
+          console.error(`⏰ Auth timeout for ${authKey} after 5 minutes`);
           resolverStates.set(authKey, 'rejected');
           authCompletionResolvers.delete(authKey);
           resolverStates.delete(authKey);
@@ -399,7 +399,7 @@ async function performSynchronizedAuthFlow(
           try {
             // Handle the token response and set up authentication session
             if (result.tokenResponse) {
-              console.log(`🔐 Processing authentication session for ${authKey}...`);
+              console.error(`🔐 Processing authentication session for ${authKey}...`);
               
               const tokens = {
                 access_token: result.tokenResponse.access_token,
@@ -424,7 +424,7 @@ async function performSynchronizedAuthFlow(
                 });
               }
               
-              console.log(`✅ Authentication session established for ${userInfo.email}`);
+              console.error(`✅ Authentication session established for ${userInfo.email}`);
               
               // ENHANCEMENT: Cache deployment URLs after successful authentication
               await cacheDeploymentUrlsForSession(authStateManager, tokens.access_token);
@@ -450,12 +450,12 @@ async function performSynchronizedAuthFlow(
 
     // Start the auth flow
     const authUrl = await authClient.startAuthFlow(openBrowser);
-    console.log(`🔗 Auth URL generated: ${authUrl}`);
-    console.log(`⏳ Waiting for OAuth callback to complete authentication...`);
+    console.error(`🔗 Auth URL generated: ${authUrl}`);
+    console.error(`⏳ Waiting for OAuth callback to complete authentication...`);
     
     // Wait for completion
     const result = await completionPromise;
-    console.log(`✅ Synchronized OAuth flow completed for ${authKey}`);
+    console.error(`✅ Synchronized OAuth flow completed for ${authKey}`);
     return result;
     
   } else {
