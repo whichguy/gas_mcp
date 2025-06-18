@@ -263,132 +263,7 @@ export class MCPGasServer {
     return tools;
   }
 
-  /**
-   * Handle authentication errors with automatic OAuth flow initiation
-   * 
-   * This UX enhancement automatically launches the OAuth authentication flow
-   * when authentication errors are detected, instead of just returning error
-   * messages. This provides a smoother experience for AI assistants and users.
-   * 
-   * ## Auto-Authentication Flow:
-   * 1. **Error Detection**: Catches `AuthenticationError` or `OAuthError`
-   * 2. **Tool Retrieval**: Gets the `gas_auth` tool from the session
-   * 3. **Flow Initiation**: Automatically calls `gas_auth(mode="start")`
-   * 4. **Browser Launch**: Opens authentication URL in default browser
-   * 5. **Response Generation**: Returns structured response with instructions
-   * 
-   * ## Response Format:
-   * ```json
-   * {
-   *   "error": { ... },           // Original error details
-   *   "autoAuth": { ... },        // Auto-auth flow information
-   *   "sessionId": "...",         // Session identifier
-   *   "instructions": [...]       // User guidance steps
-   * }
-   * ```
-   * 
-   * ## Test Mode Behavior:
-   * Auto-authentication is disabled when `MCP_TEST_MODE=true` to prevent
-   * concurrent browser launches during automated testing.
-   * 
-   * @param error - The authentication error that triggered auto-auth
-   * @param session - Client session context
-   * @param sessionId - Session identifier for tracking
-   * @returns Structured response with auto-auth status and instructions
-   * 
-   * @example
-   * ```typescript
-   * // Error caught during tool execution
-   * if (error instanceof AuthenticationError && process.env.MCP_TEST_MODE !== 'true') {
-   *   return await this.handleAuthenticationError(error, session, sessionId);
-   * }
-   * ```
-   */
-  private async handleAuthenticationError(error: AuthenticationError | OAuthError, session: ClientSession, sessionId: string): Promise<any> {
-            console.error(`[Session ${sessionId}] Authentication required - checking if auth flow already started`);
-    
-    try {
-      // Get the auth tool from the session
-      const authTool = session.tools.get('gas_auth');
-      if (!authTool) {
-        throw new Error('Auth tool not available in session');
-      }
 
-      // Check if auth flow is already in progress
-      // Add a flag to track if we've already launched browser for this session
-      const authFlowKey = `browser_launched_${sessionId}`;
-      const browserAlreadyLaunched = (session as any)[authFlowKey] || false;
-
-      const shouldOpenBrowser = !browserAlreadyLaunched;
-      
-      if (shouldOpenBrowser) {
-        console.error(`[Session ${sessionId}] Auto-starting OAuth authentication with browser...`);
-        // Mark that we've launched browser for this session
-        (session as any)[authFlowKey] = true;
-      } else {
-        console.error(`[Session ${sessionId}] OAuth authentication already started - not opening another browser`);
-      }
-
-      const authResult = await authTool.execute({ 
-        mode: 'start', 
-        openBrowser: shouldOpenBrowser,
-        waitForCompletion: false
-      });
-
-      // Return combined error info with auth flow initiation
-      const response = {
-        error: {
-          type: error.constructor.name,
-          message: error.message,
-          code: error.code,
-          data: error.data
-        },
-        autoAuth: {
-          status: 'initiated',
-          message: 'Authentication flow automatically started due to auth error',
-          ...authResult
-        },
-        sessionId,
-        instructions: [
-          'Authentication required - OAuth flow has been automatically started',
-          'Please complete authentication in the browser window that opened',
-          'Once authenticated, retry your original request',
-          'This auto-auth feature helps streamline the authentication process'
-        ]
-      };
-
-              console.error(`[Session ${sessionId}] Auto-auth flow initiated successfully`);
-      
-      // SCHEMA FIX: Return plain object, let server handle MCP wrapping
-      return response;
-
-    } catch (authError: any) {
-      console.error(`[Session ${sessionId}] Failed to auto-launch auth flow:`, authError);
-      
-      // Fall back to original error handling if auto-auth fails
-      // SCHEMA FIX: Return plain object with isError flag for server to handle
-      return {
-        error: {
-          type: error.constructor.name,
-          message: error.message,
-          code: error.code,
-          data: error.data
-        },
-        autoAuthFailed: {
-          error: authError.message,
-          fallback: 'Manual authentication required'
-        },
-        sessionId,
-        instructions: [
-          'Authentication required',
-          'Auto-authentication failed - please authenticate manually',
-          'Use: gas_auth(mode="start") to authenticate',
-          'Then retry your original request'
-        ],
-        isError: true
-      };
-    }
-  }
 
   /**
    * Get existing session or create new session with isolation
@@ -538,35 +413,35 @@ export class MCPGasServer {
         const sessionId = this.currentSessionId || 'unknown';
         console.error(`[Session ${sessionId}] Tool ${name} failed:`, error);
 
-        // Handle authentication errors by automatically launching auth flow
-        // Skip auto-auth in test mode to prevent concurrent browser launches
-        if ((error instanceof AuthenticationError || error instanceof OAuthError) && 
-            process.env.MCP_TEST_MODE !== 'true') {
-          // Get session for auto-auth (fallback to current session if needed)
-          const currentSession = this.sessions.get(sessionId) || this.getOrCreateSession(sessionId);
-          const authResponse = await this.handleAuthenticationError(error, currentSession, sessionId);
-          
-          // Handle auth response which might have isError flag
-          if (authResponse.isError) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(authResponse, null, 2)
-                }
-              ],
-              isError: true
-            };
-          } else {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(authResponse, null, 2)
-                }
-              ]
-            };
-          }
+        // Handle authentication errors by returning clear instructions instead of auto-auth
+        if (error instanceof AuthenticationError || error instanceof OAuthError) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: {
+                    type: error.constructor.name,
+                    message: error.message,
+                    code: error.code,
+                    data: error.data
+                  },
+                  authRequired: {
+                    message: 'Authentication required - please authenticate manually',
+                    instructions: [
+                      'Use gas_auth with mode="start" to begin authentication',
+                      'Complete the OAuth flow in your browser', 
+                      'Then retry your original request'
+                    ],
+                    command: `gas_auth({"mode": "start"})`,
+                    statusCheck: `gas_auth({"mode": "status"})`
+                  },
+                  sessionId
+                }, null, 2)
+              }
+            ],
+            isError: true
+          };
         }
 
         // Handle MCP Gas errors with structured information
@@ -633,7 +508,7 @@ export class MCPGasServer {
     console.error('Each client gets isolated authentication sessions');
     console.error('Use sessionId parameter to manage multiple sessions');
     console.error('Use gas_auth(mode="start") to authenticate with Google Apps Script');
-    console.error('Auto-authentication: Server automatically launches auth flow when auth errors occur');
+    console.error('Authentication: Tools will return clear instructions when auth is needed');
     console.error('Direct execution: gas_run can execute ANY statement without wrapper functions');
     
     // Clean up expired sessions on startup

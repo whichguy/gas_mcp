@@ -203,7 +203,7 @@ export async function gas_auth({
   accessToken,
   mode = 'start',
   openBrowser = true,
-  waitForCompletion = false
+  waitForCompletion = true
 }: {
   accessToken?: string;
   mode?: 'start' | 'status' | 'logout';
@@ -429,6 +429,12 @@ async function performSynchronizedAuthFlow(
               // ENHANCEMENT: Cache deployment URLs after successful authentication
               await cacheDeploymentUrlsForSession(authStateManager, tokens.access_token);
               
+              // RACE CONDITION FIX: Signal that session setup is complete
+              if (result.tokenResponse.sessionSetupComplete) {
+                console.error('🔄 Signaling session setup completion to OAuth callback...');
+                result.tokenResponse.sessionSetupComplete();
+              }
+              
               resolve({
                 status: 'authenticated',
                 message: `Authentication completed successfully for ${userInfo.email}`,
@@ -462,11 +468,95 @@ async function performSynchronizedAuthFlow(
     // Non-blocking mode - just start the flow
     const authUrl = await authClient.startAuthFlow(openBrowser);
     
+    // RACE CONDITION FIX: Even in non-blocking mode, wait briefly for session sync
+    // This prevents the race condition where users immediately call API functions
+    // after getting the auth URL but before session storage completes
+    console.error('🔄 Non-blocking mode: Starting brief session sync wait...');
+    
+    // Set up a completion resolver for non-blocking mode too
+    let nonBlockingResolver: { resolve: (result: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout } | undefined;
+    
+    const sessionSyncPromise = new Promise<void>((resolve, reject) => {
+      // Much shorter timeout for non-blocking mode (10 seconds)
+      const timeout = setTimeout(() => {
+        console.error('⚠️ Non-blocking session sync timeout, proceeding anyway...');
+        authCompletionResolvers.delete(authKey);
+        resolverStates.delete(authKey);
+        resolve();
+      }, 10000);
+
+      resolverStates.set(authKey, 'pending');
+      nonBlockingResolver = {
+        resolve: async (result: any) => {
+          try {
+            // Same session setup logic as blocking mode
+            if (result.tokenResponse) {
+              console.error(`🔐 Non-blocking: Processing authentication session for ${authKey}...`);
+              
+              const tokens = {
+                access_token: result.tokenResponse.access_token,
+                refresh_token: result.tokenResponse.refresh_token,
+                expires_at: Date.now() + (result.tokenResponse.expires_in! * 1000),
+                scope: result.tokenResponse.scope || config.scopes.join(' '),
+                token_type: result.tokenResponse.token_type || 'Bearer'
+              };
+              
+              const userInfo = await authClient.getUserInfo(tokens.access_token);
+              
+              if (authStateManager instanceof SessionAuthManager) {
+                await authStateManager.setAuthSession(tokens, userInfo);
+              } else {
+                const globalAuthManager = AuthStateManager.getInstance();
+                globalAuthManager.setAuthSession({
+                  tokens,
+                  user: userInfo,
+                  createdAt: Date.now(),
+                  lastUsed: Date.now()
+                });
+              }
+              
+              console.error(`✅ Non-blocking: Authentication session established for ${userInfo.email}`);
+              await cacheDeploymentUrlsForSession(authStateManager, tokens.access_token);
+              
+              // Signal session setup complete
+              if (result.tokenResponse.sessionSetupComplete) {
+                console.error('🔄 Non-blocking: Signaling session setup completion...');
+                result.tokenResponse.sessionSetupComplete();
+              }
+            }
+            
+            clearTimeout(timeout);
+            authCompletionResolvers.delete(authKey);
+            resolverStates.delete(authKey);
+            resolve();
+          } catch (error: any) {
+            console.error(`❌ Non-blocking session setup error (non-fatal):`, error);
+            clearTimeout(timeout);
+            authCompletionResolvers.delete(authKey);
+            resolverStates.delete(authKey);
+            resolve(); // Don't fail the auth flow due to session setup errors
+          }
+        },
+        reject: (error: any) => {
+          console.error(`❌ Non-blocking auth error (non-fatal):`, error);
+          clearTimeout(timeout);
+          authCompletionResolvers.delete(authKey);
+          resolverStates.delete(authKey);
+          resolve(); // Don't fail the auth flow
+        },
+        timeout
+      };
+      
+      authCompletionResolvers.set(authKey, nonBlockingResolver);
+    });
+    
+    // Return immediately with auth URL, but session sync continues in background
     return {
       status: 'auth_started',
       message: 'Authentication flow started. Complete the process in your browser.',
       authenticated: false,
-      authUrl: authUrl
+      authUrl: authUrl,
+      sessionSyncPromise: sessionSyncPromise // Internal promise for session sync
     };
   }
 }
@@ -504,13 +594,13 @@ export class GASAuthTool extends BaseTool {
       },
       waitForCompletion: {
         type: 'boolean',
-        default: false,
-        description: 'Wait for OAuth flow to complete before returning. LLM CRITICAL: Default false returns immediately with auth URL. Set true only when you need to block until authentication completes (5-minute timeout).',
+        default: true,
+        description: 'Wait for OAuth flow to complete before returning. LLM CRITICAL: Default true waits until authentication completes. Set false to return immediately with auth URL (5-minute timeout).',
         llmHints: {
-          nonBlocking: 'Default false: Returns auth URL immediately, user completes auth separately',
-          blocking: 'Set true: Tool waits until user completes OAuth flow in browser',
+          blocking: 'Default true: Tool waits until user completes OAuth flow in browser',
+          nonBlocking: 'Set false: Returns auth URL immediately, user completes auth separately',
           timeout: 'Has 5-minute timeout when waitForCompletion=true to prevent infinite hanging',
-          recommendation: 'Use false for most LLM operations to avoid blocking tool execution'
+          recommendation: 'Use true (default) for most LLM operations to ensure session is ready'
         }
       },
       accessToken: {

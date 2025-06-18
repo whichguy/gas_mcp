@@ -250,6 +250,14 @@ export abstract class BaseTool implements Tool {
     // Try session auth first if available
     if (this.sessionAuthManager) {
       try {
+        // RACE CONDITION FIX: Wait for session to be fully ready
+        console.error(`🔄 [${this.name}] Checking session readiness before authentication...`);
+        const sessionReady = await this.sessionAuthManager.waitForSessionReady(5000); // 5 second timeout
+        
+        if (!sessionReady) {
+          console.error(`⚠️ [${this.name}] Session not ready after timeout, proceeding anyway...`);
+        }
+        
         // SIMPLIFIED: Basic async operations since MCP is half-duplex
         // First attempt - use cached auth state
         if (await this.sessionAuthManager.isAuthenticated()) {
