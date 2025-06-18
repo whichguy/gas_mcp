@@ -89,7 +89,7 @@ export const PAGINATION_SCHEMA = {
 export const DEPLOYMENT_CONFIG_SCHEMA = {
   entryPointType: {
     type: 'string',
-    enum: EntryPointTypes,
+    enum: [...EntryPointTypes], // Convert to regular array for JSON Schema
     description: 'Type of deployment entry point. LLM GUIDANCE: Use WEB_APP for web interfaces, EXECUTION_API for programmatic access.',
     default: 'EXECUTION_API',
     llmHints: {
@@ -100,7 +100,7 @@ export const DEPLOYMENT_CONFIG_SCHEMA = {
   },
   webAppAccess: {
     type: 'string',
-    enum: AccessLevels,
+    enum: [...AccessLevels], // Convert to regular array for JSON Schema
     description: 'Who can access the web app (for WEB_APP type). LLM RECOMMENDATION: Use ANYONE for public tools, MYSELF for private tools.',
     default: 'ANYONE',
     llmHints: {
@@ -111,7 +111,7 @@ export const DEPLOYMENT_CONFIG_SCHEMA = {
   },
   webAppExecuteAs: {
     type: 'string',
-    enum: ExecutionModes,
+    enum: [...ExecutionModes], // Convert to regular array for JSON Schema
     description: 'Who the web app runs as (for WEB_APP type). LLM GUIDANCE: USER_DEPLOYING for consistent permissions, USER_ACCESSING for user-specific data.',
     default: 'USER_DEPLOYING',
     llmHints: {
@@ -121,7 +121,7 @@ export const DEPLOYMENT_CONFIG_SCHEMA = {
   },
   accessLevel: {
     type: 'string',
-    enum: AccessLevels,
+    enum: [...AccessLevels], // Convert to regular array for JSON Schema
     description: 'Access level for API Executable (for EXECUTION_API type). LLM RECOMMENDATION: Use MYSELF for secure APIs.',
     default: 'MYSELF',
     llmHints: {

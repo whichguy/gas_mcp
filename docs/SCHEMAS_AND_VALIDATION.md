@@ -410,9 +410,9 @@ interface GasDeployCreateInput {
     "scriptId": {
       "type": "string",
       "description": "Google Apps Script project ID",
-      "pattern": "^[a-zA-Z0-9_-]{20,60}$",
-      "minLength": 20,
-      "maxLength": 60
+      "pattern": "^[a-zA-Z0-9_-]{44}$",
+      "minLength": 44,
+      "maxLength": 44
     },
     "entryPointType": {
       "type": "string",
