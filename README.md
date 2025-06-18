@@ -1,209 +1,878 @@
 # MCP Google Apps Script Server
 
-**Version 1.0.1** - Model Context Protocol server for Google Apps Script integration
+<div align="center">
 
-A powerful TypeScript-based MCP server that provides seamless integration between AI assistants (like Claude via Cursor) and Google Apps Script. Create, edit, deploy, and execute Google Apps Script projects directly from your development environment.
+[![npm version](https://img.shields.io/npm/v/mcp-gas-server.svg)](https://www.npmjs.com/package/mcp-gas-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue.svg)](https://www.typescriptlang.org/)
+[![MCP Protocol](https://img.shields.io/badge/MCP-0.4.0-orange.svg)](https://modelcontextprotocol.io/)
 
-## 🚀 Quick Start
+**A powerful Model Context Protocol server for seamless Google Apps Script integration**
 
-### Prerequisites
-- **Node.js** v18+ (tested with v22.13.1)
-- **npm** v8+ (tested with v11.2.0)
-- **Google Account** with Cloud Console access
-- **Cursor IDE** with MCP support
+[Features](#-features) • [Quick Start](#-quick-start) • [Installation](#-installation) • [Usage](#-usage) • [API Reference](#-api-reference) • [Contributing](#-contributing)
 
-### Installation & Setup
-
-1. **Clone and Install**:
-   ```bash
-   git clone https://github.com/whichguy/gas_mcp.git
-   cd gas_mcp
-   npm install
-   ```
-
-2. **Initialize Configuration**:
-   ```bash
-   npm run setup
-   ```
-
-3. **Validate Setup**:
-   ```bash
-   ./validate-setup.sh
-   ```
-   This comprehensive script validates build process, dependencies, config files, and server startup.
-
-4. **Configure OAuth** (Required for real usage):
-   - Follow the detailed guide in [`CURSOR_INTEGRATION.md`](CURSOR_INTEGRATION.md)
-   - Set up Google Cloud OAuth credentials
-   - Replace test credentials in `config/oauth.json`
-
-5. **Integrate with Cursor**:
-   - Add MCP server configuration to Cursor
-   - Restart Cursor to load the server
-   - See full instructions in [`CURSOR_INTEGRATION.md`](CURSOR_INTEGRATION.md)
-
-## ✅ Current Status
-
-The OAuth error you saw (`Error 401: invalid_client`) is **expected and correct** - it means:
-- ✅ Build process works
-- ✅ Config files are properly loaded
-- ✅ Server starts successfully
-- ❌ Using test OAuth credentials (not real Google credentials)
-
-This is the normal state for initial setup. Follow the OAuth configuration in [`CURSOR_INTEGRATION.md`](CURSOR_INTEGRATION.md) to get real credentials.
-
-## 🛠️ Features
-
-### Core MCP Tools
-
-- **Authentication**: `gas_auth` - OAuth 2.0 flow with Google
-- **Project Management**: Create, list, and manage GAS projects
-- **File Operations**: Read, write, copy, move, delete files in GAS projects
-- **Code Execution**: 
-  - `gas_run` - Execute functions via HEAD deployment with /dev URLs (testing endpoint)
-  - `gas_run_api_exec` - Execute via API (requires deployment)
-- **Deployment Management**: Create versions and deployments
-- **Drive Integration**: Find and bind scripts to Sheets, Docs, Forms
-
-### Advanced Features
-
-- **Automatic Deployment**: Fresh deployments ensure latest code execution
-- **Extension Handling**: Intelligent file extension management (strips `.js`, `.ts`, etc.)
-- **Error Recovery**: Robust error handling with detailed diagnostics
-- **Project Templates**: Structured project organization with metadata
-- **Live Development**: Real-time code sync between local and Google Apps Script
-
-## 📁 Project Structure
-
-```
-gas_mcp/
-├── src/                     # TypeScript source code
-│   ├── tools/              # MCP tool implementations
-│   ├── auth/               # OAuth authentication
-│   ├── api/                # Google Apps Script API client
-│   └── index.ts            # MCP server entry point
-├── config/                 # Configuration files
-│   ├── oauth.json          # OAuth credentials (created by setup)
-│   └── oauth.json.template # Template for OAuth config
-├── gas-projects/           # Local GAS project management
-│   ├── fibonacci-calculator/  # Example project
-│   └── template/           # Project template
-├── examples/               # Usage examples and patterns
-├── test/                   # Comprehensive test suite
-├── dist/                   # Compiled JavaScript (created by build)
-├── validate-setup.sh       # Setup validation script
-└── CURSOR_INTEGRATION.md   # Complete Cursor setup guide
-```
-
-## 🔧 Development Commands
-
-```bash
-# Setup and validation
-npm run setup              # Create OAuth config from template
-./validate-setup.sh        # Validate complete setup
-npm run build             # Compile TypeScript + copy config
-npm start                 # Start MCP server
-
-# Testing
-npm test                  # Run core tests
-npm run test:system       # System integration tests
-npm run test:workflow     # End-to-end workflow tests (requires auth)
-
-# Development
-npm run dev               # Watch mode TypeScript compilation
-npm run clean             # Clean build directory
-npm run lint              # ESLint code checking
-```
-
-## 📚 Documentation
-
-- **[Cursor Integration Guide](CURSOR_INTEGRATION.md)** - Complete setup for Cursor IDE
-- **[stdout/stderr Architecture](docs/STDOUT_STDERR_DOCUMENTATION.md)** - Protocol communication and diagnostic logging
-- **[Repository Structure](REPOSITORY_STRUCTURE.md)** - Project organization and principles
-- **[Gas Projects](gas-projects/README.md)** - Managing GAS projects locally
-- **[Examples](examples/README.md)** - Usage patterns and examples
-
-## 🧪 Example Workflow
-
-Once set up with real OAuth credentials:
-
-```javascript
-// 1. Authenticate with Google
-await gas_auth({ mode: "start" });
-
-// 2. Create new project
-const project = await gas_project_create({ title: "My Calculator" });
-
-// 3. Add source code
-await gas_write({
-    path: `${project.scriptId}/calculator.js`,
-    content: `
-        function add(a, b) {
-            return a + b;
-        }
-        
-        function multiply(a, b) {
-            return a * b;
-        }
-    `
-});
-
-// 4. Execute functions
-const result = await gas_run({
-    scriptId: project.scriptId,
-    functionName: "add",
-    parameters: [5, 3]
-});
-// Returns: 8
-```
-
-## 🔐 Security
-
-- OAuth credentials in `config/oauth.json` are **never committed** (in `.gitignore`)
-- Use environment variables for CI/CD environments
-- Regular credential rotation recommended
-- Scope-limited OAuth permissions
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-1. **"OAuth client was not found"** - Expected with test credentials. Follow OAuth setup in `CURSOR_INTEGRATION.md`
-2. **"ENOENT: oauth.json"** - Run `npm run setup` to create config file
-3. **Build failures** - Run `npm run clean && npm install && npm run build`
-4. **MCP not connecting in Cursor** - Check paths in Cursor config, restart Cursor
-
-### Debug Mode
-```bash
-export DEBUG=mcp:*
-npm start
-```
-
-### Validation
-```bash
-./validate-setup.sh  # Comprehensive setup validation
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature-name`
-3. Run tests: `npm test`
-4. Commit changes: `git commit -am 'Add feature'`
-5. Push branch: `git push origin feature-name`
-6. Submit pull request
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🔗 Links
-
-- **GitHub Repository**: [https://github.com/whichguy/gas_mcp](https://github.com/whichguy/gas_mcp)
-- **Issues & Support**: [GitHub Issues](https://github.com/whichguy/gas_mcp/issues)
-- **Google Apps Script API**: [Documentation](https://developers.google.com/apps-script/api)
-- **Model Context Protocol**: [MCP Specification](https://modelcontextprotocol.io/)
+</div>
 
 ---
 
-**Next Steps**: Run `./validate-setup.sh` to verify your installation, then follow [`CURSOR_INTEGRATION.md`](CURSOR_INTEGRATION.md) for complete Cursor setup. 
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Usage](#-usage)
+- [API Reference](#-api-reference)
+- [Configuration](#-configuration)
+- [Examples](#-examples)
+- [Development](#-development)
+- [Testing](#-testing)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [Security](#-security)
+- [License](#-license)
+- [Support](#-support)
+
+## 🎯 Overview
+
+The MCP Google Apps Script Server bridges the gap between AI assistants and Google Apps Script, enabling seamless creation, execution, and management of Google Apps Script projects directly from your development environment. Built with TypeScript and following the Model Context Protocol specification, it provides a robust, type-safe interface for Google Apps Script operations.
+
+### Key Benefits
+
+- **🚀 Direct Code Execution**: Run JavaScript/Apps Script code instantly without manual deployment
+- **📁 Full Project Management**: Create, edit, organize, and deploy complete GAS projects
+- **🔐 Secure OAuth Integration**: Industry-standard PKCE OAuth 2.0 flow with Google
+- **🔄 Real-time Synchronization**: Live sync between local development and Google Apps Script
+- **🛠️ Developer-Friendly**: Comprehensive error handling, logging, and debugging tools
+- **📱 Drive Integration**: Seamless binding with Google Sheets, Docs, Forms, and Sites
+
+## ✨ Features
+
+### 🔧 Core Functionality
+- **Project Management**: Create, list, delete, and manage GAS projects
+- **File Operations**: Read, write, copy, move, and organize files within projects
+- **Dynamic Code Execution**: Execute JavaScript code directly in GAS environment
+- **Deployment Management**: Create, update, and manage web app and API deployments
+- **Version Control**: Create and manage project versions with detailed metadata
+
+### 🔗 Integration Capabilities
+- **Google Drive**: Find and bind scripts to Sheets, Docs, Forms, and Sites
+- **OAuth 2.0**: Secure authentication with PKCE flow
+- **MCP Protocol**: Standards-compliant Model Context Protocol implementation
+- **TypeScript**: Full type safety and IntelliSense support
+
+### 📊 Monitoring & Analytics
+- **Execution Metrics**: Track script performance and usage statistics
+- **Process Monitoring**: View execution history and debug failed runs
+- **Error Reporting**: Comprehensive error tracking and diagnostics
+
+## 📋 Prerequisites
+
+Before getting started, ensure you have:
+
+- **Node.js** v18.0.0 or higher ([Download](https://nodejs.org/))
+- **npm** v8.0.0 or higher (comes with Node.js)
+- **Google Account** with access to Google Cloud Console
+- **Cursor IDE** or another MCP-compatible client
+- **Google Cloud Project** with Apps Script API enabled
+
+## 🚀 Installation
+
+### 1. Clone and Install
+
+```bash
+# Clone the repository
+git clone https://github.com/whichguy/mcp_gas.git
+cd mcp_gas
+
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+```
+
+### 2. OAuth Configuration
+
+Create Google OAuth credentials:
+
+1. Visit [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing one
+3. Enable the **Google Apps Script API**
+4. Go to **Credentials** → **Create Credentials** → **OAuth client ID**
+5. Choose **Desktop Application**
+6. Download the JSON file
+
+Configure the server:
+
+```bash
+# Copy your OAuth credentials
+cp path/to/your/credentials.json oauth-config.json
+```
+
+### 3. Verify Installation
+
+```bash
+# Run validation script
+./validate-setup.sh
+
+# Start the server
+npm start
+```
+
+## 🏃 Quick Start
+
+### Basic Workflow
+
+```typescript
+// 1. Authenticate with Google
+await gas_auth({ mode: "start" });
+
+// 2. Create a new project
+const project = await gas_project_create({ 
+  title: "My First Calculator" 
+});
+
+// 3. Add source code
+await gas_write({
+  path: `${project.scriptId}/calculator`,
+  content: `
+    function add(a, b) {
+      return a + b;
+    }
+    
+    function fibonacci(n) {
+      if (n <= 1) return n;
+      return fibonacci(n - 1) + fibonacci(n - 2);
+    }
+  `
+});
+
+// 4. Execute code directly
+const result = await gas_run({
+  scriptId: project.scriptId,
+  js_statement: "add(5, 3)"
+});
+console.log(result); // 8
+
+// 5. Run complex calculations
+const fibResult = await gas_run({
+  scriptId: project.scriptId,
+  js_statement: "fibonacci(10)"
+});
+console.log(fibResult); // 55
+```
+
+### Integration with Cursor IDE
+
+Add to your Cursor configuration:
+
+```json
+{
+  "mcpServers": {
+    "mcp-gas": {
+      "command": "node",
+      "args": ["/path/to/mcp_gas/dist/src/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+## 📖 Usage
+
+### Authentication
+
+```typescript
+// Check current authentication status
+await gas_auth({ mode: "status" });
+
+// Start OAuth flow (opens browser)
+await gas_auth({ mode: "start" });
+
+// Logout and clear credentials
+await gas_auth({ mode: "logout" });
+```
+
+### Project Operations
+
+```typescript
+// Create a new project
+const project = await gas_project_create({
+  title: "Data Analytics Suite",
+  parentId: "optional_drive_folder_id"
+});
+
+// List all accessible projects
+const projects = await gas_ls({ path: "" });
+
+// Get detailed project information
+const info = await gas_info({ 
+  projectId: project.scriptId,
+  includeContent: true 
+});
+```
+
+### File Management
+
+```typescript
+// Write a new file
+await gas_write({
+  path: `${scriptId}/utils/helpers`,
+  content: `
+    function formatDate(date) {
+      return new Date(date).toISOString().split('T')[0];
+    }
+    
+    function validateEmail(email) {
+      const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      return re.test(email);
+    }
+  `,
+  position: 0  // Execute first
+});
+
+// Read file contents
+const content = await gas_cat({
+  path: `${scriptId}/utils/helpers`
+});
+
+// Copy file to new location
+await gas_cp({
+  from: `${scriptId}/utils/helpers`,
+  to: `${scriptId}/shared/utilities`
+});
+
+// Move/rename file
+await gas_mv({
+  from: `${scriptId}/shared/utilities`,
+  to: `${scriptId}/lib/common`
+});
+```
+
+### Code Execution
+
+```typescript
+// Execute simple expressions
+await gas_run({
+  scriptId: scriptId,
+  js_statement: "Math.PI * 2"
+});
+
+// Call custom functions
+await gas_run({
+  scriptId: scriptId,
+  js_statement: "formatDate(new Date())"
+});
+
+// Access Google Services
+await gas_run({
+  scriptId: scriptId,
+  js_statement: "DriveApp.getRootFolder().getName()"
+});
+
+// Execute complex operations
+await gas_run({
+  scriptId: scriptId,
+  js_statement: `
+    const sheet = SpreadsheetApp.create('Analytics Data');
+    const id = sheet.getId();
+    sheet.getActiveSheet().getRange('A1').setValue('Hello World');
+    return id;
+  `
+});
+```
+
+### Deployment Management
+
+```typescript
+// Create a version (required for deployment)
+const version = await gas_version_create({
+  scriptId: scriptId,
+  description: "Initial release with analytics functions"
+});
+
+// Deploy as web app
+const deployment = await gas_deploy_create({
+  scriptId: scriptId,
+  entryPointType: "WEB_APP",
+  webAppAccess: "ANYONE",
+  webAppExecuteAs: "USER_ACCESSING",
+  versionNumber: version.versionNumber
+});
+
+// Deploy as API executable
+const apiDeployment = await gas_deploy_create({
+  scriptId: scriptId,
+  entryPointType: "EXECUTION_API",
+  accessLevel: "ANYONE",
+  versionNumber: version.versionNumber
+});
+
+// Execute via API (requires deployment)
+const apiResult = await gas_run_api_exec({
+  scriptId: scriptId,
+  functionName: "formatDate",
+  parameters: [new Date()]
+});
+```
+
+## 📚 API Reference
+
+### Authentication Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `gas_auth` | Manage OAuth authentication | `mode`: "start" \| "status" \| "logout" |
+
+### Project Management Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_project_create` | Create new GAS project | `title`, `parentId?` |
+| `gas_ls` | List projects and files | `path`, `detailed?`, `recursive?` |
+| `gas_info` | Get project details | `projectId`, `includeContent?` |
+
+### File Operation Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_write` | Write file content | `path`, `content`, `position?` |
+| `gas_cat` | Read file content | `path` |
+| `gas_mv` | Move/rename files | `from`, `to` |
+| `gas_cp` | Copy files | `from`, `to` |
+| `gas_rm` | Delete files | `path` |
+
+### Execution Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_run` | Execute JavaScript dynamically | `scriptId`, `js_statement` |
+| `gas_run_api_exec` | Execute via API | `scriptId`, `functionName`, `parameters?` |
+
+### Deployment Tools
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_version_create` | Create project version | `scriptId`, `description?` |
+| `gas_deploy_create` | Create deployment | `scriptId`, `entryPointType`, `versionNumber?` |
+| `gas_deploy_list` | List deployments | `scriptId` |
+| `gas_deploy_get_details` | Get deployment info | `scriptId`, `deploymentId` |
+
+For complete API documentation, see [docs/API_REFERENCE.md](docs/API_REFERENCE.md).
+
+## ⚙️ Configuration
+
+### OAuth Configuration
+
+The `oauth-config.json` file contains your Google OAuth credentials:
+
+```json
+{
+  "client_id": "your-client-id.apps.googleusercontent.com",
+  "client_secret": "your-client-secret",
+  "redirect_uris": ["http://localhost:3000/oauth/callback"],
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token"
+}
+```
+
+### Environment Variables
+
+```bash
+# Optional: Override OAuth client ID
+export GOOGLE_OAUTH_CLIENT_ID="your-client-id"
+
+# Optional: Set custom OAuth port
+export OAUTH_PORT="3000"
+
+# Optional: Enable debug logging
+export DEBUG="mcp:*"
+
+# Optional: Set custom timeout
+export REQUEST_TIMEOUT="30000"
+```
+
+### MCP Server Configuration
+
+For Cursor IDE integration:
+
+```json
+{
+  "mcpServers": {
+    "mcp-gas": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
+      "env": {
+        "NODE_ENV": "production",
+        "DEBUG": "mcp:error"
+      }
+    }
+  }
+}
+```
+
+## 💡 Examples
+
+### Example 1: Spreadsheet Analytics
+
+```typescript
+// Create analytics project
+const project = await gas_project_create({
+  title: "Spreadsheet Analytics"
+});
+
+// Add analytics functions
+await gas_write({
+  path: `${project.scriptId}/analytics`,
+  content: `
+    function analyzeSheet(sheetId) {
+      const sheet = SpreadsheetApp.openById(sheetId);
+      const data = sheet.getActiveSheet().getDataRange().getValues();
+      
+      return {
+        rows: data.length,
+        columns: data[0]?.length || 0,
+        lastUpdate: sheet.getLastUpdate().toISOString()
+      };
+    }
+    
+    function generateReport(sheetIds) {
+      return sheetIds.map(id => ({
+        sheetId: id,
+        analysis: analyzeSheet(id)
+      }));
+    }
+  `
+});
+
+// Execute analytics
+const report = await gas_run({
+  scriptId: project.scriptId,
+  js_statement: `generateReport(["sheet_id_1", "sheet_id_2"])`
+});
+```
+
+### Example 2: Gmail Automation
+
+```typescript
+// Create email automation project
+const emailProject = await gas_project_create({
+  title: "Email Automation Suite"
+});
+
+// Add email functions
+await gas_write({
+  path: `${emailProject.scriptId}/email`,
+  content: `
+    function sendWelcomeEmail(recipient, name) {
+      const subject = "Welcome to Our Platform!";
+      const body = \`
+        Hello \${name},
+        
+        Welcome to our platform! We're excited to have you on board.
+        
+        Best regards,
+        The Team
+      \`;
+      
+      GmailApp.sendEmail(recipient, subject, body);
+      return \`Email sent to \${recipient}\`;
+    }
+    
+    function getUnreadCount() {
+      return GmailApp.getInboxUnreadCount();
+    }
+  `
+});
+
+// Send welcome email
+await gas_run({
+  scriptId: emailProject.scriptId,
+  js_statement: `sendWelcomeEmail("user@example.com", "John Doe")`
+});
+
+// Check unread emails
+const unreadCount = await gas_run({
+  scriptId: emailProject.scriptId,
+  js_statement: "getUnreadCount()"
+});
+```
+
+### Example 3: Drive Integration
+
+```typescript
+// Find existing spreadsheet and bind script
+const driveFiles = await gas_find_drive_script({
+  fileName: "Sales Data"
+});
+
+if (driveFiles.containers.length > 0) {
+  // Bind script to spreadsheet
+  const binding = await gas_bind_script({
+    containerName: "Sales Data",
+    scriptName: "Data Processor"
+  });
+  
+  // Add functions to bound script
+  await gas_write({
+    path: `${binding.scriptId}/processor`,
+    content: `
+      function onOpen() {
+        const ui = SpreadsheetApp.getUi();
+        ui.createMenu('Data Tools')
+          .addItem('Process Data', 'processCurrentSheet')
+          .addToUi();
+      }
+      
+      function processCurrentSheet() {
+        const sheet = SpreadsheetApp.getActiveSheet();
+        const data = sheet.getDataRange().getValues();
+        
+        // Process data logic here
+        Browser.msgBox('Data processed successfully!');
+      }
+    `
+  });
+}
+```
+
+More examples available in the [examples/](examples/) directory.
+
+## 🛠️ Development
+
+### Project Structure
+
+```
+mcp_gas/
+├── src/                    # TypeScript source code
+│   ├── tools/             # MCP tool implementations
+│   │   ├── auth.ts        # Authentication tools
+│   │   ├── execution.ts   # Code execution tools
+│   │   ├── filesystem.ts  # File operation tools
+│   │   └── project.ts     # Project management tools
+│   ├── auth/              # OAuth authentication
+│   ├── api/               # Google Apps Script API client
+│   ├── server/            # MCP server implementation
+│   └── index.ts           # Main server entry point
+├── test/                  # Comprehensive test suite
+├── docs/                  # Documentation
+├── examples/              # Usage examples
+└── gas-projects/          # Local project templates
+```
+
+### Development Commands
+
+```bash
+# Development workflow
+npm run dev                # Watch mode compilation
+npm run build             # Production build
+npm run clean             # Clean build artifacts
+
+# Code quality
+npm run lint              # Run ESLint
+npm run lint:fix          # Fix linting issues
+
+# Testing
+npm test                  # Run core tests
+npm run test:unit         # Unit tests only
+npm run test:system       # System integration tests
+npm run test:workflow     # End-to-end workflow tests
+npm run test:all          # Run all test suites
+```
+
+### Adding New Tools
+
+1. Create tool implementation in `src/tools/`
+2. Extend the base tool class
+3. Add comprehensive TypeScript types
+4. Write unit tests in `test/tools/`
+5. Update API documentation
+
+Example tool structure:
+
+```typescript
+import { BaseTool } from './base.js';
+
+export class MyNewTool extends BaseTool {
+  public name = "my_new_tool";
+  public description = "Description of what this tool does";
+  public inputSchema = {
+    type: "object" as const,
+    properties: {
+      parameter1: {
+        type: "string",
+        description: "Parameter description"
+      }
+    },
+    required: ["parameter1"]
+  };
+
+  async execute(args: any): Promise<any> {
+    // Implementation here
+  }
+}
+```
+
+## 🧪 Testing
+
+### Test Categories
+
+- **Unit Tests**: Individual function and class testing
+- **System Tests**: MCP protocol and authentication testing
+- **Integration Tests**: End-to-end workflow testing with real Google APIs
+- **Security Tests**: OAuth flow and permission validation
+
+### Running Tests
+
+```bash
+# Quick validation
+npm test
+
+# Comprehensive testing
+npm run test:all
+
+# Integration tests (requires OAuth setup)
+npm run test:workflow
+
+# Specific test suites
+npm run test:unit         # Unit tests only
+npm run test:system       # System tests only
+npm run test:gas-run      # Execution engine tests
+```
+
+### Test Configuration
+
+For integration tests, set up environment:
+
+```bash
+# Enable integration testing
+export GAS_INTEGRATION_TEST=true
+
+# Optional: Use custom OAuth credentials
+export GOOGLE_OAUTH_CLIENT_ID="test-client-id"
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### Authentication Problems
+
+**Issue**: "OAuth client was not found" or "invalid_client"
+```bash
+# Solution: Check OAuth configuration
+cat oauth-config.json  # Verify credentials exist
+./validate-setup.sh    # Run comprehensive validation
+```
+
+**Issue**: Browser doesn't open during authentication
+```bash
+# Solution: Check browser setup
+export BROWSER=chrome  # Set preferred browser
+npm start             # Restart server
+```
+
+#### Connection Issues
+
+**Issue**: MCP server not connecting in Cursor
+```bash
+# Check Cursor configuration
+# Ensure absolute paths in mcpServers config
+# Restart Cursor IDE after configuration changes
+```
+
+**Issue**: Server startup failures
+```bash
+# Validate Node.js version
+node --version  # Should be ≥18.0.0
+
+# Rebuild project
+npm run clean && npm install && npm run build
+```
+
+#### Execution Problems
+
+**Issue**: `gas_run` timeouts or hangs
+```bash
+# Check Google Apps Script quota limits
+# Verify project permissions
+# Try simpler code execution first
+```
+
+**Issue**: File operation failures
+```bash
+# Check project permissions
+# Verify file paths (no extensions needed)
+# Ensure authentication is valid
+```
+
+### Debug Mode
+
+Enable comprehensive logging:
+
+```bash
+# Enable all debug output
+export DEBUG=mcp:*
+npm start
+
+# Enable specific debug categories
+export DEBUG=mcp:auth,mcp:execution
+npm start
+```
+
+### Validation Script
+
+Run the comprehensive setup validator:
+
+```bash
+./validate-setup.sh
+```
+
+This script checks:
+- ✅ Node.js and npm versions
+- ✅ Project dependencies
+- ✅ OAuth configuration
+- ✅ Build process
+- ✅ Server startup
+- ✅ MCP protocol compliance
+
+### Getting Help
+
+1. **Check Documentation**: Review [docs/](docs/) directory
+2. **Search Issues**: Look for similar problems in project issues
+3. **Enable Debug Mode**: Use `DEBUG=mcp:*` for detailed logs
+4. **Run Validation**: Execute `./validate-setup.sh`
+5. **Check Examples**: Review [examples/](examples/) for working patterns
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### Quick Start for Contributors
+
+1. **Fork the repository**
+2. **Create a feature branch**:
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
+3. **Make your changes**
+4. **Add tests** for new functionality
+5. **Run the test suite**:
+   ```bash
+   npm run test:all
+   ```
+6. **Commit your changes**:
+   ```bash
+   git commit -am 'Add amazing feature'
+   ```
+7. **Push to your branch**:
+   ```bash
+   git push origin feature/amazing-feature
+   ```
+8. **Open a Pull Request**
+
+### Development Guidelines
+
+- **Code Style**: Follow TypeScript best practices
+- **Testing**: Maintain >90% test coverage
+- **Documentation**: Update README and docs for new features
+- **Backwards Compatibility**: Don't break existing APIs without major version bump
+
+### Areas for Contribution
+
+- 🚀 **Performance Optimization**: Improve execution speed and memory usage
+- 📚 **Documentation**: Enhance guides, examples, and API docs
+- 🧪 **Testing**: Add more comprehensive test coverage
+- 🔌 **Integration**: Add support for more Google services
+- 🛠️ **Tools**: Create new MCP tools for additional functionality
+
+## 🔐 Security
+
+### Security Best Practices
+
+- **OAuth Credentials**: Never commit `oauth-config.json` to version control
+- **Environment Variables**: Use environment variables for sensitive configuration
+- **Scope Limitation**: Request only necessary OAuth scopes
+- **Token Storage**: Credentials are stored securely using OS keychain
+- **Regular Updates**: Keep dependencies updated for security patches
+
+### Security Features
+
+- **PKCE OAuth Flow**: Proof Key for Code Exchange for enhanced security
+- **State Parameter Validation**: CSRF protection during OAuth flow
+- **Token Expiry Handling**: Automatic token refresh with clock skew protection
+- **Secure Token Storage**: OS-level credential storage
+- **Input Validation**: Comprehensive validation of all inputs
+
+### Reporting Security Issues
+
+If you discover a security vulnerability, please:
+
+1. **DO NOT** open a public issue
+2. Email security concerns to [security@example.com]
+3. Include detailed description and reproduction steps
+4. Allow time for investigation and resolution
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+```
+MIT License
+
+Copyright (c) 2024 MCP Gas Server Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## 🆘 Support
+
+### Documentation
+
+- **📖 [API Reference](docs/API_REFERENCE.md)** - Complete API documentation
+- **🔧 [LLM Schema Guide](docs/LLM_SCHEMA_DESIGN_GUIDE.md)** - Schema design for AI assistants
+- **🔐 [OAuth Architecture](docs/OAUTH_SINGLETON_ARCHITECTURE.md)** - Authentication implementation
+- **📊 [Protocol Documentation](docs/STDOUT_STDERR_DOCUMENTATION.md)** - MCP protocol details
+
+### Community
+
+- **💬 [Discussions](https://github.com/whichguy/mcp_gas/discussions)** - Ask questions and share ideas
+- **🐛 [Issues](https://github.com/whichguy/mcp_gas/issues)** - Report bugs and request features
+- **📧 [Email Support](mailto:support@example.com)** - Direct support for critical issues
+
+### Resources
+
+- **🌐 [Model Context Protocol](https://modelcontextprotocol.io/)** - MCP specification
+- **📱 [Google Apps Script](https://developers.google.com/apps-script)** - Official GAS documentation
+- **🔐 [Google OAuth 2.0](https://developers.google.com/identity/protocols/oauth2)** - OAuth implementation guide
+
+---
+
+<div align="center">
+
+**Made with ❤️ by the MCP Gas Server team**
+
+[⭐ Star this repo](https://github.com/whichguy/mcp_gas) • [🐛 Report a bug](https://github.com/whichguy/mcp_gas/issues) • [💡 Request a feature](https://github.com/whichguy/mcp_gas/issues)
+
+</div> 
