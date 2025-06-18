@@ -19,7 +19,8 @@ import {
 import { 
   GASMkdirTool, 
   GASInfoTool, 
-  GASReorderTool 
+  GASReorderTool,
+  GASProjectMetricsTool
 } from '../tools/project.js';
 import { GASRunTool, GASRunApiExecTool } from '../tools/execution.js';
 import { GASProxySetupTool } from '../tools/proxySetup.js';
@@ -28,7 +29,9 @@ import {
   GASVersionCreateTool,
   GASDeployListTool,
   GASDeployGetDetailsTool,
-  GASProjectCreateTool
+  GASProjectCreateTool,
+  GASDeployDeleteTool,
+  GASDeployUpdateTool
 } from '../tools/deployments.js';
 
 import { 
@@ -36,6 +39,16 @@ import {
   GASBindScriptTool,
   GASCreateScriptTool
 } from '../tools/driveContainerTools.js';
+
+import {
+  GASProcessListTool,
+  GASProcessListScriptTool
+} from '../tools/processes.js';
+
+import {
+  GASVersionGetTool,
+  GASVersionListTool
+} from '../tools/versions.js';
 
 
 // Import error handling
@@ -170,7 +183,7 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    * 
-   * Each session gets its own instances of all 12 MCP tools, each configured
+   * Each session gets its own instances of all 28 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    * 
@@ -187,19 +200,33 @@ export class MCPGasServer {
    * - `gas_mv` - Move/rename files
    * - `gas_cp` - Copy files
    * 
-   * ### Project Management (3 tools)
-   * - `gas_mkdir` - Create projects
+   * ### Project Management (4 tools)
+   * - `gas_mkdir` - Create logical directories
    * - `gas_info` - Project information
    * - `gas_reorder` - File ordering
+   * - `gas_project_metrics` - Performance analytics
    * 
-   * ### Execution & Deployment (7 tools)
+   * ### Script Execution (3 tools)
    * - `gas_run` - Direct code execution (primary)
    * - `gas_run_api_exec` - API-based execution
    * - `gas_proxy_setup` - Proxy configuration
+   * 
+   * ### Deployment Management (7 tools)
    * - `gas_deploy_create` - Create deployments
-   * - `gas_version_create` - Create versions
    * - `gas_deploy_list` - List deployments
+   * - `gas_deploy_get_details` - Get deployment details
+   * - `gas_deploy_delete` - Delete deployments
+   * - `gas_deploy_update` - Update deployments
+   * - `gas_version_create` - Create versions
    * - `gas_project_create` - Create projects
+   * 
+   * ### Version Management (2 tools)
+   * - `gas_version_get` - Get version details
+   * - `gas_version_list` - List all versions
+   * 
+   * ### Process Management (2 tools)
+   * - `gas_process_list` - List user processes
+   * - `gas_process_list_script` - List script processes
    * 
    * ### Drive Integration (3 tools)
    * - `gas_find_drive_script` - Find container scripts
@@ -236,6 +263,7 @@ export class MCPGasServer {
       new GASMkdirTool(authManager),
       new GASInfoTool(authManager),
       new GASReorderTool(authManager),
+      new GASProjectMetricsTool(authManager),
       
       // Script execution (with session-specific auth manager)
       new GASRunTool(authManager),  // Primary gas_run tool with doGet() proxy and auto-deployment
@@ -248,12 +276,22 @@ export class MCPGasServer {
       new GASDeployListTool(authManager),
       new GASDeployGetDetailsTool(authManager),
       new GASProjectCreateTool(authManager),
+      new GASDeployDeleteTool(authManager),
+      new GASDeployUpdateTool(authManager),
 
       
       // Drive container and script discovery/management
       new GASFindDriveScriptTool(authManager),
       new GASBindScriptTool(authManager),
-      new GASCreateScriptTool(authManager)
+      new GASCreateScriptTool(authManager),
+      
+      // Process management
+      new GASProcessListTool(authManager),
+      new GASProcessListScriptTool(authManager),
+      
+      // Version management
+      new GASVersionGetTool(authManager),
+      new GASVersionListTool(authManager)
     ];
 
     toolInstances.forEach(tool => {
