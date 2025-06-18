@@ -1346,12 +1346,12 @@ export class GASRunTool extends BaseTool {
     const startTime = Date.now();
     
     // Test function that returns a simple success string
-    const testFunction = 'return "success"';
+    const testFunction = '"success"';
     const encodedTestFunction = encodeURIComponent(testFunction);
     const testUrl = `${baseUrl}?func=${encodedTestFunction}`;
     
     console.error(`🔄 [DOMAIN_AUTH_POLL] Starting authorization polling`);
-    console.error(`   Test URL: ${baseUrl}?func=return "success"`);
+    console.error(`   Test URL: ${baseUrl}?func="success"`);
     console.error(`   Max duration: ${maxPollDuration}ms`);
     console.error(`   Poll interval: ${pollInterval}ms`);
     
