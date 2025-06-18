@@ -1317,9 +1317,14 @@ export class GASRunTool extends BaseTool {
         
         console.error(`🔐 [GAS_RUN_AUTH] Browser authentication details:\n${JSON.stringify(authInfo, null, 2)}`);
         
-        // Launch browser with the test URL (no func parameter)
-        console.error(`🚀 [GAS_RUN_AUTH] Opening browser for domain authorization: ${response.url}`);
-        await open(response.url);
+        // Create browser URL with auth successful test function
+        const authTestFunction = '"auth successful"';
+        const encodedAuthTestFunction = encodeURIComponent(authTestFunction);
+        const browserUrl = `${response.url}${response.url.includes('?') ? '&' : '?'}func=${encodedAuthTestFunction}`;
+        
+        // Launch browser with the auth test URL
+        console.error(`🚀 [GAS_RUN_AUTH] Opening browser for domain authorization: ${browserUrl}`);
+        await open(browserUrl);
         
         // Poll for successful authorization
         await this.pollForDomainAuthorization(testUrl, accessToken);
@@ -1338,20 +1343,20 @@ export class GASRunTool extends BaseTool {
 
   /**
    * Poll for domain authorization completion by testing with a simple function
-   * Makes requests to /dev?func=return%20"success" until JSON response received
+   * Makes requests to /dev?func=return%20"auth successful" until JSON response received
    */
   private async pollForDomainAuthorization(baseUrl: string, accessToken: string): Promise<void> {
     const maxPollDuration = 60000; // 60 seconds total
     const pollInterval = 3000; // 3 seconds between polls
     const startTime = Date.now();
     
-    // Test function that returns a simple success string
-    const testFunction = '"success"';
+    // Test function that returns an auth success string
+    const testFunction = '"auth successful"';
     const encodedTestFunction = encodeURIComponent(testFunction);
     const testUrl = `${baseUrl}?func=${encodedTestFunction}`;
     
     console.error(`🔄 [DOMAIN_AUTH_POLL] Starting authorization polling`);
-    console.error(`   Test URL: ${baseUrl}?func="success"`);
+    console.error(`   Test URL: ${baseUrl}?func="auth successful"`);
     console.error(`   Max duration: ${maxPollDuration}ms`);
     console.error(`   Poll interval: ${pollInterval}ms`);
     
@@ -1383,9 +1388,9 @@ export class GASRunTool extends BaseTool {
           try {
             const pollResult = await pollResponse.json();
             
-            // Verify we got the expected success response
-            if (pollResult === 'success' || 
-                (typeof pollResult === 'object' && pollResult.result === 'success')) {
+            // Verify we got the expected auth successful response
+            if (pollResult === 'auth successful' || 
+                (typeof pollResult === 'object' && pollResult.result === 'auth successful')) {
               console.error(`✅ [DOMAIN_AUTH_POLL] Success! Domain authorization completed in ${elapsedTime}ms`);
               console.error(`   Poll result: ${JSON.stringify(pollResult)}`);
               return;
