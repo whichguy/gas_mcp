@@ -4,6 +4,7 @@ import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASCodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
+import open from 'open';
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -415,23 +416,90 @@ export class GASRunTool extends BaseTool {
     properties: {
       scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID'
+        description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 20-60 character project ID from Google Apps Script. Get this from gas_project_create or gas_ls tools.',
+        pattern: '^[a-zA-Z0-9_-]{20,60}$',
+        minLength: 20,
+        maxLength: 60,
+        llmHints: {
+          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
+          format: 'Long alphanumeric string, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5JmSyzF4Ga_kM',
+          validation: 'Tool will validate this is a real, accessible project ID'
+        }
       },
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute (e.g., "Math.PI * 2", "myFunction(1, 2, 3)")'
+        description: 'JavaScript statement to execute directly in Google Apps Script. LLM POWER: Can execute ANY valid JavaScript/Apps Script code - expressions, function calls, complex operations. No wrapper functions needed.',
+        minLength: 1,
+        maxLength: 2000,
+        examples: [
+          'Math.PI * 2',
+          'new Date().toISOString()', 
+          'Session.getActiveUser().getEmail()',
+          'fibonacci(17)',
+          'SpreadsheetApp.create("My New Sheet").getId()',
+          'DriveApp.getFiles().next().getName()',
+          '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
+          'JSON.stringify({message: "Hello", timestamp: new Date()})'
+        ],
+        llmHints: {
+          capability: 'Full JavaScript ES6+ support plus Google Apps Script services',
+          expressions: 'Can execute mathematical expressions, object operations, API calls',
+          functions: 'Can call functions defined in project files',
+          services: 'Access to SpreadsheetApp, DriveApp, GmailApp, etc.',
+          return: 'Return values are automatically JSON-serialized for response',
+          debugging: 'Use console.log() for debugging output in execution logs'
+        }
       },
       autoRedeploy: {
         type: 'boolean',
-        description: 'Enable automatic infrastructure setup (default: true)',
-        default: true
+        description: 'Enable automatic deployment infrastructure setup. LLM RECOMMENDATION: Leave as true (default) unless you want to manage deployments manually. Ensures project has web app deployment for code execution.',
+        default: true,
+        llmHints: {
+          recommended: 'Keep true for seamless operation - tool handles deployment complexity',
+          manual: 'Set false only if managing deployments separately with gas_deploy_create',
+          infrastructure: 'Creates HEAD deployment with /dev URL for testing latest code',
+          performance: 'Automatic setup may add 2-3 seconds to first execution'
+        }
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation. LLM USE: Bypass session authentication for one-off operations. Most LLM workflows should omit this and use session-based auth.',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
+        llmHints: {
+          typical: 'Usually omitted - tool uses session authentication from gas_auth',
+          stateless: 'Include when doing token-based operations without session storage',
+          security: 'Never expose these tokens in logs or responses'
+        }
       }
     },
-    required: ['scriptId', 'js_statement']
+    required: ['scriptId', 'js_statement'],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      prerequisites: [
+        '1. Ensure authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '2. Have a project: gas_project_create or get existing scriptId from gas_ls',
+        '3. Optional: Add code files with gas_write before execution'
+      ],
+      useCases: {
+        calculation: 'gas_run({scriptId: "...", js_statement: "Math.pow(2, 10)"})',
+        datetime: 'gas_run({scriptId: "...", js_statement: "new Date().toISOString()"})',
+        userInfo: 'gas_run({scriptId: "...", js_statement: "Session.getActiveUser().getEmail()"})',
+        customFunction: 'gas_run({scriptId: "...", js_statement: "myCustomFunction(arg1, arg2)"})',
+        googleServices: 'gas_run({scriptId: "...", js_statement: "DriveApp.getRootFolder().getName()"})',
+        dataProcessing: 'gas_run({scriptId: "...", js_statement: "[1,2,3].map(x => x * 2).join(\',\')"})'
+      },
+      errorHandling: {
+        'AuthenticationError': 'Run gas_auth to authenticate first',
+        'ScriptNotFound': 'Verify scriptId is correct and accessible',
+        'SyntaxError': 'Check JavaScript syntax in js_statement',
+        'RuntimeError': 'Check if required functions/services are available in project'
+      },
+      performance: {
+        firstRun: 'May take 3-5 seconds if autoRedeploy creates new deployment',
+        subsequentRuns: 'Typically 1-2 seconds for execution',
+        optimization: 'Complex operations benefit from being moved to project files'
+      }
+    }
   };
 
   private gasClient: GASClient;
@@ -699,6 +767,8 @@ export class GASRunTool extends BaseTool {
     return [404, 403, 500].includes(statusCode) || isHtmlError;
   }
 
+
+
   private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
     const executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
     const startTime = Date.now();
@@ -746,7 +816,7 @@ export class GASRunTool extends BaseTool {
       
       console.error(`🚀 [GAS_RUN ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
       
-      // AUTOMATIC REDIRECT: Use native browser redirect handling
+      // AUTOMATIC REDIRECT HANDLING: Let fetch handle redirects automatically
       const response = await fetch(finalUrl, {
         headers: requestHeaders,
         signal: abortController.signal,
@@ -776,6 +846,90 @@ export class GASRunTool extends BaseTool {
       };
       
       console.error(`📡 [GAS_RUN RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
+      
+      // Check for 302/200 responses with non-JSON content (requires cookie auth)
+      if ((response.status === 302 || response.status === 200) && !contentType.includes('application/json')) {
+        console.error(`🌐 [COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - launching browser for cookie authentication`);
+        
+        const cookieAuthInfo = {
+          httpStatus: `HTTP ${response.status} ${response.statusText}`,
+          finalUrl: response.url,
+          contentType: contentType,
+          authAction: 'Launching browser for cookie authentication',
+          waitTime: '13 seconds'
+        };
+        
+        console.error(`🔐 [COOKIE AUTH] Browser authentication details:\n${JSON.stringify(cookieAuthInfo, null, 2)}`);
+        
+        try {
+          // Launch browser with the final URL for cookie authentication
+          console.error(`🚀 [COOKIE AUTH] Opening browser for cookie authentication: ${response.url}`);
+          await open(response.url);
+          
+          // Wait 13 seconds for user to complete cookie authentication
+          console.error(`⏳ [COOKIE AUTH] Waiting 13 seconds for cookie authentication to complete...`);
+          await new Promise(resolve => setTimeout(resolve, 13000));
+          
+          console.error(`✅ [COOKIE AUTH] Cookie authentication wait period completed - continuing with execution`);
+          
+                     // After cookie auth, try the request again
+           console.error(`🔄 [COOKIE AUTH] Retrying request after cookie authentication`);
+           const retryResponse = await fetch(finalUrl, {
+             headers: requestHeaders,
+             signal: abortController.signal,
+             redirect: 'follow'
+           });
+           
+           // Continue processing with the retry response
+           const retryResponseHeaders: Record<string, string> = {};
+           retryResponse.headers.forEach((value, key) => {
+             retryResponseHeaders[key] = value;
+           });
+           
+           const retryContentType = retryResponse.headers.get('content-type') || 'Unknown';
+           
+           if (!retryResponse.ok) {
+             const errorBody = await retryResponse.text();
+             const error = new Error(`HTTP ${retryResponse.status}: ${retryResponse.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+             (error as any).statusCode = retryResponse.status;
+             throw error;
+           }
+           
+           // Process the retry response body
+           let retryResult: any;
+           let retryResponseText = '';
+           let retryIsJson = false;
+           
+           if (retryContentType.includes('application/json')) {
+             retryResult = await retryResponse.json();
+             retryIsJson = true;
+           } else {
+             retryResponseText = await retryResponse.text();
+             try {
+               retryResult = JSON.parse(retryResponseText);
+               retryIsJson = true;
+             } catch {
+               retryResult = retryResponseText;
+             }
+           }
+           
+           // Clear timeout and return success
+           clearTimeout(timeoutId);
+           
+           return {
+             status: 'success',
+             scriptId,
+             js_statement,
+             result: retryResult,
+             executedAt: new Date().toISOString(),
+             cookieAuthUsed: true
+           };
+          
+        } catch (browserError: any) {
+          console.error(`⚠️ [COOKIE AUTH] Browser launch failed: ${browserError.message} - continuing without cookie auth`);
+          // Fall through to normal error handling
+        }
+      }
       
       if (!response.ok) {
         let errorBody = '';

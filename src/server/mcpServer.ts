@@ -305,7 +305,7 @@ export class MCPGasServer {
    * ```
    */
   private async handleAuthenticationError(error: AuthenticationError | OAuthError, session: ClientSession, sessionId: string): Promise<any> {
-            console.error(`[Session ${sessionId}] Authentication required - auto-launching auth flow`);
+            console.error(`[Session ${sessionId}] Authentication required - checking if auth flow already started`);
     
     try {
       // Get the auth tool from the session
@@ -314,11 +314,24 @@ export class MCPGasServer {
         throw new Error('Auth tool not available in session');
       }
 
-      // Automatically start the authentication flow
-              console.error(`[Session ${sessionId}] Auto-starting OAuth authentication...`);
+      // Check if auth flow is already in progress
+      // Add a flag to track if we've already launched browser for this session
+      const authFlowKey = `browser_launched_${sessionId}`;
+      const browserAlreadyLaunched = (session as any)[authFlowKey] || false;
+
+      const shouldOpenBrowser = !browserAlreadyLaunched;
+      
+      if (shouldOpenBrowser) {
+        console.error(`[Session ${sessionId}] Auto-starting OAuth authentication with browser...`);
+        // Mark that we've launched browser for this session
+        (session as any)[authFlowKey] = true;
+      } else {
+        console.error(`[Session ${sessionId}] OAuth authentication already started - not opening another browser`);
+      }
+
       const authResult = await authTool.execute({ 
         mode: 'start', 
-        openBrowser: true,
+        openBrowser: shouldOpenBrowser,
         waitForCompletion: false
       });
 
@@ -492,6 +505,13 @@ export class MCPGasServer {
           sessionId: session.sessionId
         };
 
+        // Reset browser launch flag if this was a successful gas_auth completion
+        if (name === 'gas_auth' && result?.authenticated === true) {
+          const authFlowKey = `browser_launched_${session.sessionId}`;
+          delete (session as any)[authFlowKey];
+          console.error(`[Session ${session.sessionId}] Authentication completed - reset browser launch flag`);
+        }
+
         console.error(`[Session ${session.sessionId}] Tool ${name} completed successfully`);
 
         // SCHEMA FIX: Check if tool already returned proper MCP format
@@ -601,6 +621,10 @@ export class MCPGasServer {
     console.error('Clearing all cached session tokens on startup...');
     const clearedSessions = SessionAuthManager.clearAllSessions();
     console.error(`Cleared ${clearedSessions} cached session token(s)`);
+    
+    // Clear all in-memory sessions including browser launch flags
+    this.sessions.clear();
+    console.error('Cleared all in-memory sessions and browser launch flags');
     
     const transport = new StdioServerTransport();
     await this.server.connect(transport);

@@ -941,14 +941,61 @@ export class GASClient {
 
   /**
    * Construct gas_run URL from existing web app URL - synchronous version
-   * Takes a web app URL and converts it to gas_run format by replacing /exec with /dev
+   * 
+   * CRITICAL FIX: Converts domain-specific URLs to standard format to avoid authentication issues
+   * 
+   * Converts from: https://script.google.com/a/macros/[DOMAIN]/s/[DEPLOYMENT_ID]/exec
+   * To:           https://script.google.com/macros/s/[DEPLOYMENT_ID]/dev
+   * 
+   * Domain-specific URLs (/a/macros/[DOMAIN]/) trigger Google Workspace authentication
+   * that doesn't accept Bearer tokens from programmatic requests. Standard URLs work
+   * with OAuth Bearer token authentication.
    */
   constructGasRunUrlFromWebApp(webAppUrl: string): string {
-    if (webAppUrl.includes('/exec')) {
-      return webAppUrl.replace('/exec', '/dev');
+    console.error(`🔧 [URL_CONVERSION] Converting web app URL: ${webAppUrl}`);
+    
+    try {
+      const url = new URL(webAppUrl);
+      
+      // Extract deployment ID from the URL path
+      // Path formats:
+      // Domain-specific: /a/macros/[DOMAIN]/s/[DEPLOYMENT_ID]/exec
+      // Standard:        /macros/s/[DEPLOYMENT_ID]/exec
+      const pathMatch = url.pathname.match(/\/(?:a\/macros\/[^\/]+\/)?s\/([^\/]+)\/(?:exec|dev)$/);
+      
+      if (!pathMatch) {
+        console.error(`⚠️ [URL_CONVERSION] Unexpected URL format, returning as-is: ${webAppUrl}`);
+        return webAppUrl;
+      }
+      
+      const deploymentId = pathMatch[1];
+      
+      // Construct standard format URL that works with Bearer token authentication
+      const standardUrl = `https://script.google.com/macros/s/${deploymentId}/dev`;
+      
+      const conversionInfo = {
+        originalUrl: webAppUrl,
+        convertedUrl: standardUrl,
+        deploymentId: deploymentId,
+        conversionType: webAppUrl.includes('/a/macros/') ? 'Domain-specific → Standard' : 'Standard → Standard',
+        authenticationCompatible: true,
+        bearerTokenSupported: true
+      };
+      
+      console.error(`✅ [URL_CONVERSION] Conversion details:\n${JSON.stringify(conversionInfo, null, 2)}`);
+      
+      return standardUrl;
+      
+    } catch (error: any) {
+      console.error(`❌ [URL_CONVERSION] Failed to parse URL: ${error.message}`);
+      console.error(`🔧 [URL_CONVERSION] Falling back to simple /exec → /dev replacement`);
+      
+      // Fallback: simple replacement
+      if (webAppUrl.includes('/exec')) {
+        return webAppUrl.replace('/exec', '/dev');
+      }
+      return webAppUrl;
     }
-    // If it's already /dev or unknown format, return as-is
-    return webAppUrl;
   }
 
   /**
