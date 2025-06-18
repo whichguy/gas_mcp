@@ -71,9 +71,9 @@ export interface CreateScriptResult {
 
 export class GASFindDriveScriptTool extends BaseTool {
   
-  name = 'gas_find_drive_script';
-  description = 'Find Drive containers (Sheets, Docs, Forms, Sites) and check Apps Script association status. Returns scriptId for integration with gas_run and other MCP functions.';
-  inputSchema = {
+  public name = 'gas_find_drive_script';
+  public description = 'Find Drive containers (Sheets, Docs, Forms, Sites) and check Apps Script association status. Returns scriptId for integration with gas_run and other MCP functions.';
+  public inputSchema = {
     type: 'object',
     properties: {
       fileName: {
@@ -326,9 +326,9 @@ export class GASFindDriveScriptTool extends BaseTool {
 
 export class GASBindScriptTool extends BaseTool {
   
-  name = 'gas_bind_script';
-  description = 'Bind an existing Apps Script project to a Drive container. Returns scriptId for integration with gas_run and other MCP functions.';
-  inputSchema = {
+  public name = 'gas_bind_script';
+  public description = 'Bind an existing Apps Script project to a Drive container. Returns scriptId for integration with gas_run and other MCP functions.';
+  public inputSchema = {
     type: 'object',
     properties: {
       containerName: {
@@ -577,9 +577,9 @@ export class GASBindScriptTool extends BaseTool {
 
 export class GASCreateScriptTool extends BaseTool {
   
-  name = 'gas_create_script';
-  description = 'Create new Apps Script project and bind to a Drive container. Generates container-specific starter code. Returns scriptId for integration with gas_run and other MCP functions.';
-  inputSchema = {
+  public name = 'gas_create_script';
+  public description = 'Create new Apps Script project and bind to a Drive container. Generates container-specific starter code. Returns scriptId for integration with gas_run and other MCP functions.';
+  public inputSchema = {
     type: 'object',
     properties: {
       containerName: {

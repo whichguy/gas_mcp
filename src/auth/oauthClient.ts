@@ -257,16 +257,29 @@ export class GASAuthClient {
             console.error('✅ State parameter validated - CSRF protection confirmed');
             console.error('🔄 Processing OAuth callback...');
 
-            // Show success page immediately
-            res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
-
-            // Exchange code for tokens
+            // Exchange code for tokens and complete session setup BEFORE showing success page
             try {
+                console.error('🔄 Starting token exchange and session setup...');
                 const tokenResponse = await this.exchangeCodeForTokens(code);
                 console.error('✅ Token exchange successful');
                 
-                // Signal completion to waiting gas_auth call
+                // Signal completion to waiting gas_auth call and wait for session setup
                 if (this.currentAuthKey) {
+                    console.error('🔄 Signaling auth completion and waiting for session setup...');
+                    const completionPromise = new Promise<void>((resolve, reject) => {
+                        // Set a timeout for session setup
+                        const sessionTimeout = setTimeout(() => {
+                            console.error('⚠️ Session setup timeout, proceeding anyway...');
+                            resolve();
+                        }, 5000); // 5 second timeout for session setup
+                        
+                        // Store the resolver for the signalAuthCompletion to use
+                        (tokenResponse as any).sessionSetupComplete = () => {
+                            clearTimeout(sessionTimeout);
+                            resolve();
+                        };
+                    });
+                    
                     signalAuthCompletion(this.currentAuthKey, {
                         status: 'authenticated',
                         message: 'Authentication completed successfully',
@@ -274,13 +287,23 @@ export class GASAuthClient {
                         tokenResponse: tokenResponse,
                         authKey: this.currentAuthKey
                     });
+                    
+                    // Wait for session setup to complete
+                    await completionPromise;
+                    console.error('✅ Session setup confirmed complete');
                 }
+                
+                // NOW show success page after session is ready
+                res.writeHead(200, { 'Content-Type': 'text/html' }).end(this.createSuccessPage());
                 
                 // Clean up server after successful authentication
                 this.cleanupServer();
                 
             } catch (tokenError: any) {
                 console.error('❌ Token exchange failed:', tokenError);
+                
+                // Show error page
+                res.writeHead(500, { 'Content-Type': 'text/html' }).end(this.createTokenErrorPage(tokenError));
                 
                 if (this.currentAuthKey) {
                     signalAuthError(this.currentAuthKey, new OAuthError(`Token exchange failed: ${tokenError.message}`, 'token_exchange'));

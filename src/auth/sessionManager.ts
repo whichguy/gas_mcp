@@ -201,6 +201,36 @@ export class SessionAuthManager {
   }
 
   /**
+   * Wait for session to be ready and fully synchronized
+   * RACE CONDITION FIX: Ensures session is fully set up before API operations
+   */
+  async waitForSessionReady(timeoutMs: number = 10000): Promise<boolean> {
+    const startTime = Date.now();
+    const checkInterval = 100; // Check every 100ms
+    
+    console.error(`⏳ Waiting for session ${this.sessionId} to be ready...`);
+    
+    while (Date.now() - startTime < timeoutMs) {
+      const authSession = MEMORY_AUTH_SESSIONS.get(this.sessionId);
+      
+      if (authSession && authSession.tokens && authSession.user) {
+        // Double-check token validity
+        const tokenValid = this.isTokenValidInternal(authSession);
+        if (tokenValid) {
+          console.error(`✅ Session ${this.sessionId} is ready and authenticated as ${authSession.user.email}`);
+          return true;
+        }
+      }
+      
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    console.error(`⚠️ Session ${this.sessionId} readiness timeout after ${timeoutMs}ms`);
+    return false;
+  }
+
+  /**
    * Check if current token is valid (not expired)
    * SIMPLIFIED: Basic operation since MCP is half-duplex
    */

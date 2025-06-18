@@ -1,6 +1,6 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
+import { ValidationError, GASApiError, AuthenticationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASCodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
@@ -176,10 +176,20 @@ export class GASRunApiExecTool extends BaseTool {
     this.gasClient = new GASClient();
   }
 
+  /**
+   * Try to get auth token without throwing errors (optimistic approach)
+   */
+  private async tryGetAuthToken(): Promise<string | null> {
+    try {
+      return await this.getAuthToken({});
+    } catch (error: any) {
+      // Return null if authentication fails, so we can try without auth first
+      return null;
+    }
+  }
+
   async execute(params: any): Promise<any> {
-    const accessToken = await this.getAuthToken(params);
-    
-    // Use new validation utilities
+    // Optimistic approach: validate inputs first, then try without authentication
     const scriptId = this.validate.scriptId(params.scriptId, 'API function execution');
     const functionName = this.validate.functionName(params.functionName, 'API function execution');
     const parameters = params.parameters || [];
@@ -190,7 +200,18 @@ export class GASRunApiExecTool extends BaseTool {
       throw new ValidationError('parameters', parameters, 'array of function parameters');
     }
 
+    // Try operation first with provided access token (if any) or session auth
+    let accessToken: string | null = null;
+    
     try {
+      // First try: Use provided token or attempt to get from session (optimistic)
+      accessToken = params.accessToken || await this.tryGetAuthToken();
+      
+      if (!accessToken) {
+        throw new AuthenticationError(
+          `Authentication required for gas_run_api_exec operation. Use gas_auth(mode="start") to authenticate and retry.`
+        );
+      }
       console.error(`🚀 Executing function: ${functionName} in script: ${scriptId}`);
       console.error(`📋 Parameters: ${JSON.stringify(parameters)}`);
       console.error(`🔧 Dev mode: ${devMode}`);
@@ -234,6 +255,42 @@ export class GASRunApiExecTool extends BaseTool {
 
     } catch (error: any) {
       console.error(`💥 Execution error:`, error);
+      
+      // Check for authentication errors (401/403)
+      const authStatusCode = error.statusCode || error.response?.status || error.data?.statusCode;
+      
+      if (authStatusCode === 401 || authStatusCode === 403) {
+        // Include detailed HTTP response information in the error
+        const httpDetails = {
+          statusCode: authStatusCode,
+          statusText: error.response?.statusText || (authStatusCode === 401 ? 'Unauthorized' : 'Forbidden'),
+          url: error.response?.url || 'Unknown URL',
+          headers: error.response?.headers ? Object.fromEntries(error.response.headers.entries()) : {},
+          responseBody: error.response?.text || error.message
+        };
+
+        const authError = new AuthenticationError(
+          `Authentication required for gas_run_api_exec operation (HTTP ${authStatusCode}). Use gas_auth(mode="start") to authenticate and retry.`
+        );
+        
+        // Add HTTP response details to error data
+        authError.data = {
+          ...authError.data,
+          statusCode: authStatusCode,
+          operation: 'gas_run_api_exec',
+          scriptId,
+          httpResponse: httpDetails,
+          instructions: [
+            'Use gas_auth with mode="start" to begin authentication',
+            'Complete the OAuth flow in your browser',
+            'Then retry your gas_run_api_exec request'
+          ],
+          command: 'gas_auth({"mode": "start"})',
+          statusCheck: 'gas_auth({"mode": "status"})'
+        };
+        
+        throw authError;
+      }
       
       // Log detailed error information for debugging
       console.error(`📊 Error details:`, {
@@ -509,8 +566,20 @@ export class GASRunTool extends BaseTool {
     this.gasClient = new GASClient();
   }
 
+  /**
+   * Try to get auth token without throwing errors (optimistic approach)
+   */
+  private async tryGetAuthToken(): Promise<string | null> {
+    try {
+      return await this.getAuthToken({});
+    } catch (error: any) {
+      // Return null if authentication fails, so we can try without auth first
+      return null;
+    }
+  }
+
   async execute(params: any): Promise<any> {
-    const accessToken = await this.getAuthToken(params);
+    // Optimistic approach: validate inputs first, then try without authentication
     const scriptId = this.validate.scriptId(params.scriptId, 'dynamic JS execution');
     const js_statement = this.validate.string(params.js_statement, 'JavaScript statement');
     const autoRedeploy = params.autoRedeploy !== false;
@@ -519,12 +588,61 @@ export class GASRunTool extends BaseTool {
       throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
     }
 
+    // Try operation first with provided access token (if any) or session auth
+    let accessToken: string | null = null;
+    
     try {
+      // First try: Use provided token or attempt to get from session (optimistic)
+      accessToken = params.accessToken || await this.tryGetAuthToken();
+      
       // 🚀 PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
-      return await this.executeOptimistic(scriptId, js_statement, accessToken);
+      return await this.executeOptimistic(scriptId, js_statement, accessToken || '');
     } catch (error: any) {
+      // Check for authentication errors (401/403)
+      const statusCode = error.statusCode || error.response?.status || error.data?.statusCode;
+      
+      if (statusCode === 401 || statusCode === 403) {
+        // Include detailed HTTP response information in the error
+        const httpDetails = {
+          statusCode,
+          statusText: error.response?.statusText || (statusCode === 401 ? 'Unauthorized' : 'Forbidden'),
+          url: error.response?.url || 'Unknown URL',
+          headers: error.response?.headers ? Object.fromEntries(error.response.headers.entries()) : {},
+          responseBody: error.response?.text || error.message
+        };
+
+        const authError = new AuthenticationError(
+          `Authentication required for gas_run operation (HTTP ${statusCode}). Use gas_auth(mode="start") to authenticate and retry.`
+        );
+        
+        // Add HTTP response details to error data
+        authError.data = {
+          ...authError.data,
+          statusCode,
+          operation: 'gas_run',
+          scriptId,
+          httpResponse: httpDetails,
+          instructions: [
+            'Use gas_auth with mode="start" to begin authentication',
+            'Complete the OAuth flow in your browser',
+            'Then retry your gas_run request'
+          ],
+          command: 'gas_auth({"mode": "start"})',
+          statusCheck: 'gas_auth({"mode": "status"})'
+        };
+        
+        throw authError;
+      }
+      
       // 🔍 PERFORMANCE: Check infrastructure before expensive setup
       if (this.needsInfrastructureSetup(error) && autoRedeploy) {
+        // For infrastructure setup, we definitely need authentication
+        if (!accessToken) {
+          throw new AuthenticationError(
+            `Authentication required for infrastructure setup. Use gas_auth(mode="start") to authenticate first.`
+          );
+        }
+        
         // Check if we have cached deployment URL (indicates infrastructure exists)
         const hasCachedUrl = this.sessionAuthManager ? 
           await this.sessionAuthManager.getCachedDeploymentUrl(scriptId) : null;
