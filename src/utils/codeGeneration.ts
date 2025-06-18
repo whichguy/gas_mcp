@@ -373,54 +373,56 @@ function createFunction(code) {
 
 /**
  * Core execution engine - runs JavaScript code dynamically
- * Uses sophisticated createFunction logic to handle declarations and expressions
+ * PERFORMANCE OPTIMIZED for repeated calls and simple expressions
  * 
  * @param {string} js_statement - JavaScript code to execute
  * @returns {TextOutput} JSON response with result and execution time
- * 
- * @example
- * // Simple expressions
- * __gas_run("Math.max(1,2,3)")
- * // Returns: {"function_called":"Math.max(1,2,3)","result":3,"success":true,"execution_time_ms":0.123}
- * 
- * // Multi-statement code - returns result of last expression
- * __gas_run("const x = 5; x * 2")
- * // Returns: {"function_called":"const x = 5; x * 2","result":10,"success":true,"execution_time_ms":0.234}
- * 
- * // Function definition and call
- * __gas_run("function add(a,b) { return a+b; } add(3,4)")
- * // Returns: {"function_called":"function add(a,b) { return a+b; } add(3,4)","result":7,"success":true,"execution_time_ms":0.156}
- * 
- * // Declarations only (returns undefined)
- * __gas_run("const x = 5;")
- * // Returns: {"function_called":"const x = 5;","result":undefined,"success":true,"execution_time_ms":0.089}
- * 
- * // Error case
- * __gas_run("invalidCode()")
- * // Returns: {"error":true,"context":"execution","function_called":"invalidCode()","message":"ReferenceError: invalidCode is not defined"}
  */
 function __gas_run(js_statement) {
-  const timerLabel = \`GAS_RUN_\${Date.now()}\`;
+  const startTime = Date.now();
   
-  console.error(\`[GAS_RUN] Executing: \${js_statement}\`);
-
-  let duration = "0";
-  console.time(timerLabel);
+  // 🚀 PERFORMANCE OPTIMIZATION: Skip logging for simple expressions
+  const isSimpleExpression = /^[a-zA-Z0-9_.\$\s*/()+-]+$/.test(js_statement) && 
+                            js_statement.length < 50 && 
+                            !js_statement.includes('function') && 
+                            !js_statement.includes('const') && 
+                            !js_statement.includes('let') && 
+                            !js_statement.includes('var');
+  
+  if (!isSimpleExpression) {
+    console.error(\`[GAS_RUN] Executing: \${js_statement}\`);
+  }
 
   try {
+    // 🚀 PERFORMANCE OPTIMIZATION: Direct eval for simple math expressions
+    if (isSimpleExpression && /^[\d\s*/.()+-]+$/.test(js_statement)) {
+      const result = eval(js_statement);
+      const duration = Date.now() - startTime;
+      
+      return jsonResponse({
+        function_called: js_statement,
+        result: result,
+        success: true,
+        execution_time_ms: duration,
+        execution_type: 'fast_eval'
+      });
+    }
+    
+    // Standard function construction for complex expressions
     const fn = createFunction(js_statement);
     const result = fn();
-    
-    duration = console.timeEnd(timerLabel);
+    const duration = Date.now() - startTime;
     
     return jsonResponse({
       function_called: js_statement,
       result: result,
       success: true,
-      execution_time_ms: duration
+      execution_time_ms: duration,
+      execution_type: 'function_constructor'
     });
   } catch (error) {
-    console.timeEnd(timerLabel);
+    const duration = Date.now() - startTime;
+    console.error(\`[GAS_RUN ERROR] \${js_statement}: \${error.toString()}\`);
     return errorResponse(error, 'execution', js_statement);
   }
 }
@@ -473,9 +475,6 @@ function errorResponse(error, context, code = 'unknown') {
 }
 `;
   }
-
-  // generateUserFunctionFile method removed - user functions in separate .gs files
-  // This maintains clean separation between system shim and user code
 
   /**
    * Utility method to get available generation types

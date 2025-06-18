@@ -203,7 +203,7 @@ export async function gas_auth({
   accessToken,
   mode = 'start',
   openBrowser = true,
-  waitForCompletion = true
+  waitForCompletion = false
 }: {
   accessToken?: string;
   mode?: 'start' | 'status' | 'logout';
