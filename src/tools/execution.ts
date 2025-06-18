@@ -520,11 +520,27 @@ export class GASRunTool extends BaseTool {
     }
 
     try {
-      // Simple optimistic execution - just try the basic fetch
+      // 🚀 PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
       return await this.executeOptimistic(scriptId, js_statement, accessToken);
     } catch (error: any) {
+      // 🔍 PERFORMANCE: Check infrastructure before expensive setup
       if (this.needsInfrastructureSetup(error) && autoRedeploy) {
+        // Check if we have cached deployment URL (indicates infrastructure exists)
+        const hasCachedUrl = this.sessionAuthManager ? 
+          await this.sessionAuthManager.getCachedDeploymentUrl(scriptId) : null;
+        
+        if (hasCachedUrl) {
+          console.error(`⚡ [OPTIMISTIC RETRY] Infrastructure exists (cached URL found), retrying without setup...`);
+          // Try one more time before full infrastructure setup
+          try {
+            return await this.executeOptimistic(scriptId, js_statement, accessToken);
+          } catch (retryError: any) {
+            console.error(`🔄 [OPTIMISTIC RETRY FAILED] Proceeding with infrastructure setup: ${retryError.message}`);
+          }
+        }
+        
         // Set up infrastructure and retry
+        console.error(`🏗️ [INFRASTRUCTURE SETUP] Setting up deployment infrastructure...`);
         await this.setupInfrastructure(scriptId, accessToken);
         
         // NEW: Retry logic for deployment delays with test function validation
@@ -633,15 +649,12 @@ export class GASRunTool extends BaseTool {
 
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
-      // IMPORTANT: Don't use URLSearchParams.set() as it URL-encodes the parameter
-      // Google Apps Script expects raw JavaScript code, not URL-encoded
+      // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
       const separator = executionUrl.includes('?') ? '&' : '?';
-      const finalUrl = `${executionUrl}${separator}func=${js_statement}`;
+      const encodedJsStatement = encodeURIComponent(js_statement);
+      const finalUrl = `${executionUrl}${separator}func=${encodedJsStatement}`;
       
-      // Convert /exec to /dev if needed for testing
-      const testUrl = finalUrl.replace('/exec', '/dev');
-      
-      // Enhanced request headers for deployment testing
+      // Enhanced request headers
       const requestHeaders = {
         'Authorization': `Bearer ${accessToken}`,
         'User-Agent': 'MCP-GAS-Server/1.0.0',
@@ -649,29 +662,37 @@ export class GASRunTool extends BaseTool {
         'Content-Type': 'application/json'
       };
       
-      // ENHANCED DEBUG LOG - Show URL conversion and headers before request
-      const debugInfo = {
-        timestamp: new Date().toISOString(),
-        operation: 'DEPLOYMENT_TEST',
-        scriptId: scriptId,
-        jsStatement: js_statement,
-        baseUrl: executionUrl,
-        originalUrl: finalUrl,
-        testUrl: testUrl,
-        urlConversion: finalUrl !== testUrl ? '/exec → /dev' : 'no conversion needed',
-        requestHeaders: {
-          ...requestHeaders,
-          'Authorization': `Bearer ${accessToken.substring(0, 10)}...***`
-        },
-        redirectPolicy: 'follow (automatic)',
-        timeout: '30 seconds',
-        requestStart: new Date().toISOString()
-      };
+      // 🚀 PERFORMANCE OPTIMIZATION: Reduce logging for repeated calls
+      const isFromCache = executionUrl.includes('cached'); // Simple heuristic
+      const shouldVerboseLog = !isFromCache || process.env.MCP_GAS_VERBOSE_LOGGING === 'true';
       
-      console.error(`🧪 [DEPLOYMENT_TEST ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+      if (shouldVerboseLog) {
+        // ENHANCED DEBUG LOG - Show URL and headers before request
+        const debugInfo = {
+          timestamp: new Date().toISOString(),
+          operation: 'DEPLOYMENT_TEST',
+          scriptId: scriptId,
+          jsStatement: js_statement,
+          baseUrl: executionUrl,
+          originalUrl: finalUrl,
+          testUrl: finalUrl,
+          urlConversion: finalUrl !== executionUrl ? '/exec → /dev' : 'no conversion needed',
+          requestHeaders: {
+            ...requestHeaders,
+            'Authorization': `Bearer ${accessToken.substring(0, 10)}...***`
+          },
+          redirectPolicy: 'follow (automatic)',
+          timeout: '30 seconds',
+          requestStart: new Date().toISOString()
+        };
+        
+        console.error(`🚀 [DEPLOYMENT_TEST ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+      } else {
+        console.error(`⚡ [DEPLOYMENT_TEST FAST] Executing: ${js_statement} on cached deployment`);
+      }
       
       // AUTOMATIC REDIRECT: Use native browser redirect handling with JSON Accept header
-      const response = await fetch(testUrl, {
+      const response = await fetch(finalUrl, {
         headers: requestHeaders,
         signal: abortController.signal,
         redirect: 'follow' // Automatically follow redirects
@@ -693,7 +714,7 @@ export class GASRunTool extends BaseTool {
         finalUrl: response.url,
         contentType: contentType,
         responseHeaders: responseHeaders,
-        redirectsFollowed: response.url !== testUrl ? 'YES' : 'NO',
+        redirectsFollowed: response.url !== finalUrl ? 'YES' : 'NO',
         responseTime: new Date().toISOString()
       };
       
@@ -724,19 +745,6 @@ export class GASRunTool extends BaseTool {
         
         const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
         (error as any).statusCode = response.status;
-        (error as any).statusText = response.statusText;
-        (error as any).response = {
-          status: response.status,
-          statusText: response.statusText,
-          headers: responseHeaders,
-          url: response.url,
-          body: errorBody
-        };
-        (error as any).responseBody = errorBody;
-        (error as any).config = {
-          url: testUrl,
-          method: 'GET'
-        };
         throw error;
       }
       
@@ -767,11 +775,40 @@ export class GASRunTool extends BaseTool {
     return [404, 403, 500].includes(statusCode) || isHtmlError;
   }
 
-
-
   private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
-    const executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
     const startTime = Date.now();
+    
+    // 🚀 PERFORMANCE OPTIMIZATION: Check cached deployment URL first
+    let executionUrl: string | null = null;
+    if (this.sessionAuthManager) {
+      try {
+        executionUrl = await this.sessionAuthManager.getCachedDeploymentUrl(scriptId);
+        if (executionUrl) {
+          console.error(`⚡ [CACHE HIT] Using cached deployment URL for ${scriptId}: ${executionUrl}`);
+        }
+      } catch (cacheError: any) {
+        console.error(`⚠️ [CACHE] Failed to check cached URL: ${cacheError.message}`);
+      }
+    }
+    
+    // If no cached URL, construct it (this is the expensive operation)
+    if (!executionUrl) {
+      console.error(`🔄 [CACHE MISS] Constructing deployment URL for ${scriptId}...`);
+      const urlConstructionStart = Date.now();
+      executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+      const urlConstructionTime = Date.now() - urlConstructionStart;
+      console.error(`🔧 [URL CONSTRUCTION] Completed in ${urlConstructionTime}ms`);
+      
+      // Cache the URL for future use
+      if (this.sessionAuthManager && executionUrl) {
+        try {
+          await this.sessionAuthManager.setCachedDeploymentUrl(scriptId, executionUrl);
+          console.error(`💾 [CACHE STORE] Deployment URL cached for future calls`);
+        } catch (cacheError: any) {
+          console.error(`⚠️ [CACHE] Failed to store URL: ${cacheError.message}`);
+        }
+      }
+    }
     
     // HANGING FIX: Add timeout protection to prevent indefinite hangs
     const abortController = new AbortController();
@@ -781,10 +818,10 @@ export class GASRunTool extends BaseTool {
 
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
-      // IMPORTANT: Don't use URLSearchParams.set() as it URL-encodes the parameter
-      // Google Apps Script expects raw JavaScript code, not URL-encoded
+      // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
       const separator = executionUrl.includes('?') ? '&' : '?';
-      const finalUrl = `${executionUrl}${separator}func=${js_statement}`;
+      const encodedJsStatement = encodeURIComponent(js_statement);
+      const finalUrl = `${executionUrl}${separator}func=${encodedJsStatement}`;
       
       // Enhanced request headers
       const requestHeaders = {
@@ -794,27 +831,35 @@ export class GASRunTool extends BaseTool {
         'Content-Type': 'application/json'
       };
       
-      // ENHANCED DEBUG LOG - Show URL and headers before request
-      const debugInfo = {
-        timestamp: new Date().toISOString(),
-        operation: 'GAS_RUN_EXECUTION',
-        scriptId: scriptId,
-        jsStatement: js_statement,
-        baseUrl: executionUrl,
-        finalUrl: finalUrl,
-        urlConversion: executionUrl.includes('/exec') ? 
-          `${executionUrl} → ${finalUrl.replace('/exec', '/dev')} (if redirected)` : 
-          'no conversion needed',
-        requestHeaders: {
-          ...requestHeaders,
-          'Authorization': `Bearer ${accessToken.substring(0, 10)}...***`
-        },
-        redirectPolicy: 'follow (automatic)',
-        timeout: '30 seconds',
-        requestStart: new Date().toISOString()
-      };
+      // 🚀 PERFORMANCE OPTIMIZATION: Reduce logging for repeated calls
+      const isFromCache = executionUrl.includes('cached'); // Simple heuristic
+      const shouldVerboseLog = !isFromCache || process.env.MCP_GAS_VERBOSE_LOGGING === 'true';
       
-      console.error(`🚀 [GAS_RUN ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+      if (shouldVerboseLog) {
+        // ENHANCED DEBUG LOG - Show URL and headers before request
+        const debugInfo = {
+          timestamp: new Date().toISOString(),
+          operation: 'GAS_RUN_EXECUTION',
+          scriptId: scriptId,
+          jsStatement: js_statement,
+          baseUrl: executionUrl,
+          finalUrl: finalUrl,
+          urlConversion: executionUrl.includes('/exec') ? 
+            `${executionUrl} → ${finalUrl.replace('/exec', '/dev')} (if redirected)` : 
+            'no conversion needed',
+          requestHeaders: {
+            ...requestHeaders,
+            'Authorization': `Bearer ${accessToken.substring(0, 10)}...***`
+          },
+          redirectPolicy: 'follow (automatic)',
+          timeout: '30 seconds',
+          requestStart: new Date().toISOString()
+        };
+        
+        console.error(`🚀 [GAS_RUN ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+      } else {
+        console.error(`⚡ [GAS_RUN FAST] Executing: ${js_statement} on cached deployment`);
+      }
       
       // AUTOMATIC REDIRECT HANDLING: Let fetch handle redirects automatically
       const response = await fetch(finalUrl, {
@@ -849,84 +894,67 @@ export class GASRunTool extends BaseTool {
       
       // Check for 302/200 responses with non-JSON content (requires cookie auth)
       if ((response.status === 302 || response.status === 200) && !contentType.includes('application/json')) {
-        console.error(`🌐 [COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - launching browser for cookie authentication`);
-        
-        const cookieAuthInfo = {
-          httpStatus: `HTTP ${response.status} ${response.statusText}`,
-          finalUrl: response.url,
-          contentType: contentType,
-          authAction: 'Launching browser for cookie authentication',
-          waitTime: '13 seconds'
-        };
-        
-        console.error(`🔐 [COOKIE AUTH] Browser authentication details:\n${JSON.stringify(cookieAuthInfo, null, 2)}`);
+        console.error(`🌐 [COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - calling gas_run_auth`);
         
         try {
-          // Launch browser with the final URL for cookie authentication
-          console.error(`🚀 [COOKIE AUTH] Opening browser for cookie authentication: ${response.url}`);
-          await open(response.url);
+          // Call gas_run_auth to handle domain authorization
+          await this.gas_run_auth(scriptId, accessToken);
           
-          // Wait 13 seconds for user to complete cookie authentication
-          console.error(`⏳ [COOKIE AUTH] Waiting 13 seconds for cookie authentication to complete...`);
-          await new Promise(resolve => setTimeout(resolve, 13000));
+          // After cookie auth, try the request again
+          console.error(`🔄 [COOKIE AUTH] Retrying request after domain authorization`);
+          const retryResponse = await fetch(finalUrl, {
+            headers: requestHeaders,
+            signal: abortController.signal,
+            redirect: 'follow'
+          });
           
-          console.error(`✅ [COOKIE AUTH] Cookie authentication wait period completed - continuing with execution`);
+          // Continue processing with the retry response
+          const retryResponseHeaders: Record<string, string> = {};
+          retryResponse.headers.forEach((value, key) => {
+            retryResponseHeaders[key] = value;
+          });
           
-                     // After cookie auth, try the request again
-           console.error(`🔄 [COOKIE AUTH] Retrying request after cookie authentication`);
-           const retryResponse = await fetch(finalUrl, {
-             headers: requestHeaders,
-             signal: abortController.signal,
-             redirect: 'follow'
-           });
-           
-           // Continue processing with the retry response
-           const retryResponseHeaders: Record<string, string> = {};
-           retryResponse.headers.forEach((value, key) => {
-             retryResponseHeaders[key] = value;
-           });
-           
-           const retryContentType = retryResponse.headers.get('content-type') || 'Unknown';
-           
-           if (!retryResponse.ok) {
-             const errorBody = await retryResponse.text();
-             const error = new Error(`HTTP ${retryResponse.status}: ${retryResponse.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
-             (error as any).statusCode = retryResponse.status;
-             throw error;
-           }
-           
-           // Process the retry response body
-           let retryResult: any;
-           let retryResponseText = '';
-           let retryIsJson = false;
-           
-           if (retryContentType.includes('application/json')) {
-             retryResult = await retryResponse.json();
-             retryIsJson = true;
-           } else {
-             retryResponseText = await retryResponse.text();
-             try {
-               retryResult = JSON.parse(retryResponseText);
-               retryIsJson = true;
-             } catch {
-               retryResult = retryResponseText;
-             }
-           }
-           
-           // Clear timeout and return success
-           clearTimeout(timeoutId);
-           
-           return {
-             status: 'success',
-             scriptId,
-             js_statement,
-             result: retryResult,
-             executedAt: new Date().toISOString(),
-             cookieAuthUsed: true
-           };
+          const retryContentType = retryResponse.headers.get('content-type') || 'Unknown';
           
-        } catch (browserError: any) {
-          console.error(`⚠️ [COOKIE AUTH] Browser launch failed: ${browserError.message} - continuing without cookie auth`);
+          if (!retryResponse.ok) {
+            const errorBody = await retryResponse.text();
+            const error = new Error(`HTTP ${retryResponse.status}: ${retryResponse.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+            (error as any).statusCode = retryResponse.status;
+            throw error;
+          }
+          
+          // Process the retry response body
+          let retryResult: any;
+          let retryResponseText = '';
+          let retryIsJson = false;
+          
+          if (retryContentType.includes('application/json')) {
+            retryResult = await retryResponse.json();
+            retryIsJson = true;
+          } else {
+            retryResponseText = await retryResponse.text();
+            try {
+              retryResult = JSON.parse(retryResponseText);
+              retryIsJson = true;
+            } catch {
+              retryResult = retryResponseText;
+            }
+          }
+          
+          // Clear timeout and return success
+          clearTimeout(timeoutId);
+          
+          return {
+            status: 'success',
+            scriptId,
+            js_statement,
+            result: retryResult,
+            executedAt: new Date().toISOString(),
+            cookieAuthUsed: true
+          };
+          
+        } catch (authError: any) {
+          console.error(`⚠️ [COOKIE AUTH] Domain authorization failed: ${authError.message} - continuing without cookie auth`);
           // Fall through to normal error handling
         }
       }
@@ -1124,6 +1152,157 @@ export class GASRunTool extends BaseTool {
       // Re-throw other errors
       throw error;
     }
+  }
+
+  /**
+   * Handle domain authorization for Google Apps Script web apps
+   * Makes a test request to the /dev endpoint and launches browser if cookie auth is needed
+   */
+  private async gas_run_auth(scriptId: string, accessToken: string): Promise<void> {
+    console.error(`🔐 [GAS_RUN_AUTH] Starting domain authorization for script: ${scriptId}`);
+    
+    try {
+      // Get the base deployment URL
+      const baseUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+      
+      // Ensure it ends with /dev for the test request
+      const testUrl = baseUrl.replace('/exec', '/dev');
+      
+      console.error(`🧪 [GAS_RUN_AUTH] Testing domain authorization with URL: ${testUrl}`);
+      
+      // Make a test request without any func parameter
+      const response = await fetch(testUrl, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'User-Agent': 'MCP-GAS-Server/1.0.0',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        redirect: 'follow'
+      });
+      
+      const contentType = response.headers.get('content-type') || '';
+      
+      console.error(`📡 [GAS_RUN_AUTH] Test response: HTTP ${response.status}, Content-Type: ${contentType}`);
+      
+      // Check if we need cookie authentication
+      if ((response.status === 302 || response.status === 200) && !contentType.includes('application/json')) {
+        console.error(`🌐 [GAS_RUN_AUTH] Cookie authentication required - launching browser and polling`);
+        
+        const authInfo = {
+          httpStatus: `HTTP ${response.status} ${response.statusText}`,
+          finalUrl: response.url,
+          contentType: contentType,
+          authAction: 'Launching browser for domain authorization',
+          pollingStrategy: 'Will poll for JSON response with test function'
+        };
+        
+        console.error(`🔐 [GAS_RUN_AUTH] Browser authentication details:\n${JSON.stringify(authInfo, null, 2)}`);
+        
+        // Launch browser with the test URL (no func parameter)
+        console.error(`🚀 [GAS_RUN_AUTH] Opening browser for domain authorization: ${response.url}`);
+        await open(response.url);
+        
+        // Poll for successful authorization
+        await this.pollForDomainAuthorization(testUrl, accessToken);
+        
+      } else if (response.status === 200 && contentType.includes('application/json')) {
+        console.error(`✅ [GAS_RUN_AUTH] Domain already authorized - JSON response received`);
+      } else {
+        console.error(`⚠️ [GAS_RUN_AUTH] Unexpected response: HTTP ${response.status}, continuing anyway`);
+      }
+      
+         } catch (error: any) {
+       console.error(`❌ [GAS_RUN_AUTH] Domain authorization test failed: ${error.message}`);
+       throw new Error(`Domain authorization failed: ${error.message}`);
+     }
+   }
+
+  /**
+   * Poll for domain authorization completion by testing with a simple function
+   * Makes requests to /dev?func=return%20"success" until JSON response received
+   */
+  private async pollForDomainAuthorization(baseUrl: string, accessToken: string): Promise<void> {
+    const maxPollDuration = 60000; // 60 seconds total
+    const pollInterval = 3000; // 3 seconds between polls
+    const startTime = Date.now();
+    
+    // Test function that returns a simple success string
+    const testFunction = 'return "success"';
+    const encodedTestFunction = encodeURIComponent(testFunction);
+    const testUrl = `${baseUrl}?func=${encodedTestFunction}`;
+    
+    console.error(`🔄 [DOMAIN_AUTH_POLL] Starting authorization polling`);
+    console.error(`   Test URL: ${baseUrl}?func=return "success"`);
+    console.error(`   Max duration: ${maxPollDuration}ms`);
+    console.error(`   Poll interval: ${pollInterval}ms`);
+    
+    let pollCount = 0;
+    
+    while (Date.now() - startTime < maxPollDuration) {
+      pollCount++;
+      const elapsedTime = Date.now() - startTime;
+      
+      try {
+        console.error(`📡 [DOMAIN_AUTH_POLL] Poll #${pollCount} (${elapsedTime}ms elapsed)`);
+        
+        const pollResponse = await fetch(testUrl, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'User-Agent': 'MCP-GAS-Server/1.0.0',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          redirect: 'follow'
+        });
+        
+        const pollContentType = pollResponse.headers.get('content-type') || '';
+        
+        console.error(`📡 [DOMAIN_AUTH_POLL] Poll #${pollCount} response: HTTP ${pollResponse.status}, Content-Type: ${pollContentType}`);
+        
+        // Check for successful JSON response
+        if (pollResponse.status === 200 && pollContentType.includes('application/json')) {
+          try {
+            const pollResult = await pollResponse.json();
+            
+            // Verify we got the expected success response
+            if (pollResult === 'success' || 
+                (typeof pollResult === 'object' && pollResult.result === 'success')) {
+              console.error(`✅ [DOMAIN_AUTH_POLL] Success! Domain authorization completed in ${elapsedTime}ms`);
+              console.error(`   Poll result: ${JSON.stringify(pollResult)}`);
+              return;
+            } else {
+              console.error(`⚠️ [DOMAIN_AUTH_POLL] Got JSON but unexpected result: ${JSON.stringify(pollResult)}`);
+            }
+          } catch (jsonError) {
+            console.error(`⚠️ [DOMAIN_AUTH_POLL] Failed to parse JSON response: ${jsonError}`);
+          }
+        } else if (pollResponse.status === 200) {
+          // Got 200 but not JSON - still need auth
+          console.error(`⏳ [DOMAIN_AUTH_POLL] HTTP 200 but non-JSON (${pollContentType}) - auth still needed`);
+        } else if (pollResponse.status === 302) {
+          // Still getting redirects - auth not complete
+          console.error(`⏳ [DOMAIN_AUTH_POLL] HTTP 302 redirect - auth still needed`);
+        } else {
+          // Other status codes
+          console.error(`⚠️ [DOMAIN_AUTH_POLL] HTTP ${pollResponse.status} - continuing to poll`);
+        }
+        
+      } catch (pollError: any) {
+        console.error(`⚠️ [DOMAIN_AUTH_POLL] Poll #${pollCount} failed: ${pollError.message}`);
+      }
+      
+      // Wait before next poll (unless we're close to timeout)
+      if (Date.now() - startTime + pollInterval < maxPollDuration) {
+        console.error(`⏳ [DOMAIN_AUTH_POLL] Waiting ${pollInterval}ms before next poll...`);
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+    }
+    
+    // Timeout reached
+    const finalElapsedTime = Date.now() - startTime;
+    console.error(`⏰ [DOMAIN_AUTH_POLL] Timeout reached after ${finalElapsedTime}ms (${pollCount} polls)`);
+    throw new Error(`Domain authorization timeout: No successful JSON response after ${finalElapsedTime}ms and ${pollCount} polling attempts`);
   }
 
   private async setupInfrastructure(scriptId: string, accessToken: string): Promise<void> {
