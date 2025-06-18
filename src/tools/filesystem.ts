@@ -187,22 +187,94 @@ export class GASWriteTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: projectId/path/to/filename_WITHOUT_EXTENSION (CRITICAL: Known extensions .gs, .html, .json, .js will be INTENTIONALLY STRIPPED to prevent double extensions. GAS auto-detects file type: SERVER_JS, HTML, JSON based on content)'
+        description: 'Full path to file: projectId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content.',
+        pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
+        minLength: 25,
+        maxLength: 200,
+        examples: [
+          'abc123def456.../fibonacci',
+          'abc123def456.../utils/helpers',
+          'abc123def456.../Code',
+          'abc123def456.../models/User'
+        ],
+        llmHints: {
+          format: 'projectId/filename (no extension)',
+          extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON',
+          organization: 'Use "/" in filename for logical organization (not real folders)',
+          autoDetection: 'File type detected from content: JavaScript, HTML, JSON'
+        }
       },
       content: {
         type: 'string',
-        description: 'Content to write to the file'
+        description: 'File content to write. LLM FLEXIBILITY: Supports JavaScript/Apps Script, HTML, JSON. Content type automatically detected for proper file extension.',
+        minLength: 0,
+        maxLength: 100000,
+        examples: [
+          'function fibonacci(n) { return n <= 1 ? n : fibonacci(n-1) + fibonacci(n-2); }',
+          '<!DOCTYPE html><html><body><h1>My Web App</h1></body></html>',
+          '{"timeZone": "America/New_York", "dependencies": {}}',
+          'const API_KEY = "your-key"; function processData() { /* code */ }'
+        ],
+        llmHints: {
+          javascript: 'Apps Script functions, ES6+ syntax, Google services (SpreadsheetApp, etc.)',
+          html: 'HTML templates for web apps, can include CSS and JavaScript',
+          json: 'Configuration files like appsscript.json for project settings',
+          limits: 'Maximum 100KB per file (Google Apps Script limit)',
+          encoding: 'UTF-8 encoding, supports international characters'
+        }
       },
       position: {
         type: 'number',
-        description: 'Position in file order (0-based, optional)'
+        description: 'File execution order position (0-based). LLM USE: Controls order in Apps Script editor and execution sequence. Lower numbers execute first.',
+        minimum: 0,
+        maximum: 100,
+        llmHints: {
+          execution: 'Lower numbers execute first in Apps Script runtime',
+          organization: 'Use for dependencies: utilities first (0), main code later (1,2,3)',
+          optional: 'Omit to append at end of file list',
+          reordering: 'Use gas_reorder tool to change position later'
+        }
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation. LLM TYPICAL: Omit - tool uses session authentication.',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
+        llmHints: {
+          typical: 'Usually omitted - uses session auth from gas_auth',
+          stateless: 'Only for token-based operations'
+        }
       }
     },
-    required: ['path', 'content']
+    required: ['path', 'content'],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      prerequisites: [
+        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '2. Project exists: Have scriptId from gas_project_create or gas_ls'
+      ],
+      useCases: {
+        newFunction: 'Add JavaScript functions to existing project',
+        htmlTemplate: 'Create web app HTML interface files',
+        configuration: 'Modify appsscript.json project settings',
+        utilities: 'Add helper functions and shared code'
+      },
+      fileTypes: {
+        javascript: 'Content with functions → .gs file (SERVER_JS type)',
+        html: 'Content with HTML tags → .html file (HTML type)', 
+        json: 'Content with JSON format → .json file (JSON type)'
+      },
+      bestPractices: [
+        'Use descriptive filenames that indicate purpose',
+        'Organize related functions in same file',
+        'Put utility functions in separate files at position 0',
+        'Use logical "/" paths for organization: utils/helpers, models/User'
+      ],
+      afterWriting: [
+        'Use gas_run to execute functions from this file',
+        'Use gas_cat to verify file was written correctly',
+        'Use gas_ls to see file in project structure'
+      ]
+    }
   };
 
   private gasClient: GASClient;

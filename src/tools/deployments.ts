@@ -695,25 +695,76 @@ export class GASDeployListTool extends BaseTool {
  */
 export class GASProjectCreateTool extends BaseTool {
   public name = 'gas_project_create';
-  public description = 'Creates a new, empty Google Apps Script project';
+  public description = 'Creates a new Google Apps Script project. LLM WORKFLOW: This is typically the FIRST step when building new automation or when you need a fresh project for code execution.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       title: {
         type: 'string',
-        description: 'Title for the new project'
+        description: 'Human-readable title for the new project. LLM GUIDANCE: Use descriptive names that indicate the project purpose. This appears in Google Drive and Apps Script dashboard.',
+        minLength: 1,
+        maxLength: 100,
+        examples: [
+          'Fibonacci Calculator',
+          'Spreadsheet Automation Tool',
+          'Gmail Email Processor',
+          'Data Analysis Scripts',
+          'Custom Functions Library'
+        ],
+        llmHints: {
+          naming: 'Use clear, descriptive names for easy identification',
+          visibility: 'This title appears in Google Drive and Apps Script editor',
+          purpose: 'Include the main function or use case in the title'
+        }
       },
       parentId: {
         type: 'string',
-        description: 'Parent folder ID in Google Drive (optional)'
+        description: 'Google Drive folder ID to create the project in. LLM USE: Organize projects in specific Drive folders. Omit to create in root Drive folder.',
+        pattern: '^[a-zA-Z0-9_-]{25,50}$',
+        llmHints: {
+          organization: 'Use to organize related projects in specific Drive folders',
+          optional: 'Omit to create in root Drive folder (most common)',
+          obtaining: 'Get folder IDs from Google Drive URL or Drive API calls',
+          sharing: 'Project inherits sharing permissions from parent folder'
+        }
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation. LLM TYPICAL: Omit this - tool uses session authentication from gas_auth.',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
+        llmHints: {
+          typical: 'Usually omitted - tool uses session authentication',
+          stateless: 'Only needed for token-based operations without sessions'
+        }
       }
     },
-    required: ['title']
+    required: ['title'],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      typicalSequence: [
+        '1. Authenticate: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '2. Create project: gas_project_create({title: "My Project"})',
+        '3. Get scriptId from response for subsequent operations',
+        '4. Add code: gas_write({path: "scriptId/fileName", content: "..."})',
+        '5. Execute: gas_run({scriptId: "...", js_statement: "..."})'
+      ],
+      returnValue: {
+        scriptId: 'Save this ID - required for all subsequent operations on this project',
+        webAppUrl: 'Initially null - created when first deployment is made',
+        driveUrl: 'Direct link to edit project in Apps Script editor'
+      },
+      nextSteps: [
+        'Use gas_write to add JavaScript code files',
+        'Use gas_run to execute code in the project',
+        'Use gas_deploy_create for web app or API deployments'
+      ],
+      errorHandling: {
+        'AuthenticationError': 'Run gas_auth to authenticate first',
+        'PermissionError': 'Check Google Drive permissions and API access',
+        'QuotaExceeded': 'You may have reached project creation limits'
+      }
+    }
   };
 
   private gasClient: GASClient;

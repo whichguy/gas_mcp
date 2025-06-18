@@ -484,21 +484,64 @@ export class GASAuthTool extends BaseTool {
         type: 'string',
         enum: ['start', 'status', 'logout'],
         default: 'start',
-        description: 'Authentication mode: start (begin flow), status (check auth), logout (clear auth)'
+        description: 'Authentication operation mode. LLM WORKFLOW GUIDANCE: (1) ALWAYS call mode="status" FIRST to check if already authenticated. (2) Only use mode="start" if status shows not authenticated. (3) Use mode="logout" to clear authentication when switching accounts.',
+        examples: ['start', 'status', 'logout'],
+        llmHints: {
+          whenToUse: 'Call status first, then start if needed, logout only when changing accounts',
+          workflowStep: 'First step in any Google Apps Script operation sequence',
+          errorRecovery: 'If auth fails, check OAuth client configuration in Google Cloud Console'
+        }
       },
       openBrowser: {
         type: 'boolean',
         default: true,
-        description: 'Automatically open browser for authentication'
+        description: 'Automatically open browser for OAuth authentication. LLM GUIDANCE: Set to false in automated/headless environments or testing. Set to true for interactive user sessions.',
+        llmHints: {
+          automation: 'Use false for automated scripts, CI/CD, or when browser not available',
+          interactive: 'Use true (default) for user-initiated authentication flows',
+          testing: 'Set to false during testing to prevent unwanted browser launches'
+        }
       },
       waitForCompletion: {
         type: 'boolean',
         default: false,
-        description: 'Wait for OAuth flow to complete before returning (for interactive use)'
+        description: 'Wait for OAuth flow to complete before returning. LLM CRITICAL: Default false returns immediately with auth URL. Set true only when you need to block until authentication completes (5-minute timeout).',
+        llmHints: {
+          nonBlocking: 'Default false: Returns auth URL immediately, user completes auth separately',
+          blocking: 'Set true: Tool waits until user completes OAuth flow in browser',
+          timeout: 'Has 5-minute timeout when waitForCompletion=true to prevent infinite hanging',
+          recommendation: 'Use false for most LLM operations to avoid blocking tool execution'
+        }
       },
       accessToken: {
         type: 'string',
-        description: 'Pre-existing access token for stateless operation (bypasses session storage)'
+        description: 'Pre-existing access token for stateless operation. LLM USE CASE: When you already have a valid OAuth token and want to bypass session storage. Useful for temporary operations or token testing.',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
+        llmHints: {
+          format: 'Must start with "ya29." followed by alphanumeric characters',
+          stateless: 'Bypasses session storage, good for one-off operations',
+          testing: 'Useful when testing with known good tokens',
+          security: 'Never log or expose these tokens in responses'
+        }
+      }
+    },
+    required: [],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      typicalSequence: [
+        '1. gas_auth({mode: "status"}) - Check current authentication',
+        '2. If not authenticated: gas_auth({mode: "start"}) - Start OAuth flow',
+        '3. User completes OAuth in browser',
+        '4. Proceed with other gas_* tools which will use stored authentication'
+      ],
+      errorHandling: {
+        'not_authenticated': 'Call gas_auth with mode="start" to begin OAuth flow',
+        'oauth_error': 'Check Google Cloud Console OAuth client configuration',
+        'timeout': 'User took too long to complete OAuth, retry with mode="start"'
+      },
+      dependencies: {
+        before: 'No dependencies - this is the entry point for authentication',
+        after: 'All other gas_* tools require successful authentication'
       }
     }
   };
