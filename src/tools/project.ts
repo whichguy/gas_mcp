@@ -245,4 +245,113 @@ export class GASReorderTool extends BaseTool {
       message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}`
     };
   }
+}
+
+/**
+ * Get metrics data for scripts, such as number of executions and active users
+ */
+export class GASProjectMetricsTool extends BaseTool {
+  public name = 'gas_project_metrics';
+  public description = 'Get metrics data for scripts, such as number of executions and active users. LLM USE: Analyze script performance and usage patterns.';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      scriptId: {
+        type: 'string',
+                  description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project.',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44,
+        llmHints: {
+          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
+          format: '44-character Google Drive file ID, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5Jm'
+        }
+      },
+      metricsFilter: {
+        type: 'object',
+        description: 'Optional field containing filters to apply to the request. This limits the scope of the metrics returned to those specified in the filter.',
+        properties: {
+          deploymentId: {
+            type: 'string',
+            description: 'Optional field indicating a specific deployment to retrieve metrics from.'
+          }
+        },
+        llmHints: {
+          deployment: 'Use deploymentId to analyze specific deployment performance',
+          overall: 'Omit filter to get overall project metrics across all deployments'
+        }
+      },
+      metricsGranularity: {
+        type: 'string',
+        enum: ['UNSPECIFIED_GRANULARITY', 'WEEKLY', 'DAILY'],
+        description: 'Required field indicating what granularity of metrics are returned (default: WEEKLY). LLM RECOMMENDATION: Use DAILY for detailed analysis, WEEKLY for trends.',
+        default: 'WEEKLY',
+        llmHints: {
+          trends: 'Use WEEKLY for long-term trend analysis',
+          detailed: 'Use DAILY for detailed performance analysis over 7 days',
+          performance: 'WEEKLY provides better performance for large datasets',
+          unspecified: 'UNSPECIFIED_GRANULARITY is default but returns no metrics'
+        }
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional). LLM TYPICAL: Omit - tool uses session authentication.',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
+        llmHints: {
+          typical: 'Usually omitted - tool uses session authentication from gas_auth',
+          stateless: 'Include when doing token-based operations without session storage'
+        }
+      }
+    },
+    required: ['scriptId'],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      prerequisites: [
+        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '2. Have valid scriptId from gas_project_create or gas_ls',
+        '3. Project must have had some execution history'
+      ],
+      useCases: {
+        performance: 'gas_project_metrics({scriptId: "...", metricsGranularity: "DAILY"}) - Detailed performance analysis',
+        trends: 'gas_project_metrics({scriptId: "...", metricsGranularity: "WEEKLY"}) - Long-term usage trends',
+        deployment: 'gas_project_metrics({scriptId: "...", metricsFilter: {deploymentId: "..."}}) - Specific deployment metrics'
+      },
+      errorHandling: {
+        'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
+        'ScriptNotFound': 'Verify scriptId is correct and accessible',
+        'NoMetricsData': 'Project may not have sufficient execution history for metrics'
+      },
+      returnValue: {
+        activeUsers: 'Array of MetricsValue objects showing number of active users over time periods',
+        totalExecutions: 'Array of MetricsValue objects showing total execution counts over time periods',
+        failedExecutions: 'Array of MetricsValue objects showing failed execution counts over time periods',
+        metricsGranularity: 'The granularity level used for the metrics (WEEKLY or DAILY)',
+        scriptId: 'The script ID these metrics apply to'
+      }
+    }
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const accessToken = await this.getAuthToken(params);
+    
+    const scriptId = this.validate.scriptId(params.scriptId, 'project metrics');
+    const metricsFilter = params.metricsFilter || undefined;
+    const metricsGranularity = params.metricsGranularity ? 
+      this.validate.enum(params.metricsGranularity, 'metricsGranularity', ['UNSPECIFIED_GRANULARITY', 'WEEKLY', 'DAILY'], 'project metrics') : 
+      'WEEKLY';
+
+    return await this.handleApiCall(
+      () => this.gasClient.getProjectMetrics(scriptId, metricsGranularity, metricsFilter, accessToken),
+      'get project metrics',
+      { scriptId, metricsGranularity, metricsFilter }
+    );
+  }
 } 

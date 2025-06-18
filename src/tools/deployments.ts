@@ -2,6 +2,7 @@ import { BaseTool } from './base.js';
 import { GASClient, DeploymentOptions, EntryPointType, WebAppAccess, WebAppExecuteAs } from '../api/gasClient.js';
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SCRIPT_ID_SCHEMA } from '../utils/schemaPatterns.js';
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -119,10 +120,7 @@ export class GASDeployCreateTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID'
-      },
+      scriptId: SCRIPT_ID_SCHEMA,
       description: {
         type: 'string',
         description: 'Description of this deployment',
@@ -293,10 +291,7 @@ export class GASVersionCreateTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID'
-      },
+      scriptId: SCRIPT_ID_SCHEMA,
       description: {
         type: 'string',
         description: 'Description of this version',
@@ -367,10 +362,7 @@ export class GASDeployListTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID'
-      },
+      scriptId: SCRIPT_ID_SCHEMA,
       pageSize: {
         type: 'number',
         description: 'Maximum number of deployments to return (default: 50)',
@@ -808,10 +800,7 @@ export class GASDeployGetDetailsTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID'
-      },
+      scriptId: SCRIPT_ID_SCHEMA,
       deploymentId: {
         type: 'string',
         description: 'The deployment ID to get details for'
@@ -1026,5 +1015,143 @@ export class GASDeployGetDetailsTool extends BaseTool {
     }
 
     return instructions;
+  }
+}
+
+/**
+ * Delete a deployment of an Apps Script project
+ */
+export class GASDeployDeleteTool extends BaseTool {
+  public name = 'gas_deploy_delete';
+  public description = 'Delete a deployment of an Apps Script project';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      scriptId: SCRIPT_ID_SCHEMA,
+      deploymentId: {
+        type: 'string',
+        description: 'The deployment ID to delete'
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)'
+      }
+    },
+    required: ['scriptId', 'deploymentId']
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const accessToken = await this.getAuthToken(params);
+    
+    const scriptId = this.validate.scriptId(params.scriptId, 'deployment deletion');
+    const deploymentId = this.validate.string(params.deploymentId, 'deploymentId', 'deployment deletion');
+
+    return await this.handleApiCall(
+      () => this.gasClient.deleteDeployment(scriptId, deploymentId, accessToken),
+      'delete deployment',
+      { scriptId, deploymentId }
+    );
+  }
+}
+
+/**
+ * Update a deployment of an Apps Script project
+ */
+export class GASDeployUpdateTool extends BaseTool {
+  public name = 'gas_deploy_update';
+  public description = 'Update a deployment of an Apps Script project';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      scriptId: SCRIPT_ID_SCHEMA,
+      deploymentId: {
+        type: 'string',
+        description: 'The deployment ID to update'
+      },
+      description: {
+        type: 'string',
+        description: 'New description for the deployment (optional)'
+      },
+      entryPointType: {
+        type: 'string',
+        enum: ['WEB_APP', 'EXECUTION_API', 'ADD_ON'],
+        description: 'Type of deployment entry point (optional)'
+      },
+      webAppAccess: {
+        type: 'string',
+        enum: ['MYSELF', 'DOMAIN', 'ANYONE', 'ANYONE_ANONYMOUS'],
+        description: 'Who can access the web app (for WEB_APP type, optional)'
+      },
+      webAppExecuteAs: {
+        type: 'string',
+        enum: ['USER_ACCESSING', 'USER_DEPLOYING'],
+        description: 'Who the web app runs as (for WEB_APP type, optional)'
+      },
+      accessLevel: {
+        type: 'string',
+        enum: ['MYSELF', 'DOMAIN', 'ANYONE', 'ANYONE_ANONYMOUS'],
+        description: 'Access level for API Executable (for EXECUTION_API type, optional)'
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)'
+      }
+    },
+    required: ['scriptId', 'deploymentId']
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const accessToken = await this.getAuthToken(params);
+    
+    const scriptId = this.validate.scriptId(params.scriptId, 'deployment update');
+    const deploymentId = this.validate.string(params.deploymentId, 'deploymentId', 'deployment update');
+    
+    // Build update object with only provided parameters
+    const updates: any = {};
+    
+    if (params.description) {
+      updates.description = this.validate.string(params.description, 'description', 'deployment update');
+    }
+    
+    if (params.entryPointType) {
+      const entryPointType = this.validate.enum(params.entryPointType, 'entryPointType', ['WEB_APP', 'EXECUTION_API', 'ADD_ON'], 'deployment update');
+      updates.entryPointType = entryPointType;
+      
+      // Add entry point specific configurations
+      if (entryPointType === 'WEB_APP') {
+        if (params.webAppAccess) {
+          updates.webAppAccess = this.validate.enum(params.webAppAccess, 'webAppAccess', ['MYSELF', 'DOMAIN', 'ANYONE', 'ANYONE_ANONYMOUS'], 'deployment update');
+        }
+        if (params.webAppExecuteAs) {
+          updates.webAppExecuteAs = this.validate.enum(params.webAppExecuteAs, 'webAppExecuteAs', ['USER_ACCESSING', 'USER_DEPLOYING'], 'deployment update');
+        }
+      } else if (entryPointType === 'EXECUTION_API') {
+        if (params.accessLevel) {
+          updates.accessLevel = this.validate.enum(params.accessLevel, 'accessLevel', ['MYSELF', 'DOMAIN', 'ANYONE', 'ANYONE_ANONYMOUS'], 'deployment update');
+        }
+      }
+    }
+
+    return await this.handleApiCall(
+      () => this.gasClient.updateDeployment(scriptId, deploymentId, updates, accessToken),
+      'update deployment',
+      { scriptId, deploymentId, updates }
+    );
   }
 } 

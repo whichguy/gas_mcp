@@ -7,6 +7,7 @@ import { AUTH_MESSAGES, getContextualAuthMessage } from '../constants/authMessag
 import { GASErrorHandler, ErrorContext } from '../utils/errorHandler.js';
 import { MCPValidator } from '../utils/validation.js';
 import { AuthConfig } from '../auth/oauthClient.js';
+import { rateLimiter } from '../api/rateLimiter.js';
 
 /**
  * Base class for all MCP Gas tools with comprehensive authentication and validation support
@@ -399,7 +400,20 @@ export abstract class BaseTool implements Tool {
     additionalContext?: Record<string, any>
   ): Promise<T> {
     try {
-      return await apiCall();
+      const result = await apiCall();
+      
+      // Add rate limiting information to the response if it's an object
+      if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
+        const tokens = rateLimiter.getTokenCount();
+        (result as any).rateLimitInfo = {
+          remainingRequests: tokens,
+          maxRequests: 90,
+          resetTimeWindow: '100 seconds',
+          recommendedDelay: tokens < 10 ? '30 seconds' : 'none'
+        };
+      }
+      
+      return result;
     } catch (error: any) {
       // Use centralized error handler
       const context: ErrorContext = {

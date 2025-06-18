@@ -473,10 +473,10 @@ export class GASRunTool extends BaseTool {
     properties: {
       scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 20-60 character project ID from Google Apps Script. Get this from gas_project_create or gas_ls tools.',
-        pattern: '^[a-zA-Z0-9_-]{20,60}$',
-        minLength: 20,
-        maxLength: 60,
+                  description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project. Get this from gas_project_create or gas_ls tools.',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44,
         llmHints: {
           obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
           format: 'Long alphanumeric string, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5JmSyzF4Ga_kM',

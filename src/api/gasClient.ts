@@ -131,6 +131,96 @@ export interface ExecutionResponse {
   };
 }
 
+// Process Management Interfaces (per Google Apps Script API specification)
+export type ProcessType = 
+  | 'PROCESS_TYPE_UNSPECIFIED'
+  | 'ADD_ON'
+  | 'EXECUTION_API'
+  | 'TIME_DRIVEN'
+  | 'TRIGGER'
+  | 'WEBAPP'
+  | 'EDITOR'
+  | 'SIMPLE_TRIGGER'
+  | 'MENU'
+  | 'BATCH_TASK';
+
+export type ProcessStatus = 
+  | 'PROCESS_STATUS_UNSPECIFIED'
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'COMPLETED'
+  | 'CANCELED'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'UNKNOWN'
+  | 'DELAYED';
+
+export type UserAccessLevel = 
+  | 'USER_ACCESS_LEVEL_UNSPECIFIED'
+  | 'NONE'
+  | 'READ'
+  | 'WRITE'
+  | 'OWNER';
+
+export interface ListUserProcessesFilter {
+  scriptId?: string;
+  deploymentId?: string;
+  projectName?: string;
+  functionName?: string;
+  startTime?: string; // RFC3339 UTC "Zulu" format
+  endTime?: string; // RFC3339 UTC "Zulu" format
+  types?: ProcessType[];
+  statuses?: ProcessStatus[];
+  userAccessLevels?: UserAccessLevel[];
+}
+
+export interface ListScriptProcessesFilter {
+  deploymentId?: string;
+  functionName?: string;
+  startTime?: string; // RFC3339 UTC "Zulu" format
+  endTime?: string; // RFC3339 UTC "Zulu" format
+  types?: ProcessType[];
+  statuses?: ProcessStatus[];
+  userAccessLevels?: UserAccessLevel[];
+}
+
+export interface Process {
+  projectName: string;
+  functionName: string;
+  processType: ProcessType;
+  processStatus: ProcessStatus;
+  userAccessLevel: UserAccessLevel;
+  startTime: string; // RFC3339 UTC "Zulu" format
+  duration: string; // Duration in seconds with up to nine fractional digits, ending with 's'
+}
+
+export interface ProcessListResponse {
+  processes: Process[];
+  nextPageToken?: string;
+}
+
+// Metrics Interfaces (per Google Apps Script API specification)
+export type MetricsGranularity = 
+  | 'UNSPECIFIED_GRANULARITY'
+  | 'WEEKLY'
+  | 'DAILY';
+
+export interface MetricsFilter {
+  deploymentId?: string;
+}
+
+export interface MetricsValue {
+  value: string; // Number of executions counted
+  startTime: string; // RFC3339 UTC "Zulu" format
+  endTime: string; // RFC3339 UTC "Zulu" format
+}
+
+export interface ProjectMetrics {
+  activeUsers: MetricsValue[];
+  totalExecutions: MetricsValue[];
+  failedExecutions: MetricsValue[];
+}
+
 /**
  * Google Apps Script API client with authentication and rate limiting
  */
@@ -1208,6 +1298,295 @@ export class GASClient {
       headDeploymentUrl,
       message
     };
+  }
+
+  /**
+   * List information about processes made by or on behalf of a user
+   */
+  async listProcesses(
+    pageSize: number = 50,
+    pageToken?: string,
+    userProcessFilter?: ListUserProcessesFilter,
+    accessToken?: string
+  ): Promise<ProcessListResponse> {
+    await this.initializeClient(accessToken);
+    
+    return this.makeApiCall(async () => {
+      const params: any = {
+        pageSize
+      };
+      
+      if (pageToken) {
+        params.pageToken = pageToken;
+      }
+      
+      if (userProcessFilter) {
+        params.userProcessFilter = userProcessFilter;
+      }
+      
+      console.error(`🔍 Listing user processes (pageSize: ${pageSize})`);
+      if (userProcessFilter) {
+        console.error(`   Filter:`, JSON.stringify(userProcessFilter, null, 2));
+      }
+      
+      const response = await this.scriptApi.processes.list(params);
+      
+      console.error(`📋 Found ${response.data.processes?.length || 0} processes`);
+      
+      return {
+        processes: response.data.processes || [],
+        nextPageToken: response.data.nextPageToken
+      };
+    }, accessToken);
+  }
+
+  /**
+   * List information about a script's executed processes
+   */
+  async listScriptProcesses(
+    scriptId: string,
+    pageSize: number = 50,
+    pageToken?: string,
+    scriptProcessFilter?: ListScriptProcessesFilter,
+    accessToken?: string
+  ): Promise<ProcessListResponse & { scriptId: string }> {
+    await this.initializeClient(accessToken);
+    
+    return this.makeApiCall(async () => {
+      const params: any = {
+        scriptId,
+        pageSize
+      };
+      
+      if (pageToken) {
+        params.pageToken = pageToken;
+      }
+      
+      if (scriptProcessFilter) {
+        params.scriptProcessFilter = scriptProcessFilter;
+      }
+      
+      console.error(`🔍 Listing script processes for ${scriptId} (pageSize: ${pageSize})`);
+      if (scriptProcessFilter) {
+        console.error(`   Filter:`, JSON.stringify(scriptProcessFilter, null, 2));
+      }
+      
+      const response = await this.scriptApi.processes.listScriptProcesses(params);
+      
+      console.error(`📋 Found ${response.data.processes?.length || 0} script processes`);
+      
+      return {
+        scriptId,
+        processes: response.data.processes || [],
+        nextPageToken: response.data.nextPageToken
+      };
+    }, accessToken);
+  }
+
+  /**
+   * Get metrics data for scripts, such as number of executions and active users
+   */
+  async getProjectMetrics(
+    scriptId: string,
+    metricsGranularity: MetricsGranularity = 'WEEKLY',
+    metricsFilter?: MetricsFilter,
+    accessToken?: string
+  ): Promise<ProjectMetrics & { scriptId: string; metricsGranularity: MetricsGranularity }> {
+    await this.initializeClient(accessToken);
+    
+    return this.makeApiCall(async () => {
+      const params: any = {
+        scriptId,
+        metricsGranularity
+      };
+      
+      if (metricsFilter) {
+        params.metricsFilter = metricsFilter;
+      }
+      
+      console.error(`📊 Getting project metrics for ${scriptId} (granularity: ${metricsGranularity})`);
+      if (metricsFilter) {
+        console.error(`   Filter:`, JSON.stringify(metricsFilter, null, 2));
+      }
+      
+      const response = await this.scriptApi.projects.getMetrics(params);
+      
+      console.error(`📈 Retrieved metrics data for ${scriptId}`);
+      console.error(`   Active users: ${response.data.activeUsers?.length || 0} data points`);
+      console.error(`   Total executions: ${response.data.totalExecutions?.length || 0} data points`);
+      console.error(`   Failed executions: ${response.data.failedExecutions?.length || 0} data points`);
+      
+      return {
+        scriptId,
+        metricsGranularity,
+        activeUsers: response.data.activeUsers || [],
+        totalExecutions: response.data.totalExecutions || [],
+        failedExecutions: response.data.failedExecutions || []
+      };
+    }, accessToken);
+  }
+
+  /**
+   * Delete a deployment of an Apps Script project
+   */
+  async deleteDeployment(
+    scriptId: string,
+    deploymentId: string,
+    accessToken?: string
+  ): Promise<any> {
+    await this.initializeClient(accessToken);
+    
+    return this.makeApiCall(async () => {
+      console.error(`🗑️ Deleting deployment ${deploymentId} from script ${scriptId}`);
+      
+      await this.scriptApi.projects.deployments.delete({
+        scriptId,
+        deploymentId
+      });
+      
+      console.error(`✅ Deployment ${deploymentId} deleted successfully`);
+      
+      return {
+        status: 'deleted',
+        scriptId,
+        deploymentId,
+        message: `Deployment ${deploymentId} has been deleted successfully`
+      };
+    }, accessToken);
+  }
+
+  /**
+   * Update a deployment of an Apps Script project
+   */
+  async updateDeployment(
+    scriptId: string,
+    deploymentId: string,
+    updates: any,
+    accessToken?: string
+  ): Promise<GASDeployment> {
+    await this.initializeClient(accessToken);
+    
+    return this.makeApiCall(async () => {
+      console.error(`🔄 Updating deployment ${deploymentId} in script ${scriptId}`);
+      console.error(`   Updates:`, JSON.stringify(updates, null, 2));
+      
+      // Build the update request body
+      const requestBody: any = {
+        deploymentId
+      };
+      
+      if (updates.description) {
+        requestBody.description = updates.description;
+      }
+      
+      // Handle entry point configurations
+      if (updates.entryPointType) {
+        if (updates.entryPointType === 'WEB_APP') {
+          requestBody.entryPointType = 'WEB_APP';
+          requestBody.webAppConfig = {
+            access: updates.webAppAccess || 'ANYONE',
+            executeAs: updates.webAppExecuteAs || 'USER_ACCESSING'
+          };
+        } else if (updates.entryPointType === 'EXECUTION_API') {
+          requestBody.entryPointType = 'EXECUTION_API';
+          requestBody.accessLevel = updates.accessLevel || 'MYSELF';
+        } else if (updates.entryPointType === 'ADD_ON') {
+          requestBody.entryPointType = 'ADD_ON';
+        }
+      }
+      
+      const response = await this.scriptApi.projects.deployments.update({
+        scriptId,
+        deploymentId,
+        requestBody
+      });
+      
+      console.error(`✅ Deployment ${deploymentId} updated successfully`);
+      
+      const updatedDeployment: GASDeployment = {
+        deploymentId: response.data.deploymentId,
+        versionNumber: response.data.versionNumber,
+        description: response.data.description,
+        manifestFileName: response.data.manifestFileName,
+        updateTime: response.data.updateTime,
+        deploymentConfig: response.data.deploymentConfig,
+        entryPoints: response.data.entryPoints
+      };
+      
+      // Extract web app URL if available
+      if (response.data.entryPoints) {
+        const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+        if (webAppEntry?.webApp?.url) {
+          updatedDeployment.webAppUrl = webAppEntry.webApp.url;
+        }
+      }
+      
+      return updatedDeployment;
+    }, accessToken);
+  }
+
+  /**
+   * Get details of a specific version of a script project
+   */
+  async getVersion(
+    scriptId: string,
+    versionNumber: number,
+    accessToken?: string
+  ): Promise<any> {
+    await this.initializeClient(accessToken);
+    
+    return this.makeApiCall(async () => {
+      console.error(`📋 Getting version ${versionNumber} details for script ${scriptId}`);
+      
+      const response = await this.scriptApi.projects.versions.get({
+        scriptId,
+        versionNumber
+      });
+      
+      console.error(`✅ Retrieved version ${versionNumber} details`);
+      
+      return {
+        scriptId,
+        versionNumber: response.data.versionNumber,
+        description: response.data.description,
+        createTime: response.data.createTime,
+        ...response.data
+      };
+    }, accessToken);
+  }
+
+  /**
+   * List all versions of a script project
+   */
+  async listVersions(
+    scriptId: string,
+    pageSize: number = 50,
+    pageToken?: string,
+    accessToken?: string
+  ): Promise<any> {
+    await this.initializeClient(accessToken);
+    
+    return this.makeApiCall(async () => {
+      const params: any = {
+        scriptId,
+        pageSize
+      };
+      
+      if (pageToken) {
+        params.pageToken = pageToken;
+      }
+      
+      console.error(`📋 Listing versions for script ${scriptId} (pageSize: ${pageSize})`);
+      const response = await this.scriptApi.projects.versions.list(params);
+      
+      console.error(`📚 Found ${response.data.versions?.length || 0} versions`);
+      
+      return {
+        scriptId,
+        versions: response.data.versions || [],
+        nextPageToken: response.data.nextPageToken
+      };
+    }, accessToken);
   }
 
   // Legacy code generation methods removed - use GASCodeGenerator from utils/codeGeneration.ts instead
