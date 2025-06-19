@@ -89,9 +89,14 @@ public
 tmp/
 temp/
 
-# Runtime data
+# Runtime data and log files
 *.log
-logs
+logs/
+mcp-server*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
 
 # Editor directories and files
 .vscode/
@@ -119,10 +124,19 @@ build/
 
 # Local config overrides
 config/local.json 
-# Cleanup artifacts
+# Cleanup artifacts and development files
 .cleanup-backup/
 *.tmp
 *.backup
+test-*.js
+test-*.ts
+*-test.js
+*-test.ts
+
+# Development artifacts
+playground/
+scratch/
+debug/
 
 # Auth session storage
 .auth/
