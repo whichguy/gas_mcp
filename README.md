@@ -363,7 +363,7 @@ const apiResult = await gas_run_api_exec({
 | `gas_deploy_list` | List deployments | `scriptId` |
 | `gas_deploy_get_details` | Get deployment info | `scriptId`, `deploymentId` |
 
-For complete API documentation, see [docs/API_REFERENCE.md](docs/API_REFERENCE.md).
+For complete API documentation, see [docs/api/API_REFERENCE.md](docs/api/API_REFERENCE.md).
 
 ## ⚙️ Configuration
 
@@ -850,10 +850,10 @@ SOFTWARE.
 
 ### Documentation
 
-- **📖 [API Reference](docs/API_REFERENCE.md)** - Complete API documentation
-- **🔧 [LLM Schema Guide](docs/LLM_SCHEMA_DESIGN_GUIDE.md)** - Schema design for AI assistants
-- **🔐 [OAuth Architecture](docs/OAUTH_SINGLETON_ARCHITECTURE.md)** - Authentication implementation
-- **📊 [Protocol Documentation](docs/STDOUT_STDERR_DOCUMENTATION.md)** - MCP protocol details
+- **📖 [Complete Documentation Index](docs/README.md)** - Organized documentation hub
+- **📚 [API Reference](docs/api/API_REFERENCE.md)** - Complete API documentation
+- **🔧 [Developer Guides](docs/developer/)** - Technical documentation for developers
+- **🛠️ [LLM Schema Guide](docs/developer/LLM_SCHEMA_DESIGN_GUIDE.md)** - Schema design for AI assistants
 
 ### Community
 
