@@ -751,7 +751,7 @@ This script checks:
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+We welcome contributions! Please see our [Contributing Guidelines](.github/CONTRIBUTING.md) for details.
 
 ### Quick Start for Contributors
 
