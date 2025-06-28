@@ -3,6 +3,318 @@ import { GASClient } from '../api/gasClient.js';
 import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath } from '../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { ProjectResolver } from '../utils/projectResolver.js';
+import { LocalFileManager } from '../utils/localFileManager.js';
+
+/**
+ * Read file contents with smart local/remote fallback (RECOMMENDED)
+ * 
+ * ✅ RECOMMENDED - Use for normal development workflow
+ * Automatically reads from local ./src/ if current project is set, otherwise reads from remote
+ */
+export class GASCatTool extends BaseTool {
+  public name = 'gas_cat';
+  public description = '📖 RECOMMENDED: Smart file reader - uses local files when available, otherwise reads from remote';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'File path (filename only if current project set, or full projectId/filename)',
+        examples: [
+          'utils.gs',                    // Uses current project
+          'models/User.gs',              // Uses current project  
+          'abc123def456.../helpers.gs'   // Explicit project ID
+        ]
+      },
+      preferLocal: {
+        type: 'boolean',
+        description: 'Prefer local file over remote when both exist',
+        default: true
+      },
+      workingDir: {
+        type: 'string',
+        description: 'Working directory (defaults to current directory)',
+        default: process.cwd()
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)'
+      }
+    },
+    required: ['path'],
+    llmGuidance: {
+      whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
+      workflow: 'Set project with gas_project_set, then just use filename: gas_cat({path: "utils.gs"})',
+      alternatives: 'Use gas_raw_cat only when you need explicit project ID control'
+    }
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const workingDir = params.workingDir || process.cwd();
+    const preferLocal = params.preferLocal !== false;
+    let filePath = params.path;
+
+    // Try to resolve path with current project context
+    try {
+      const parsedPath = parsePath(filePath);
+      
+      if (!parsedPath.isFile) {
+        // Path doesn't have project ID, try to use current project
+        const currentProjectId = await ProjectResolver.getCurrentProjectId(workingDir);
+        filePath = `${currentProjectId}/${filePath}`;
+      }
+    } catch (error) {
+      // If no current project, the path must be complete
+      const parsedPath = parsePath(filePath);
+      if (!parsedPath.isFile) {
+        throw new ValidationError('path', filePath, 'filename or projectId/filename (set current project with gas_project_set)');
+      }
+    }
+
+    const parsedPath = parsePath(filePath);
+    const filename = parsedPath.filename!;
+
+    // Try local file first if preferred and current project is set
+    if (preferLocal) {
+      try {
+        const localContent = await LocalFileManager.readLocalFile(filename, workingDir);
+        if (localContent) {
+          return {
+            path: filePath,
+            filename,
+            source: 'local',
+            content: localContent,
+            size: localContent.length,
+            localPath: LocalFileManager.getLocalFilePath(filename, workingDir)
+          };
+        }
+      } catch (error) {
+        // Local file doesn't exist, fall back to remote
+      }
+    }
+
+    // Fall back to remote read
+    const accessToken = await this.getAuthToken(params);
+    const files = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
+    const file = files.find((f: any) => f.name === filename);
+
+    if (!file) {
+      throw new FileOperationError('read', filePath, 'file not found in local or remote');
+    }
+
+    return {
+      path: filePath,
+      projectId: parsedPath.projectId,
+      filename,
+      source: 'remote',
+      type: file.type,
+      content: file.source || '',
+      size: (file.source || '').length
+    };
+  }
+}
+
+/**
+ * Write file with automatic local and remote sync (RECOMMENDED)
+ * 
+ * ✅ RECOMMENDED - Use for normal development workflow
+ * Automatically writes to both local ./src/ and remote project when current project is set
+ */
+export class GASWriteTool extends BaseTool {
+  public name = 'gas_write';
+  public description = '✍️ RECOMMENDED: Smart file writer - auto-syncs to local and remote when current project set';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description: 'File path (filename only if current project set, or full projectId/filename WITHOUT extension)',
+        examples: [
+          'utils',                       // Uses current project → utils.gs
+          'models/User',                 // Uses current project → models/User.gs
+          'abc123def456.../helpers'      // Explicit project ID → helpers.gs
+        ]
+      },
+      content: {
+        type: 'string',
+        description: 'File content to write. Content type automatically detected for proper file extension.',
+        maxLength: 100000
+      },
+      fileType: {
+        type: 'string',
+        description: 'Explicit file type for Google Apps Script (optional). If not provided, auto-detected from content.',
+        enum: ['SERVER_JS', 'HTML', 'JSON'],
+        examples: ['SERVER_JS', 'HTML', 'JSON']
+      },
+      localOnly: {
+        type: 'boolean',
+        description: 'Write only to local ./src/ directory (skip remote sync)',
+        default: false
+      },
+      remoteOnly: {
+        type: 'boolean',
+        description: 'Write only to remote project (skip local sync)',
+        default: false
+      },
+      workingDir: {
+        type: 'string',
+        description: 'Working directory (defaults to current directory)',
+        default: process.cwd()
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)'
+      }
+    },
+    required: ['path', 'content'],
+    llmGuidance: {
+      whenToUse: 'Use for normal file writing. Automatically syncs to both local and remote.',
+      workflow: 'Set project with gas_project_set, then write: gas_write({path: "utils", content: "..."})',
+      alternatives: 'Use gas_raw_write only when you need explicit project ID control or single-destination writes'
+    }
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const workingDir = params.workingDir || process.cwd();
+    const localOnly = params.localOnly || false;
+    const remoteOnly = params.remoteOnly || false;
+    let filePath = params.path;
+    const content = params.content;
+
+    if (localOnly && remoteOnly) {
+      throw new ValidationError('localOnly/remoteOnly', 'both true', 'only one can be true');
+    }
+
+    // Try to resolve path with current project context
+    let scriptId: string | undefined;
+    let filename: string;
+    
+    try {
+      const parsedPath = parsePath(filePath);
+      
+      if (parsedPath.isFile) {
+        // Complete path provided
+        scriptId = parsedPath.projectId;
+        filename = parsedPath.filename!;
+      } else {
+        throw new Error('Incomplete path');
+      }
+    } catch (error) {
+      // Path doesn't have project ID, try to use current project
+      try {
+        scriptId = await ProjectResolver.getCurrentProjectId(workingDir);
+        filename = filePath;
+        filePath = `${scriptId}/${filePath}`;
+      } catch (currentProjectError) {
+        throw new ValidationError('path', filePath, 'filename or projectId/filename (set current project with gas_project_set)');
+      }
+    }
+
+    const results = {
+      path: filePath,
+      filename,
+      content,
+      localWritten: false,
+      remoteWritten: false,
+      size: content.length
+    };
+
+    // Write to local ./src/ 
+    if (!remoteOnly) {
+      try {
+        await LocalFileManager.writeLocalFile(filename, content, params.fileType, workingDir);
+        results.localWritten = true;
+      } catch (error: any) {
+        console.error(`Failed to write local file: ${error.message}`);
+      }
+    }
+
+    // Write to remote project
+    if (!localOnly && scriptId) {
+      try {
+        const accessToken = await this.getAuthToken(params);
+        
+        // Use explicit file type or auto-detect from content
+        let fileType: 'SERVER_JS' | 'HTML' | 'JSON';
+        if (params.fileType) {
+          fileType = params.fileType as 'SERVER_JS' | 'HTML' | 'JSON';
+        } else {
+          // Auto-detect from content (similar to LocalFileManager logic)
+          const trimmed = content.trim();
+          if (filename === 'appsscript') {
+            fileType = 'JSON';
+          } else if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            fileType = 'JSON';
+          } else if (trimmed.includes('<html>') || trimmed.includes('<!DOCTYPE') || 
+                     trimmed.includes('<head>') || trimmed.includes('<body>') ||
+                     /^<\s*!DOCTYPE\s+html/i.test(trimmed)) {
+            fileType = 'HTML';
+          } else {
+            fileType = 'SERVER_JS';
+          }
+        }
+        
+        // Use updateProjectContent with explicit file type
+        const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        const existingIndex = currentFiles.findIndex(f => f.name === filename);
+        
+        const newFile = {
+          name: filename,
+          type: fileType,
+          source: content
+        };
+        
+        let updatedFiles;
+        if (existingIndex >= 0) {
+          // Update existing file
+          updatedFiles = [...currentFiles];
+          updatedFiles[existingIndex] = newFile;
+        } else {
+          // Add new file
+          updatedFiles = [...currentFiles, newFile];
+        }
+        
+        await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
+        results.remoteWritten = true;
+        (results as any).detectedType = fileType;
+      } catch (error: any) {
+        console.error(`Failed to write remote file: ${error.message}`);
+        // If local write succeeded but remote failed, this is still a partial success
+      }
+    }
+
+    const syncStatus = localOnly ? 'local-only' : 
+                      remoteOnly ? 'remote-only' : 
+                      (results.localWritten && results.remoteWritten) ? 'synced' :
+                      results.localWritten ? 'local-only' :
+                      results.remoteWritten ? 'remote-only' : 'failed';
+
+    return {
+      ...results,
+      syncStatus,
+      message: `File ${syncStatus === 'synced' ? 'synced to local and remote' : 
+                      syncStatus === 'local-only' ? 'written to local only' :
+                      syncStatus === 'remote-only' ? 'written to remote only' : 'write failed'}`
+    };
+  }
+}
 
 /**
  * List files and directories in a Google Apps Script project
@@ -117,11 +429,14 @@ export class GASListTool extends BaseTool {
 }
 
 /**
- * Read file contents from a Google Apps Script project
+ * Read file contents from a Google Apps Script project (RAW/ADVANCED)
+ * 
+ * ⚠️  ADVANCED TOOL - Use gas_cat for normal development workflow
+ * This tool requires explicit project IDs and paths for direct API access
  */
-export class GASCatTool extends BaseTool {
-  public name = 'gas_cat';
-  public description = 'Read the contents of a file in a Google Apps Script project';
+export class GASRawCatTool extends BaseTool {
+  public name = 'gas_raw_cat';
+  public description = '🔧 ADVANCED: Read file contents with explicit project ID path. Use gas_cat for normal workflow.';
   
   public inputSchema = {
     type: 'object',
@@ -176,11 +491,14 @@ export class GASCatTool extends BaseTool {
 }
 
 /**
- * Write content to a file in a Google Apps Script project
+ * Write content to a file in a Google Apps Script project (RAW/ADVANCED)
+ * 
+ * ⚠️  ADVANCED TOOL - Use gas_write for normal development workflow
+ * This tool requires explicit project IDs and paths for direct API access
  */
-export class GASWriteTool extends BaseTool {
-  public name = 'gas_write';
-  public description = 'Write content to a file in a Google Apps Script project';
+export class GASRawWriteTool extends BaseTool {
+  public name = 'gas_raw_write';
+  public description = '🔧 ADVANCED: Write files with explicit project ID path. Use gas_write for normal workflow.';
   
   public inputSchema = {
     type: 'object',
@@ -285,9 +603,8 @@ export class GASWriteTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    // SECURITY: Validate path and content BEFORE authentication
+    // SECURITY: Validate path BEFORE authentication
     const path = this.validate.filePath(params.path, 'file writing');
-    const content = this.validate.code(params.content, 'file writing');
     const position = params.position !== undefined ? this.validate.number(params.position, 'position', 'file writing', 0) : undefined;
     
     const parsedPath = parsePath(path);
@@ -310,26 +627,28 @@ export class GASWriteTool extends BaseTool {
     let filename = parsedPath.filename!;
     let extensionStripped = false;
     let strippedExtension = '';
+    let detectedContentType = 'javascript'; // Default to JavaScript
     
     // PRIORITY 1: Handle special manifest file case first
     if (filename.toLowerCase() === 'appsscript.json') {
       filename = 'appsscript';
       extensionStripped = true;
       strippedExtension = '.json';
+      detectedContentType = 'json';
       console.error(`📋 MANIFEST CONVERSION: appsscript.json → appsscript (JSON type for manifest)`);
     } else {
       // PRIORITY 2: Handle general known GAS extensions
       const GAS_EXTENSIONS = {
-        '.json': 'JSON',      // JSON files (non-manifest)
-        '.html': 'HTML',      // Client-side HTML files  
-        '.gs': 'SERVER_JS',   // Apps Script server-side code
-        '.js': 'SERVER_JS'    // Alternative JavaScript extension
+        '.json': 'json',      // JSON files (non-manifest)
+        '.html': 'html',      // Client-side HTML files  
+        '.gs': 'javascript',  // Apps Script server-side code
+        '.js': 'javascript'   // Alternative JavaScript extension
       };
       
       // Check if filename ends with any known GAS extension
-      for (const [ext, gasFileType] of Object.entries(GAS_EXTENSIONS)) {
+      for (const [ext, contentType] of Object.entries(GAS_EXTENSIONS)) {
         if (filename.toLowerCase().endsWith(ext)) {
-          console.error(`🔧 INTENTIONAL EXTENSION STRIPPING: Found '${ext}' extension (maps to ${gasFileType} type)`);
+          console.error(`🔧 INTENTIONAL EXTENSION STRIPPING: Found '${ext}' extension (maps to ${contentType} type)`);
           
           // Strip the extension - GAS will auto-detect type and add appropriate extension
           const strippedFilename = filename.slice(0, -ext.length);
@@ -338,6 +657,7 @@ export class GASWriteTool extends BaseTool {
           filename = strippedFilename;
           extensionStripped = true;
           strippedExtension = ext;
+          detectedContentType = contentType;
           break;
         }
       }
@@ -351,6 +671,16 @@ export class GASWriteTool extends BaseTool {
     } else {
       console.error(`📝 No known extension found in filename: ${filename}`);
       console.error(`🎯 Will default to SERVER_JS type (Apps Script server-side code)`);
+    }
+
+    // CONTENT VALIDATION: Use appropriate validation based on detected content type
+    let content: string;
+    if (detectedContentType === 'html') {
+      content = this.validate.htmlContent(params.content, 'HTML file writing');
+      console.error(`🌐 HTML content validation passed - script tags allowed`);
+    } else {
+      content = this.validate.code(params.content, 'file writing', detectedContentType);
+      console.error(`💻 ${detectedContentType.toUpperCase()} content validation passed`);
     }
 
     // Validate content size (50KB limit)
@@ -583,6 +913,241 @@ export class GASCopyTool extends BaseTool {
       destProject: parsedTo.projectId,
       size: (sourceFile.source || '').length,
       totalFiles: updatedFiles.length
+    };
+  }
+}
+
+/**
+ * Copy files from one remote project to another with merge capabilities
+ * This is a remote-to-remote operation that doesn't touch local files
+ */
+export class GASRawCopyTool extends BaseTool {
+  public name = 'gas_raw_copy';
+  public description = 'Copy files from source remote project to destination remote project with merge options';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      sourceScriptId: {
+        type: 'string',
+        description: 'Source Google Apps Script project ID (44 characters) to copy files FROM',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44
+      },
+      destinationScriptId: {
+        type: 'string', 
+        description: 'Destination Google Apps Script project ID (44 characters) to copy files TO',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44
+      },
+      mergeStrategy: {
+        type: 'string',
+        enum: ['preserve-destination', 'overwrite-destination', 'skip-conflicts'],
+        default: 'preserve-destination',
+        description: 'How to handle files that exist in both projects: preserve-destination (default), overwrite-destination, or skip-conflicts'
+      },
+      includeFiles: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional: Only copy specific files (by name, without extensions). If omitted, copies all files.'
+      },
+      excludeFiles: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional: Exclude specific files (by name, without extensions) from copying.'
+      },
+      dryRun: {
+        type: 'boolean',
+        description: 'Show what would be copied without actually copying',
+        default: false
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)'
+      }
+    },
+    required: ['sourceScriptId', 'destinationScriptId']
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const { 
+      sourceScriptId, 
+      destinationScriptId, 
+      mergeStrategy = 'preserve-destination',
+      includeFiles = [],
+      excludeFiles = [],
+      dryRun = false
+    } = params;
+
+    const accessToken = await this.getAuthToken(params);
+
+    // Get source project files
+    const sourceFiles = await this.gasClient.getProjectContent(sourceScriptId, accessToken);
+    
+    // Get destination project files  
+    const destinationFiles = await this.gasClient.getProjectContent(destinationScriptId, accessToken);
+
+    // Create maps for easier lookup
+    const sourceFileMap = new Map(sourceFiles.map((f: any) => [f.name, f]));
+    const destinationFileMap = new Map(destinationFiles.map((f: any) => [f.name, f]));
+
+    // Filter source files based on include/exclude lists
+    let filesToProcess = sourceFiles.filter((file: any) => {
+      const fileName = file.name;
+      
+      // Apply include filter if specified
+      if (includeFiles.length > 0 && !includeFiles.includes(fileName)) {
+        return false;
+      }
+      
+      // Apply exclude filter if specified
+      if (excludeFiles.length > 0 && excludeFiles.includes(fileName)) {
+        return false;
+      }
+      
+      return true;
+    });
+
+    // Analyze what will happen with each file
+    const analysis = {
+      newFiles: [] as string[],
+      conflictFiles: [] as string[],
+      identicalFiles: [] as string[],
+      excludedFiles: [] as string[]
+    };
+
+    const filesToCopy: Array<{name: string; content: string; type: string; action: string}> = [];
+
+    for (const sourceFile of filesToProcess) {
+      const fileName = sourceFile.name;
+      const destinationFile = destinationFileMap.get(fileName);
+
+      if (!destinationFile) {
+        // File doesn't exist in destination - always copy
+        analysis.newFiles.push(fileName);
+        filesToCopy.push({
+          name: fileName,
+          content: sourceFile.source || '',
+          type: sourceFile.type || 'SERVER_JS',
+          action: 'new'
+        });
+      } else if (sourceFile.source === destinationFile.source) {
+        // Files are identical - skip
+        analysis.identicalFiles.push(fileName);
+      } else {
+        // Files are different - apply merge strategy
+        analysis.conflictFiles.push(fileName);
+        
+        switch (mergeStrategy) {
+          case 'preserve-destination':
+            // Skip copying - keep destination version
+            analysis.excludedFiles.push(`${fileName} (preserved destination)`);
+            break;
+          case 'overwrite-destination':
+            // Copy source over destination
+            filesToCopy.push({
+              name: fileName,
+              content: sourceFile.source || '',
+              type: sourceFile.type || 'SERVER_JS',
+              action: 'overwrite'
+            });
+            break;
+          case 'skip-conflicts':
+            // Skip all conflicting files
+            analysis.excludedFiles.push(`${fileName} (skipped conflict)`);
+            break;
+        }
+      }
+    }
+
+    if (dryRun) {
+      return {
+        dryRun: true,
+        sourceScriptId,
+        destinationScriptId,
+        mergeStrategy,
+        analysis: {
+          totalSourceFiles: sourceFiles.length,
+          filteredSourceFiles: filesToProcess.length,
+          newFiles: analysis.newFiles.length,
+          conflictFiles: analysis.conflictFiles.length,
+          identicalFiles: analysis.identicalFiles.length,
+          excludedFiles: analysis.excludedFiles.length,
+          wouldCopy: filesToCopy.length
+        },
+        details: {
+          newFiles: analysis.newFiles,
+          conflictFiles: analysis.conflictFiles,
+          identicalFiles: analysis.identicalFiles,
+          excludedFiles: analysis.excludedFiles,
+          filesToCopy: filesToCopy.map(f => ({ name: f.name, action: f.action }))
+        },
+        message: `Would copy ${filesToCopy.length} files from source to destination`
+      };
+    }
+
+    // Actually copy the files
+    const copyResults = [];
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const file of filesToCopy) {
+      try {
+        await this.gasClient.updateFile(
+          destinationScriptId,
+          file.name,
+          file.content,
+          undefined, // position
+          accessToken
+        );
+        copyResults.push({ name: file.name, action: file.action, status: 'success' });
+        successCount++;
+      } catch (error: any) {
+        copyResults.push({ 
+          name: file.name, 
+          action: file.action, 
+          status: 'error', 
+          error: error.message 
+        });
+        errorCount++;
+      }
+    }
+
+    return {
+      success: errorCount === 0,
+      sourceScriptId,
+      destinationScriptId,
+      mergeStrategy,
+      summary: {
+        totalSourceFiles: sourceFiles.length,
+        filteredSourceFiles: filesToProcess.length,
+        attemptedCopy: filesToCopy.length,
+        successfulCopies: successCount,
+        errors: errorCount,
+        newFiles: analysis.newFiles.length,
+        conflictFiles: analysis.conflictFiles.length,
+        identicalFiles: analysis.identicalFiles.length,
+        excludedFiles: analysis.excludedFiles.length
+      },
+      details: {
+        newFiles: analysis.newFiles,
+        conflictFiles: analysis.conflictFiles,
+        identicalFiles: analysis.identicalFiles,
+        excludedFiles: analysis.excludedFiles
+      },
+      copyResults: copyResults.filter(r => r.status === 'error'), // Only show errors
+      message: errorCount === 0 
+        ? `Successfully copied ${successCount} files from source to destination`
+        : `Copied ${successCount} files with ${errorCount} errors. See copyResults for details.`
     };
   }
 } 

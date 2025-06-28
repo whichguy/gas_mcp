@@ -183,6 +183,120 @@ Add to your Cursor configuration:
 }
 ```
 
+## 🔧 All 33 Available Tools
+
+### **📋 Tool Usage Guide**
+
+| Tool Type | When to Use | Examples |
+|-----------|-------------|-----------|
+| **✅ RECOMMENDED** | Normal development workflow | `gas_write`, `gas_cat`, `gas_run` |
+| **🔄 EXPLICIT** | Multi-environment, troubleshooting | `gas_pull`, `gas_push`, `gas_status` |
+| **⚠️ ADVANCED** | Power users, explicit control | `gas_raw_write`, `gas_raw_cat`, `gas_raw_copy`, `gas_raw_run` |
+
+---
+
+## **✅ RECOMMENDED TOOLS (Normal Workflow)**
+
+### Authentication (1 tool)
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_auth` | OAuth 2.0 authentication | `mode`, `openBrowser?` |
+
+### 📂 Smart Filesystem Operations (6 tools)
+> **Auto-sync**: Automatically handles local/remote synchronization
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_ls` | List projects/files | `path?`, `detailed?` |
+| **`gas_cat`** | **✅ Smart reader** (local-first, remote fallback) | `path` |
+| **`gas_write`** | **✅ Auto-sync writer** (local + remote) | `path`, `content` |
+| `gas_rm` | Delete files | `path` |
+| `gas_mv` | Move/rename files | `from`, `to` |
+| `gas_cp` | Copy files | `from`, `to` |
+
+### 🚀 Smart Execution (1 tool)
+> **Current project**: Uses project context automatically
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| **`gas_run`** | **✅ Execute with current project** | `js_statement` |
+
+### 🎯 Project Workflow (1 tool)
+> **Main workflow**: Set project and start development
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| **`gas_project_set`** | **✅ Set project & auto-pull files** | `project` |
+
+---
+
+## **🔄 EXPLICIT TOOLS (Multi-Environment)**
+
+### Project Management (4 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_mkdir` | Create logical directories | `projectId`, `directoryPath` |
+| `gas_info` | Get project information | `projectId`, `includeContent?` |
+| `gas_reorder` | Change file execution order | `projectId`, `fileName`, `newPosition` |
+| `gas_project_metrics` | Get project analytics | `scriptId`, `metricsGranularity?` |
+
+### Local Sync & Project Context (7 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_project_set` | Set current project & cache files | `project?`, `workingDir?` |
+| `gas_project_get` | Get current project info | `workingDir?`, `detailed?` |
+| `gas_project_add` | Add project to configuration | `name`, `scriptId`, `description?` |
+| `gas_project_list` | List configured projects | `workingDir?` |
+| `gas_pull` | Pull remote files to local src | `project?`, `force?` |
+| `gas_push` | Push local files to remote | `project?`, `dryRun?` |
+| `gas_status` | Compare local vs remote files | `project?`, `detailed?` |
+
+### Execution Tools (3 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_run` | Execute JavaScript dynamically | `scriptId`, `js_statement` |
+| `gas_run_api_exec` | Execute via API | `scriptId`, `functionName`, `parameters?` |
+| `gas_proxy_setup` | Setup HTTP proxy | `scriptId`, `deploy?` |
+
+### Deployment Management (7 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_version_create` | Create project version | `scriptId`, `description?` |
+| `gas_deploy_create` | Create deployment | `scriptId`, `entryPointType`, `versionNumber?` |
+| `gas_deploy_list` | List deployments | `scriptId` |
+| `gas_deploy_get_details` | Get deployment info | `scriptId`, `deploymentId` |
+| `gas_deploy_delete` | Delete deployment | `scriptId`, `deploymentId` |
+| `gas_deploy_update` | Update deployment | `scriptId`, `deploymentId` |
+| `gas_project_create` | Create new project | `title`, `parentId?` |
+
+### Version Management (2 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_version_get` | Get version details | `scriptId`, `versionNumber` |
+| `gas_version_list` | List all versions | `scriptId`, `pageSize?` |
+
+### Process Management (2 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_process_list` | List user processes | `pageSize?`, `userProcessFilter?` |
+| `gas_process_list_script` | List script processes | `scriptId`, `scriptProcessFilter?` |
+
+### Drive Integration (3 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_find_drive_script` | Find container scripts | `fileName` |
+| `gas_bind_script` | Bind script to container | `containerName`, `scriptName` |
+| `gas_create_script` | Create container script | `containerName`, `scriptName?` |
+
+For complete API documentation, see [docs/api/API_REFERENCE.md](docs/api/API_REFERENCE.md) and [docs/api/LOCAL_SYNC_API.md](docs/api/LOCAL_SYNC_API.md).
+
 ## 📖 Usage
 
 ### Authentication

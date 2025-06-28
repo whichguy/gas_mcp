@@ -11,7 +11,10 @@ import { GASAuthTool } from '../tools/auth.js';
 import { 
   GASListTool, 
   GASCatTool, 
-  GASWriteTool, 
+  GASWriteTool,
+  GASRawCatTool,
+  GASRawWriteTool,
+  GASRawCopyTool,
   GASRemoveTool, 
   GASMoveTool, 
   GASCopyTool 
@@ -22,7 +25,7 @@ import {
   GASReorderTool,
   GASProjectMetricsTool
 } from '../tools/project.js';
-import { GASRunTool, GASRunApiExecTool } from '../tools/execution.js';
+import { GASRunTool, GASRawRunTool, GASRunApiExecTool } from '../tools/execution.js';
 import { GASProxySetupTool } from '../tools/proxySetup.js';
 import {
   GASDeployCreateTool,
@@ -49,6 +52,20 @@ import {
   GASVersionGetTool,
   GASVersionListTool
 } from '../tools/versions.js';
+
+// Import new local sync and project context tools
+import {
+  GASPullTool,
+  GASPushTool,
+  GASStatusTool
+} from '../tools/localSync.js';
+
+import {
+  GASProjectSetTool,
+  GASProjectGetTool,
+  GASProjectAddTool,
+  GASProjectListTool
+} from '../tools/projectContext.js';
 
 
 // Import error handling
@@ -183,33 +200,49 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    * 
-   * Each session gets its own instances of all 28 MCP tools, each configured
+   * Each session gets its own instances of all 35 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    * 
-   * ## Tool Categories Created:
+   * ## Tool Categories Created (31 total tools):
    * 
-   * ### Authentication & Session (1 tool)
+   * ### 🔐 Authentication & Session (1 tool)
    * - `gas_auth` - OAuth 2.0 flow management with desktop PKCE
    * 
-   * ### Filesystem Operations (6 tools)
-   * - `gas_ls` - List projects and files
-   * - `gas_cat` - Read file contents
-   * - `gas_write` - Create/update files
+   * ### 📂 Filesystem Operations - RECOMMENDED (6 tools)
+   * - `gas_ls` - List projects and files  
+   * - `gas_cat` - ✅ Smart reader (local-first with remote fallback)
+   * - `gas_write` - ✅ Auto-sync writer (local + remote)
    * - `gas_rm` - Delete files
    * - `gas_mv` - Move/rename files
    * - `gas_cp` - Copy files
    * 
-   * ### Project Management (4 tools)
+   * ### 🔧 Filesystem Operations - ADVANCED (3 tools)
+   * - `gas_raw_cat` - ⚠️ Advanced: Read with explicit project ID paths
+   * - `gas_raw_write` - ⚠️ Advanced: Write with explicit project ID paths
+   * - `gas_raw_copy` - ⚠️ Advanced: Remote-to-remote file copying with merge strategies
+   * 
+   * ### 🏗️ Project Management (4 tools)
    * - `gas_mkdir` - Create logical directories
    * - `gas_info` - Project information
    * - `gas_reorder` - File ordering
    * - `gas_project_metrics` - Performance analytics
    * 
-   * ### Script Execution (3 tools)
-   * - `gas_run` - Direct code execution (primary)
+   * ### 🚀 Script Execution - RECOMMENDED (1 tool)
+   * - `gas_run` - ✅ Execute with current project context
+   * 
+   * ### 🔧 Script Execution - ADVANCED (3 tools)
+   * - `gas_raw_run` - ⚠️ Advanced: Execute with explicit script ID
    * - `gas_run_api_exec` - API-based execution
    * - `gas_proxy_setup` - Proxy configuration
+   * 
+   * ### 🔄 Local-Remote Sync - INDIVIDUAL COMMANDS (3 tools)
+   * - `gas_pull` - Pull remote files to local src directory
+   * - `gas_push` - Push local src files to remote project  
+   * - `gas_status` - Compare local and remote files
+   * 
+   * ### 🎯 Project Context - WORKFLOW (1 tool)
+   * - `gas_project_set` - ✅ Set current project and auto-pull files
    * 
    * ### Deployment Management (7 tools)
    * - `gas_deploy_create` - Create deployments
@@ -251,23 +284,31 @@ export class MCPGasServer {
       // Authentication (with session-specific auth manager)
       new GASAuthTool(authManager),
       
-      // Filesystem operations (with session-specific auth manager)  
+      // 📂 Filesystem operations - RECOMMENDED auto-sync tools
       new GASListTool(authManager),
-      new GASCatTool(authManager),
-      new GASWriteTool(authManager),
+      new GASCatTool(authManager),           // ✅ Smart reader (local-first)
+      new GASWriteTool(authManager),         // ✅ Auto-sync writer
       new GASRemoveTool(authManager),
       new GASMoveTool(authManager),
       new GASCopyTool(authManager),
       
-      // Project management (with session-specific auth manager)
+      // 🔧 Filesystem operations - ADVANCED raw tools (explicit project IDs)
+      new GASRawCatTool(authManager),        // ⚠️ Advanced: Explicit project ID paths
+      new GASRawWriteTool(authManager),      // ⚠️ Advanced: Explicit project ID paths
+      new GASRawCopyTool(authManager),       // ⚠️ Advanced: Remote-to-remote file copying
+      
+      // 🏗️ Project management
       new GASMkdirTool(authManager),
       new GASInfoTool(authManager),
       new GASReorderTool(authManager),
       new GASProjectMetricsTool(authManager),
       
-      // Script execution (with session-specific auth manager)
-      new GASRunTool(authManager),  // Primary gas_run tool with doGet() proxy and auto-deployment
-      new GASRunApiExecTool(authManager),  // Alternative API-based execution
+      // 🚀 Script execution - RECOMMENDED auto-sync tool
+      new GASRunTool(authManager),           // ✅ Uses current project context
+      
+      // 🔧 Script execution - ADVANCED raw tool
+      new GASRawRunTool(authManager),        // ⚠️ Advanced: Explicit script ID
+      new GASRunApiExecTool(authManager),    // Alternative API-based execution
       new GASProxySetupTool(authManager),
       
       // Deployment management (with session-specific auth manager)
@@ -291,7 +332,18 @@ export class MCPGasServer {
       
       // Version management
       new GASVersionGetTool(authManager),
-      new GASVersionListTool(authManager)
+      new GASVersionListTool(authManager),
+      
+      // 🔄 Local-Remote sync operations - EXPLICIT workflow tools
+      new GASPullTool(authManager),          // Explicit pull for multi-env
+      new GASPushTool(authManager),          // Explicit push for multi-env  
+      new GASStatusTool(authManager),        // Diagnostic comparison
+      
+      // 🎯 Project context - WORKFLOW tool (visible to MCP)
+      new GASProjectSetTool(authManager),    // ✅ Main workflow: Set project & auto-pull
+      
+      // NOTE: gas_project_get, gas_project_add, gas_project_list are HIDDEN from MCP
+      // They're used internally by other tools but not exposed to users/LLMs
     ];
 
     toolInstances.forEach(tool => {

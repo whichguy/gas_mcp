@@ -2,18 +2,19 @@
 
 ## 🎯 Overview
 
-This comprehensive API reference documents all 11 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
+This comprehensive API reference documents all 36 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
 
 ## 📋 Table of Contents
 
 1. [Authentication Tools](#authentication-tools)
 2. [Filesystem Tools](#filesystem-tools)
 3. [Project Management Tools](#project-management-tools)
-4. [Execution Tools](#execution-tools)
-5. [Deployment Tools](#deployment-tools)
-6. [Drive Container Tools](#drive-container-tools)
-7. [Error Handling](#error-handling)
-8. [Usage Patterns](#usage-patterns)
+4. [Local Sync & Project Context Tools](#local-sync--project-context-tools)
+5. [Execution Tools](#execution-tools)
+6. [Deployment Tools](#deployment-tools)
+7. [Drive Container Tools](#drive-container-tools)
+8. [Error Handling](#error-handling)
+9. [Usage Patterns](#usage-patterns)
 
 ---
 
@@ -407,6 +408,158 @@ const copyResult = await callTool('gas_cp', {
 }
 ```
 
+### `gas_raw_copy` - Remote-to-Remote File Copying
+
+Copy files from one remote Google Apps Script project to another with intelligent merge strategies. This is an advanced tool for power users who need explicit control over remote-to-remote operations.
+
+#### Input Schema
+```typescript
+interface GasRawCopyInput {
+  sourceScriptId: string;      // 44-character source project ID
+  destinationScriptId: string; // 44-character destination project ID
+  mergeStrategy?: 'preserve-destination' | 'overwrite-destination' | 'skip-conflicts';
+  includeFiles?: string[];     // Optional: Only copy specific files
+  excludeFiles?: string[];     // Optional: Exclude specific files  
+  dryRun?: boolean;           // Show what would be copied
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Copy All Files with Preservation (Default)**
+```typescript
+const copyResult = await callTool('gas_raw_copy', {
+  sourceScriptId: '1abc123def456..._source_project_id_44_chars',
+  destinationScriptId: '1xyz789ghi012..._dest_project_id_44_chars',
+  mergeStrategy: 'preserve-destination'  // Default: keep destination files in conflicts
+});
+
+// Response:
+{
+  "success": true,
+  "sourceScriptId": "1abc123def456...",
+  "destinationScriptId": "1xyz789ghi012...",
+  "mergeStrategy": "preserve-destination",
+  "summary": {
+    "totalSourceFiles": 8,
+    "filteredSourceFiles": 8,
+    "attemptedCopy": 5,
+    "successfulCopies": 5,
+    "errors": 0,
+    "newFiles": 5,          // Files that didn't exist in destination
+    "conflictFiles": 3,     // Files that existed but were preserved
+    "identicalFiles": 0,    // Files that were already identical
+    "excludedFiles": 3      // Files preserved due to conflicts
+  },
+  "details": {
+    "newFiles": ["NewUtility", "Helper", "Config", "Models", "API"],
+    "conflictFiles": ["Code", "Main", "Utils"],
+    "excludedFiles": ["Code (preserved destination)", "Main (preserved destination)", "Utils (preserved destination)"]
+  },
+  "message": "Successfully copied 5 files from source to destination"
+}
+```
+
+**Dry Run Analysis**
+```typescript
+const analysis = await callTool('gas_raw_copy', {
+  sourceScriptId: '1abc123def456...',
+  destinationScriptId: '1xyz789ghi012...',
+  mergeStrategy: 'overwrite-destination',
+  dryRun: true
+});
+
+// Response:
+{
+  "dryRun": true,
+  "sourceScriptId": "1abc123def456...",
+  "destinationScriptId": "1xyz789ghi012...", 
+  "mergeStrategy": "overwrite-destination",
+  "analysis": {
+    "totalSourceFiles": 8,
+    "filteredSourceFiles": 8,
+    "newFiles": 5,
+    "conflictFiles": 3,
+    "identicalFiles": 0,
+    "excludedFiles": 0,
+    "wouldCopy": 8
+  },
+  "details": {
+    "newFiles": ["NewUtility", "Helper", "Config", "Models", "API"],
+    "conflictFiles": ["Code", "Main", "Utils"],
+    "filesToCopy": [
+      {"name": "NewUtility", "action": "new"},
+      {"name": "Helper", "action": "new"},
+      {"name": "Code", "action": "overwrite"},
+      {"name": "Main", "action": "overwrite"}
+    ]
+  },
+  "message": "Would copy 8 files from source to destination"
+}
+```
+
+**Selective File Copying**
+```typescript
+const selectiveCopy = await callTool('gas_raw_copy', {
+  sourceScriptId: '1abc123def456...',
+  destinationScriptId: '1xyz789ghi012...',
+  includeFiles: ['Utils', 'Helper', 'Config'],
+  excludeFiles: ['TestFile'],
+  mergeStrategy: 'skip-conflicts'
+});
+
+// Response:
+{
+  "success": true,
+  "summary": {
+    "totalSourceFiles": 8,
+    "filteredSourceFiles": 2,  // Only Utils, Helper (Config excluded, Utils conflicts)
+    "attemptedCopy": 1,        // Only Helper (new file)
+    "successfulCopies": 1,
+    "newFiles": 1,
+    "conflictFiles": 1,        // Utils exists in destination
+    "excludedFiles": 1         // Utils skipped due to conflict
+  },
+  "details": {
+    "newFiles": ["Helper"],
+    "conflictFiles": ["Utils"],
+    "excludedFiles": ["Utils (skipped conflict)"]
+  },
+  "message": "Successfully copied 1 files from source to destination"
+}
+```
+
+#### Merge Strategies
+
+- **`preserve-destination`** (default): Keep destination files when conflicts occur
+- **`overwrite-destination`**: Replace destination files with source files
+- **`skip-conflicts`**: Skip any files that exist in both projects
+
+#### Error Responses
+
+**Authentication Error**
+```json
+{
+  "error": {
+    "type": "AuthenticationError", 
+    "message": "Authentication required",
+    "instructions": ["Use gas_auth({mode: \"start\"}) to authenticate"]
+  }
+}
+```
+
+**Invalid Project ID**
+```json
+{
+  "error": {
+    "type": "ValidationError",
+    "message": "Invalid sourceScriptId: must be 44 characters",
+    "field": "sourceScriptId"
+  }
+}
+```
+
 ---
 
 ## 🛠️ Project Management Tools
@@ -554,6 +707,463 @@ const reorderResult = await callTool('gas_reorder', {
   ]
 }
 ```
+
+---
+
+## 🔄 Local Sync & Project Context Tools
+
+### `gas_project_set` - Set Current Project
+
+Set the current project for the workspace and cache files locally for editing.
+
+#### Input Schema
+```typescript
+interface GasProjectSetInput {
+  project?: string | {
+    dev?: boolean;
+    staging?: boolean;
+    prod?: boolean;
+    production?: boolean;
+  };
+  workingDir?: string;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Set Current Project by Name**
+```typescript
+const result = await callTool('gas_project_set', {
+  project: "my-calculator"
+});
+
+// Response:
+{
+  "success": true,
+  "projectName": "my-calculator",
+  "scriptId": "abc123def456...",
+  "title": "Calculator App",
+  "filesCached": 3,
+  "localPath": "./src",
+  "message": "Set current project to 'my-calculator' and cached 3 files to ./src/"
+}
+```
+
+**Set Current Project by Script ID**
+```typescript
+const result = await callTool('gas_project_set', {
+  project: "abc123def456ghi789jkl012mno345pqr678stu901vwx234"
+});
+```
+
+**Set Environment Project**
+```typescript
+const result = await callTool('gas_project_set', {
+  project: { dev: true }
+});
+```
+
+### `gas_project_get` - Get Current Project
+
+Get information about the current project and its status.
+
+#### Input Schema
+```typescript
+interface GasProjectGetInput {
+  workingDir?: string;
+  detailed?: boolean;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Basic Project Info**
+```typescript
+const info = await callTool('gas_project_get', {});
+
+// Response:
+{
+  "currentProject": {
+    "projectName": "my-calculator",
+    "scriptId": "abc123def456...",
+    "lastSync": "2024-01-15T14:30:00Z"
+  },
+  "localPath": "./src",
+  "hasLocalFiles": true
+}
+```
+
+**Detailed Project Status**
+```typescript
+const detailed = await callTool('gas_project_get', {
+  detailed: true
+});
+
+// Response includes file comparisons and sync status
+{
+  "currentProject": { /* ... */ },
+  "remoteInfo": {
+    "title": "Calculator App",
+    "createTime": "2024-01-01T12:00:00Z",
+    "updateTime": "2024-01-15T14:30:00Z"
+  },
+  "localFiles": 3,
+  "remoteFiles": 3,
+  "fileComparisons": [
+    {
+      "name": "Code.gs",
+      "status": "same",
+      "localSize": 1024,
+      "remoteSize": 1024
+    }
+  ],
+  "syncStatus": "in-sync"
+}
+```
+
+### `gas_project_add` - Add Project to Configuration
+
+Add a project to the local workspace configuration.
+
+#### Input Schema
+```typescript
+interface GasProjectAddInput {
+  name: string;
+  scriptId: string;
+  description?: string;
+  environment?: 'dev' | 'staging' | 'production';
+  workingDir?: string;
+}
+```
+
+#### Usage Examples
+
+**Add Regular Project**
+```typescript
+const result = await callTool('gas_project_add', {
+  name: "calculator-app",
+  scriptId: "abc123def456ghi789jkl012mno345pqr678stu901vwx234",
+  description: "Calculator application for basic math operations"
+});
+
+// Response:
+{
+  "success": true,
+  "name": "calculator-app",
+  "scriptId": "abc123def456...",
+  "description": "Calculator application for basic math operations",
+  "configPath": "./.gas-projects.json",
+  "message": "Added project 'calculator-app' to configuration"
+}
+```
+
+**Add Environment Project**
+```typescript
+const result = await callTool('gas_project_add', {
+  name: "calculator-prod",
+  scriptId: "xyz789abc012def345ghi678jkl901mno234pqr567stu890",
+  environment: "production"
+});
+```
+
+### `gas_project_list` - List Configured Projects
+
+List all projects in the local workspace configuration.
+
+#### Input Schema
+```typescript
+interface GasProjectListInput {
+  workingDir?: string;
+}
+```
+
+#### Usage Examples
+
+**List All Projects**
+```typescript
+const projects = await callTool('gas_project_list', {});
+
+// Response:
+{
+  "projects": [
+    {
+      "name": "calculator-app",
+      "scriptId": "abc123def456...",
+      "description": "Calculator application",
+      "type": "project"
+    },
+    {
+      "name": "dev",
+      "scriptId": "dev123abc456...",
+      "description": "Development Environment",
+      "type": "environment"
+    }
+  ],
+  "currentProject": {
+    "projectName": "calculator-app",
+    "scriptId": "abc123def456...",
+    "lastSync": "2024-01-15T14:30:00Z"
+  },
+  "totalProjects": 2,
+  "configPath": "/workspace/path"
+}
+```
+
+### `gas_pull` - Pull Remote Files
+
+Pull files from a remote Google Apps Script project to the local `./src/` directory.
+
+#### Input Schema
+```typescript
+interface GasPullInput {
+  project?: string | {
+    dev?: boolean;
+    staging?: boolean;
+    prod?: boolean;
+    production?: boolean;
+  };
+  workingDir?: string;
+  force?: boolean;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Pull from Current Project**
+```typescript
+const result = await callTool('gas_pull', {});
+
+// Response:
+{
+  "success": true,
+  "projectName": "calculator-app",
+  "scriptId": "abc123def456...",
+  "filesPulled": 4,
+  "localPath": "./src",
+  "message": "Pulled 4 files from 'calculator-app' to ./src/"
+}
+```
+
+**Pull with Force (Overwrite Local Files)**
+```typescript
+const result = await callTool('gas_pull', {
+  force: true
+});
+```
+
+**Pull from Specific Environment**
+```typescript
+const result = await callTool('gas_pull', {
+  project: { staging: true }
+});
+```
+
+**Warning Response (Local Files Exist)**
+```typescript
+// When local files exist and force: false (default)
+{
+  "warning": true,
+  "message": "Local files exist. Use force: true to overwrite, or check gas_status first.",
+  "localFiles": 3,
+  "remoteFiles": 4,
+  "suggestion": "Run gas_status() to see differences before pulling"
+}
+```
+
+### `gas_push` - Push Local Files
+
+Push local files from the `./src/` directory to a remote Google Apps Script project.
+
+#### Input Schema
+```typescript
+interface GasPushInput {
+  project?: string | {
+    dev?: boolean;
+    staging?: boolean;
+    prod?: boolean;
+    production?: boolean;
+  };
+  workingDir?: string;
+  dryRun?: boolean;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Push to Current Project**
+```typescript
+const result = await callTool('gas_push', {});
+
+// Response:
+{
+  "success": true,
+  "projectName": "calculator-app",
+  "scriptId": "abc123def456...",
+  "filesPushed": 3,
+  "results": [
+    { "name": "Code.gs", "status": "success" },
+    { "name": "Utils.gs", "status": "success" },
+    { "name": "appsscript.json", "status": "success" }
+  ],
+  "successCount": 3,
+  "errorCount": 0,
+  "message": "Successfully pushed 3 files to 'calculator-app'"
+}
+```
+
+**Dry Run (Preview Changes)**
+```typescript
+const preview = await callTool('gas_push', {
+  dryRun: true
+});
+
+// Response:
+{
+  "dryRun": true,
+  "projectName": "calculator-app",
+  "scriptId": "abc123def456...",
+  "filesToPush": [
+    {
+      "name": "Code.gs",
+      "size": 1024,
+      "relativePath": "Code.gs"
+    }
+  ],
+  "totalFiles": 3,
+  "message": "Would push 3 files to 'calculator-app'"
+}
+```
+
+**Push to Production Environment**
+```typescript
+const result = await callTool('gas_push', {
+  project: { production: true }
+});
+```
+
+### `gas_status` - Compare Local and Remote Files
+
+Show the status and differences between local and remote files.
+
+#### Input Schema
+```typescript
+interface GasStatusInput {
+  project?: string | {
+    dev?: boolean;
+    staging?: boolean;
+    prod?: boolean;
+    production?: boolean;
+  };
+  workingDir?: string;
+  detailed?: boolean;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Basic Status Check**
+```typescript
+const status = await callTool('gas_status', {});
+
+// Response:
+{
+  "projectName": "calculator-app",
+  "scriptId": "abc123def456...",
+  "overallStatus": "modified",
+  "summary": {
+    "same": 2,
+    "different": 1,
+    "localOnly": 0,
+    "remoteOnly": 1
+  },
+  "localFiles": 3,
+  "remoteFiles": 4,
+  "localPath": "./src",
+  "needsAttention": [
+    {
+      "name": "Code.gs",
+      "status": "different"
+    },
+    {
+      "name": "NewFeature.gs",
+      "status": "remote-only"
+    }
+  ],
+  "message": "1 files modified locally, 1 files only exist remotely",
+  "suggestions": {
+    "toPush": "Use gas_push() to upload local changes",
+    "toPull": "Use gas_pull({force: true}) to download remote files"
+  }
+}
+```
+
+**Detailed Status with File-by-File Comparison**
+```typescript
+const detailed = await callTool('gas_status', {
+  detailed: true
+});
+
+// Response includes fileComparisons array with full details
+{
+  "projectName": "calculator-app",
+  "scriptId": "abc123def456...",
+  "overallStatus": "modified",
+  "summary": { /* ... */ },
+  "fileComparisons": [
+    {
+      "name": "Code.gs",
+      "status": "different",
+      "localPath": "Code.gs",
+      "localSize": 1024,
+      "remoteSize": 980,
+      "lastModified": "2024-01-15T14:30:00Z"
+    },
+    {
+      "name": "Utils.gs",
+      "status": "same",
+      "localPath": "Utils.gs",
+      "localSize": 512,
+      "remoteSize": 512,
+      "lastModified": "2024-01-15T14:00:00Z"
+    },
+    {
+      "name": "NewFeature.gs",
+      "status": "remote-only",
+      "remoteSize": 256
+    }
+  ]
+}
+```
+
+**In-Sync Status**
+```typescript
+// When everything is synchronized
+{
+  "projectName": "calculator-app",
+  "scriptId": "abc123def456...",
+  "overallStatus": "in-sync",
+  "summary": {
+    "same": 3,
+    "different": 0,
+    "localOnly": 0,
+    "remoteOnly": 0
+  },
+  "message": "Local and remote files are in sync"
+}
+```
+
+#### Status Values
+
+| Status | Description |
+|--------|-------------|
+| `in-sync` | All files match between local and remote |
+| `modified` | Some files have been modified locally |
+| `files-added-or-removed` | Files added or removed but no modifications |
 
 ---
 

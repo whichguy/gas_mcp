@@ -388,7 +388,7 @@ export class MCPValidator {
    * Validate code content
    * **Consolidates code validation** from file and execution tools
    */
-  static validateCode(code: string, context?: ErrorContext): ValidationResult {
+  static validateCode(code: string, context?: ErrorContext, contentType?: string): ValidationResult {
     return this.validateParameter({
       field: 'code',
       value: code,
@@ -397,12 +397,46 @@ export class MCPValidator {
       minLength: 1,
       maxLength: 100000, // Google Apps Script file size limit
       customValidator: (value) => {
-        // Basic JavaScript/Google Apps Script syntax check
+        // Allow script tags in HTML content
+        if (contentType === 'html' || contentType === 'HTML') {
+          // For HTML content, we allow script tags but still check size limits
+          if (value.length > 50000) {
+            return 'HTML content exceeds Google Apps Script recommended file size (50KB)';
+          }
+          return null;
+        }
+        
+        // For JavaScript/Apps Script content, block script tags
         if (value.includes('<script>') || value.includes('</script>')) {
           return 'Code should not contain HTML script tags';
         }
         if (value.length > 50000) {
           return 'Code exceeds Google Apps Script recommended file size (50KB)';
+        }
+        return null;
+      }
+    }, { context, throwOnError: true });
+  }
+
+  /**
+   * Validate HTML content specifically
+   * **New method for HTML file validation**
+   */
+  static validateHtmlContent(content: string, context?: ErrorContext): ValidationResult {
+    return this.validateParameter({
+      field: 'htmlContent',
+      value: content,
+      required: true,
+      type: 'string',
+      minLength: 1,
+      maxLength: 100000, // Google Apps Script file size limit
+      customValidator: (value) => {
+        // HTML content validation - allow script tags but check for basic HTML structure
+        if (!value.trim().toLowerCase().includes('<!doctype') && !value.trim().toLowerCase().includes('<html')) {
+          // Not strictly required, but good practice
+        }
+        if (value.length > 50000) {
+          return 'HTML content exceeds Google Apps Script recommended file size (50KB)';
         }
         return null;
       }
