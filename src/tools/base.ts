@@ -554,9 +554,9 @@ export abstract class BaseTool implements Tool {
       return path;
     },
 
-    code: (code: string, operation: string): string => {
+    code: (code: string, operation: string, contentType?: string): string => {
       const context = this.createErrorContext(operation);
-      MCPValidator.validateCode(code, context);
+      MCPValidator.validateCode(code, context, contentType);
       return code;
     },
 
@@ -570,6 +570,12 @@ export abstract class BaseTool implements Tool {
       const context = this.createErrorContext(operation);
       MCPValidator.validateTimezone(timezone, context);
       return timezone;
+    },
+
+    htmlContent: (content: string, operation: string): string => {
+      const context = this.createErrorContext(operation);
+      MCPValidator.validateHtmlContent(content, context);
+      return content;
     },
 
     // Legacy validation methods for backward compatibility

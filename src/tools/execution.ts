@@ -4,7 +4,118 @@ import { ValidationError, GASApiError, AuthenticationError } from '../errors/mcp
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASCodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
+import { ProjectResolver } from '../utils/projectResolver.js';
 import open from 'open';
+
+/**
+ * Execute JavaScript in Google Apps Script with current project support (RECOMMENDED)
+ * 
+ * ✅ RECOMMENDED - Use for normal code execution
+ * Automatically uses current project when set, otherwise requires explicit script ID
+ */
+export class GASRunTool extends BaseTool {
+  public name = 'gas_run';
+  public description = '🚀 RECOMMENDED: Execute JavaScript using current project context or explicit script ID';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      js_statement: {
+        type: 'string',
+        description: 'JavaScript statement to execute directly in Google Apps Script. LLM POWER: Can execute ANY valid JavaScript/Apps Script code - expressions, function calls, complex operations. No wrapper functions needed.',
+        minLength: 1,
+        maxLength: 2000,
+        examples: [
+          'Math.PI * 2',
+          'new Date().toISOString()',
+          'Session.getActiveUser().getEmail()',
+          'fibonacci(17)',
+          'SpreadsheetApp.create("My New Sheet").getId()',
+          'DriveApp.getFiles().next().getName()',
+          '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
+          'JSON.stringify({message: "Hello", timestamp: new Date()})'
+        ]
+      },
+      project: {
+        oneOf: [
+          {
+            type: 'string',
+            description: 'Local project name OR direct script ID (44 chars). If not provided, uses current project.'
+          },
+          {
+            type: 'object',
+            properties: {
+              dev: { type: 'boolean', description: 'Use development environment' },
+              staging: { type: 'boolean', description: 'Use staging environment' }, 
+              prod: { type: 'boolean', description: 'Use production environment' },
+              production: { type: 'boolean', description: 'Use production environment' }
+            },
+            description: 'Environment shortcut from local configuration'
+          }
+        ],
+        description: 'Project to execute in (defaults to current project if set)'
+      },
+      autoRedeploy: {
+        type: 'boolean',
+        description: 'Enable automatic deployment infrastructure setup. LLM RECOMMENDATION: Leave as true (default) unless you want to manage deployments manually.',
+        default: true
+      },
+      workingDir: {
+        type: 'string',
+        description: 'Working directory (defaults to current directory)',
+        default: process.cwd()
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)'
+      }
+    },
+    required: ['js_statement'],
+    llmGuidance: {
+      whenToUse: 'Use for normal JavaScript execution. Automatically uses current project context.',
+      workflow: 'Set project with gas_project_set, then execute: gas_run({js_statement: "Math.sqrt(16)"})',
+      alternatives: 'Use gas_raw_run only when you need explicit script ID control'
+    }
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const workingDir = params.workingDir || process.cwd();
+    const js_statement = this.validate.string(params.js_statement, 'js_statement', 'JavaScript execution');
+    const autoRedeploy = params.autoRedeploy !== false;
+    
+    // Resolve script ID
+    let scriptId: string;
+    
+    try {
+      scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir);
+    } catch (error: any) {
+      if (!params.project) {
+        throw new ValidationError('project', 'undefined', 'project parameter or current project (use gas_project_set)');
+      }
+      throw error;
+    }
+
+    // Get auth token and delegate to raw execution
+    const accessToken = await this.getAuthToken(params);
+    
+    // Create a raw tool instance to execute the actual logic
+    const rawTool = new GASRawRunTool(this.sessionAuthManager);
+    
+    return await rawTool.execute({
+      scriptId,
+      js_statement,
+      autoRedeploy,
+      accessToken
+    });
+  }
+}
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -464,9 +575,9 @@ export class GASRunApiExecTool extends BaseTool {
  * - Returns JSON responses that can be properly dehydrated/rehydrated
  * - Must have script.scriptapp OAuth scope
  */
-export class GASRunTool extends BaseTool {
-  public name = 'gas_run';
-  public description = 'Execute JavaScript code dynamically in Google Apps Script projects';
+export class GASRawRunTool extends BaseTool {
+  public name = 'gas_raw_run';
+  public description = '🔧 ADVANCED: Execute JavaScript with explicit script ID. Use gas_run for normal workflow.';
   
   public inputSchema = {
     type: 'object',

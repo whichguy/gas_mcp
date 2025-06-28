@@ -710,6 +710,17 @@ export class GASProjectCreateTool extends BaseTool {
           purpose: 'Include the main function or use case in the title'
         }
       },
+      localName: {
+        type: 'string',
+        description: 'Optional local project name to add to .gas-projects.json configuration. If not provided, uses title.',
+        minLength: 1,
+        maxLength: 50
+      },
+      addToLocalConfig: {
+        type: 'boolean',
+        description: 'Add the new project to local configuration (.gas-projects.json) for easy reference',
+        default: true
+      },
       parentId: {
         type: 'string',
         description: 'Google Drive folder ID to create the project in. LLM USE: Organize projects in specific Drive folders. Omit to create in root Drive folder.',
@@ -736,17 +747,20 @@ export class GASProjectCreateTool extends BaseTool {
     llmWorkflowGuide: {
       typicalSequence: [
         '1. Authenticate: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
-        '2. Create project: gas_project_create({title: "My Project"})',
-        '3. Get scriptId from response for subsequent operations',
-        '4. Add code: gas_write({path: "scriptId/fileName", content: "..."})',
-        '5. Execute: gas_run({scriptId: "...", js_statement: "..."})'
+        '2. Create project: gas_project_create({title: "My Project", localName: "my-project"})',
+        '3. Project automatically added to local config for easy reference',
+        '4. Use gas_project_set({project: "my-project"}) to start working',
+        '5. Add code: gas_write({path: "fileName", content: "..."}) - uses current project',
+        '6. Execute: gas_run({js_statement: "..."}) - uses current project'
       ],
       returnValue: {
-        scriptId: 'Save this ID - required for all subsequent operations on this project',
+        scriptId: 'Save this ID - required for direct API operations',
+        localName: 'Use this name with gas_project_set, gas_pull, gas_push, etc.',
         webAppUrl: 'Initially null - created when first deployment is made',
         driveUrl: 'Direct link to edit project in Apps Script editor'
       },
       nextSteps: [
+        'Use gas_project_set({project: "localName"}) to set as current',
         'Use gas_write to add JavaScript code files',
         'Use gas_run to execute code in the project',
         'Use gas_deploy_create for web app or API deployments'
@@ -771,22 +785,44 @@ export class GASProjectCreateTool extends BaseTool {
     
     const title = this.validate.string(params.title, 'title', 'project creation');
     const parentId = params.parentId ? this.validate.string(params.parentId, 'parentId', 'project creation') : undefined;
+    const addToLocalConfig = params.addToLocalConfig !== false; // Default to true
+    const localName = params.localName || this.generateLocalName(title);
 
-         try {
-       const project = await this.gasClient.createProject(title, parentId, accessToken);
+    try {
+      const project = await this.gasClient.createProject(title, parentId, accessToken);
 
-       return {
-         status: 'created',
-         scriptId: project.scriptId,
-         title: project.title,
-         createTime: project.createTime,
-         updateTime: project.updateTime,
-         parentId: project.parentId,
-         instructions: 'Project created successfully. Add files with gas_write, then deploy with gas_deploy_create.'
-       };
+      // Optionally add to local configuration
+      if (addToLocalConfig) {
+        const { ProjectResolver } = await import('../utils/projectResolver.js');
+        await ProjectResolver.addProject(localName, project.scriptId, `Created: ${new Date().toLocaleDateString()}`);
+      }
+
+      return {
+        status: 'created',
+        scriptId: project.scriptId,
+        title: project.title,
+        localName: addToLocalConfig ? localName : undefined,
+        addedToLocalConfig: addToLocalConfig,
+        createTime: project.createTime,
+        updateTime: project.updateTime,
+        parentId: project.parentId,
+        instructions: addToLocalConfig 
+          ? `Project created and added to local config as '${localName}'. Use gas_project_set({project: "${localName}"}) to start working.`
+          : 'Project created successfully. Add files with gas_write, then deploy with gas_deploy_create.'
+      };
     } catch (error: any) {
       throw new GASApiError(`Project creation failed: ${error.message}`);
     }
+  }
+
+  private generateLocalName(title: string): string {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '') // Remove special chars
+      .replace(/\s+/g, '-')         // Replace spaces with hyphens
+      .replace(/-+/g, '-')          // Collapse multiple hyphens
+      .replace(/^-|-$/g, '')        // Remove leading/trailing hyphens
+      .substring(0, 30);            // Limit length
   }
 }
 
