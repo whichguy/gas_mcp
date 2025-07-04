@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Fibonacci Chart - Component Test</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+    .chart-container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 30px;
+    }
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 30px;
+      align-items: center;
+      justify-content: center;
+    }
+    input[type="number"] {
+      padding: 8px 12px;
+      border: 2px solid #e1e5e9;
+      border-radius: 6px;
+      font-size: 14px;
+      width: 80px;
+    }
+    .btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .chart-area {
+      width: 100%;
+      height: 400px;
+      border: 2px solid #e1e5e9;
+      border-radius: 8px;
+      position: relative;
+      background: linear-gradient(to bottom, #f8f9fa 0%, white 100%);
+      overflow: hidden;
+    }
+    .bar {
+      position: absolute;
+      bottom: 0;
+      background: linear-gradient(to top, #667eea 0%, #764ba2 100%);
+      border-radius: 3px 3px 0 0;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      color: white;
+      font-size: 10px;
+      font-weight: bold;
+      padding-bottom: 5px;
+    }
+    .legend {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+      font-size: 12px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .legend-color {
+      width: 15px;
+      height: 15px;
+      border-radius: 3px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .subfolder-info {
+      margin-top: 30px;
+      padding: 15px;
+      background: #e8f4f8;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+  </style>
+  <script>
+    function fibonacci(n) {
+      if (n <= 0) return 0;
+      if (n === 1) return 1;
+      return fibonacci(n - 1) + fibonacci(n - 2);
+    }
+    
+    function fibonacciSequence(count) {
+      let sequence = [];
+      for (let i = 0; i < count; i++) {
+        sequence.push(fibonacci(i));
+      }
+      return sequence;
+    }
+    
+    function generateChart() {
+      const input = document.getElementById('countInput');
+      const chartArea = document.getElementById('chartArea');
+      const count = parseInt(input.value) || 10;
+      
+      if (count < 1 || count > 20) {
+        alert('Please enter a number between 1 and 20');
+        return;
+      }
+      
+      // Clear existing chart
+      chartArea.innerHTML = '';
+      
+      // Generate fibonacci sequence
+      const sequence = fibonacciSequence(count);
+      const maxValue = Math.max(...sequence);
+      
+      // Create bars
+      const barWidth = Math.max(30, (chartArea.offsetWidth - 40) / count);
+      
+      sequence.forEach((value, index) => {
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        
+        const height = maxValue > 0 ? (value / maxValue) * (chartArea.offsetHeight - 50) : 20;
+        const left = index * barWidth + 20;
+        
+        bar.style.width = `${barWidth - 5}px`;
+        bar.style.height = `${Math.max(height, 20)}px`;
+        bar.style.left = `${left}px`;
+        bar.textContent = value;
+        
+        // Add hover effect
+        bar.addEventListener('mouseenter', () => {
+          bar.style.transform = 'scale(1.05)';
+          bar.style.zIndex = '10';
+        });
+        
+        bar.addEventListener('mouseleave', () => {
+          bar.style.transform = 'scale(1)';
+          bar.style.zIndex = '1';
+        });
+        
+        chartArea.appendChild(bar);
+      });
+      
+      // Update legend
+      updateLegend(sequence);
+    }
+    
+    function updateLegend(sequence) {
+      const legend = document.getElementById('legend');
+      legend.innerHTML = `
+        <div class="legend-item">
+          <div class="legend-color"></div>
+          <span>Fibonacci Values: ${sequence.join(', ')}</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color"></div>
+          <span>Count: ${sequence.length} | Max: ${Math.max(...sequence)}</span>
+        </div>
+      `;
+    }
+    
+    // Generate initial chart
+    window.onload = function() {
+      generateChart();
+    };
+  </script>
+</head>
+<body>
+  <div class="chart-container">
+    <h1>📊 Fibonacci Chart Component</h1>
+    
+    <div class="controls">
+      <label for="countInput">Count:</label>
+      <input type="number" id="countInput" value="10" min="1" max="20">
+      <button class="btn" onclick="generateChart()">Generate Chart</button>
+    </div>
+    
+    <div id="chartArea" class="chart-area"></div>
+    
+    <div id="legend" class="legend"></div>
+    
+    <div class="subfolder-info">
+      <strong>🗂️ HTML Component Test:</strong><br>
+      📁 File location: <code>components/charts/fibonacci-graph</code><br>
+      ✅ Interactive chart with CSS3 styling<br>
+      ✅ JavaScript-powered Fibonacci visualization<br>
+      ✅ Demonstrates HTML files in logical 3-level subfolder structure<br>
+      ✅ Hover effects and responsive design<br>
+      ✅ Dynamic content generation and animation
+      
+      <div style="margin-top: 15px; font-size: 14px; color: #666;">
+        <strong>Subfolder Structure:</strong><br>
+        • views/calculator (calculator interface)<br>
+        • components/charts/fibonacci-graph (this chart component)<br>
+        • Deep nesting: components → charts → fibonacci-graph
+      </div>
+    </div>
+  </div>
+</body>
+</html>

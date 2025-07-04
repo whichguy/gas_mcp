@@ -6,6 +6,9 @@ import { randomUUID } from 'crypto';
 // Import session manager instead of singleton
 import { SessionAuthManager } from '../auth/sessionManager.js';
 
+// Import local file manager for root initialization  
+import { LocalFileManager } from '../utils/localFileManager.js';
+
 // Import all tools
 import { GASAuthTool } from '../tools/auth.js';
 import { 
@@ -67,9 +70,26 @@ import {
   GASProjectListTool
 } from '../tools/projectContext.js';
 
+// Import local root management tools
+import {
+  GASLocalSetRootTool,
+  GASLocalGetRootTool,
+  GASLocalListProjectsTool,
+  GASLocalShowStructureTool
+} from '../tools/localRootTools.js';
+
+// Import trigger management tools
+import {
+  GATriggerListTool,
+  GATriggerCreateTool,
+  GATriggerDeleteTool
+} from '../tools/triggers.js';
 
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
+
+// Import unified configuration
+import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 
 /**
  * Client session context for MCP Gas Server
@@ -195,16 +215,33 @@ export class MCPGasServer {
     );
 
     this.setupHandlers();
+    this.initializeConfig();
+  }
+
+  /**
+   * Initialize unified configuration system
+   * Consolidates OAuth, projects, and local root settings
+   */
+  private async initializeConfig(): Promise<void> {
+    try {
+      // Use safe workspace detection instead of process.cwd()
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = LocalFileManager.getResolvedWorkingDirectory();
+    await McpGasConfigManager.initialize(workingDir);
+      console.error(`🔧 [SERVER] Unified configuration initialized`);
+    } catch (error) {
+      console.error(`❌ [SERVER] Config initialization failed: ${error}`);
+    }
   }
 
   /**
    * Create session-specific tool instances with isolated authentication
    * 
-   * Each session gets its own instances of all 35 MCP tools, each configured
+   * Each session gets its own instances of all 39 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    * 
-   * ## Tool Categories Created (31 total tools):
+   * ## Tool Categories Created (35 total tools):
    * 
    * ### 🔐 Authentication & Session (1 tool)
    * - `gas_auth` - OAuth 2.0 flow management with desktop PKCE
@@ -237,12 +274,18 @@ export class MCPGasServer {
    * - `gas_proxy_setup` - Proxy configuration
    * 
    * ### 🔄 Local-Remote Sync - INDIVIDUAL COMMANDS (3 tools)
-   * - `gas_pull` - Pull remote files to local src directory
-   * - `gas_push` - Push local src files to remote project  
+   * - `gas_pull` - Pull remote files to local project-specific directory
+   * - `gas_push` - Push local project-specific files to remote project  
    * - `gas_status` - Compare local and remote files
    * 
    * ### 🎯 Project Context - WORKFLOW (1 tool)
    * - `gas_project_set` - ✅ Set current project and auto-pull files
+   * 
+   * ### 📁 Local Root Management - PROJECT STRUCTURE (4 tools)
+   * - `gas_local_set_root` - Set configurable local root directory for all projects
+   * - `gas_local_get_root` - Get current local root configuration
+   * - `gas_local_list_projects` - List all local projects in directory structure
+   * - `gas_local_show_structure` - Show complete directory tree structure
    * 
    * ### Deployment Management (7 tools)
    * - `gas_deploy_create` - Create deployments
@@ -341,6 +384,17 @@ export class MCPGasServer {
       
       // 🎯 Project context - WORKFLOW tool (visible to MCP)
       new GASProjectSetTool(authManager),    // ✅ Main workflow: Set project & auto-pull
+      
+      // 📁 Local root management - PROJECT STRUCTURE tools
+      new GASLocalSetRootTool(authManager),  // Set configurable local root directory
+      new GASLocalGetRootTool(authManager),  // Get current local root configuration
+      new GASLocalListProjectsTool(authManager), // List all local projects
+      new GASLocalShowStructureTool(authManager), // Show directory structure
+      
+      // ⏰ Trigger management - AUTOMATION tools
+      new GATriggerListTool(authManager),    // List all installable triggers
+      new GATriggerCreateTool(authManager),  // Create time-based and event-driven triggers
+      new GATriggerDeleteTool(authManager),  // Delete triggers by ID or function name
       
       // NOTE: gas_project_get, gas_project_add, gas_project_list are HIDDEN from MCP
       // They're used internally by other tools but not exposed to users/LLMs
@@ -590,6 +644,15 @@ export class MCPGasServer {
     // Clear all in-memory sessions including browser launch flags
     this.sessions.clear();
     console.error('Cleared all in-memory sessions and browser launch flags');
+    
+    // Initialize default local root directory if not configured
+    try {
+      const localRoot = await LocalFileManager.initializeDefaultRoot();
+      console.error(`🗂️  Local root directory: ${localRoot}`);
+    } catch (error) {
+      console.error('⚠️  Warning: Failed to initialize local root directory:', error);
+      // Don't fail server startup for this, just log the warning
+    }
     
     const transport = new StdioServerTransport();
     await this.server.connect(transport);

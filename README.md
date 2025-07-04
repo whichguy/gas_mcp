@@ -183,7 +183,78 @@ Add to your Cursor configuration:
 }
 ```
 
-## 🔧 All 33 Available Tools
+## ⚙️ Configuration
+
+The MCP Gas Server uses a single unified configuration file: `mcp-gas-config.json`
+
+### Unified Configuration Structure
+
+```json
+{
+  "oauth": {
+    "client_id": "your-oauth-client-id.apps.googleusercontent.com",
+    "type": "uwp",
+    "redirect_uris": ["http://127.0.0.1/*", "http://localhost/*"],
+    "scopes": ["https://www.googleapis.com/auth/script.projects", "..."]
+  },
+  "projects": {
+    "my-project": {
+      "scriptId": "1ABC...XYZ",
+      "name": "my-project",
+      "description": "My project description"
+    }
+  },
+  "environments": {
+    "dev": { "scriptId": "1ABC...XYZ", "name": "my-project" }
+  },
+  "localRoot": {
+    "rootPath": "/Users/you/src/mcp_gas/gas-projects",
+    "lastUpdated": "2025-06-29T16:47:43.135Z"
+  },
+  "server": {
+    "defaultWorkingDir": "/Users/you/src/mcp_gas",
+    "configVersion": "1.0.0",
+    "lastModified": "2025-06-29T16:47:43.135Z"
+  }
+}
+```
+
+### Starting the Server
+
+```bash
+# Using npm (recommended)
+npm start
+
+# Direct invocation
+node dist/src/index.js --config ./mcp-gas-config.json
+
+# Custom config location
+node dist/src/index.js --config /path/to/custom-config.json
+```
+
+### Cursor IDE Integration
+
+Update your Cursor configuration to include the config file:
+
+```json
+{
+  "mcpServers": {
+    "mcp-gas": {
+      "command": "node",
+      "args": [
+        "/Users/you/src/mcp_gas/dist/src/index.js",
+        "--config",
+        "/Users/you/src/mcp_gas/mcp-gas-config.json"
+      ],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+## 🔧 All 43 Available Tools
 
 ### **📋 Tool Usage Guide**
 
@@ -214,12 +285,28 @@ Add to your Cursor configuration:
 | `gas_mv` | Move/rename files | `from`, `to` |
 | `gas_cp` | Copy files | `from`, `to` |
 
+### ⚠️ Advanced Filesystem Operations (3 tools)
+> **Raw access**: Direct remote operations with explicit project IDs
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_raw_cat` | Read files with explicit project ID | `path` (full projectId/filename) |
+| `gas_raw_write` | Write files with explicit project ID | `path`, `content` |
+| `gas_raw_copy` | Copy files between projects | `from`, `to` |
+
 ### 🚀 Smart Execution (1 tool)
 > **Current project**: Uses project context automatically
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
 | **`gas_run`** | **✅ Execute with current project** | `js_statement` |
+
+### ⚠️ Advanced Execution (1 tool)
+> **Raw execution**: Direct execution with explicit project IDs
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_raw_run` | Execute with explicit project ID | `scriptId`, `js_statement` |
 
 ### 🎯 Project Workflow (1 tool)
 > **Main workflow**: Set project and start development
@@ -241,23 +328,19 @@ Add to your Cursor configuration:
 | `gas_reorder` | Change file execution order | `projectId`, `fileName`, `newPosition` |
 | `gas_project_metrics` | Get project analytics | `scriptId`, `metricsGranularity?` |
 
-### Local Sync & Project Context (7 tools)
+### Local Sync & Project Context (4 tools)
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
 | `gas_project_set` | Set current project & cache files | `project?`, `workingDir?` |
-| `gas_project_get` | Get current project info | `workingDir?`, `detailed?` |
-| `gas_project_add` | Add project to configuration | `name`, `scriptId`, `description?` |
-| `gas_project_list` | List configured projects | `workingDir?` |
 | `gas_pull` | Pull remote files to local src | `project?`, `force?` |
 | `gas_push` | Push local files to remote | `project?`, `dryRun?` |
 | `gas_status` | Compare local vs remote files | `project?`, `detailed?` |
 
-### Execution Tools (3 tools)
+### Execution Tools (2 tools)
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
-| `gas_run` | Execute JavaScript dynamically | `scriptId`, `js_statement` |
 | `gas_run_api_exec` | Execute via API | `scriptId`, `functionName`, `parameters?` |
 | `gas_proxy_setup` | Setup HTTP proxy | `scriptId`, `deploy?` |
 
@@ -294,6 +377,23 @@ Add to your Cursor configuration:
 | `gas_find_drive_script` | Find container scripts | `fileName` |
 | `gas_bind_script` | Bind script to container | `containerName`, `scriptName` |
 | `gas_create_script` | Create container script | `containerName`, `scriptName?` |
+
+### Local Root Management (4 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_local_set_root` | Set local root directory | `rootPath`, `workingDir?` |
+| `gas_local_get_root` | Get current local root | `workingDir?` |
+| `gas_local_list_projects` | List local projects | `detailed?`, `workingDir?` |
+| `gas_local_show_structure` | Show directory structure | `depth?`, `workingDir?` |
+
+### Trigger Management (3 tools)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `gas_trigger_list` | List installable triggers | `scriptId`, `detailed?` |
+| `gas_trigger_create` | Create new trigger | `scriptId`, `functionName`, `triggerType` |
+| `gas_trigger_delete` | Delete trigger | `scriptId`, `triggerId?`, `functionName?` |
 
 For complete API documentation, see [docs/api/API_REFERENCE.md](docs/api/API_REFERENCE.md) and [docs/api/LOCAL_SYNC_API.md](docs/api/LOCAL_SYNC_API.md).
 

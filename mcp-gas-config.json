@@ -1,0 +1,56 @@
+{
+  "oauth": {
+    "client_id": "428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com",
+    "type": "uwp",
+    "redirect_uris": [
+      "http://127.0.0.1/*",
+      "http://localhost/*"
+    ],
+    "scopes": [
+      "https://www.googleapis.com/auth/script.projects",
+      "https://www.googleapis.com/auth/script.processes",
+      "https://www.googleapis.com/auth/script.deployments",
+      "https://www.googleapis.com/auth/script.scriptapp",
+      "https://www.googleapis.com/auth/script.external_request",
+      "https://www.googleapis.com/auth/script.webapp.deploy",
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/documents",
+      "https://www.googleapis.com/auth/forms",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+  },
+  "projects": {
+    "SyncGoogleGroups": {
+      "scriptId": "1QAPMb_1TpIMwMEHfi_jq1S7EZFyvRDFkW1FEbmzVssuLtIO3DKMUO0yr",
+      "name": "SyncGoogleGroups",
+      "description": "Google Groups synchronization project"
+    },
+    "fibonacci-calc": {
+      "scriptId": "1kf-Gda6l7oNVlm19kvKoMY66EkvMX6yUjeZraRnhNSxrH0HtmqYFgaym",
+      "name": "fibonacci-calc",
+      "description": "Fibonacci Calculator with organized directory structure"
+    },
+    "dir-test-new": {
+      "scriptId": "1XVWXzfs1PkBYoeAIc827fMwy6QJAQlTZG4zpcPbnta23uznHpXfU9Ewy",
+      "name": "dir-test-new",
+      "description": "Created: 6/29/2025"
+    }
+  },
+  "environments": {
+    "dev": {
+      "scriptId": "1QAPMb_1TpIMwMEHfi_jq1S7EZFyvRDFkW1FEbmzVssuLtIO3DKMUO0yr",
+      "name": "SyncGoogleGroups"
+    }
+  },
+  "localRoot": {
+    "rootPath": "/Users/jameswiese/src/mcp_gas/gas-projects",
+    "lastUpdated": "2025-06-29T16:47:43.135Z"
+  },
+  "server": {
+    "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
+    "configVersion": "1.0.0",
+    "lastModified": "2025-06-29T16:47:43.135Z"
+  }
+}

@@ -23,7 +23,7 @@
     "test:all": "npm run test:core && npm run test:unit && npm run test:gas-run",
     "test:full": "npm run test:all && npm run test:advanced",
     "test:integration": "./scripts/test-integration.sh",
-    "start": "npm run build && node dist/src/index.js",
+    "start": "npm run build && node dist/src/index.js --config ./mcp-gas-config.json",
     "dev": "npx tsc --watch",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
@@ -82,7 +82,9 @@
     "mcp-gas": {
       "command": "node",
       "args": [
-        "/Users/jameswiese/src/mcp_gas/dist/src/index.js"
+        "/Users/jameswiese/src/mcp_gas/dist/src/index.js",
+        "--config",
+        "/Users/jameswiese/src/mcp_gas/mcp-gas-config.json"
       ],
       "env": {
         "NODE_ENV": "production"

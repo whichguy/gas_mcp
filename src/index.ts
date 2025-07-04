@@ -2,12 +2,49 @@
 
 import { MCPGasServer } from './server/mcpServer.js';
 import { SessionAuthManager } from './auth/sessionManager.js';
+import { McpGasConfigManager } from './config/mcpGasConfig.js';
+import path from 'path';
+
+/**
+ * Parse command line arguments
+ */
+function parseArgs(): { configPath?: string } {
+  const args = process.argv.slice(2);
+  const result: { configPath?: string } = {};
+  
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--config' || args[i] === '-c') {
+      if (i + 1 < args.length) {
+        result.configPath = args[i + 1];
+        i++; // Skip the next argument since we consumed it
+      } else {
+        console.error('Error: --config requires a file path');
+        process.exit(1);
+      }
+    }
+  }
+  
+  return result;
+}
 
 /**
  * Main entry point for MCP Gas Server
  */
 async function main() {
+  const { configPath } = parseArgs();
+  
   console.error('🚀 Starting MCP Gas Server with forced desktop authentication...');
+  
+  // Initialize configuration with explicit config file path
+  if (configPath) {
+    const absoluteConfigPath = path.resolve(configPath);
+    console.error(`🔧 Using config file: ${absoluteConfigPath}`);
+    await McpGasConfigManager.initializeFromFile(absoluteConfigPath);
+  } else {
+    console.error(`⚠️  No config file specified. Use --config <path> to specify configuration file.`);
+    console.error(`   Example: node dist/index.js --config ./mcp-gas-config.json`);
+    process.exit(1);
+  }
   
   // FORCE CLEAR ALL CACHED TOKENS ON STARTUP
   console.error('🗑️  Clearing all cached authentication tokens (forced restart behavior)...');

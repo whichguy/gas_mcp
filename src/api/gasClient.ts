@@ -511,12 +511,24 @@ export class GASClient {
   /**
    * Create or update a single file
    */
-  async updateFile(scriptId: string, fileName: string, content: string, position?: number, accessToken?: string): Promise<GASFile[]> {
+  async updateFile(scriptId: string, fileName: string, content: string, position?: number, accessToken?: string, explicitType?: 'SERVER_JS' | 'HTML' | 'JSON'): Promise<GASFile[]> {
     // Get current project content
     const currentFiles = await this.getProjectContent(scriptId, accessToken);
     
-    // ✅ SIMPLIFIED: Use exact fileName as provided with no manipulation
-    const fileType = getFileType(fileName);
+    // ✅ PRIORITY SYSTEM: 1) Explicit type, 2) Existing file type, 3) Extension detection
+    let fileType: string;
+    if (explicitType) {
+      fileType = explicitType;
+    } else {
+      // Check if file already exists and preserve its type
+      const existingFile = currentFiles.find(f => f.name === fileName);
+      if (existingFile?.type) {
+        fileType = existingFile.type;
+      } else {
+        // Fall back to extension detection
+        fileType = getFileType(fileName);
+      }
+    }
     
     // Find existing file by exact name match ONLY
     const existingIndex = currentFiles.findIndex(f => f.name === fileName);

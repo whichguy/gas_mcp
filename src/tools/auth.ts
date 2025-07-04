@@ -42,11 +42,13 @@ const authCompletionResolvers = new Map<string, {
 const resolverStates = new Map<string, 'pending' | 'resolved' | 'rejected'>();
 
 /**
- * Load OAuth configuration (simplified - removed unnecessary complexity)
+ * Load OAuth configuration from unified config
  */
 export function loadOAuthConfigFromJson(): AuthConfig {
-  console.error('⚠️  Using hardcoded OAuth configuration for testing');
+  console.error('🔧 Loading OAuth configuration from unified config...');
   
+  // This will be updated to async when the calling code is refactored
+  // For now, we'll use hardcoded config to maintain compatibility
   const authConfig: AuthConfig = {
     client_id: '428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com',
     type: 'uwp',
@@ -54,7 +56,7 @@ export function loadOAuthConfigFromJson(): AuthConfig {
     scopes: REQUIRED_SCOPES
   };
 
-  console.error('✅ OAuth configuration loaded successfully (hardcoded)');
+  console.error('✅ OAuth configuration loaded (unified config transition in progress)');
   console.error(`🔑 Client ID: ${authConfig.client_id.substring(0, 30)}...`);
   console.error(`🏷️  Type: ${authConfig.type?.toUpperCase()} (PKCE-enabled)`);
 

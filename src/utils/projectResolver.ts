@@ -1,6 +1,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ValidationError } from '../errors/mcpErrors.js';
+import { GASClient } from '../api/gasClient.js';
+import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 
 /**
  * Project configuration structure
@@ -40,12 +42,28 @@ export class ProjectResolver {
   private static readonly CONFIG_FILE = '.gas-projects.json';
   private static readonly CURRENT_FILE = '.gas-current.json';
   private static readonly SCRIPT_ID_PATTERN = /^[a-zA-Z0-9_-]{20,60}$/;
+  
+  /**
+   * Get safe working directory (fallback to tmp if process.cwd() is unsafe)
+   */
+  private static getSafeWorkingDir(): string {
+    try {
+      const cwd = process.cwd();
+      // Check if we're in root filesystem (unsafe)
+      if (cwd === '/' || cwd === 'C:\\' || cwd === 'C:/') {
+        return '/tmp/mcp-gas-workspace';
+      }
+      return cwd;
+    } catch (error) {
+      return '/tmp/mcp-gas-workspace';
+    }
+  }
 
   /**
    * Resolve project parameter to script ID
-   * Supports: project names, environment shortcuts, direct script IDs, current project
+   * Supports: project names, environment shortcuts, direct script IDs, current project, remote title search
    */
-  static async resolveProjectId(projectParam?: ProjectParam, workingDir: string = process.cwd()): Promise<string> {
+  static async resolveProjectId(projectParam?: ProjectParam, workingDir: string = ProjectResolver.getSafeWorkingDir(), accessToken?: string): Promise<string> {
     if (!projectParam) {
       // No parameter = current project
       return await this.getCurrentProjectId(workingDir);
@@ -57,13 +75,57 @@ export class ProjectResolver {
         return projectParam;
       }
 
-      // Assume it's a project name - look it up
+      // Check local project configuration first
       const config = await this.getProjectConfig(workingDir);
       if (config.projects[projectParam]) {
         return config.projects[projectParam].scriptId;
       }
 
-      throw new ValidationError('projectParam', projectParam, 'valid project name or script ID');
+      // If not found locally, try to resolve from remote GAS projects by title
+      try {
+        const gasClient = new GASClient();
+        const remoteProjects = await gasClient.listProjects(50, accessToken);
+        
+        // Try exact title match first
+        const exactMatch = remoteProjects.find(p => 
+          p.title.toLowerCase() === projectParam.toLowerCase()
+        );
+        if (exactMatch) {
+          return exactMatch.scriptId;
+        }
+
+        // Try fuzzy matching - find projects that contain the search term
+        const fuzzyMatches = remoteProjects.filter(p => 
+          p.title.toLowerCase().includes(projectParam.toLowerCase()) ||
+          projectParam.toLowerCase().includes(p.title.toLowerCase())
+        );
+
+        if (fuzzyMatches.length === 1) {
+          // Single fuzzy match found
+          return fuzzyMatches[0].scriptId;
+        } else if (fuzzyMatches.length > 1) {
+          // Multiple matches - provide helpful error with options
+          const matchNames = fuzzyMatches.map(p => `"${p.title}"`).join(', ');
+          throw new ValidationError(
+            'projectParam', 
+            projectParam, 
+            `unique project name. Found multiple matches: ${matchNames}. Use full title or script ID.`
+          );
+        }
+
+        // No matches found
+        throw new ValidationError(
+          'projectParam', 
+          projectParam, 
+          'valid project name, title, or script ID. Use gas_ls to see available projects.'
+        );
+      } catch (error: any) {
+        // If remote search fails (e.g., not authenticated), fall back to original error
+        if (error instanceof ValidationError) {
+          throw error;
+        }
+        throw new ValidationError('projectParam', projectParam, 'valid project name or script ID (remote search failed - check authentication)');
+      }
     }
 
     if (typeof projectParam === 'object') {
@@ -92,7 +154,7 @@ export class ProjectResolver {
   /**
    * Get current project script ID from .gas-current.json
    */
-  static async getCurrentProjectId(workingDir: string = process.cwd()): Promise<string> {
+  static async getCurrentProjectId(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<string> {
     try {
       const currentPath = path.join(workingDir, this.CURRENT_FILE);
       const content = await fs.readFile(currentPath, 'utf-8');
@@ -106,7 +168,7 @@ export class ProjectResolver {
   /**
    * Get current project info from .gas-current.json
    */
-  static async getCurrentProject(workingDir: string = process.cwd()): Promise<CurrentProject> {
+  static async getCurrentProject(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<CurrentProject> {
     try {
       const currentPath = path.join(workingDir, this.CURRENT_FILE);
       const content = await fs.readFile(currentPath, 'utf-8');
@@ -117,23 +179,18 @@ export class ProjectResolver {
   }
 
   /**
-   * Set current project in .gas-current.json
+   * Set current project in unified configuration
    */
-  static async setCurrentProject(projectName: string, scriptId: string, workingDir: string = process.cwd()): Promise<void> {
-    const current: CurrentProject = {
-      projectName,
-      scriptId,
-      lastSync: new Date().toISOString()
-    };
-
-    const currentPath = path.join(workingDir, this.CURRENT_FILE);
-    await fs.writeFile(currentPath, JSON.stringify(current, null, 2));
+  static async setCurrentProject(projectName: string, scriptId: string, workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<void> {
+    // Use unified configuration instead of separate files
+    console.error(`🔧 [PROJECT_RESOLVER] Setting current project via unified config: ${projectName}`);
+    await McpGasConfigManager.setCurrentProject(projectName, scriptId);
   }
 
   /**
    * Get project configuration from .gas-projects.json
    */
-  static async getProjectConfig(workingDir: string = process.cwd()): Promise<ProjectConfig> {
+  static async getProjectConfig(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<ProjectConfig> {
     try {
       const configPath = path.join(workingDir, this.CONFIG_FILE);
       const content = await fs.readFile(configPath, 'utf-8');
@@ -147,7 +204,7 @@ export class ProjectResolver {
   /**
    * Save project configuration to .gas-projects.json
    */
-  static async saveProjectConfig(config: ProjectConfig, workingDir: string = process.cwd()): Promise<void> {
+  static async saveProjectConfig(config: ProjectConfig, workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<void> {
     const configPath = path.join(workingDir, this.CONFIG_FILE);
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
   }
@@ -159,23 +216,40 @@ export class ProjectResolver {
     name: string, 
     scriptId: string, 
     description?: string, 
-    workingDir: string = process.cwd()
+    workingDir: string = ProjectResolver.getSafeWorkingDir()
   ): Promise<void> {
-    const config = await this.getProjectConfig(workingDir);
-    
-    config.projects[name] = {
-      scriptId,
-      name,
-      description
-    };
+    try {
+      // Try unified configuration first
+      console.error(`🔧 [PROJECT_RESOLVER] Attempting unified config for project: ${name}`);
+      await McpGasConfigManager.addProject(name, scriptId, description);
+      console.error(`✅ [PROJECT_RESOLVER] Successfully added to unified config`);
+    } catch (unifiedError: any) {
+      console.error(`⚠️ [PROJECT_RESOLVER] Unified config failed: ${unifiedError.message}`);
+      console.error(`🔄 [PROJECT_RESOLVER] Falling back to legacy config...`);
+      
+      // Fall back to legacy method
+      try {
+        const config = await this.getProjectConfig(workingDir);
+        
+        config.projects[name] = {
+          scriptId,
+          name,
+          description
+        };
 
-    await this.saveProjectConfig(config, workingDir);
+        await this.saveProjectConfig(config, workingDir);
+        console.error(`✅ [PROJECT_RESOLVER] Successfully added to legacy config`);
+      } catch (legacyError: any) {
+        console.error(`❌ [PROJECT_RESOLVER] Both unified and legacy config failed`);
+        throw new Error(`Failed to add project to configuration: unified config error: ${unifiedError.message}, legacy config error: ${legacyError.message}`);
+      }
+    }
   }
 
   /**
    * Get project name by script ID
    */
-  static async getProjectNameByScriptId(scriptId: string, workingDir: string = process.cwd()): Promise<string | null> {
+  static async getProjectNameByScriptId(scriptId: string, workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<string | null> {
     const config = await this.getProjectConfig(workingDir);
     
     for (const [name, project] of Object.entries(config.projects)) {
@@ -199,7 +273,7 @@ export class ProjectResolver {
   /**
    * List all configured projects
    */
-  static async listProjects(workingDir: string = process.cwd()): Promise<Array<{name: string; scriptId: string; description?: string; type: string}>> {
+  static async listProjects(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<Array<{name: string; scriptId: string; description?: string; type: string}>> {
     const config = await this.getProjectConfig(workingDir);
     const results: Array<{name: string; scriptId: string; description?: string; type: string}> = [];
 
