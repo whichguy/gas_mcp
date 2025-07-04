@@ -99,16 +99,16 @@ export function parsePath(path: string): ParsedPath {
   // 2. It has any extension (contains a dot)
   // 3. It looks like a code file (starts with uppercase or contains camelCase)
   // 4. It's a special Google Apps Script file (appsscript manifest or Code)
-  // 5. It's a single component after project ID (no nested path separators)
-  // 6. It's a valid Google Apps Script filename (alphanumeric, underscores, hyphens)
+  // 5. The last part is a valid Google Apps Script filename (alphanumeric, underscores, hyphens)
+  // 6. In GAS, filenames with "/" are valid and represent logical directory structure
   const hasKnownExtension = /\.(gs|ts|html|json)$/i.test(lastPart);
   const hasAnyExtension = lastPart.includes('.');
   const looksLikeCodeFile = /^[A-Z]/.test(lastPart) || /[a-z][A-Z]/.test(lastPart);
   const isSpecialGASFile = lastPart === 'appsscript' || lastPart === 'Code';
-  const isSingleComponent = parts.length === 2; // Only project ID + filename
   const isValidGASFilename = /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(lastPart);
   
-  const isFile = hasKnownExtension || hasAnyExtension || looksLikeCodeFile || isSpecialGASFile || (isSingleComponent && isValidGASFilename);
+  // ✅ FIXED: Accept files with directory prefixes - GAS supports "/" in filenames
+  const isFile = hasKnownExtension || hasAnyExtension || looksLikeCodeFile || isSpecialGASFile || isValidGASFilename;
 
   if (isFile) {
     return {

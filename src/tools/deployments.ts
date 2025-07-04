@@ -732,6 +732,10 @@ export class GASProjectCreateTool extends BaseTool {
           sharing: 'Project inherits sharing permissions from parent folder'
         }
       },
+      workingDir: {
+        type: 'string',
+        description: 'Working directory (defaults to current directory)'
+      },
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation. LLM TYPICAL: Omit this - tool uses session authentication from gas_auth.',
@@ -787,6 +791,16 @@ export class GASProjectCreateTool extends BaseTool {
     const parentId = params.parentId ? this.validate.string(params.parentId, 'parentId', 'project creation') : undefined;
     const addToLocalConfig = params.addToLocalConfig !== false; // Default to true
     const localName = params.localName || this.generateLocalName(title);
+    
+    // Use workspace detection instead of process.cwd()
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
+
+    // Debug logging to stderr
+    console.error(`🔍 [GAS_PROJECT_CREATE] Debug info:`);
+    console.error(`   - params.workingDir: ${params.workingDir}`);
+    console.error(`   - process.cwd(): ${process.cwd()}`);
+    console.error(`   - detected workingDir: ${workingDir}`);
 
     try {
       const project = await this.gasClient.createProject(title, parentId, accessToken);
@@ -794,7 +808,7 @@ export class GASProjectCreateTool extends BaseTool {
       // Optionally add to local configuration
       if (addToLocalConfig) {
         const { ProjectResolver } = await import('../utils/projectResolver.js');
-        await ProjectResolver.addProject(localName, project.scriptId, `Created: ${new Date().toLocaleDateString()}`);
+        await ProjectResolver.addProject(localName, project.scriptId, `Created: ${new Date().toLocaleDateString()}`, workingDir);
       }
 
       return {

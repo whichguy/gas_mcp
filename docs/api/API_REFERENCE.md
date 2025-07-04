@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-This comprehensive API reference documents all 36 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
+This comprehensive API reference documents all 43 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
 
 ## 📋 Table of Contents
 
@@ -13,8 +13,12 @@ This comprehensive API reference documents all 36 MCP Gas tools with detailed sc
 5. [Execution Tools](#execution-tools)
 6. [Deployment Tools](#deployment-tools)
 7. [Drive Container Tools](#drive-container-tools)
-8. [Error Handling](#error-handling)
-9. [Usage Patterns](#usage-patterns)
+8. [Local Root Management Tools](#local-root-management-tools)
+9. [Trigger Management Tools](#trigger-management-tools)
+10. [Process Management Tools](#process-management-tools)
+11. [Version Management Tools](#version-management-tools)
+12. [Error Handling](#error-handling)
+13. [Usage Patterns](#usage-patterns)
 
 ---
 
@@ -1651,8 +1655,222 @@ const createResult = await callTool('gas_create_script', {
 }
 ```
 
+## 📁 Local Root Management Tools
+
+### `gas_local_set_root` - Set Local Root Directory
+
+Set the local root directory where all GAS project folders will be stored.
+
+#### Input Schema
+```typescript
+interface GasLocalSetRootInput {
+  rootPath: string;
+  workingDir?: string;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+```typescript
+const result = await callTool('gas_local_set_root', {
+  rootPath: '~/Development/gas-projects'
+});
+
+// Response:
+{
+  "success": true,
+  "rootPath": "/Users/username/Development/gas-projects",
+  "created": true,
+  "message": "Local root directory set successfully"
+}
+```
+
+### `gas_local_get_root` - Get Current Local Root
+
+Get the current local root directory configuration.
+
+#### Input Schema
+```typescript
+interface GasLocalGetRootInput {
+  workingDir?: string;
+  accessToken?: string;
+}
+```
+
+### `gas_local_list_projects` - List Local Projects
+
+List all local GAS projects found in the local root directory structure.
+
+#### Input Schema
+```typescript
+interface GasLocalListProjectsInput {
+  detailed?: boolean;
+  workingDir?: string;
+  accessToken?: string;
+}
+```
+
+### `gas_local_show_structure` - Show Directory Structure
+
+Show the directory structure of the local root with all project folders.
+
+#### Input Schema
+```typescript
+interface GasLocalShowStructureInput {
+  depth?: number; // 1-3, default: 2
+  workingDir?: string;
+  accessToken?: string;
+}
+```
+
 ---
 
+## ⏰ Trigger Management Tools
+
+### `gas_trigger_list` - List Installable Triggers
+
+List all installable triggers for a Google Apps Script project.
+
+#### Input Schema
+```typescript
+interface GasTriggerListInput {
+  scriptId: string;
+  detailed?: boolean;
+  accessToken?: string;
+}
+```
+
+### `gas_trigger_create` - Create New Trigger
+
+Create a new installable trigger for a Google Apps Script project.
+
+#### Input Schema
+```typescript
+interface GasTriggerCreateInput {
+  scriptId: string;
+  functionName: string;
+  triggerType: 'time' | 'spreadsheet' | 'form' | 'calendar' | 'document' | 'addon' | 'gmail';
+  timeOptions?: TimeOptions;
+  spreadsheetOptions?: SpreadsheetOptions;
+  formOptions?: FormOptions;
+  calendarOptions?: CalendarOptions;
+  documentOptions?: DocumentOptions;
+  addonOptions?: AddonOptions;
+  gmailOptions?: GmailOptions;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Time-based Trigger**
+```typescript
+const trigger = await callTool('gas_trigger_create', {
+  scriptId: 'abc123...',
+  functionName: 'dailyReport',
+  triggerType: 'time',
+  timeOptions: {
+    interval: 'daily',
+    hour: 9,
+    timezone: 'America/New_York'
+  }
+});
+```
+
+**Spreadsheet Trigger**
+```typescript
+const trigger = await callTool('gas_trigger_create', {
+  scriptId: 'abc123...',
+  functionName: 'onSheetEdit',
+  triggerType: 'spreadsheet',
+  spreadsheetOptions: {
+    eventType: 'onEdit',
+    spreadsheetId: 'spreadsheet123...'
+  }
+});
+```
+
+### `gas_trigger_delete` - Delete Trigger
+
+Delete an installable trigger from a Google Apps Script project.
+
+#### Input Schema
+```typescript
+interface GasTriggerDeleteInput {
+  scriptId: string;
+  triggerId?: string;
+  functionName?: string;
+  deleteAll?: boolean;
+  accessToken?: string;
+}
+```
+
+---
+
+## 📊 Process Management Tools
+
+### `gas_process_list` - List User Processes
+
+List information about processes made by or on behalf of a user.
+
+#### Input Schema
+```typescript
+interface GasProcessListInput {
+  pageSize?: number; // 1-50, default: 50
+  pageToken?: string;
+  userProcessFilter?: UserProcessFilter;
+  accessToken?: string;
+}
+```
+
+### `gas_process_list_script` - List Script Processes
+
+List information about a script's executed processes.
+
+#### Input Schema
+```typescript
+interface GasProcessListScriptInput {
+  scriptId: string;
+  pageSize?: number; // 1-50, default: 50
+  pageToken?: string;
+  scriptProcessFilter?: ScriptProcessFilter;
+  accessToken?: string;
+}
+```
+
+---
+
+## 📦 Version Management Tools
+
+### `gas_version_get` - Get Version Details
+
+Get details of a specific version of a script project.
+
+#### Input Schema
+```typescript
+interface GasVersionGetInput {
+  scriptId: string;
+  versionNumber: number;
+  accessToken?: string;
+}
+```
+
+### `gas_version_list` - List All Versions
+
+List all versions of a script project.
+
+#### Input Schema
+```typescript
+interface GasVersionListInput {
+  scriptId: string;
+  pageSize?: number; // 1-50, default: 50
+  pageToken?: string;
+  accessToken?: string;
+}
+```
+
+--- 
 ## 🚨 Error Handling
 
 ### Common Error Types

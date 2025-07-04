@@ -62,8 +62,7 @@ export class GASRunTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       accessToken: {
         type: 'string',
@@ -86,24 +85,25 @@ export class GASRunTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const js_statement = this.validate.string(params.js_statement, 'js_statement', 'JavaScript execution');
     const autoRedeploy = params.autoRedeploy !== false;
+    
+    // Get auth token first for project resolution
+    const accessToken = await this.getAuthToken(params);
     
     // Resolve script ID
     let scriptId: string;
     
     try {
-      scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir);
+      scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
     } catch (error: any) {
       if (!params.project) {
         throw new ValidationError('project', 'undefined', 'project parameter or current project (use gas_project_set)');
       }
       throw error;
     }
-
-    // Get auth token and delegate to raw execution
-    const accessToken = await this.getAuthToken(params);
     
     // Create a raw tool instance to execute the actual logic
     const rawTool = new GASRawRunTool(this.sessionAuthManager);

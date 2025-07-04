@@ -37,8 +37,7 @@ export class GASProjectSetTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       autoPull: {
         type: 'boolean',
@@ -62,11 +61,12 @@ export class GASProjectSetTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const autoPull = params.autoPull !== false; // Default to true
     
     // Resolve project parameter to script ID
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir);
+    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
     
     // Get project info using EXISTING gas_info functionality
     const projectInfo = await this.gasClient.getProject(scriptId, accessToken);
@@ -141,8 +141,7 @@ export class GASProjectGetTool extends BaseTool {
     properties: {
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       detailed: {
         type: 'boolean',
@@ -164,7 +163,8 @@ export class GASProjectGetTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     try {
       // Get current project info
@@ -276,8 +276,7 @@ export class GASProjectAddTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       }
     },
     required: ['name', 'scriptId']
@@ -288,7 +287,8 @@ export class GASProjectAddTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     // Validate script ID format
     const scriptId = this.validate.scriptId(params.scriptId, 'project addition');
@@ -323,8 +323,7 @@ export class GASProjectListTool extends BaseTool {
     properties: {
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       }
     }
   };
@@ -334,7 +333,8 @@ export class GASProjectListTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     // Get projects using utility
     const projects = await ProjectResolver.listProjects(workingDir);

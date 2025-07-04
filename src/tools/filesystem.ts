@@ -35,8 +35,7 @@ export class GASCatTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       accessToken: {
         type: 'string',
@@ -59,7 +58,8 @@ export class GASCatTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const preferLocal = params.preferLocal !== false;
     let filePath = params.path;
 
@@ -168,8 +168,7 @@ export class GASWriteTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       accessToken: {
         type: 'string',
@@ -192,7 +191,8 @@ export class GASWriteTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const localOnly = params.localOnly || false;
     const remoteOnly = params.remoteOnly || false;
     let filePath = params.path;
@@ -251,47 +251,35 @@ export class GASWriteTool extends BaseTool {
       try {
         const accessToken = await this.getAuthToken(params);
         
-        // Use explicit file type or auto-detect from content
+        // Use improved file type detection from GASRawWriteTool
         let fileType: 'SERVER_JS' | 'HTML' | 'JSON';
         if (params.fileType) {
           fileType = params.fileType as 'SERVER_JS' | 'HTML' | 'JSON';
         } else {
-          // Auto-detect from content (similar to LocalFileManager logic)
-          const trimmed = content.trim();
-          if (filename === 'appsscript') {
+          // Use same detection logic as gas_raw_write for consistency
+          if (filename.toLowerCase() === 'appsscript') {
             fileType = 'JSON';
-          } else if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-            fileType = 'JSON';
-          } else if (trimmed.includes('<html>') || trimmed.includes('<!DOCTYPE') || 
-                     trimmed.includes('<head>') || trimmed.includes('<body>') ||
-                     /^<\s*!DOCTYPE\s+html/i.test(trimmed)) {
+          } else if (filename.toLowerCase().endsWith('.html') || filename.toLowerCase().endsWith('.htm')) {
             fileType = 'HTML';
-          } else {
+          } else if (filename.toLowerCase().endsWith('.json')) {
+            fileType = 'JSON';
+          } else if (filename.toLowerCase().endsWith('.js') || filename.toLowerCase().endsWith('.gs')) {
             fileType = 'SERVER_JS';
+          } else {
+            // Content-based detection as fallback
+            const trimmed = content.trim();
+            if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html>')) {
+              fileType = 'HTML';
+            } else if (trimmed.startsWith('{') && trimmed.endsWith('}') && filename === 'appsscript') {
+              fileType = 'JSON';
+            } else {
+              fileType = 'SERVER_JS';
+            }
           }
         }
         
-        // Use updateProjectContent with explicit file type
-        const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-        const existingIndex = currentFiles.findIndex(f => f.name === filename);
-        
-        const newFile = {
-          name: filename,
-          type: fileType,
-          source: content
-        };
-        
-        let updatedFiles;
-        if (existingIndex >= 0) {
-          // Update existing file
-          updatedFiles = [...currentFiles];
-          updatedFiles[existingIndex] = newFile;
-        } else {
-          // Add new file
-          updatedFiles = [...currentFiles, newFile];
-        }
-        
-        await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
+        // Use the improved updateFile method with explicit file type
+        await this.gasClient.updateFile(scriptId, filename, content, undefined, accessToken, fileType);
         results.remoteWritten = true;
         (results as any).detectedType = fileType;
       } catch (error: any) {
@@ -321,14 +309,14 @@ export class GASWriteTool extends BaseTool {
  */
 export class GASListTool extends BaseTool {
   public name = 'gas_ls';
-  public description = 'List files and directories in a Google Apps Script project';
+  public description = 'List files and directories in a Google Apps Script project. SPECIAL FILE: Always shows appsscript.json if present - this manifest file must exist in project root and contains essential project metadata.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       path: {
         type: 'string',
-        description: 'Path to list: empty for all projects, projectId for project files, projectId/prefix for logical grouping (no real folders in GAS)',
+        description: 'Path to list: empty for all projects, projectId for project files, projectId/prefix for logical grouping (no real folders in GAS). NOTE: appsscript.json will always be included in listings if present in the project.',
         default: ''
       },
       detailed: {
@@ -498,14 +486,14 @@ export class GASRawCatTool extends BaseTool {
  */
 export class GASRawWriteTool extends BaseTool {
   public name = 'gas_raw_write';
-  public description = '🔧 ADVANCED: Write files with explicit project ID path. Use gas_write for normal workflow.';
+  public description = '🔧 ADVANCED: Write files with explicit project ID path. Use gas_write for normal workflow. SPECIAL FILE: appsscript.json must always reside in project root (no subfolders allowed) and contains essential project metadata.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: projectId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content.',
+        description: 'Full path to file: projectId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (projectId/appsscript), never in subfolders.',
         pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
         minLength: 25,
         maxLength: 200,
@@ -513,13 +501,15 @@ export class GASRawWriteTool extends BaseTool {
           'abc123def456.../fibonacci',
           'abc123def456.../utils/helpers',
           'abc123def456.../Code',
-          'abc123def456.../models/User'
+          'abc123def456.../models/User',
+          'abc123def456.../appsscript'
         ],
         llmHints: {
           format: 'projectId/filename (no extension)',
           extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON',
           organization: 'Use "/" in filename for logical organization (not real folders)',
-          autoDetection: 'File type detected from content: JavaScript, HTML, JSON'
+          autoDetection: 'File type detected from content: JavaScript, HTML, JSON',
+          specialFiles: 'appsscript.json MUST be in root: projectId/appsscript (never projectId/subfolder/appsscript)'
         }
       },
       content: {
@@ -553,6 +543,17 @@ export class GASRawWriteTool extends BaseTool {
           reordering: 'Use gas_reorder tool to change position later'
         }
       },
+      fileType: {
+        type: 'string',
+        enum: ['SERVER_JS', 'HTML', 'JSON'],
+        description: 'File type for Google Apps Script. REQUIRED: Must be explicitly specified.',
+        examples: ['SERVER_JS', 'HTML', 'JSON'],
+        llmHints: {
+          serverJs: 'Use SERVER_JS for JavaScript/Apps Script code (.gs files)',
+          html: 'Use HTML for web app templates (.html files)',
+          json: 'Use JSON for configuration files (.json files like appsscript.json)'
+        }
+      },
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation. LLM TYPICAL: Omit - tool uses session authentication.',
@@ -563,7 +564,7 @@ export class GASRawWriteTool extends BaseTool {
         }
       }
     },
-    required: ['path', 'content'],
+    required: ['path', 'content', 'fileType'],
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
@@ -613,92 +614,91 @@ export class GASRawWriteTool extends BaseTool {
       throw new ValidationError('path', path, 'file path (must include filename)');
     }
 
-    // INTENTIONAL EXTENSION STRIPPING based on Google Apps Script File Type Enums
-    // Reference: https://developers.google.com/apps-script/api/reference/rest/v1/projects.deployments#EntryPointType
-    //
-    // Google Apps Script File Types:
-    // - ENUM_TYPE_UNSPECIFIED: Undetermined file type; never actually used.
-    // - SERVER_JS: An Apps Script server-side code file (.gs, .js)
-    // - HTML: A file containing client-side HTML (.html)
-    // - JSON: A file in JSON format (.json) - only used for manifest (appsscript)
-    //
-    // Strategy: Strip known extensions (.json, .html, .gs, .js) unless type is unknown
-    
+    // ⚠️ SPECIAL FILE VALIDATION: appsscript.json must be in root
     let filename = parsedPath.filename!;
-    let extensionStripped = false;
-    let strippedExtension = '';
-    let detectedContentType = 'javascript'; // Default to JavaScript
+    if (filename.toLowerCase() === 'appsscript' || filename.toLowerCase() === 'appsscript.json') {
+      // Check if appsscript is being placed in subfolder (path has directory)
+      if (parsedPath.directory && parsedPath.directory !== '') {
+        throw new ValidationError(
+          'path', 
+          path, 
+          'appsscript.json must be in project root (projectId/appsscript), not in subfolders'
+        );
+      }
+      console.error(`✅ Special file appsscript.json validated - correctly placed in project root`);
+    }
+
+    // ✅ SIMPLIFIED FILE TYPE HANDLING - fileType is now REQUIRED
+    const gasFileType = params.fileType as 'SERVER_JS' | 'HTML' | 'JSON';
     
-    // PRIORITY 1: Handle special manifest file case first
-    if (filename.toLowerCase() === 'appsscript.json') {
-      filename = 'appsscript';
-      extensionStripped = true;
-      strippedExtension = '.json';
-      detectedContentType = 'json';
-      console.error(`📋 MANIFEST CONVERSION: appsscript.json → appsscript (JSON type for manifest)`);
-    } else {
-      // PRIORITY 2: Handle general known GAS extensions
-      const GAS_EXTENSIONS = {
-        '.json': 'json',      // JSON files (non-manifest)
-        '.html': 'html',      // Client-side HTML files  
-        '.gs': 'javascript',  // Apps Script server-side code
-        '.js': 'javascript'   // Alternative JavaScript extension
-      };
-      
-      // Check if filename ends with any known GAS extension
-      for (const [ext, contentType] of Object.entries(GAS_EXTENSIONS)) {
-        if (filename.toLowerCase().endsWith(ext)) {
-          console.error(`🔧 INTENTIONAL EXTENSION STRIPPING: Found '${ext}' extension (maps to ${contentType} type)`);
-          
-          // Strip the extension - GAS will auto-detect type and add appropriate extension
-          const strippedFilename = filename.slice(0, -ext.length);
-          console.error(`✂️  Stripping: ${filename} → ${strippedFilename}`);
-          
-          filename = strippedFilename;
-          extensionStripped = true;
-          strippedExtension = ext;
-          detectedContentType = contentType;
-          break;
-        }
+    console.error(`🎯 Using required fileType: ${gasFileType} for ${filename}`);
+    
+    // Strip extensions only if they match the declared file type
+    let extensionStripped = false;
+    if (gasFileType === 'SERVER_JS') {
+      if (filename.toLowerCase().endsWith('.js')) {
+        const originalFilename = filename;
+        filename = filename.slice(0, -3);
+        console.error(`✂️  JS extension stripped: ${originalFilename} → ${filename}`);
+        extensionStripped = true;
+      } else if (filename.toLowerCase().endsWith('.gs')) {
+        const originalFilename = filename;
+        filename = filename.slice(0, -3);
+        console.error(`✂️  GS extension stripped: ${originalFilename} → ${filename}`);
+        extensionStripped = true;
+      }
+    } else if (gasFileType === 'HTML') {
+      if (filename.toLowerCase().endsWith('.html')) {
+        const originalFilename = filename;
+        filename = filename.slice(0, -5);
+        console.error(`✂️  HTML extension stripped: ${originalFilename} → ${filename}`);
+        extensionStripped = true;
+      } else if (filename.toLowerCase().endsWith('.htm')) {
+        const originalFilename = filename;
+        filename = filename.slice(0, -4);
+        console.error(`✂️  HTM extension stripped: ${originalFilename} → ${filename}`);
+        extensionStripped = true;
+      }
+    } else if (gasFileType === 'JSON') {
+      if (filename.toLowerCase().endsWith('.json')) {
+        const originalFilename = filename;
+        filename = filename.slice(0, -5);
+        console.error(`✂️  JSON extension stripped: ${originalFilename} → ${filename}`);
+        extensionStripped = true;
       }
     }
     
-    // Log the final result
-    if (extensionStripped) {
-      console.error(`✅ Extension stripping complete. File will be created as: ${filename}`);
-      console.error(`🎯 Google Apps Script will auto-detect type and add appropriate extension`);
-      console.error(`📄 Original extension '${strippedExtension}' removed to prevent double extensions`);
-    } else {
-      console.error(`📝 No known extension found in filename: ${filename}`);
-      console.error(`🎯 Will default to SERVER_JS type (Apps Script server-side code)`);
+    if (!extensionStripped) {
+      console.error(`✅ No extension stripping needed for ${gasFileType} type`);
     }
 
-    // CONTENT VALIDATION: Use appropriate validation based on detected content type
-    let content: string;
-    if (detectedContentType === 'html') {
-      content = this.validate.htmlContent(params.content, 'HTML file writing');
-      console.error(`🌐 HTML content validation passed - script tags allowed`);
-    } else {
-      content = this.validate.code(params.content, 'file writing', detectedContentType);
-      console.error(`💻 ${detectedContentType.toUpperCase()} content validation passed`);
-    }
-
-    // Validate content size (50KB limit)
+    // REDUCED CONTENT VALIDATION: Only basic safety checks
+    const content: string = params.content;
+    
+    // Basic safety validation
     if (content.length > 50 * 1024) {
       throw new FileOperationError('write', path, 'content exceeds 50KB limit');
     }
     
+    // Only validate critical safety issues, not syntax
+    if (content.includes('<script>') && content.includes('document.write') && gasFileType !== 'HTML') {
+      console.error(`⚠️  Warning: Potential script injection detected - but allowing since you explicitly chose ${gasFileType} type`);
+    }
+    
+    console.error(`✅ File type determined: ${gasFileType} for ${filename}`);
+
     // After validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
-    console.error(`📝 Writing file: ${filename} (extension will be auto-added based on content type)`);
+    console.error(`📝 Writing file: ${filename} with type: ${gasFileType}`);
     
     const updatedFiles = await this.gasClient.updateFile(
       parsedPath.projectId,
       filename,
       content,
       position,
-      accessToken
+      accessToken,
+      gasFileType
     );
 
     return {

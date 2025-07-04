@@ -1,45 +1,41 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
+import { ProjectResolver } from '../utils/projectResolver.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 
 /**
- * Detect Google Apps Script file type from content
- * Similar to LocalFileManager.getFileExtension but returns GAS API file types
+ * Detect GAS file type from content and filename for proper API submission
  */
 function detectGASFileType(content: string, fileName: string): 'SERVER_JS' | 'HTML' | 'JSON' {
-  // Special handling for Google Apps Script manifest files
-  if (fileName === 'appsscript') {
+  // Check file extension first
+  if (fileName.endsWith('.html') || fileName.endsWith('.htm')) {
+    return 'HTML';
+  }
+  if (fileName.endsWith('.json')) {
     return 'JSON';
   }
   
-  // Auto-detect from content
+  // Check content patterns
   const trimmed = content.trim();
-  
-  // JSON files - check for JSON structure
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     return 'JSON';
   }
-  
-  // HTML files - check for HTML tags
-  if (trimmed.includes('<html>') || trimmed.includes('<!DOCTYPE') || 
-      trimmed.includes('<head>') || trimmed.includes('<body>') ||
-      /^<\s*!DOCTYPE\s+html/i.test(trimmed)) {
+  if (trimmed.includes('<html>') || trimmed.includes('<!DOCTYPE')) {
     return 'HTML';
   }
   
-  // Default to SERVER_JS for JavaScript/Apps Script code
+  // Default to SERVER_JS for Apps Script code
   return 'SERVER_JS';
 }
 
 /**
- * Pull files from remote project to local src directory
- * Leverages existing gas_ls and gas_cat functions
+ * Pull files from remote project to local project-specific directory
+ * Leverages existing gas_ls and gas_cat functions via GASClient
  */
 export class GASPullTool extends BaseTool {
   public name = 'gas_pull';
-  public description = 'Pull files from remote Google Apps Script project to local src directory';
+  public description = 'Pull files from remote Google Apps Script project to local project-specific directory';
   
   public inputSchema = {
     type: 'object',
@@ -65,11 +61,10 @@ export class GASPullTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       force: {
-        type: 'boolean', 
+        type: 'boolean',
         description: 'Force overwrite local files (default: false = merge mode preserves local changes)',
         default: false
       },
@@ -89,72 +84,87 @@ export class GASPullTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
+    const force = params.force || false;
     
     // Resolve project parameter to script ID (uses current project if not specified)
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir);
+    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
     
-    // Get project files using EXISTING gas_ls functionality
+    // Get project name for directories
+    const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
+                        `project-${scriptId.substring(0, 8)}`;
+
+    // Get remote files using EXISTING gas_ls functionality
     const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-    
-    // Convert remote files to format expected by LocalFileManager
-    const remoteFilesToMerge = remoteFiles.map((file: any) => ({
+    const remoteFilesForMerge = remoteFiles.map((file: any) => ({
       name: file.name,
       content: file.source || '',
       type: file.type
     }));
 
-    let mergeResult;
-    
-    if (params.force) {
-      // Force mode: overwrite all files (original behavior)
-      await LocalFileManager.writeLocalFiles(remoteFilesToMerge, workingDir);
-      mergeResult = {
-        written: remoteFilesToMerge.map(f => f.name),
+    let result;
+    if (force) {
+      // Force mode: overwrite all local files
+      await LocalFileManager.writeProjectFiles(projectName, remoteFilesForMerge, workingDir);
+      result = {
+        written: remoteFilesForMerge.map(f => f.name),
         skipped: [],
         overwritten: [],
-        summary: `Force pulled ${remoteFilesToMerge.length} files (overwrote local)`
+        summary: `Force pulled ${remoteFilesForMerge.length} files`
       };
     } else {
-      // Merge mode: preserve local files, only add new or identical remote files
-      mergeResult = await LocalFileManager.mergeRemoteFiles(remoteFilesToMerge, workingDir, {
-        preserveLocal: true,
-        overwriteModified: false
-      });
+      // Merge mode: preserve local changes (default)
+      result = await LocalFileManager.mergeProjectFiles(
+        projectName,
+        remoteFilesForMerge,
+        workingDir,
+        { preserveLocal: true }
+      );
     }
 
-    // Get project name for response
-    const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
-                        `project-${scriptId.substring(0, 8)}`;
+    // Save/update project metadata
+    const projectInfo = {
+      projectName,
+      scriptId,
+      lastSync: new Date().toISOString(),
+      created: new Date().toISOString(), // Will be overwritten if project already exists
+      description: `Google Apps Script project synced from ${scriptId}`
+    };
+
+    // Check if project info already exists to preserve creation date
+    const existingInfo = await LocalFileManager.loadProjectInfo(projectName, workingDir);
+    if (existingInfo) {
+      projectInfo.created = existingInfo.created;
+      if (existingInfo.description) {
+        projectInfo.description = existingInfo.description;
+      }
+    }
+
+    await LocalFileManager.saveProjectInfo(projectInfo, workingDir);
+
+    const projectDir = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+    const srcDir = await LocalFileManager.getProjectSrcDirectory(projectName, workingDir);
 
     return {
       success: true,
       projectName,
       scriptId,
-      totalRemoteFiles: remoteFiles.length,
-      newFiles: mergeResult.written.length,
-      skippedFiles: mergeResult.skipped.length,
-      overwrittenFiles: mergeResult.overwritten.length,
-      mergeDetails: {
-        written: mergeResult.written,
-        skipped: mergeResult.skipped,
-        overwritten: mergeResult.overwritten
-      },
-      localPath: LocalFileManager.getSrcDirectory(workingDir),
-      message: params.force 
-        ? `Force pulled ${remoteFiles.length} files from '${projectName}' (overwrote local)`
-        : `${mergeResult.summary} from '${projectName}'`
+      projectDir,
+      srcDir,
+      ...result,
+      message: `${result.summary} to project '${projectName}'`
     };
   }
 }
 
 /**
- * Push local src files to remote project
- * Leverages existing gas_write function
+ * Push files from local project-specific directory to remote project
+ * Leverages existing gas_write functionality with proper file type detection
  */
 export class GASPushTool extends BaseTool {
   public name = 'gas_push';
-  public description = 'Push local src files to remote Google Apps Script project';
+  public description = 'Push local project-specific files to remote Google Apps Script project';
   
   public inputSchema = {
     type: 'object',
@@ -180,8 +190,7 @@ export class GASPushTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       dryRun: {
         type: 'boolean',
@@ -203,83 +212,91 @@ export class GASPushTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const workingDir = params.workingDir || process.cwd();
+    const accessToken = await this.getAuthToken(params);
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
-    // Get local files
-    const localFiles = await LocalFileManager.getLocalFiles(workingDir);
+    // Resolve project parameter to script ID (uses current project if not specified)
+    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
     
+    // Get project name
+    const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
+                        `project-${scriptId.substring(0, 8)}`;
+
+    // Get local files from project-specific directory
+    const localFiles = await LocalFileManager.getProjectFiles(projectName, workingDir);
+
     if (localFiles.length === 0) {
       return {
-        success: false,
-        message: 'No local files found in ./src/ directory. Use gas_pull to get files first.',
-        localPath: LocalFileManager.getSrcDirectory(workingDir)
+        success: true,
+        projectName,
+        scriptId,
+        filesPushed: 0,
+        errors: 0,
+        message: `No files found in local project '${projectName}' to push`
       };
     }
 
-    // Resolve project parameter to script ID (uses current project if not specified)
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir);
-    
+    // Show dry run results if requested
     if (params.dryRun) {
-      // Just show what would be pushed
-      const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
-                          `project-${scriptId.substring(0, 8)}`;
-      
       return {
         dryRun: true,
         projectName,
         scriptId,
         filesToPush: localFiles.map(f => ({
-          name: f.name,
-          size: f.size,
-          relativePath: f.relativePath
+          name: f.name, // ✅ Now properly includes directory structure (utils/helper)
+          path: f.relativePath, // Local path (utils/helper.js)
+          size: f.content.length,
+          type: detectGASFileType(f.content, f.name)
         })),
-        totalFiles: localFiles.length,
         message: `Would push ${localFiles.length} files to '${projectName}'`
       };
     }
 
-    const accessToken = await this.getAuthToken(params);
-
-    // Push each file using EXISTING gas_write functionality with proper file type detection
+    // ✅ REUSE EXISTING FUNCTIONALITY: Leverage gas_raw_write for each file
+    // This approach reuses existing tested code paths instead of duplicating API logic
     const results = [];
+    const { GASRawWriteTool } = await import('./filesystem.js');
+    const gasRawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+    
     for (const file of localFiles) {
       try {
-        // Detect proper file type from content
-        const fileType = detectGASFileType(file.content, file.name);
+        // Use existing gas_raw_write functionality with proper path formatting
+        const gasPath = `${scriptId}/${file.name}`; // ✅ file.name now includes directory structure
+        const fileType = detectGASFileType(file.content, file.name); // ✅ Determine file type explicitly
         
-        // Use updateProjectContent with proper file type instead of updateFile
-        const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-        const existingIndex = currentFiles.findIndex(f => f.name === file.name);
+        await gasRawWriteTool.execute({
+          path: gasPath,
+          content: file.content,
+          fileType, // ✅ Pass required fileType parameter
+          accessToken // Pass through auth token
+        });
         
-        const newFile = {
-          name: file.name,
-          type: fileType,
-          source: file.content
-        };
-        
-        let updatedFiles;
-        if (existingIndex >= 0) {
-          // Update existing file
-          updatedFiles = [...currentFiles];
-          updatedFiles[existingIndex] = newFile;
-        } else {
-          // Add new file
-          updatedFiles = [...currentFiles, newFile];
-        }
-        
-        await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
-        results.push({ name: file.name, status: 'success', type: fileType });
+        results.push({ 
+          name: file.name, 
+          localPath: file.relativePath,
+          status: 'success', 
+          type: fileType 
+        });
       } catch (error: any) {
-        results.push({ name: file.name, status: 'error', error: error.message });
+        results.push({ 
+          name: file.name, 
+          localPath: file.relativePath,
+          status: 'error', 
+          error: error.message 
+        });
       }
     }
 
     const successCount = results.filter(r => r.status === 'success').length;
     const errorCount = results.filter(r => r.status === 'error').length;
 
-    // Get project name for response
-    const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
-                        `project-${scriptId.substring(0, 8)}`;
+    // Update project metadata with last sync time
+    const existingInfo = await LocalFileManager.loadProjectInfo(projectName, workingDir);
+    if (existingInfo) {
+      existingInfo.lastSync = new Date().toISOString();
+      await LocalFileManager.saveProjectInfo(existingInfo, workingDir);
+    }
 
     return {
       success: errorCount === 0,
@@ -287,21 +304,22 @@ export class GASPushTool extends BaseTool {
       scriptId,
       filesPushed: successCount,
       errors: errorCount,
-      results: results.filter(r => r.status === 'error'), // Only show errors
+      results: results.filter(r => r.status === 'error'), // Only show errors in summary
+      allResults: results, // Full results for debugging
       message: errorCount === 0 
-        ? `Successfully pushed ${successCount} files to '${projectName}'`
-        : `Pushed ${successCount} files, ${errorCount} errors. See results for details.`
+        ? `✅ Successfully pushed ${successCount} files to '${projectName}' with preserved directory structure`
+        : `⚠️ Pushed ${successCount} files, ${errorCount} errors. See results for details.`
     };
   }
 }
 
 /**
- * Show status/diff between local and remote files
+ * Show status/diff between local project-specific files and remote files
  * Leverages existing gas_ls and gas_cat functions
  */
 export class GASStatusTool extends BaseTool {
   public name = 'gas_status';
-  public description = 'Show status and differences between local and remote files';
+  public description = 'Show status and differences between local project-specific files and remote files';
   
   public inputSchema = {
     type: 'object',
@@ -327,8 +345,7 @@ export class GASStatusTool extends BaseTool {
       },
       workingDir: {
         type: 'string',
-        description: 'Working directory (defaults to current directory)',
-        default: process.cwd()
+        description: 'Working directory (defaults to current directory)'
       },
       detailed: {
         type: 'boolean',
@@ -351,13 +368,18 @@ export class GASStatusTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    const workingDir = params.workingDir || process.cwd();
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     // Resolve project parameter to script ID (uses current project if not specified)
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir);
+    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
     
-    // Get local files
-    const localFiles = await LocalFileManager.getLocalFiles(workingDir);
+    // Get project name
+    const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
+                        `project-${scriptId.substring(0, 8)}`;
+
+    // Get local files from project-specific directory
+    const localFiles = await LocalFileManager.getProjectFiles(projectName, workingDir);
     
     // Get remote files using EXISTING gas_ls functionality
     const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
@@ -388,10 +410,6 @@ export class GASStatusTool extends BaseTool {
       overallStatus = 'files-added-or-removed';
     }
 
-    // Get project name for response
-    const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
-                        `project-${scriptId.substring(0, 8)}`;
-
     const response: any = {
       projectName,
       scriptId,
@@ -399,43 +417,39 @@ export class GASStatusTool extends BaseTool {
       summary,
       localFiles: localFiles.length,
       remoteFiles: remoteFiles.length,
-      localPath: LocalFileManager.getSrcDirectory(workingDir)
+      projectDir: await LocalFileManager.getProjectDirectory(projectName, workingDir),
+      srcDir: await LocalFileManager.getProjectSrcDirectory(projectName, workingDir)
     };
 
+    // Add file details if requested
     if (params.detailed) {
       response.fileComparisons = fileComparisons;
     } else {
       // Just show files that need attention
-      const needsAttention = fileComparisons.filter(f => f.status !== 'same');
-      if (needsAttention.length > 0) {
-        response.needsAttention = needsAttention.map(f => ({
+      const changedFiles = fileComparisons.filter(f => f.status !== 'same');
+      if (changedFiles.length > 0) {
+        response.changedFiles = changedFiles.map(f => ({
           name: f.name,
-          status: f.status
+          status: f.status,
+          localSize: f.localSize,
+          remoteSize: f.remoteSize
         }));
       }
     }
 
-    // Add helpful messages
+    // Generate status message
+    let message: string;
     if (overallStatus === 'in-sync') {
-      response.message = 'Local and remote files are in sync';
+      message = `Project '${projectName}' is in sync with remote`;
     } else {
-      const suggestions = [];
-      if (summary.different > 0) {
-        suggestions.push(`${summary.different} files modified locally`);
-      }
-      if (summary.localOnly > 0) {
-        suggestions.push(`${summary.localOnly} files only exist locally`);
-      }
-      if (summary.remoteOnly > 0) {
-        suggestions.push(`${summary.remoteOnly} files only exist remotely`);
-      }
-      response.message = suggestions.join(', ');
-      response.suggestions = {
-        toPush: summary.different + summary.localOnly > 0 ? 'Use gas_push() to upload local changes' : null,
-        toPull: summary.remoteOnly > 0 ? 'Use gas_pull({force: true}) to download remote files' : null
-      };
+      const changes = [];
+      if (summary.different > 0) changes.push(`${summary.different} modified`);
+      if (summary.localOnly > 0) changes.push(`${summary.localOnly} local only`);
+      if (summary.remoteOnly > 0) changes.push(`${summary.remoteOnly} remote only`);
+      message = `Project '${projectName}' has changes: ${changes.join(', ')}`;
     }
 
+    response.message = message;
     return response;
   }
 } 
