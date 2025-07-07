@@ -99,8 +99,8 @@ export class GASProjectSetTool extends BaseTool {
         type: file.type
       }));
 
-      // Merge remote files with local (preserve local modifications)
-      const mergeResult = await LocalFileManager.mergeRemoteFiles(remoteFiles, workingDir, {
+      // Use project-specific directory instead of legacy workspace src
+      const mergeResult = await LocalFileManager.mergeProjectFiles(projectName, remoteFiles, workingDir, {
         preserveLocal: true,
         overwriteModified: false
       });
@@ -108,8 +108,11 @@ export class GASProjectSetTool extends BaseTool {
       filesCached = mergeResult.written.length + mergeResult.overwritten.length;
       const skippedCount = mergeResult.skipped.length;
       
+      // Get the actual project-specific path for the message
+      const projectPath = await LocalFileManager.getProjectSrcDirectory(projectName, workingDir);
+      
       pullMessage = filesCached > 0 
-        ? ` and merged ${filesCached} files to ./src/` + (skippedCount > 0 ? ` (${skippedCount} local files preserved)` : '')
+        ? ` and merged ${filesCached} files to ${projectPath}` + (skippedCount > 0 ? ` (${skippedCount} local files preserved)` : '')
         : ` (${skippedCount} files already exist locally - no changes needed)`;
     } else {
       pullMessage = ' (autoPull disabled - use gas_pull to sync)';
@@ -122,7 +125,7 @@ export class GASProjectSetTool extends BaseTool {
       title: projectInfo.title,
       filesCached,
       autoPull,
-      localPath: LocalFileManager.getSrcDirectory(workingDir),
+      localPath: await LocalFileManager.getProjectSrcDirectory(projectName, workingDir),
       message: `Set current project to '${projectName}'${pullMessage}`
     };
   }
@@ -176,8 +179,8 @@ export class GASProjectGetTool extends BaseTool {
         // Get remote project info using EXISTING gas_info functionality
         const remoteInfo = await this.gasClient.getProject(currentProject.scriptId, accessToken);
         
-        // Get local files for comparison
-        const localFiles = await LocalFileManager.getLocalFiles(workingDir);
+        // Get local files for comparison using project-specific directory
+        const localFiles = await LocalFileManager.getProjectFiles(currentProject.projectName, workingDir);
         
         // Get remote files using EXISTING gas_ls functionality
         const remoteFiles = await this.gasClient.getProjectContent(currentProject.scriptId, accessToken);
@@ -202,13 +205,13 @@ export class GASProjectGetTool extends BaseTool {
           remoteFiles: remoteFiles.length,
           fileComparisons,
           syncStatus: this.getSyncStatus(fileComparisons),
-          localPath: LocalFileManager.getSrcDirectory(workingDir)
+          localPath: await LocalFileManager.getProjectSrcDirectory(currentProject.projectName, workingDir)
         };
       } else {
         return {
           currentProject,
-          localPath: LocalFileManager.getSrcDirectory(workingDir),
-          hasLocalFiles: await LocalFileManager.hasSrcFiles(workingDir)
+          localPath: await LocalFileManager.getProjectSrcDirectory(currentProject.projectName, workingDir),
+          hasLocalFiles: (await LocalFileManager.getProjectFiles(currentProject.projectName, workingDir)).length > 0
         };
       }
     } catch (error: any) {

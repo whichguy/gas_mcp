@@ -40,12 +40,12 @@
   },
   "localRoot": {
     "rootPath": "/Users/jameswiese/gas-projects",
-    "lastUpdated": "2025-07-07T03:05:39.034Z"
+    "lastUpdated": "2025-07-07T03:19:19.641Z"
   },
   "server": {
     "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-07T03:05:46.115Z"
+    "lastModified": "2025-07-07T03:19:23.963Z"
   },
   "environments": {
     "dev": {
@@ -54,8 +54,8 @@
     }
   },
   "currentProject": {
-    "projectName": "1iBedJvVbDgBc4Y2BdqPe4Y4XObkRf3bU-9t9TwKFGq77Cmqti8crxt1O",
+    "projectName": "Summation Test Project",
     "scriptId": "1iBedJvVbDgBc4Y2BdqPe4Y4XObkRf3bU-9t9TwKFGq77Cmqti8crxt1O",
-    "lastSync": "2025-07-07T03:05:46.115Z"
+    "lastSync": "2025-07-07T03:19:23.963Z"
   }
 }
