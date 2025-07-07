@@ -38,19 +38,24 @@
       "description": "Created: 6/29/2025"
     }
   },
+  "localRoot": {
+    "rootPath": "/Users/jameswiese/gas-projects",
+    "lastUpdated": "2025-07-07T03:05:39.034Z"
+  },
+  "server": {
+    "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
+    "configVersion": "1.0.0",
+    "lastModified": "2025-07-07T03:05:46.115Z"
+  },
   "environments": {
     "dev": {
       "scriptId": "1QAPMb_1TpIMwMEHfi_jq1S7EZFyvRDFkW1FEbmzVssuLtIO3DKMUO0yr",
       "name": "SyncGoogleGroups"
     }
   },
-  "localRoot": {
-    "rootPath": "/Users/jameswiese/src/mcp_gas/gas-projects",
-    "lastUpdated": "2025-06-29T16:47:43.135Z"
-  },
-  "server": {
-    "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
-    "configVersion": "1.0.0",
-    "lastModified": "2025-06-29T16:47:43.135Z"
+  "currentProject": {
+    "projectName": "1iBedJvVbDgBc4Y2BdqPe4Y4XObkRf3bU-9t9TwKFGq77Cmqti8crxt1O",
+    "scriptId": "1iBedJvVbDgBc4Y2BdqPe4Y4XObkRf3bU-9t9TwKFGq77Cmqti8crxt1O",
+    "lastSync": "2025-07-07T03:05:46.115Z"
   }
 }
