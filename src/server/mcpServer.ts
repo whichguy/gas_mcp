@@ -85,6 +85,12 @@ import {
   GATriggerDeleteTool
 } from '../tools/triggers.js';
 
+// Import git operations tools
+import {
+  GASGitCommitTool,
+  GASGitStatusTool
+} from '../tools/gitOps.js';
+
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
 
@@ -219,15 +225,21 @@ export class MCPGasServer {
   }
 
   /**
-   * Initialize unified configuration system
-   * Consolidates OAuth, projects, and local root settings
+   * Initialize the unified configuration system
    */
   private async initializeConfig(): Promise<void> {
     try {
-      // Use safe workspace detection instead of process.cwd()
-    const { LocalFileManager } = await import('../utils/localFileManager.js');
-    const workingDir = LocalFileManager.getResolvedWorkingDirectory();
-    await McpGasConfigManager.initialize(workingDir);
+      // Check if configuration was already initialized from command line (--config argument)
+      if (process.env.MCP_GAS_WORKING_DIR) {
+        console.error(`🔧 [SERVER] Configuration already initialized from command line, skipping re-initialization`);
+        console.error(`🔧 [SERVER] Using working directory: ${process.env.MCP_GAS_WORKING_DIR}`);
+        return;
+      }
+      
+      // Only initialize if not already done via command line
+      const { LocalFileManager } = await import('../utils/localFileManager.js');
+      const workingDir = LocalFileManager.getResolvedWorkingDirectory();
+      await McpGasConfigManager.initialize(workingDir);
       console.error(`🔧 [SERVER] Unified configuration initialized`);
     } catch (error) {
       console.error(`❌ [SERVER] Config initialization failed: ${error}`);
@@ -395,6 +407,10 @@ export class MCPGasServer {
       new GATriggerListTool(authManager),    // List all installable triggers
       new GATriggerCreateTool(authManager),  // Create time-based and event-driven triggers
       new GATriggerDeleteTool(authManager),  // Delete triggers by ID or function name
+      
+      // 🔧 Git operations - VERSION CONTROL tools
+      new GASGitCommitTool(authManager),     // Add and commit currently synced files
+      new GASGitStatusTool(authManager),     // Show git status of workspace
       
       // NOTE: gas_project_get, gas_project_add, gas_project_list are HIDDEN from MCP
       // They're used internally by other tools but not exposed to users/LLMs

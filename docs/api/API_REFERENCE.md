@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-This comprehensive API reference documents all 43 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
+This comprehensive API reference documents all 45 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
 
 ## 📋 Table of Contents
 
@@ -17,8 +17,9 @@ This comprehensive API reference documents all 43 MCP Gas tools with detailed sc
 9. [Trigger Management Tools](#trigger-management-tools)
 10. [Process Management Tools](#process-management-tools)
 11. [Version Management Tools](#version-management-tools)
-12. [Error Handling](#error-handling)
-13. [Usage Patterns](#usage-patterns)
+12. [Git Operations Tools](#git-operations-tools)
+13. [Error Handling](#error-handling)
+14. [Usage Patterns](#usage-patterns)
 
 ---
 
@@ -1173,114 +1174,160 @@ const detailed = await callTool('gas_status', {
 
 ## ⚡ Execution Tools
 
-### `gas_run` - Direct Code Execution with HEAD Deployment
+### `gas_run` - Execute Arbitrary JavaScript Code and Function Calls
 
-Execute any JavaScript/Apps Script statement directly using HEAD deployments for testing. Uses `/dev` URLs that automatically serve the latest saved content without redeployment. Perfect for development and testing workflows.
+🚀 **POWERFUL CODE EXECUTION**: Execute ANY JavaScript statement or function call directly in Google Apps Script. This tool can invoke arbitrary code in a single statement AND call existing functions that reside in the GAS repository, both returning results.
 
-#### Key Features
-- **🔄 HEAD Deployment Strategy**: Uses HEAD deployments (`versionNumber=null`) with stable `/dev` URLs
-- **⚡ Automatic Content Updates**: Code changes are reflected immediately without redeployment  
-- **🎯 Testing Endpoint**: Uses Google Apps Script's true testing endpoint pattern
-- **🚀 Auto-Setup**: Automatically creates HEAD deployment and proxy shim if needed
-- **📝 Direct Execution**: Execute any JavaScript/Apps Script statement or function call
+#### Key Capabilities
+- **💻 Arbitrary Code Execution**: Execute any valid JavaScript expression, mathematical operations, object manipulations
+- **🔧 Function Invocation**: Call any function defined in your Google Apps Script project files
+- **📊 Built-in Services**: Access SpreadsheetApp, DriveApp, GmailApp, Session, and all Google Apps Script services
+- **🔄 HEAD Deployment Strategy**: Uses HEAD deployments with `/dev` URLs for immediate code updates
+- **⚡ Zero Setup**: Automatically creates deployment infrastructure and proxy shim if needed
+- **📝 Direct Results**: Returns execution results immediately with JSON serialization
 
-#### Deployment Behavior
-| Deployment Type | versionNumber | URL Suffix | Content Updates |
-|----------------|---------------|------------|-----------------|
-| **HEAD** (testing) | `null` or `0` | **`/dev`** | ✅ Automatic (latest saved content) |
-| **Versioned** (production) | Positive integer | **`/exec`** | ❌ Fixed version (requires redeployment) |
+#### What You Can Execute
+| Category | Examples | Use Cases |
+|----------|----------|-----------|
+| **Math Expressions** | `Math.PI * 2`, `Math.sqrt(16)` | Calculations, formulas |
+| **Date/Time** | `new Date().toISOString()`, `Session.getScriptTimeZone()` | Timestamps, timezone info |
+| **User Functions** | `fibonacci(10)`, `calculateTotal(prices)` | Custom business logic |
+| **Array Operations** | `[1,2,3].map(x => x * 2)`, `data.filter(item => item.active)` | Data processing |
+| **Object Creation** | `{timestamp: new Date(), user: Session.getActiveUser().getEmail()}` | Structured data |
+| **Google Services** | `SpreadsheetApp.create("New Sheet").getId()` | Drive, Sheets, Gmail operations |
+| **Complex Logic** | `users.find(u => u.role === "admin")?.permissions || []` | Business rules |
 
 #### Input Schema
 ```typescript
 interface GasRunInput {
-  scriptId: string;
-  functionName: string;  // Any JavaScript statement or function call
-  parameters?: any[];
-  devMode?: boolean;     // Uses HEAD deployment (default: true)
-  autoRedeploy?: boolean; // Ensures HEAD deployment exists (default: true)
-  accessToken?: string;
+  js_statement: string;  // ANY JavaScript statement or function call
+  project?: string | object;     // Project reference (uses current if not specified)
+  autoRedeploy?: boolean;        // Auto-setup deployment (default: true)
+  workingDir?: string;           // Working directory
+  accessToken?: string;          // Optional access token
 }
 ```
 
 #### Usage Examples
 
-**Execute Built-in Functions**
+**1. Mathematical Expressions and Calculations**
 ```typescript
-const timezoneResult = await callTool('gas_run', {
-  scriptId: 'abc123def456...',
-  functionName: 'Session.getScriptTimeZone()'
-});
-
-// Response:
-{
-  "function_called": "Session.getScriptTimeZone()",
-  "result": "America/Los_Angeles",
-  "execution_time": 245,
-  "timestamp": "2024-01-15T14:30:00Z"
-}
-```
-
-**Execute Mathematical Expressions**
-```typescript
+// Simple math
 const mathResult = await callTool('gas_run', {
-  scriptId: 'abc123def456...',
-  functionName: 'Math.PI * 2'
+  js_statement: 'Math.PI * 2'
 });
+// Returns: 6.283185307179586
 
-// Response:
-{
-  "function_called": "Math.PI * 2",
-  "result": 6.283185307179586,
-  "execution_time": 12,
-  "timestamp": "2024-01-15T14:30:00Z"
-}
+// Complex calculations
+const calculation = await callTool('gas_run', {
+  js_statement: 'Math.sqrt(16) + Math.pow(2, 3)'
+});
+// Returns: 12
+
+// Array reduction
+const sum = await callTool('gas_run', {
+  js_statement: '[1,2,3,4,5].reduce((sum, num) => sum + num, 0)'
+});
+// Returns: 15
 ```
 
-**Execute User Functions**
+**2. Google Apps Script Built-in Services**
 ```typescript
+// Get timezone
+const timezone = await callTool('gas_run', {
+  js_statement: 'Session.getScriptTimeZone()'
+});
+// Returns: "America/Los_Angeles"
+
+// Get user email
+const email = await callTool('gas_run', {
+  js_statement: 'Session.getActiveUser().getEmail()'
+});
+// Returns: "user@example.com"
+
+// Create new spreadsheet
+const sheetId = await callTool('gas_run', {
+  js_statement: 'SpreadsheetApp.create("My New Sheet").getId()'
+});
+// Returns: "1abc123def456..."
+
+// Get Drive root folder name
+const folderName = await callTool('gas_run', {
+  js_statement: 'DriveApp.getRootFolder().getName()'
+});
+// Returns: "My Drive"
+```
+
+**3. Call User-Defined Functions in GAS Repository**
+```typescript
+// Call a fibonacci function you've defined in your project
 const fibResult = await callTool('gas_run', {
-  scriptId: 'abc123def456...',
-  functionName: 'fibonacci(10)'
+  js_statement: 'fibonacci(10)'
 });
+// Returns: 55 (if fibonacci function exists in your project)
 
-// Response:
-{
-  "function_called": "fibonacci(10)",
-  "result": 55,
-  "execution_time": 156,
-  "timestamp": "2024-01-15T14:30:00Z"
-}
+// Call custom business logic
+const total = await callTool('gas_run', {
+  js_statement: 'calculateOrderTotal([{price: 10, qty: 2}, {price: 5, qty: 3}])'
+});
+// Returns: result of your custom function
+
+// Call data processing function
+const processed = await callTool('gas_run', {
+  js_statement: 'processUserData("john@example.com")'
+});
+// Returns: result from your custom function
 ```
 
-**Execute Complex Expressions**
+**4. Complex Data Manipulation**
 ```typescript
-const complexResult = await callTool('gas_run', {
-  scriptId: 'abc123def456...',
-  functionName: '[1,2,3,4,5].reduce((sum, num) => sum + num, 0)'
+// Object creation with live data
+const statusObject = await callTool('gas_run', {
+  js_statement: 'JSON.stringify({timestamp: new Date().getTime(), timezone: Session.getScriptTimeZone(), user: Session.getActiveUser().getEmail()})'
 });
+// Returns: "{\"timestamp\":1705322400000,\"timezone\":\"America/Los_Angeles\",\"user\":\"user@example.com\"}"
 
-// Response:
-{
-  "function_called": "[1,2,3,4,5].reduce((sum, num) => sum + num, 0)",
-  "result": 15,
-  "execution_time": 89,
-  "timestamp": "2024-01-15T14:30:00Z"
-}
+// Array processing
+const filtered = await callTool('gas_run', {
+  js_statement: '[{name: "John", active: true}, {name: "Jane", active: false}].filter(user => user.active).map(user => user.name)'
+});
+// Returns: ["John"]
+
+// Date manipulation
+const dateInfo = await callTool('gas_run', {
+  js_statement: 'new Date().toISOString()'
+});
+// Returns: "2024-01-15T14:30:00.000Z"
 ```
 
-**Execute with Return Object**
+**5. Using Current Project Context (Recommended)**
 ```typescript
-const objectResult = await callTool('gas_run', {
-  scriptId: 'abc123def456...',
-  functionName: 'JSON.stringify({time: new Date().getTime(), timezone: Session.getScriptTimeZone()})'
+// When you have a current project set via gas_project_set
+const result = await callTool('gas_run', {
+  js_statement: 'myProjectFunction(42)'
 });
 
-// Response:
+// Using environment shortcuts
+const envResult = await callTool('gas_run', {
+  js_statement: 'getEnvironmentInfo()',
+  project: { dev: true }
+});
+
+// Using project name
+const namedResult = await callTool('gas_run', {
+  js_statement: 'processData()',
+  project: 'my-calculator'
+});
+```
+
+#### Response Format
+```typescript
 {
-  "function_called": "JSON.stringify({time: new Date().getTime(), timezone: Session.getScriptTimeZone()})",
-  "result": "{\"time\":1705322400000,\"timezone\":\"America/Los_Angeles\"}",
-  "execution_time": 178,
-  "timestamp": "2024-01-15T14:30:00Z"
+  "status": "success",
+  "scriptId": "abc123def456...",
+  "js_statement": "Math.PI * 2",
+  "result": 6.283185307179586,
+  "executedAt": "2024-01-15T14:30:00Z"
 }
 ```
 
@@ -1868,6 +1915,180 @@ interface GasVersionListInput {
   pageToken?: string;
   accessToken?: string;
 }
+```
+
+---
+
+## 🔧 Git Operations Tools
+
+### `gas_git_commit` - Add and Commit Synced Files
+
+Add and commit currently synced Google Apps Script project files to git repository.
+
+#### Key Features
+- **📁 Smart File Detection**: Automatically finds and adds currently synced GAS project files
+- **🔍 Git Status Integration**: Shows status before and after commit operations
+- **🛡️ Safety Checks**: Validates git repository and working directory state
+- **⚡ Flexible Options**: Support for adding all files or just tracked changes
+- **🔄 Dry Run Mode**: Preview changes before committing
+
+#### Input Schema
+```typescript
+interface GasGitCommitInput {
+  message: string;           // Required commit message
+  addAll?: boolean;          // Add all modified files (default: false)
+  dryRun?: boolean;          // Show what would be committed (default: false)
+  workingDir?: string;       // Working directory (optional)
+  accessToken?: string;      // Optional access token
+}
+```
+
+#### Usage Examples
+
+**Basic Commit of Tracked Changes**
+```typescript
+const commitResult = await callTool('gas_git_commit', {
+  message: 'Update GAS project functions'
+});
+
+// Response:
+{
+  "success": true,
+  "message": "Successfully committed changes",
+  "filesAdded": ["src/summation-test/SummationUtils.gs"],
+  "commitHash": "abc123def456...",
+  "workingDirectory": "/Users/user/src/mcp_gas"
+}
+```
+
+**Add All Files and Commit**
+```typescript
+const commitAllResult = await callTool('gas_git_commit', {
+  message: 'Sync all changes from Google Apps Script',
+  addAll: true
+});
+
+// Response:
+{
+  "success": true,
+  "message": "Successfully committed changes",
+  "filesAdded": [
+    "src/summation-test/SummationUtils.gs",
+    "src/calculator/MathUtils.gs",
+    ".gas-projects.json"
+  ],
+  "commitHash": "def456abc789...",
+  "workingDirectory": "/Users/user/src/mcp_gas"
+}
+```
+
+**Dry Run Preview**
+```typescript
+const dryRunResult = await callTool('gas_git_commit', {
+  message: 'Preview commit',
+  addAll: true,
+  dryRun: true
+});
+
+// Response:
+{
+  "success": true,
+  "dryRun": true,
+  "message": "Dry run completed - no changes made",
+  "wouldAdd": [
+    "src/summation-test/SummationUtils.gs",
+    "src/calculator/MathUtils.gs"
+  ],
+  "wouldCommit": "Preview commit",
+  "workingDirectory": "/Users/user/src/mcp_gas"
+}
+```
+
+### `gas_git_status` - Show Git Repository Status
+
+Display git status of the current workspace including branch information and file changes.
+
+#### Key Features
+- **🌿 Branch Information**: Shows current branch and tracking status
+- **📊 File Status**: Lists modified, added, deleted, and untracked files
+- **🔍 Working Tree State**: Shows if working tree is clean or has changes
+- **📍 Repository Info**: Confirms git repository location and status
+
+#### Input Schema
+```typescript
+interface GasGitStatusInput {
+  workingDir?: string;       // Working directory (optional)
+  accessToken?: string;      // Optional access token
+}
+```
+
+#### Usage Examples
+
+**Check Git Status**
+```typescript
+const statusResult = await callTool('gas_git_status');
+
+// Response:
+{
+  "success": true,
+  "branch": "main",
+  "ahead": 0,
+  "behind": 0,
+  "staged": [],
+  "modified": ["src/summation-test/SummationUtils.gs"],
+  "untracked": ["temp-file.txt"],
+  "deleted": [],
+  "workingTreeClean": false,
+  "workingDirectory": "/Users/user/src/mcp_gas"
+}
+```
+
+**Clean Working Tree**
+```typescript
+const cleanStatus = await callTool('gas_git_status');
+
+// Response:
+{
+  "success": true,
+  "branch": "main",
+  "ahead": 0,
+  "behind": 0,
+  "staged": [],
+  "modified": [],
+  "untracked": [],
+  "deleted": [],
+  "workingTreeClean": true,
+  "workingDirectory": "/Users/user/src/mcp_gas"
+}
+```
+
+#### Typical Git Workflow with MCP Gas
+
+```typescript
+// 1. Check current git status
+const status = await callTool('gas_git_status');
+console.log('Current branch:', status.branch);
+console.log('Modified files:', status.modified);
+
+// 2. Pull latest changes from GAS (if needed)
+await callTool('gas_pull', {
+  project: 'my-project'
+});
+
+// 3. Check status after pull
+const afterPullStatus = await callTool('gas_git_status');
+
+// 4. Commit the synced changes
+if (!afterPullStatus.workingTreeClean) {
+  await callTool('gas_git_commit', {
+    message: 'Sync latest changes from Google Apps Script',
+    addAll: true
+  });
+}
+
+// 5. Verify commit
+const finalStatus = await callTool('gas_git_status');
+console.log('Working tree clean:', finalStatus.workingTreeClean);
 ```
 
 --- 

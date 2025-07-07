@@ -911,6 +911,12 @@ export class LocalFileManager {
       return workingDir;
     }
     
+    // Check for environment variable override first
+    if (process.env.MCP_GAS_WORKING_DIR) {
+      console.error(`🔍 [LocalFileManager] Using MCP_GAS_WORKING_DIR: ${process.env.MCP_GAS_WORKING_DIR}`);
+      return process.env.MCP_GAS_WORKING_DIR;
+    }
+    
     // If no working directory specified, try to detect the workspace
     const detectedWorkspace = this.detectWorkspaceDirectory();
     console.error(`🔍 [LocalFileManager] Using working directory: ${detectedWorkspace}`);

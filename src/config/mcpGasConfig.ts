@@ -145,6 +145,11 @@ export class McpGasConfigManager {
     
     McpGasConfigManager.configPath = path.resolve(configFilePath);
     
+    // Derive working directory from config file location and set environment variable
+    const workingDir = path.dirname(McpGasConfigManager.configPath);
+    process.env.MCP_GAS_WORKING_DIR = workingDir;
+    console.error(`🔧 [CONFIG] Set MCP_GAS_WORKING_DIR to: ${workingDir}`);
+    
     try {
       await fs.access(McpGasConfigManager.configPath);
       console.error(`✅ [CONFIG] Found existing config: ${McpGasConfigManager.configPath}`);
