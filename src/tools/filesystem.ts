@@ -1105,7 +1105,8 @@ export class GASRawCopyTool extends BaseTool {
           file.name,
           file.content,
           undefined, // position
-          accessToken
+          accessToken,
+          file.type as 'SERVER_JS' | 'HTML' | 'JSON' // ✅ Pass the original file type
         );
         copyResults.push({ name: file.name, action: file.action, status: 'success' });
         successCount++;

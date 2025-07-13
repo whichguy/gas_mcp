@@ -55,12 +55,12 @@
   },
   "localRoot": {
     "rootPath": "/tmp/gas-projects",
-    "lastUpdated": "2025-07-13T20:34:10.124Z"
+    "lastUpdated": "2025-07-13T20:40:12.436Z"
   },
   "server": {
     "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-13T20:35:50.203Z"
+    "lastModified": "2025-07-13T20:42:41.419Z"
   },
   "environments": {
     "dev": {
@@ -71,6 +71,6 @@
   "currentProject": {
     "projectName": "1pL8bFEomNyJrRP8la8UAZjmi2SAjbwBRidiaBUaF5_C1Cf_bFTat-V7s",
     "scriptId": "1pL8bFEomNyJrRP8la8UAZjmi2SAjbwBRidiaBUaF5_C1Cf_bFTat-V7s",
-    "lastSync": "2025-07-13T20:35:50.203Z"
+    "lastSync": "2025-07-13T20:42:41.419Z"
   }
 }
