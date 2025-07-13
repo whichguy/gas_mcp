@@ -45,7 +45,7 @@
   "server": {
     "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-07T03:19:23.963Z"
+    "lastModified": "2025-07-13T20:03:59.939Z"
   },
   "environments": {
     "dev": {
@@ -56,6 +56,6 @@
   "currentProject": {
     "projectName": "Summation Test Project",
     "scriptId": "1iBedJvVbDgBc4Y2BdqPe4Y4XObkRf3bU-9t9TwKFGq77Cmqti8crxt1O",
-    "lastSync": "2025-07-07T03:19:23.963Z"
+    "lastSync": "2025-07-13T20:03:59.939Z"
   }
 }
