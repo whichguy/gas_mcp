@@ -675,10 +675,8 @@ export class GASRawWriteTool extends BaseTool {
     // REDUCED CONTENT VALIDATION: Only basic safety checks
     const content: string = params.content;
     
-    // Basic safety validation
-    if (content.length > 50 * 1024) {
-      throw new FileOperationError('write', path, 'content exceeds 50KB limit');
-    }
+    // Let Google Apps Script API be the authority for size validation
+    // Remove arbitrary client-side limits and let the API return its own errors
     
     // Only validate critical safety issues, not syntax
     if (content.includes('<script>') && content.includes('document.write') && gasFileType !== 'HTML') {
