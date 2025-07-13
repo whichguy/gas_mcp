@@ -475,24 +475,9 @@ export class GASClient {
     await this.initializeClient(accessToken);
     
     return this.makeApiCall(async () => {
-      // Validate file constraints
-      if (files.length > 20) {
-        throw new GASApiError('Project cannot have more than 20 files', 400);
-      }
-
-      // Calculate total size
-      const totalSize = files.reduce((sum, file) => sum + (file.source?.length || 0), 0);
-      if (totalSize > 50 * 1024 * 1024) { // 50MB
-        throw new GASApiError('Project size cannot exceed 50MB', 400);
-      }
-
-      // Check individual file sizes
-      for (const file of files) {
-        if ((file.source?.length || 0) > 50 * 1024) { // 50KB
-          throw new GASApiError(`File ${file.name} cannot exceed 50KB`, 400);
-        }
-      }
-
+      // Let Google Apps Script API be the authority for validation
+      // Remove arbitrary client-side limits and let the API return its own errors
+      
       const response = await this.scriptApi.projects.updateContent({
         scriptId,
         requestBody: {

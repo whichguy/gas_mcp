@@ -36,16 +36,31 @@
       "scriptId": "1XVWXzfs1PkBYoeAIc827fMwy6QJAQlTZG4zpcPbnta23uznHpXfU9Ewy",
       "name": "dir-test-new",
       "description": "Created: 6/29/2025"
+    },
+    "ai_tools4": {
+      "scriptId": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
+      "name": "ai_tools4",
+      "description": "Created: 7/13/2025"
+    },
+    "ai_tools3_script": {
+      "scriptId": "1wNWGnXYZtUEgnbfiqi_olmKc-cJYl4lb7W6Nycz7CPiGjyfueHA2Aigj",
+      "name": "ai_tools3_script",
+      "description": "Created: 7/13/2025"
+    },
+    "ai_tools4_part2": {
+      "scriptId": "1BOCTY-tqxtBdBL-2LyhFLTgWpWG0ecB_S-WzzYgnyU9c-EAKoFklRQPV",
+      "name": "ai_tools4_part2",
+      "description": "Created: 7/13/2025"
     }
   },
   "localRoot": {
     "rootPath": "/tmp/gas-projects",
-    "lastUpdated": "2025-07-13T20:07:40.642Z"
+    "lastUpdated": "2025-07-13T20:34:10.124Z"
   },
   "server": {
     "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-13T20:07:40.642Z"
+    "lastModified": "2025-07-13T20:35:50.203Z"
   },
   "environments": {
     "dev": {
@@ -54,8 +69,8 @@
     }
   },
   "currentProject": {
-    "projectName": "Summation Test Project",
-    "scriptId": "1iBedJvVbDgBc4Y2BdqPe4Y4XObkRf3bU-9t9TwKFGq77Cmqti8crxt1O",
-    "lastSync": "2025-07-13T20:03:59.939Z"
+    "projectName": "1pL8bFEomNyJrRP8la8UAZjmi2SAjbwBRidiaBUaF5_C1Cf_bFTat-V7s",
+    "scriptId": "1pL8bFEomNyJrRP8la8UAZjmi2SAjbwBRidiaBUaF5_C1Cf_bFTat-V7s",
+    "lastSync": "2025-07-13T20:35:50.203Z"
   }
 }

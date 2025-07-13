@@ -399,10 +399,7 @@ export class MCPValidator {
       customValidator: (value) => {
         // Allow script tags in HTML content
         if (contentType === 'html' || contentType === 'HTML') {
-          // For HTML content, we allow script tags but still check size limits
-          if (value.length > 50000) {
-            return 'HTML content exceeds Google Apps Script recommended file size (50KB)';
-          }
+          // For HTML content, we allow script tags - let GAS API handle size validation
           return null;
         }
         
@@ -410,9 +407,7 @@ export class MCPValidator {
         if (value.includes('<script>') || value.includes('</script>')) {
           return 'Code should not contain HTML script tags';
         }
-        if (value.length > 50000) {
-          return 'Code exceeds Google Apps Script recommended file size (50KB)';
-        }
+        // Let Google Apps Script API be the authority for size validation
         return null;
       }
     }, { context, throwOnError: true });
@@ -435,9 +430,7 @@ export class MCPValidator {
         if (!value.trim().toLowerCase().includes('<!doctype') && !value.trim().toLowerCase().includes('<html')) {
           // Not strictly required, but good practice
         }
-        if (value.length > 50000) {
-          return 'HTML content exceeds Google Apps Script recommended file size (50KB)';
-        }
+        // Let Google Apps Script API be the authority for size validation
         return null;
       }
     }, { context, throwOnError: true });
