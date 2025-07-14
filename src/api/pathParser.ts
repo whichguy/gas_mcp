@@ -105,7 +105,7 @@ export function parsePath(path: string): ParsedPath {
   const hasAnyExtension = lastPart.includes('.');
   const looksLikeCodeFile = /^[A-Z]/.test(lastPart) || /[a-z][A-Z]/.test(lastPart);
   const isSpecialGASFile = lastPart === 'appsscript' || lastPart === 'Code';
-  const isValidGASFilename = /^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(lastPart);
+  const isValidGASFilename = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(lastPart);
   
   // ✅ FIXED: Accept files with directory prefixes - GAS supports "/" in filenames
   const isFile = hasKnownExtension || hasAnyExtension || looksLikeCodeFile || isSpecialGASFile || isValidGASFilename;
