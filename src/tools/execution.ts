@@ -22,18 +22,24 @@ export class GASRunTool extends BaseTool {
     properties: {
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. LLM POWER: Can execute ANY valid JavaScript/Apps Script code - expressions, function calls, complex operations. No wrapper functions needed.',
+        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed.',
         minLength: 1,
         maxLength: 2000,
         examples: [
+          // Inline expressions and built-in services (direct execution)
           'Math.PI * 2',
           'new Date().toISOString()',
           'Session.getActiveUser().getEmail()',
-          'fibonacci(17)',
           'SpreadsheetApp.create("My New Sheet").getId()',
           'DriveApp.getFiles().next().getName()',
           '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
-          'JSON.stringify({message: "Hello", timestamp: new Date()})'
+          'JSON.stringify({message: "Hello", timestamp: new Date()})',
+          // Function calls from files (require namespace first)
+          'require("Calculator").add(5, 3)',
+          'require("MathLibrary").fibonacci(10)',
+          'require("Utils").processData(inputArray)',
+          'const calc = require("Calculator"); calc.multiply(4, 6)',
+          'const math = require("MathLibrary"); math.factorial(5)'
         ]
       },
       project: {
@@ -72,8 +78,13 @@ export class GASRunTool extends BaseTool {
     required: ['js_statement'],
     llmGuidance: {
       whenToUse: 'Use for normal JavaScript execution. Automatically uses current project context.',
-      workflow: 'Set project with gas_project_set, then execute: gas_run({js_statement: "Math.sqrt(16)"})',
-      alternatives: 'Use gas_raw_run only when you need explicit script ID control'
+      workflow: 'Set project with gas_project_set, then execute: gas_run({js_statement: "Math.sqrt(16)"}) for inline code or gas_run({js_statement: "require(\\"Calculator\\").add(5, 3)"}) for functions from files.',
+      alternatives: 'Use gas_raw_run only when you need explicit script ID control',
+      executionPatterns: {
+        inlineCode: 'Direct execution: Math.PI * 2, new Date(), Session.getActiveUser().getEmail()',
+        builtinServices: 'Google Apps Script services: SpreadsheetApp.create(), DriveApp.getFiles()',
+        userFunctions: 'Functions from files: require("ModuleName").functionName(args)'
+      }
     }
   };
 
@@ -596,23 +607,29 @@ export class GASRawRunTool extends BaseTool {
       },
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. LLM POWER: Can execute ANY valid JavaScript/Apps Script code - expressions, function calls, complex operations. No wrapper functions needed.',
+        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed.',
         minLength: 1,
         maxLength: 2000,
         examples: [
+          // Inline expressions and built-in services (direct execution)
           'Math.PI * 2',
           'new Date().toISOString()', 
           'Session.getActiveUser().getEmail()',
-          'fibonacci(17)',
           'SpreadsheetApp.create("My New Sheet").getId()',
           'DriveApp.getFiles().next().getName()',
           '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
-          'JSON.stringify({message: "Hello", timestamp: new Date()})'
+          'JSON.stringify({message: "Hello", timestamp: new Date()})',
+          // Function calls from files (require namespace first)
+          'require("Calculator").add(5, 3)',
+          'require("MathLibrary").fibonacci(10)',
+          'require("Utils").processData(inputArray)',
+          'const calc = require("Calculator"); calc.multiply(4, 6)',
+          'const math = require("MathLibrary"); math.factorial(5)'
         ],
         llmHints: {
           capability: 'Full JavaScript ES6+ support plus Google Apps Script services',
           expressions: 'Can execute mathematical expressions, object operations, API calls',
-          functions: 'Can call functions defined in project files',
+          functions: 'Can call functions defined in project files using require("ModuleName").functionName()',
           services: 'Access to SpreadsheetApp, DriveApp, GmailApp, etc.',
           return: 'Return values are automatically JSON-serialized for response',
           debugging: 'Use console.log() for debugging output in execution logs'
@@ -652,7 +669,7 @@ export class GASRawRunTool extends BaseTool {
         calculation: 'gas_run({scriptId: "...", js_statement: "Math.pow(2, 10)"})',
         datetime: 'gas_run({scriptId: "...", js_statement: "new Date().toISOString()"})',
         userInfo: 'gas_run({scriptId: "...", js_statement: "Session.getActiveUser().getEmail()"})',
-        customFunction: 'gas_run({scriptId: "...", js_statement: "myCustomFunction(arg1, arg2)"})',
+        customFunction: 'gas_run({scriptId: "...", js_statement: "require(\\"Calculator\\").add(5, 3)"})',
         googleServices: 'gas_run({scriptId: "...", js_statement: "DriveApp.getRootFolder().getName()"})',
         dataProcessing: 'gas_run({scriptId: "...", js_statement: "[1,2,3].map(x => x * 2).join(\',\')"})'
       },

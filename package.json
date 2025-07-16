@@ -82,9 +82,9 @@
     "mcp-gas": {
       "command": "node",
       "args": [
-        "/Users/jameswiese/src/mcp_gas/dist/src/index.js",
+        "dist/src/index.js",
         "--config",
-        "/Users/jameswiese/src/mcp_gas/mcp-gas-config.json"
+        "./mcp-gas-config.json"
       ],
       "env": {
         "NODE_ENV": "production"

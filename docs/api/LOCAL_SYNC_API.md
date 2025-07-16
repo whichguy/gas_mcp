@@ -20,7 +20,7 @@ Use these for day-to-day development. They handle local/remote sync automaticall
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
 | **`gas_project_set`** | Set project & auto-pull | Start working on a project |
-| **`gas_write`** | Auto-sync writer | Edit files (writes to local + remote) |
+| **`gas_write`** | Auto-sync writer | Edit files with explicit paths (projectId/filename) |
 | **`gas_cat`** | Smart reader | Read files (local-first, remote fallback) |
 | **`gas_run`** | Current project execution | Run code in current project |
 
@@ -38,7 +38,7 @@ Use these when you need explicit control over paths and project IDs.
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
-| **`gas_raw_write`** | Explicit project ID paths | Multiple projects, no current project |
+| **`gas_raw_write`** | ⚠️ Explicit project ID paths (CLOBBERS files) | Multiple projects, no current project, file replacement |
 | **`gas_raw_cat`** | Explicit project ID paths | Direct API access, automation |
 | **`gas_raw_run`** | Explicit script ID | Multiple projects, testing |
 

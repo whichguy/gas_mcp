@@ -255,14 +255,16 @@ const manifest = await callTool('gas_cat', {
 
 ### `gas_write` - Create/Update Files
 
-Create new files or update existing files in Google Apps Script projects.
+Create new files or update existing files in Google Apps Script projects with automatic local/remote sync.
 
 #### Input Schema
 ```typescript
 interface GasWriteInput {
-  path: string;     // Format: "projectId/filename"
+  path: string;         // Format: "projectId/filename" (WITHOUT extension) - same as gas_raw_write
   content: string;
-  position?: number;
+  fileType?: 'SERVER_JS' | 'HTML' | 'JSON';  // Optional - auto-detected if not provided
+  localOnly?: boolean;  // Write only to local (skip remote sync)
+  remoteOnly?: boolean; // Write only to remote (skip local sync)
   accessToken?: string;
 }
 ```
@@ -281,44 +283,47 @@ function fibonacci(n) {
 
 function testFibonacci() {
   Logger.log('fib(10) = ' + fibonacci(10));
-}`,
-  position: 0
-});
-
-// Response:
-{
-  "success": true,
-  "fileName": "MyNewFile.gs",  // .gs automatically appended
-  "fileType": "JAVASCRIPT",
-  "bytesWritten": 187,
-  "position": 0,
-  "message": "File created successfully"
-}
-```
-
-**Update Existing File**
-```typescript
-const updateResult = await callTool('gas_write', {
-  path: 'abc123def456.../Code.gs',
-  content: `
-function myFunction() {
-  Logger.log('Updated function!');
-  return {
-    timestamp: new Date().toISOString(),
-    timezone: Session.getScriptTimeZone()
-  };
 }`
 });
 
 // Response:
 {
-  "success": true,
-  "fileName": "Code.gs",
-  "fileType": "JAVASCRIPT",
-  "bytesWritten": 156,
-  "message": "File updated successfully",
-  "previousVersion": "backup-timestamp"
+  "status": "success",
+  "path": "abc123def456.../MyNewFile",
+  "projectId": "abc123def456...",
+  "filename": "MyNewFile",
+  "size": 187,
+  "syncStatus": "synced",
+  "localWritten": true,
+  "remoteWritten": true,
+  "detectedType": "SERVER_JS",
+  "message": "File synced to local and remote"
 }
+```
+
+**Local-Only Write (for testing)**
+```typescript
+const localResult = await callTool('gas_write', {
+  path: 'abc123def456.../TestFile',
+  content: 'function test() { return "local only"; }',
+  localOnly: true
+});
+
+// Response:
+{
+  "syncStatus": "local-only",
+  "localWritten": true,
+  "remoteWritten": false,
+  "message": "File written to local only"
+}
+```
+
+**Differences from `gas_raw_write`:**
+- ✅ **Auto-sync**: Writes to both local and remote by default
+- ✅ **File type detection**: Optional `fileType` parameter (auto-detected)
+- ✅ **Sync control**: `localOnly`/`remoteOnly` options
+- ✅ **Same path format**: Uses identical `projectId/filename` format
+- ❌ **No positioning**: Cannot specify file order (use `gas_raw_write` for that)
 ```
 
 ### `gas_rm` - Delete Files
@@ -1180,7 +1185,7 @@ const detailed = await callTool('gas_status', {
 
 #### Key Capabilities
 - **💻 Arbitrary Code Execution**: Execute any valid JavaScript expression, mathematical operations, object manipulations
-- **🔧 Function Invocation**: Call any function defined in your Google Apps Script project files
+- **🔧 Function Invocation**: Call functions defined in your Google Apps Script project files using `require("ModuleName")`
 - **📊 Built-in Services**: Access SpreadsheetApp, DriveApp, GmailApp, Session, and all Google Apps Script services
 - **🔄 HEAD Deployment Strategy**: Uses HEAD deployments with `/dev` URLs for immediate code updates
 - **⚡ Zero Setup**: Automatically creates deployment infrastructure and proxy shim if needed
@@ -1191,7 +1196,7 @@ const detailed = await callTool('gas_status', {
 |----------|----------|-----------|
 | **Math Expressions** | `Math.PI * 2`, `Math.sqrt(16)` | Calculations, formulas |
 | **Date/Time** | `new Date().toISOString()`, `Session.getScriptTimeZone()` | Timestamps, timezone info |
-| **User Functions** | `fibonacci(10)`, `calculateTotal(prices)` | Custom business logic |
+| **User Functions** | `require("Calculator").add(5, 3)`, `require("MathLibrary").fibonacci(10)` | Custom business logic |
 | **Array Operations** | `[1,2,3].map(x => x * 2)`, `data.filter(item => item.active)` | Data processing |
 | **Object Creation** | `{timestamp: new Date(), user: Session.getActiveUser().getEmail()}` | Structured data |
 | **Google Services** | `SpreadsheetApp.create("New Sheet").getId()` | Drive, Sheets, Gmail operations |
@@ -1262,21 +1267,27 @@ const folderName = await callTool('gas_run', {
 ```typescript
 // Call a fibonacci function you've defined in your project
 const fibResult = await callTool('gas_run', {
-  js_statement: 'fibonacci(10)'
+  js_statement: 'require("MathLibrary").fibonacci(10)'
 });
-// Returns: 55 (if fibonacci function exists in your project)
+// Returns: 55 (if fibonacci function exists in MathLibrary module)
 
 // Call custom business logic
 const total = await callTool('gas_run', {
-  js_statement: 'calculateOrderTotal([{price: 10, qty: 2}, {price: 5, qty: 3}])'
+  js_statement: 'require("Calculator").calculateOrderTotal([{price: 10, qty: 2}, {price: 5, qty: 3}])'
 });
 // Returns: result of your custom function
 
 // Call data processing function
 const processed = await callTool('gas_run', {
-  js_statement: 'processUserData("john@example.com")'
+  js_statement: 'require("UserUtils").processUserData("john@example.com")'
 });
 // Returns: result from your custom function
+
+// Alternative: Store module reference for multiple calls
+const multiCall = await callTool('gas_run', {
+  js_statement: 'const calc = require("Calculator"); calc.add(5, 3) + calc.multiply(2, 4)'
+});
+// Returns: result of combined operations
 ```
 
 **4. Complex Data Manipulation**
@@ -1304,18 +1315,18 @@ const dateInfo = await callTool('gas_run', {
 ```typescript
 // When you have a current project set via gas_project_set
 const result = await callTool('gas_run', {
-  js_statement: 'myProjectFunction(42)'
+  js_statement: 'require("MyModule").myProjectFunction(42)'
 });
 
 // Using environment shortcuts
 const envResult = await callTool('gas_run', {
-  js_statement: 'getEnvironmentInfo()',
+  js_statement: 'require("Config").getEnvironmentInfo()',
   project: { dev: true }
 });
 
 // Using project name
 const namedResult = await callTool('gas_run', {
-  js_statement: 'processData()',
+  js_statement: 'require("DataProcessor").processData()',
   project: 'my-calculator'
 });
 ```

@@ -280,7 +280,7 @@ Update your Cursor configuration to include the config file:
 |------|-------------|----------------|
 | `gas_ls` | List projects/files | `path?`, `detailed?` |
 | **`gas_cat`** | **✅ Smart reader** (local-first, remote fallback) | `path` |
-| **`gas_write`** | **✅ Auto-sync writer** (local + remote) | `path`, `content` |
+| **`gas_write`** | **✅ Auto-sync writer** (local + remote) | `path` (projectId/filename), `content` |
 | `gas_rm` | Delete files | `path` |
 | `gas_mv` | Move/rename files | `from`, `to` |
 | `gas_cp` | Copy files | `from`, `to` |
@@ -291,7 +291,7 @@ Update your Cursor configuration to include the config file:
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
 | `gas_raw_cat` | Read files with explicit project ID | `path` (full projectId/filename) |
-| `gas_raw_write` | Write files with explicit project ID | `path`, `content` |
+| `gas_raw_write` | ⚠️ Write files with explicit project ID (CLOBBERS remote files - use gas_write for safe merging) | `path`, `content` |
 | `gas_raw_copy` | Copy files between projects | `from`, `to` |
 
 ### 🚀 Smart Execution (1 tool)
