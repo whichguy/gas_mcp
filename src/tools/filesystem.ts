@@ -5,6 +5,7 @@ import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
+import { wrapModuleContent, unwrapModuleContent, shouldWrapContent, getModuleName } from '../utils/moduleWrapper.js';
 
 /**
  * Read file contents with smart local/remote fallback (RECOMMENDED)
@@ -88,12 +89,29 @@ export class GASCatTool extends BaseTool {
       try {
         const localContent = await LocalFileManager.readLocalFile(filename, workingDir);
         if (localContent) {
+          // Detect file type from filename for local files
+          let fileType: string;
+          if (filename.toLowerCase() === 'appsscript') {
+            fileType = 'JSON';
+          } else if (filename.toLowerCase().endsWith('.html') || filename.toLowerCase().endsWith('.htm')) {
+            fileType = 'HTML';
+          } else if (filename.toLowerCase().endsWith('.json')) {
+            fileType = 'JSON';
+          } else {
+            fileType = 'SERVER_JS'; // Default for .gs files and others
+          }
+          
+          // Unwrap module content for SERVER_JS files
+          const unwrappedContent = shouldWrapContent(fileType, filename) 
+            ? unwrapModuleContent(localContent)
+            : localContent;
+          
           return {
             path: filePath,
             filename,
             source: 'local',
-            content: localContent,
-            size: localContent.length,
+            content: unwrappedContent,
+            size: unwrappedContent.length,
             localPath: LocalFileManager.getLocalFilePath(filename, workingDir)
           };
         }
@@ -111,14 +129,20 @@ export class GASCatTool extends BaseTool {
       throw new FileOperationError('read', filePath, 'file not found in local or remote');
     }
 
+    // Unwrap module content for SERVER_JS files
+    const rawContent = file.source || '';
+    const unwrappedContent = shouldWrapContent(file.type, filename) 
+      ? unwrapModuleContent(rawContent)
+      : rawContent;
+
     return {
       path: filePath,
       projectId: parsedPath.projectId,
       filename,
       source: 'remote',
       type: file.type,
-      content: file.source || '',
-      size: (file.source || '').length
+      content: unwrappedContent,
+      size: unwrappedContent.length
     };
   }
 }
@@ -127,22 +151,26 @@ export class GASCatTool extends BaseTool {
  * Write file with automatic local and remote sync (RECOMMENDED)
  * 
  * ✅ RECOMMENDED - Use for normal development workflow
- * Automatically writes to both local ./src/ and remote project when current project is set
+ * Automatically writes to both local ./src/ and remote project when explicit project path provided
  */
 export class GASWriteTool extends BaseTool {
   public name = 'gas_write';
-  public description = '✍️ RECOMMENDED: Smart file writer - auto-syncs to local and remote when current project set';
+  public description = '✍️ RECOMMENDED: Smart file writer - auto-syncs to local and remote with explicit project path';
   
   public inputSchema = {
     type: 'object',
     properties: {
       path: {
         type: 'string',
-        description: 'File path (filename only if current project set, or full projectId/filename WITHOUT extension)',
+        description: 'Full path to file: projectId/filename (WITHOUT extension). Same format as gas_raw_write for consistency.',
+        pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
+        minLength: 25,
+        maxLength: 200,
         examples: [
-          'utils',                       // Uses current project → utils.gs
-          'models/User',                 // Uses current project → models/User.gs
-          'abc123def456.../helpers'      // Explicit project ID → helpers.gs
+          'abc123def456.../utils',                // → utils.gs
+          'abc123def456.../models/User',          // → models/User.gs  
+          'abc123def456.../helpers',              // → helpers.gs
+          'abc123def456.../appsscript'            // → appsscript.json
         ]
       },
       content: {
@@ -177,9 +205,9 @@ export class GASWriteTool extends BaseTool {
     },
     required: ['path', 'content'],
     llmGuidance: {
-      whenToUse: 'Use for normal file writing. Automatically syncs to both local and remote.',
-      workflow: 'Set project with gas_project_set, then write: gas_write({path: "utils", content: "..."})',
-      alternatives: 'Use gas_raw_write only when you need explicit project ID control or single-destination writes'
+      whenToUse: 'Use for normal file writing with explicit project paths. Automatically syncs to both local and remote.',
+      workflow: 'Use with explicit paths: gas_write({path: "projectId/filename", content: "..."})',
+      alternatives: 'Use gas_raw_write when you need single-destination writes or advanced file positioning'
     }
   };
 
@@ -195,51 +223,87 @@ export class GASWriteTool extends BaseTool {
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const localOnly = params.localOnly || false;
     const remoteOnly = params.remoteOnly || false;
-    let filePath = params.path;
+    const filePath = params.path;
     const content = params.content;
 
     if (localOnly && remoteOnly) {
       throw new ValidationError('localOnly/remoteOnly', 'both true', 'only one can be true');
     }
 
-    // Try to resolve path with current project context
-    let scriptId: string | undefined;
-    let filename: string;
+    // SECURITY: Validate path BEFORE authentication - same validation as gas_raw_write
+    const path = this.validate.filePath(filePath, 'file writing');
     
-    try {
-      const parsedPath = parsePath(filePath);
-      
-      if (parsedPath.isFile) {
-        // Complete path provided
-        scriptId = parsedPath.projectId;
-        filename = parsedPath.filename!;
-      } else {
-        throw new Error('Incomplete path');
+    const parsedPath = parsePath(path);
+    
+    if (!parsedPath.isFile) {
+      throw new ValidationError('path', path, 'file path (must include projectId/filename)');
+    }
+
+    const scriptId = parsedPath.projectId;
+    let filename = parsedPath.filename!;
+
+    // ⚠️ SPECIAL FILE VALIDATION: appsscript.json must be in root (same as gas_raw_write)
+    if (filename.toLowerCase() === 'appsscript' || filename.toLowerCase() === 'appsscript.json') {
+      // Check if appsscript is being placed in subfolder (path has directory)
+      if (parsedPath.directory && parsedPath.directory !== '') {
+        throw new ValidationError(
+          'path', 
+          path, 
+          'appsscript.json must be in project root (projectId/appsscript), not in subfolders'
+        );
       }
-    } catch (error) {
-      // Path doesn't have project ID, try to use current project
-      try {
-        scriptId = await ProjectResolver.getCurrentProjectId(workingDir);
-        filename = filePath;
-        filePath = `${scriptId}/${filePath}`;
-      } catch (currentProjectError) {
-        throw new ValidationError('path', filePath, 'filename or projectId/filename (set current project with gas_project_set)');
+      console.error(`✅ Special file appsscript.json validated - correctly placed in project root`);
+    }
+
+    // Determine file type for wrapping decisions
+    let fileType: 'SERVER_JS' | 'HTML' | 'JSON';
+    if (params.fileType) {
+      fileType = params.fileType as 'SERVER_JS' | 'HTML' | 'JSON';
+    } else {
+      // Use same detection logic as gas_raw_write for consistency
+      if (filename.toLowerCase() === 'appsscript') {
+        fileType = 'JSON';
+      } else if (filename.toLowerCase().endsWith('.html') || filename.toLowerCase().endsWith('.htm')) {
+        fileType = 'HTML';
+      } else if (filename.toLowerCase().endsWith('.json')) {
+        fileType = 'JSON';
+      } else if (filename.toLowerCase().endsWith('.js') || filename.toLowerCase().endsWith('.gs')) {
+        fileType = 'SERVER_JS';
+      } else {
+        // Content-based detection as fallback
+        const trimmed = content.trim();
+        if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html>')) {
+          fileType = 'HTML';
+        } else if (trimmed.startsWith('{') && trimmed.endsWith('}') && filename === 'appsscript') {
+          fileType = 'JSON';
+        } else {
+          fileType = 'SERVER_JS';
+        }
       }
     }
 
+    // Wrap content for SERVER_JS files
+    const moduleName = getModuleName(filename);
+    const wrappedContent = shouldWrapContent(fileType, filename) 
+      ? wrapModuleContent(content, moduleName)
+      : content;
+
     const results = {
       path: filePath,
+      projectId: scriptId,
       filename,
-      content,
+      content: wrappedContent,
+      originalContent: content,
+      wrapped: shouldWrapContent(fileType, filename),
       localWritten: false,
       remoteWritten: false,
-      size: content.length
+      size: wrappedContent.length
     };
 
     // Write to local ./src/ 
     if (!remoteOnly) {
       try {
-        await LocalFileManager.writeLocalFile(filename, content, params.fileType, workingDir);
+        await LocalFileManager.writeLocalFile(filename, wrappedContent, fileType, workingDir);
         results.localWritten = true;
       } catch (error: any) {
         console.error(`Failed to write local file: ${error.message}`);
@@ -251,35 +315,8 @@ export class GASWriteTool extends BaseTool {
       try {
         const accessToken = await this.getAuthToken(params);
         
-        // Use improved file type detection from GASRawWriteTool
-        let fileType: 'SERVER_JS' | 'HTML' | 'JSON';
-        if (params.fileType) {
-          fileType = params.fileType as 'SERVER_JS' | 'HTML' | 'JSON';
-        } else {
-          // Use same detection logic as gas_raw_write for consistency
-          if (filename.toLowerCase() === 'appsscript') {
-            fileType = 'JSON';
-          } else if (filename.toLowerCase().endsWith('.html') || filename.toLowerCase().endsWith('.htm')) {
-            fileType = 'HTML';
-          } else if (filename.toLowerCase().endsWith('.json')) {
-            fileType = 'JSON';
-          } else if (filename.toLowerCase().endsWith('.js') || filename.toLowerCase().endsWith('.gs')) {
-            fileType = 'SERVER_JS';
-          } else {
-            // Content-based detection as fallback
-            const trimmed = content.trim();
-            if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html>')) {
-              fileType = 'HTML';
-            } else if (trimmed.startsWith('{') && trimmed.endsWith('}') && filename === 'appsscript') {
-              fileType = 'JSON';
-            } else {
-              fileType = 'SERVER_JS';
-            }
-          }
-        }
-        
         // Use the improved updateFile method with explicit file type
-        await this.gasClient.updateFile(scriptId, filename, content, undefined, accessToken, fileType);
+        await this.gasClient.updateFile(scriptId, filename, wrappedContent, undefined, accessToken, fileType);
         results.remoteWritten = true;
         (results as any).detectedType = fileType;
       } catch (error: any) {
@@ -482,11 +519,33 @@ export class GASRawCatTool extends BaseTool {
  * Write content to a file in a Google Apps Script project (RAW/ADVANCED)
  * 
  * ⚠️  ADVANCED TOOL - Use gas_write for normal development workflow
+ * ⚠️  DANGER: This tool COMPLETELY OVERWRITES remote files without merging
+ * 
+ * ## CRITICAL WARNING
+ * gas_raw_write CLOBBERS (completely replaces) the entire remote file content.
+ * Any existing content in the remote file will be PERMANENTLY LOST.
+ * 
+ * ## RECOMMENDED ALTERNATIVE
+ * Use gas_write instead - it provides intelligent merging of local and remote files,
+ * preserving existing content while applying your changes safely.
+ * 
+ * ## When to Use gas_raw_write
+ * Only use this tool when you explicitly intend to:
+ * - Replace entire file contents completely
+ * - Create new files from scratch
+ * - Perform bulk operations where clobbering is intended
+ * 
+ * ## Safe Alternative: gas_write
+ * - ✅ Merges local and remote file content intelligently
+ * - ✅ Preserves existing code while adding new content
+ * - ✅ Safer for collaborative development
+ * - ✅ Same path format but with merge protection
+ * 
  * This tool requires explicit project IDs and paths for direct API access
  */
 export class GASRawWriteTool extends BaseTool {
   public name = 'gas_raw_write';
-  public description = '🔧 ADVANCED: Write files with explicit project ID path. Use gas_write for normal workflow. SPECIAL FILE: appsscript.json must always reside in project root (no subfolders allowed) and contains essential project metadata.';
+  public description = '🔧 ADVANCED: Write files with explicit project ID path. ⚠️ DANGER: CLOBBERS remote files - use gas_write for safe merging. SPECIAL FILE: appsscript.json must always reside in project root (no subfolders allowed) and contains essential project metadata.';
   
   public inputSchema = {
     type: 'object',
@@ -509,12 +568,13 @@ export class GASRawWriteTool extends BaseTool {
           extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON',
           organization: 'Use "/" in filename for logical organization (not real folders)',
           autoDetection: 'File type detected from content: JavaScript, HTML, JSON',
-          specialFiles: 'appsscript.json MUST be in root: projectId/appsscript (never projectId/subfolder/appsscript)'
+          specialFiles: 'appsscript.json MUST be in root: projectId/appsscript (never projectId/subfolder/appsscript)',
+          warning: 'This tool OVERWRITES the entire file - use gas_write for safer merging'
         }
       },
       content: {
         type: 'string',
-        description: 'File content to write. LLM FLEXIBILITY: Supports JavaScript/Apps Script, HTML, JSON. Content type automatically detected for proper file extension.',
+        description: 'File content to write. ⚠️ WARNING: This content will COMPLETELY REPLACE the existing file. LLM FLEXIBILITY: Supports JavaScript/Apps Script, HTML, JSON. Content type automatically detected for proper file extension.',
         minLength: 0,
         maxLength: 100000,
         examples: [
@@ -528,7 +588,8 @@ export class GASRawWriteTool extends BaseTool {
           html: 'HTML templates for web apps, can include CSS and JavaScript',
           json: 'Configuration files like appsscript.json for project settings',
           limits: 'Maximum 100KB per file (Google Apps Script limit)',
-          encoding: 'UTF-8 encoding, supports international characters'
+          encoding: 'UTF-8 encoding, supports international characters',
+          danger: 'This content will OVERWRITE the entire remote file - existing content will be lost'
         }
       },
       position: {
@@ -569,13 +630,31 @@ export class GASRawWriteTool extends BaseTool {
     llmWorkflowGuide: {
       prerequisites: [
         '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
-        '2. Project exists: Have scriptId from gas_project_create or gas_ls'
+        '2. Project exists: Have scriptId from gas_project_create or gas_ls',
+        '3. ⚠️ VERIFY: You intend to COMPLETELY OVERWRITE the target file'
       ],
+      dangerWarning: {
+        behavior: 'This tool CLOBBERS (completely overwrites) remote files without merging',
+        consequence: 'Any existing content in the target file will be PERMANENTLY LOST',
+        recommendation: 'Use gas_write instead for safe merging of local and remote content',
+        useCase: 'Only use gas_raw_write when you explicitly intend to replace entire file contents'
+      },
+      saferAlternative: {
+        tool: 'gas_write',
+        benefits: [
+          'Intelligent merging of local and remote file content',
+          'Preserves existing code while adding new content',  
+          'Safer for collaborative development',
+          'Same path format but with merge protection'
+        ],
+        when: 'Use gas_write for most file writing operations unless you specifically need to clobber files'
+      },
       useCases: {
-        newFunction: 'Add JavaScript functions to existing project',
-        htmlTemplate: 'Create web app HTML interface files',
-        configuration: 'Modify appsscript.json project settings',
-        utilities: 'Add helper functions and shared code'
+        newFile: 'Creating completely new files from scratch',
+        replace: 'Intentionally replacing entire file contents',
+        bulk: 'Bulk operations where clobbering is intended',
+        config: 'Replacing configuration files like appsscript.json',
+        avoid: '⚠️ AVOID for: Updating existing files, collaborative editing, preserving content'
       },
       fileTypes: {
         javascript: 'Content with functions → .gs file (SERVER_JS type)',
@@ -583,6 +662,8 @@ export class GASRawWriteTool extends BaseTool {
         json: 'Content with JSON format → .json file (JSON type)'
       },
       bestPractices: [
+        '⚠️ CRITICAL: Only use when you intend to completely replace file contents',
+        'Consider gas_write for safer merging operations',
         'Use descriptive filenames that indicate purpose',
         'Organize related functions in same file',
         'Put utility functions in separate files at position 0',
@@ -591,7 +672,8 @@ export class GASRawWriteTool extends BaseTool {
       afterWriting: [
         'Use gas_run to execute functions from this file',
         'Use gas_cat to verify file was written correctly',
-        'Use gas_ls to see file in project structure'
+        'Use gas_ls to see file in project structure',
+        '⚠️ Verify that file clobbering was intentional'
       ]
     }
   };
