@@ -1,398 +1,289 @@
 /**
  * 0_shim.js template for Google Apps Script projects
- * This file contains the module system and function registry code
- * that gets automatically added to new GAS projects.
+ * This file contains the module system that gets automatically added to new GAS projects.
+ * 
+ * CRITICAL: This implements LAZY LOADING where _main is called only when require() is first invoked,
+ * not when __defineModule__ is called.
  */
 
 export const SHIM_TEMPLATE = `/**
- * Module System and Function Registry
+ * Google Apps Script Module System (0_shim.js)
  * 
- * This module provides a CommonJS-like module system for Google Apps Script
- * with automatic name detection and function registration capabilities.
+ * This file provides a CommonJS-like module system for Google Apps Script,
+ * enabling the use of require() to import modules and manage dependencies.
  * 
  * Key Features:
- * - CommonJS-style require() function
+ * - Module registration and LAZY LOADING
+ * - Circular dependency detection and handling
  * - Automatic module name detection from stack traces
- * - Function registry for cross-module function calls
- * - Circular dependency detection
- * - Module initialization control
+ * - Support for both explicit and automatic module naming
  * 
- * Usage Pattern:
- * \`\`\`javascript
- * function _main(module, exports, require) {
- *   // Your module code here
- *   exports.myFunction = function() {
- *     return "Hello from module";
- *   };
- * }
+ * Usage:
+ * 1. Each module should define a _main function with the signature:
+ *    function _main(module = globalThis.__getCurrentModule(), exports = module.exports, require = globalThis.require)
+ * 2. At the end of each module file, call: __defineModule__(_main);
+ * 3. Use require('ModuleName') to import modules
  * 
- * // For 0_shim only: use explicit naming
- * __defineModule__(_main, '0_shim');
- * 
- * // For all other modules: use automatic detection
- * __defineModule__(_main);
- * \`\`\`
+ * CRITICAL: The _main function is called ONLY when the module is first required,
+ * not when __defineModule__ is called (lazy loading).
  */
 
-// Initialize global module system
-if (!globalThis.__modules) {
-  globalThis.__modules = {};
-}
-
-if (!globalThis.__requireStack) {
-  globalThis.__requireStack = [];
-}
-
-if (!globalThis.__FUNCTION_REGISTRY) {
-  globalThis.__FUNCTION_REGISTRY = {};
-}
-
-/**
- * Get the current module context (fallback for legacy code)
- * @returns {Object} Module object with exports
- */
-function __getCurrentModule() {
-  let moduleName = 'unknown';
-  try {
-    const stack = new Error().stack;
-    if (stack) {
-      const lines = stack.split('\\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (line.includes('at _main')) {
-          const match = line.match(/at _main \\(([^:]+):/);
-          if (match) {
-            moduleName = match[1].split('/').pop() || 'unknown';
-            break;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // Fallback to unknown
+(function() {
+  'use strict';
+  
+  // Initialize global module system if not already present
+  if (!globalThis.__modules) {
+    globalThis.__modules = {};
+    globalThis.__moduleRegistry = {}; // Stores module functions for lazy loading
+    globalThis.__requireStack = [];
+    globalThis.__currentModule = null;
   }
-  
-  if (!globalThis.__modules[moduleName]) {
-    globalThis.__modules[moduleName] = { exports: {} };
-  }
-  
-  return globalThis.__modules[moduleName];
-}
 
-// Make getCurrentModule available globally
-globalThis.__getCurrentModule = __getCurrentModule;
-
-/**
- * CommonJS-style require function
- * @param {string} moduleName - Name of the module to require
- * @returns {Object} Module exports
- */
-function require(moduleName) {
-  // Check for circular dependencies
-  if (globalThis.__requireStack.includes(moduleName)) {
-    throw new Error(\`Circular dependency detected: \${globalThis.__requireStack.join(' -> ')} -> \${moduleName}\`);
-  }
-  
-  // Check if module is already loaded
-  if (globalThis.__modules[moduleName]) {
-    return globalThis.__modules[moduleName].exports;
-  }
-  
-  // Module not found
-  throw new Error(\`Module not found: \${moduleName}\`);
-}
-
-// Make require available globally
-globalThis.require = require;
-
-/**
- * Define a module in the global module system
- * @param {Function} moduleFunction - The _main function of the module
- * @param {string} [explicitName] - Optional explicit module name (only for 0_shim)
- */
-function __defineModule__(moduleFunction, explicitName) {
-  let moduleName;
-  
-  if (explicitName) {
-    // Use explicit name (only for 0_shim)
-    moduleName = explicitName;
-  } else {
-    // Auto-detect module name from stack trace
-    moduleName = __detectModuleName__();
-  }
-  
-  // Create module object
-  const module = { exports: {} };
-  globalThis.__modules[moduleName] = module;
-  
-  // Add to require stack for circular dependency detection
-  globalThis.__requireStack.push(moduleName);
-  
-  try {
-    // Execute the module function
-    moduleFunction(module, module.exports, require);
-  } finally {
-    // Remove from require stack
-    globalThis.__requireStack.pop();
-  }
-  
-  return module.exports;
-}
-
-// Make defineModule available globally
-globalThis.__defineModule__ = __defineModule__;
-
-/**
- * Function Registry System
- * Allows registration and retrieval of functions across modules
- */
-
-/**
- * Register a function in the global registry
- * @param {string} name - Function name
- * @param {Function} func - Function to register
- * @param {string} [moduleName] - Module name (auto-detected if not provided)
- */
-function registerFunction(name, func, moduleName) {
-  if (!moduleName) {
-    moduleName = __detectModuleName__();
-  }
-  
-  const fullName = \`\${moduleName}.\${name}\`;
-  globalThis.__FUNCTION_REGISTRY[fullName] = func;
-  
-  console.log(\`📝 Registered function: \${fullName}\`);
-}
-
-/**
- * Get a registered function
- * @param {string} name - Function name (can be "module.function" or just "function")
- * @returns {Function|null} The registered function or null if not found
- */
-function getRegisteredFunction(name) {
-  // Try direct lookup first
-  if (globalThis.__FUNCTION_REGISTRY[name]) {
-    return globalThis.__FUNCTION_REGISTRY[name];
-  }
-  
-  // Try to find by function name across all modules
-  for (const fullName in globalThis.__FUNCTION_REGISTRY) {
-    if (fullName.endsWith(\`.\${name}\`)) {
-      return globalThis.__FUNCTION_REGISTRY[fullName];
-    }
-  }
-  
-  return null;
-}
-
-/**
- * Get all registered functions
- * @returns {Object} Object with all registered functions
- */
-function getAllRegisteredFunctions() {
-  return { ...globalThis.__FUNCTION_REGISTRY };
-}
-
-/**
- * Clear the function registry
- */
-function clearFunctionRegistry() {
-  globalThis.__FUNCTION_REGISTRY = {};
-  console.log("🧹 Function registry cleared");
-}
-
-/**
- * Register all current global functions
- */
-function registerCurrentGlobalFunctions() {
-  const moduleName = __detectModuleName__();
-  let count = 0;
-  
-  for (const name in globalThis) {
-    if (typeof globalThis[name] === 'function' && !name.startsWith('__') && name !== 'require') {
-      registerFunction(name, globalThis[name], moduleName);
-      count++;
-    }
-  }
-  
-  console.log(\`📋 Registered \${count} global functions from \${moduleName}\`);
-}
-
-/**
- * List all registered functions
- * @returns {string[]} Array of function names
- */
-function listRegisteredFunctions() {
-  return Object.keys(globalThis.__FUNCTION_REGISTRY);
-}
-
-/**
- * Execute a registered function by name
- * @param {string} name - Function name
- * @param {...any} args - Arguments to pass to the function
- * @returns {any} Function result
- */
-function executeRegisteredFunction(name, ...args) {
-  const func = getRegisteredFunction(name);
-  if (!func) {
-    throw new Error(\`Function not found: \${name}\`);
-  }
-  
-  return func(...args);
-}
-
-/**
- * Register all exported functions from a module
- * @param {string} moduleName - Module name
- */
-function registerModuleFunctions(moduleName) {
-  const module = globalThis.__modules[moduleName];
-  if (!module) {
-    throw new Error(\`Module not found: \${moduleName}\`);
-  }
-  
-  let count = 0;
-  for (const name in module.exports) {
-    if (typeof module.exports[name] === 'function') {
-      registerFunction(name, module.exports[name], moduleName);
-      count++;
-    }
-  }
-  
-  console.log(\`📦 Registered \${count} functions from module \${moduleName}\`);
-}
-
-/**
- * Detect the current module name from stack trace
- * @returns {string} Module name
- */
-function __detectModuleName__() {
-  try {
-    const stack = new Error().stack;
-    if (stack) {
+  /**
+   * Detects the module name from the current stack trace
+   * @returns {string} The detected module name
+   */
+  function __detectModuleName__() {
+    try {
+      throw new Error();
+    } catch (e) {
+      const stack = e.stack;
       const lines = stack.split('\\n');
       
-      // Look for the calling module in the stack
+      // Look for the line that contains the module file reference
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         
-        // Skip internal functions
-        if (line.includes('__defineModule__') || 
-            line.includes('__detectModuleName__') ||
-            line.includes('registerFunction') ||
-            line.includes('at _main')) {
-          continue;
-        }
-        
-        // Look for file references
-        const match = line.match(/at \\w+ \\(([^:]+):/);
-        if (match) {
-          const fileName = match[1].split('/').pop();
-          if (fileName && fileName !== 'unknown') {
-            return fileName.replace(/\\.gs$/, '');
+        // Match Google Apps Script file patterns
+        if (line.includes('.gs:') || line.includes('Code.gs:')) {
+          // Extract module name from various stack trace formats
+          const matches = line.match(/at\\s+([^\\s]+)\\s*\\(.*?([^/\\\\]+)\\.gs:/);
+          if (matches && matches[2]) {
+            return matches[2];
           }
-        }
-      }
-    }
-  } catch (e) {
-    // Fallback
-  }
-  
-  return \`module_\${Object.keys(globalThis.__modules).length + 1}\`;
-}
-
-/**
- * Debug version of module name detection
- * @returns {Object} Debug information about module detection
- */
-function __detectModuleNameDebug__() {
-  const debug = {
-    stack: null,
-    lines: [],
-    matches: [],
-    finalName: null,
-    detectionMethod: 'unknown'
-  };
-  
-  try {
-    const stack = new Error().stack;
-    debug.stack = stack;
-    
-    if (stack) {
-      const lines = stack.split('\\n');
-      debug.lines = lines;
-      
-      // Look for the calling module in the stack
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        // Skip internal functions
-        if (line.includes('__defineModule__') || 
-            line.includes('__detectModuleName__') ||
-            line.includes('registerFunction') ||
-            line.includes('at _main')) {
-          continue;
-        }
-        
-        // Look for file references
-        const match = line.match(/at \\w+ \\(([^:]+):/);
-        if (match) {
-          debug.matches.push({
-            line: line,
-            match: match[1],
-            fileName: match[1].split('/').pop()
-          });
           
-          const fileName = match[1].split('/').pop();
-          if (fileName && fileName !== 'unknown') {
-            debug.finalName = fileName.replace(/\\.gs$/, '');
-            debug.detectionMethod = 'stack_trace';
-            return debug;
+          // Alternative format matching
+          const altMatches = line.match(/([^/\\\\]+)\\.gs:/);
+          if (altMatches && altMatches[1]) {
+            return altMatches[1];
           }
         }
       }
+      
+      // Fallback: generate a unique module name
+      return 'Module_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+  }
+
+  /**
+   * Gets the current module being processed
+   * @returns {Object} The current module object
+   */
+  function __getCurrentModule__() {
+    return globalThis.__currentModule;
+  }
+
+  /**
+   * LAZY LOADING: Registers a module function but does NOT execute _main immediately
+   * @param {Function} moduleFunction - The _main function to register
+   * @param {string} explicitName - Optional explicit module name (used for 0_shim)
+   */
+  function __defineModule__(moduleFunction, explicitName) {
+    let moduleName;
+    
+    if (explicitName) {
+      // Use explicit name (only for 0_shim)
+      moduleName = explicitName;
+    } else {
+      // Auto-detect module name from stack trace
+      moduleName = __detectModuleName__();
     }
     
-    // Final fallback: generate unique name
-    debug.finalName = \`module_\${Object.keys(globalThis.__modules).length + 1}\`;
-    debug.detectionMethod = 'generated';
+    // Store the module function for lazy loading - do NOT execute it yet
+    globalThis.__moduleRegistry[moduleName] = moduleFunction;
     
-  } catch (e) {
-    debug.error = e.message;
-    debug.finalName = \`module_\${Object.keys(globalThis.__modules).length + 1}\`;
-    debug.detectionMethod = 'error_fallback';
+    // Only create the module object structure, but don't populate exports yet
+    if (!globalThis.__modules[moduleName]) {
+      globalThis.__modules[moduleName] = { exports: {} };
+    }
+    
+    console.log('📦 Module registered (lazy): ' + moduleName);
   }
-  
-  return debug;
-}
 
-// Export detection functions from 0_shim
-globalThis.__detectModuleName__ = __detectModuleName__;
-globalThis.__detectModuleNameDebug__ = __detectModuleNameDebug__;
+  /**
+   * LAZY LOADING: Loads a module by executing its _main function only when first required
+   * @param {string} moduleName - The name of the module to load
+   * @returns {Object} The module's exports
+   */
+  function __loadModule__(moduleName) {
+    // Check if module function is registered
+    if (!globalThis.__moduleRegistry[moduleName]) {
+      throw new Error('Module not found: ' + moduleName + '. Available modules: ' + Object.keys(globalThis.__moduleRegistry).join(', '));
+    }
+    
+    // Check if module is already loaded (exports populated)
+    const module = globalThis.__modules[moduleName];
+    if (module && Object.keys(module.exports).length > 0) {
+      console.log('📦 Module already loaded (cached): ' + moduleName);
+      return module.exports;
+    }
+    
+    // Check for circular dependencies
+    if (globalThis.__requireStack.includes(moduleName)) {
+      console.warn('⚠️  Circular dependency detected: ' + globalThis.__requireStack.join(' -> ') + ' -> ' + moduleName);
+      return module.exports; // Return partial exports for circular dependencies
+    }
+    
+    console.log('📦 Loading module (executing _main): ' + moduleName);
+    
+    // Add to require stack for circular dependency detection
+    globalThis.__requireStack.push(moduleName);
+    
+    // Set current module context
+    const previousModule = globalThis.__currentModule;
+    globalThis.__currentModule = module;
+    
+    try {
+      // Execute the module function (_main) to populate exports
+      const moduleFunction = globalThis.__moduleRegistry[moduleName];
+      moduleFunction(module, module.exports, globalThis.require);
+      
+      console.log('✅ Module loaded successfully: ' + moduleName);
+      return module.exports;
+    } catch (error) {
+      console.error('❌ Error loading module ' + moduleName + ':', error);
+      throw error;
+    } finally {
+      // Clean up: remove from require stack and restore previous module
+      globalThis.__requireStack.pop();
+      globalThis.__currentModule = previousModule;
+    }
+  }
 
-// 📚 See documentation above for proper _main() patterns
-function _main(
-  module = globalThis.__getCurrentModule(),
-  exports = module.exports,
-  require = globalThis.require
-) {
-  // Export all registry and module functions
-  exports.registerFunction = registerFunction;
-  exports.getRegisteredFunction = getRegisteredFunction;
-  exports.getAllRegisteredFunctions = getAllRegisteredFunctions;
-  exports.clearFunctionRegistry = clearFunctionRegistry;
-  exports.registerCurrentGlobalFunctions = registerCurrentGlobalFunctions;
-  exports.listRegisteredFunctions = listRegisteredFunctions;
-  exports.executeRegisteredFunction = executeRegisteredFunction;
-  exports.registerModuleFunctions = registerModuleFunctions;
-  
-  // Export enhanced detection functions
-  exports.__detectModuleName__ = __detectModuleName__;
-  exports.__detectModuleNameDebug__ = __detectModuleNameDebug__;
-  
-  console.log("🔧 Module system and function registry initialized");
-}
+  /**
+   * Requires a module (CommonJS-like require function)
+   * @param {string} moduleName - The name of the module to require
+   * @returns {Object} The module's exports
+   */
+  function require(moduleName) {
+    if (!moduleName) {
+      throw new Error('Module name is required');
+    }
+    
+    // Normalize module name (remove file extensions)
+    moduleName = moduleName.replace(/\\.(js|gs)$/, '');
+    
+    console.log('🔍 Requiring module: ' + moduleName);
+    
+    // Load the module (this will execute _main if not already loaded)
+    return __loadModule__(moduleName);
+  }
 
-// Initialize the shim module with explicit name (ONLY 0_shim uses explicit naming)
-__defineModule__(_main, '0_shim');
+  /**
+   * Lists all available modules
+   * @returns {Array} Array of module names
+   */
+  function __listModules__() {
+    return Object.keys(globalThis.__moduleRegistry);
+  }
+
+  /**
+   * Gets detailed information about the module system
+   * @returns {Object} Module system information
+   */
+  function __getModuleInfo__() {
+    return {
+      registered: Object.keys(globalThis.__moduleRegistry),
+      loaded: Object.keys(globalThis.__modules).filter(name => 
+        globalThis.__modules[name] && Object.keys(globalThis.__modules[name].exports).length > 0
+      ),
+      requireStack: globalThis.__requireStack.slice(),
+      currentModule: globalThis.__currentModule ? 'Set' : 'None'
+    };
+  }
+
+  /**
+   * Clears the module cache (for testing/debugging)
+   */
+  function __clearModuleCache__() {
+    globalThis.__modules = {};
+    globalThis.__moduleRegistry = {};
+    globalThis.__requireStack = [];
+    globalThis.__currentModule = null;
+    console.log('🧹 Module cache cleared');
+  }
+
+  // Export functions to global scope
+  globalThis.__defineModule__ = __defineModule__;
+  globalThis.__getCurrentModule__ = __getCurrentModule__;
+  globalThis.__loadModule__ = __loadModule__;
+  globalThis.__listModules__ = __listModules__;
+  globalThis.__getModuleInfo__ = __getModuleInfo__;
+  globalThis.__clearModuleCache__ = __clearModuleCache__;
+  globalThis.require = require;
+
+  // Register the shim itself as a module
+  function _main(module, exports, require) {
+    // Export utility functions
+    exports.defineModule = __defineModule__;
+    exports.getCurrentModule = __getCurrentModule__;
+    exports.loadModule = __loadModule__;
+    exports.listModules = __listModules__;
+    exports.getModuleInfo = __getModuleInfo__;
+    exports.clearModuleCache = __clearModuleCache__;
+    exports.require = require;
+    
+    // Export system information
+    exports.version = '1.0.0';
+    exports.description = 'Google Apps Script Module System';
+    
+    console.log('🚀 Module system initialized (0_shim)');
+  }
+
+  // Register the shim module itself (this is the only module that gets loaded immediately)
+  __defineModule__(_main, '0_shim');
+  // Load the shim module immediately since it's the bootstrap module
+  __loadModule__('0_shim');
+
+})();
+
+/**
+ * Documentation for creating new user functions:
+ * 
+ * To create a new module in Google Apps Script:
+ * 
+ * 1. Create a new .gs file with your module name
+ * 2. Define your _main function with the proper signature:
+ * 
+ *    function _main(
+ *      module = globalThis.__getCurrentModule(),
+ *      exports = module.exports,
+ *      require = globalThis.require
+ *    ) {
+ *      // Your module code here
+ *      
+ *      function myFunction() {
+ *        return "Hello from my module!";
+ *      }
+ *      
+ *      function anotherFunction(param) {
+ *        return "Received: " + param;
+ *      }
+ *      
+ *      // Export functions
+ *      exports.myFunction = myFunction;
+ *      exports.anotherFunction = anotherFunction;
+ *    }
+ * 
+ * 3. At the end of your file, register the module:
+ *    __defineModule__(_main);
+ * 
+ * 4. Use the module in other files:
+ *    const myModule = require('YourModuleName');
+ *    myModule.myFunction(); // "Hello from my module!"
+ * 
+ * The _main function will only be called the first time the module is required,
+ * not when __defineModule__ is called. Subsequent require() calls will return
+ * the cached exports without re-executing _main.
+ */
 `; 

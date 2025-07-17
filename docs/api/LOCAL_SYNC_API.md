@@ -15,14 +15,16 @@ The MCP Gas Local Sync API provides seamless integration between local developme
 ## **📋 Tool Usage Guide**
 
 ### **✅ RECOMMENDED TOOLS (Normal Workflow)**
-Use these for day-to-day development. They handle local/remote sync automatically.
+Use these for day-to-day development. They handle local/remote sync automatically and provide module wrapper functionality.
 
-| Tool | Purpose | When to Use |
-|------|---------|-------------|
-| **`gas_project_set`** | Set project & auto-pull | Start working on a project |
-| **`gas_write`** | Auto-sync writer | Edit files with explicit paths (projectId/filename) |
-| **`gas_cat`** | Smart reader | Read files (local-first, remote fallback) |
-| **`gas_run`** | Current project execution | Run code in current project |
+| Tool | Purpose | Key Features | When to Use |
+|------|---------|-------------|-------------|
+| **`gas_project_set`** | Set project & auto-pull | Project context management | Start working on a project |
+| **`gas_write`** | Auto-sync writer with module wrapper | **🎯 Automatic `_main()` wrapper for `require()` system** | Edit files with explicit paths (projectId/filename) |
+| **`gas_cat`** | Smart reader | Local-first, remote fallback | Read files (local-first, remote fallback) |
+| **`gas_run`** | Current project execution | Works with current project context | Run code in current project |
+
+**🔑 Module Wrapper Advantage**: `gas_write` automatically wraps your JavaScript code with the proper `_main()` function signature, enabling seamless `require()` functionality across your modules without manual wrapper management.
 
 ### **🔄 EXPLICIT TOOLS (Multi-Environment)**
 Use these for deployment workflows and troubleshooting.
@@ -33,14 +35,16 @@ Use these for deployment workflows and troubleshooting.
 | **`gas_push`** | Explicit local → remote | Deploy to staging/production |
 | **`gas_status`** | Compare local vs remote | Check sync status, find conflicts |
 
-### **⚠️ ADVANCED TOOLS (Power Users)**
-Use these when you need explicit control over paths and project IDs.
+### **⚠️ ADVANCED TOOLS (Power Users Only)**
+**🚨 WARNING**: Use these only when you need explicit control and understand the risks. They lack automatic module wrapper functionality.
 
-| Tool | Purpose | When to Use |
-|------|---------|-------------|
-| **`gas_raw_write`** | ⚠️ Explicit project ID paths (CLOBBERS files) | Multiple projects, no current project, file replacement |
-| **`gas_raw_cat`** | Explicit project ID paths | Direct API access, automation |
-| **`gas_raw_run`** | Explicit script ID | Multiple projects, testing |
+| Tool | Purpose | ⚠️ Risks | When to Use | ❌ When NOT to Use |
+|------|---------|----------|-------------|-------------------|
+| **`gas_raw_write`** | ⚠️ Explicit project ID paths | **CLOBBERS files, no module wrapper** | File replacement, positioning control | Normal development, collaborative editing |
+| **`gas_raw_cat`** | Explicit project ID paths | No local caching, no context | Direct API access, automation | Normal development, current project set |
+| **`gas_raw_run`** | Explicit script ID | No current project context | Multiple projects, testing | Normal development, current project set |
+
+**🔑 Key Limitation**: Raw tools do NOT provide automatic module wrapper functionality, meaning your code won't work with the `require()` system unless you manually add the `_main()` wrapper.
 
 ---
 
