@@ -1190,6 +1190,7 @@ const detailed = await callTool('gas_status', {
 - **🔄 HEAD Deployment Strategy**: Uses HEAD deployments with `/dev` URLs for immediate code updates
 - **⚡ Zero Setup**: Automatically creates deployment infrastructure and proxy shim if needed
 - **📝 Direct Results**: Returns execution results immediately with JSON serialization
+- **🔍 Logging Capture**: Use `Logger.getLog()` inline to capture current execution logs
 
 #### What You Can Execute
 | Category | Examples | Use Cases |
@@ -1201,11 +1202,13 @@ const detailed = await callTool('gas_status', {
 | **Object Creation** | `{timestamp: new Date(), user: Session.getActiveUser().getEmail()}` | Structured data |
 | **Google Services** | `SpreadsheetApp.create("New Sheet").getId()` | Drive, Sheets, Gmail operations |
 | **Complex Logic** | `users.find(u => u.role === "admin")?.permissions || []` | Business rules |
+| **Logging Capture** | `Logger.getLog()` | Retrieve current execution logs |
 
 #### Input Schema
 ```typescript
 interface GasRunInput {
   js_statement: string;  // ANY JavaScript statement or function call
+                        // 💡 TIP: Use Logger.getLog() to capture current execution logs
   project?: string | object;     // Project reference (uses current if not specified)
   autoRedeploy?: boolean;        // Auto-setup deployment (default: true)
   workingDir?: string;           // Working directory
@@ -1329,6 +1332,27 @@ const namedResult = await callTool('gas_run', {
   js_statement: 'require("DataProcessor").processData()',
   project: 'my-calculator'
 });
+```
+
+**6. Capturing Execution Logs**
+```typescript
+// 💡 RECOMMENDED: Use Logger.getLog() to capture current execution logs
+const logs = await callTool('gas_run', {
+  js_statement: 'Logger.getLog()'
+});
+// Returns: String containing all log statements from current execution context
+
+// Example: Debug function execution with logging
+const debugResult = await callTool('gas_run', {
+  js_statement: 'Logger.log("Starting calculation"); const result = Math.PI * 2; Logger.log("Result: " + result); Logger.getLog()'
+});
+// Returns: "Starting calculation\nResult: 6.283185307179586\n"
+
+// Capture logs from user functions
+const functionLogs = await callTool('gas_run', {
+  js_statement: 'require("MyModule").debugFunction(); Logger.getLog()'
+});
+// Returns: All log statements from debugFunction() execution
 ```
 
 #### Response Format
