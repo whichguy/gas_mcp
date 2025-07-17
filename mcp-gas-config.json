@@ -60,6 +60,11 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-17T14:15:01.202Z"
+    "lastModified": "2025-07-17T14:18:19.292Z"
+  },
+  "currentProject": {
+    "projectName": "1mTFpbKl3efLMmH1XrMdZr5-zUicP-qvna-TiRZTXOie-RPVd9M0AR3UU",
+    "scriptId": "1mTFpbKl3efLMmH1XrMdZr5-zUicP-qvna-TiRZTXOie-RPVd9M0AR3UU",
+    "lastSync": "2025-07-17T14:18:19.292Z"
   }
 }

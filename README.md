@@ -52,10 +52,11 @@ The MCP Google Apps Script Server bridges the gap between AI assistants and Goog
 
 ### 🔧 Core Functionality
 - **Project Management**: Create, list, delete, and manage GAS projects
-- **File Operations**: Read, write, copy, move, and organize files within projects
-- **Dynamic Code Execution**: Execute JavaScript code directly in GAS environment
+- **Smart File Operations**: Read, write, copy, move, and organize files with automatic module wrapper
+- **Dynamic Code Execution**: Execute JavaScript code directly in GAS environment with `require()` support
 - **Deployment Management**: Create, update, and manage web app and API deployments
 - **Version Control**: Create and manage project versions with detailed metadata
+- **Module System**: Automatic `require()` wrapper for seamless inter-module dependencies
 
 ### 🔗 Integration Capabilities
 - **Google Drive**: Find and bind scripts to Sheets, Docs, Forms, and Sites
@@ -77,6 +78,22 @@ Before getting started, ensure you have:
 - **Google Account** with access to Google Cloud Console
 - **Cursor IDE** or another MCP-compatible client
 - **Google Cloud Project** with Apps Script API enabled
+
+## 🎯 Recommended Tools
+
+For optimal development experience, use these **preferred tools** that provide automatic module wrapper functionality:
+
+### ✅ **Smart File Operations**
+- **`gas_write`**: Automatically wraps JavaScript code with `_main()` function for `require()` system
+- **`gas_cat`**: Intelligent local/remote file reading with project context
+- **`gas_run`**: Code execution with current project context
+
+### ⚠️ **Advanced Tools (Use with Caution)**
+- **`gas_raw_write`**: Direct file writing (clobbers files, no module wrapper)
+- **`gas_raw_cat`**: Direct file reading (no local caching)
+- **`gas_raw_run`**: Direct code execution (requires explicit script ID)
+
+**🔑 Key Advantage**: Smart tools automatically wrap your JavaScript code with the proper `_main()` function signature, enabling seamless `require()` functionality across your modules without manual wrapper management.
 
 ## 🚀 Installation
 

@@ -164,11 +164,15 @@ interface GasLsInput {
 }
 ```
 
-#### `gas_cat` - Read File Contents
+#### `gas_cat` - Read File Contents (⭐ RECOMMENDED)
+
+**🎯 PREFERRED METHOD**: Use `gas_cat` instead of `gas_raw_cat` for better workflow integration and local/remote file resolution.
 
 ```typescript
 interface GasCatInput {
-  path: string;                     // Full path: projectId/filename.gs
+  path: string;                     // Full path: projectId/filename.gs or just filename if current project set
+  preferLocal?: boolean;            // Prefer local file over remote when both exist (default: true)
+  workingDir?: string;              // Working directory (defaults to current directory)
   accessToken?: string;             // Optional access token
 }
 ```
@@ -196,13 +200,24 @@ interface GasCatInput {
 }
 ```
 
-#### `gas_write` - Create/Update Files
+#### `gas_write` - Create/Update Files with Module Wrapper (⭐ RECOMMENDED)
+
+**🎯 PREFERRED METHOD**: Use `gas_write` instead of `gas_raw_write` for automatic module wrapper functionality and safer file operations.
+
+**Key Features:**
+- **Automatic Module Wrapper**: Wraps JavaScript code with proper `_main()` function for `require()` system
+- **Intelligent Sync**: Writes to both local and remote by default with conflict detection
+- **Type Detection**: Automatically detects JavaScript, HTML, and JSON content
+- **Safer Operations**: Preserves existing content during merges (vs. clobbering)
 
 ```typescript
 interface GasWriteInput {
-  path: string;                     // Full path: projectId/filename
-  content: string;                  // File content (JavaScript/Apps Script)
-  position?: number;                // File order position (0-based)
+  path: string;                     // Full path: projectId/filename (WITHOUT extension)
+  content: string;                  // Your raw code content (will be wrapped automatically)
+  fileType?: 'SERVER_JS' | 'HTML' | 'JSON';  // Optional - auto-detected if not provided
+  localOnly?: boolean;              // Write only to local (skip remote sync)
+  remoteOnly?: boolean;             // Write only to remote (skip local sync)
+  workingDir?: string;              // Working directory (defaults to current directory)
   accessToken?: string;             // Optional access token
 }
 ```
@@ -244,15 +259,22 @@ interface GasWriteInput {
 
 ### 3. Execution Tools
 
-#### `gas_run` - Direct Code Execution with HEAD Deployment
+#### `gas_run` - Direct Code Execution with Current Project Context (⭐ RECOMMENDED)
+
+**🎯 PREFERRED METHOD**: Use `gas_run` instead of `gas_raw_run` for automatic project context and better error handling.
+
+**Key Advantages:**
+- **Automatic Project Context**: Works with current project when set via `gas_project_set`
+- **Better Error Handling**: Provides clearer error messages and recovery suggestions
+- **Simplified Interface**: No need to specify script ID when current project is set
+- **Module System Integration**: Seamlessly works with `require()` system from wrapped files
 
 ```typescript
 interface GasRunInput {
-  scriptId: string;                 // Google Apps Script project ID
-  functionName: string;             // Any JavaScript statement or function call
-  parameters?: any[];               // Optional parameters (for function calls)
-  devMode?: boolean;                // Uses HEAD deployment with /dev URL (default: true)
+  js_statement: string;             // Any JavaScript statement or function call
+  project?: string | object;        // Project reference (uses current if not specified)
   autoRedeploy?: boolean;           // Ensures HEAD deployment exists (default: true)
+  workingDir?: string;              // Working directory (defaults to current directory)
   accessToken?: string;             // Optional access token
 }
 ```

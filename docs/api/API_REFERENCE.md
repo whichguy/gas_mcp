@@ -124,6 +124,47 @@ const logoutResult = await callTool('gas_auth', {
 
 ## 📁 Filesystem Tools
 
+### ⭐ RECOMMENDED: `gas_write` - Smart File Writer with Module Wrapper
+
+**🎯 PREFERRED METHOD**: Use `gas_write` instead of `gas_raw_write` for all file operations. This tool automatically provides proper module wrappers for the `require()` system and handles intelligent local/remote synchronization.
+
+**Key Advantages over `gas_raw_write`:**
+- ✅ **Automatic Module Wrapper**: Wraps your code with proper `_main()` function signature for `require()` system
+- ✅ **Intelligent Sync**: Writes to both local and remote by default with conflict detection
+- ✅ **Type Detection**: Automatically detects JavaScript, HTML, and JSON content
+- ✅ **Safer Operations**: Preserves existing content during merges (vs. clobbering)
+- ✅ **Development Workflow**: Optimized for iterative development with local file caching
+
+**Module Wrapper Functionality:**
+When you write JavaScript content, `gas_write` automatically wraps it with:
+```javascript
+function _main(
+  module = globalThis.__getCurrentModule(),
+  exports = module.exports,
+  require = globalThis.require
+) {
+  // Your code here
+  
+  // Export functions
+  exports.myFunction = myFunction;
+  exports.anotherFunction = anotherFunction;
+}
+
+__defineModule__(_main);
+```
+
+This enables seamless `require()` functionality across your Google Apps Script modules.
+
+### ⭐ RECOMMENDED: `gas_cat` - Smart File Reader
+
+**🎯 PREFERRED METHOD**: Use `gas_cat` instead of `gas_raw_cat` for reading files. This tool provides intelligent local/remote file resolution and better error handling.
+
+**Key Advantages over `gas_raw_cat`:**
+- ✅ **Local-First**: Reads from local cache when available, falls back to remote
+- ✅ **Automatic Project Context**: Works with current project when set via `gas_project_set`
+- ✅ **Better Error Handling**: Provides clearer error messages and recovery suggestions
+- ✅ **Consistent Interface**: Same path format as `gas_write` for consistency
+
 ### `gas_ls` - List Projects and Files
 
 List Google Apps Script projects and files with optional filtering and detailed information.
@@ -205,19 +246,41 @@ const files = await callTool('gas_ls', {
 
 ### `gas_cat` - Read File Contents
 
-Read the contents of a specific file in a Google Apps Script project.
+**🎯 RECOMMENDED**: Use this instead of `gas_raw_cat` for better workflow integration.
+
+Read the contents of a specific file in a Google Apps Script project with intelligent local/remote resolution.
 
 #### Input Schema
 ```typescript
 interface GasCatInput {
-  path: string;  // Format: "projectId/filename.gs"
+  path: string;  // Format: "projectId/filename.gs" or just "filename" if current project is set
+  preferLocal?: boolean;  // Prefer local file over remote when both exist (default: true)
+  workingDir?: string;    // Working directory (defaults to current directory)
   accessToken?: string;
 }
 ```
 
 #### Usage Examples
 
-**Read JavaScript File**
+**Read JavaScript File (Current Project)**
+```typescript
+// If current project is set via gas_project_set
+const fileContent = await callTool('gas_cat', {
+  path: 'utils.gs'
+});
+
+// Response:
+{
+  "content": "function _main(\n  module = globalThis.__getCurrentModule(),\n  exports = module.exports,\n  require = globalThis.require\n) {\n  function add(a, b) {\n    return a + b;\n  }\n  \n  exports.add = add;\n}\n\n__defineModule__(_main);",
+  "fileName": "utils.gs",
+  "fileType": "JAVASCRIPT",
+  "lastModified": "2024-01-15T14:30:00Z",
+  "size": 123,
+  "source": "local"  // Indicates file was read from local cache
+}
+```
+
+**Read with Explicit Project Path**
 ```typescript
 const fileContent = await callTool('gas_cat', {
   path: 'abc123def456.../Code.gs'
@@ -225,80 +288,109 @@ const fileContent = await callTool('gas_cat', {
 
 // Response:
 {
-  "content": "function myFunction() {\n  Logger.log('Hello World!');\n  return new Date().toISOString();\n}",
+  "content": "function _main(\n  module = globalThis.__getCurrentModule(),\n  exports = module.exports,\n  require = globalThis.require\n) {\n  function myFunction() {\n    Logger.log('Hello World!');\n    return new Date().toISOString();\n  }\n  \n  exports.myFunction = myFunction;\n}\n\n__defineModule__(_main);",
   "fileName": "Code.gs",
   "fileType": "JAVASCRIPT",
   "lastModified": "2024-01-15T14:30:00Z",
-  "size": 123
+  "size": 123,
+  "source": "remote"  // Indicates file was read from remote
 }
 ```
 
-**Read Manifest File**
-```typescript
-const manifest = await callTool('gas_cat', {
-  path: 'abc123def456.../appsscript.json'
-});
+### `gas_write` - Create/Update Files with Module Wrapper
 
-// Response:
-{
-  "content": "{\n  \"timeZone\": \"America/Los_Angeles\",\n  \"dependencies\": {},\n  \"exceptionLogging\": \"STACKDRIVER\",\n  \"runtimeVersion\": \"V8\"\n}",
-  "fileName": "appsscript.json",
-  "fileType": "JSON",
-  "parsed": {
-    "timeZone": "America/Los_Angeles",
-    "dependencies": {},
-    "exceptionLogging": "STACKDRIVER",
-    "runtimeVersion": "V8"
-  }
-}
-```
+**🎯 RECOMMENDED**: Use this instead of `gas_raw_write` for all file operations.
 
-### `gas_write` - Create/Update Files
+Create new files or update existing files in Google Apps Script projects with automatic module wrapper and intelligent local/remote sync.
 
-Create new files or update existing files in Google Apps Script projects with automatic local/remote sync.
+#### Key Features
+- **Automatic Module Wrapper**: Wraps JavaScript code with proper `_main()` function for `require()` system
+- **Intelligent Sync**: Writes to both local and remote by default with conflict detection
+- **Type Detection**: Automatically detects JavaScript, HTML, and JSON content
+- **Safer Operations**: Preserves existing content during merges (vs. clobbering)
 
 #### Input Schema
 ```typescript
 interface GasWriteInput {
   path: string;         // Format: "projectId/filename" (WITHOUT extension) - same as gas_raw_write
-  content: string;
+  content: string;      // Your raw code content (will be wrapped automatically)
   fileType?: 'SERVER_JS' | 'HTML' | 'JSON';  // Optional - auto-detected if not provided
   localOnly?: boolean;  // Write only to local (skip remote sync)
   remoteOnly?: boolean; // Write only to remote (skip local sync)
+  workingDir?: string;  // Working directory (defaults to current directory)
   accessToken?: string;
 }
 ```
 
 #### Usage Examples
 
-**Create New JavaScript File**
+**Create New JavaScript File with Module Wrapper**
 ```typescript
 const writeResult = await callTool('gas_write', {
-  path: 'abc123def456.../MyNewFile',
+  path: 'abc123def456.../MathUtils',
   content: `
-function fibonacci(n) {
-  if (n <= 1) return n;
-  return fibonacci(n - 1) + fibonacci(n - 2);
+/**
+ * Add two numbers
+ */
+function add(a, b) {
+  return a + b;
 }
 
-function testFibonacci() {
-  Logger.log('fib(10) = ' + fibonacci(10));
-}`
+/**
+ * Multiply two numbers
+ */
+function multiply(a, b) {
+  return a * b;
+}
+
+// Export functions
+exports.add = add;
+exports.multiply = multiply;`
 });
 
 // Response:
 {
   "status": "success",
-  "path": "abc123def456.../MyNewFile",
+  "path": "abc123def456.../MathUtils",
   "projectId": "abc123def456...",
-  "filename": "MyNewFile",
+  "filename": "MathUtils",
   "size": 187,
   "syncStatus": "synced",
   "localWritten": true,
   "remoteWritten": true,
   "detectedType": "SERVER_JS",
-  "message": "File synced to local and remote"
+  "moduleWrapperApplied": true,
+  "message": "File synced to local and remote with module wrapper"
 }
+```
+
+**The above content is automatically wrapped as:**
+```javascript
+function _main(
+  module = globalThis.__getCurrentModule(),
+  exports = module.exports,
+  require = globalThis.require
+) {
+  /**
+   * Add two numbers
+   */
+  function add(a, b) {
+    return a + b;
+  }
+
+  /**
+   * Multiply two numbers
+   */
+  function multiply(a, b) {
+    return a * b;
+  }
+
+  // Export functions
+  exports.add = add;
+  exports.multiply = multiply;
+}
+
+__defineModule__(_main);
 ```
 
 **Local-Only Write (for testing)**
@@ -314,17 +406,64 @@ const localResult = await callTool('gas_write', {
   "syncStatus": "local-only",
   "localWritten": true,
   "remoteWritten": false,
-  "message": "File written to local only"
+  "moduleWrapperApplied": true,
+  "message": "File written to local only with module wrapper"
+}
+```
+
+**HTML File (No Module Wrapper)**
+```typescript
+const htmlResult = await callTool('gas_write', {
+  path: 'abc123def456.../index',
+  content: '<!DOCTYPE html><html><body><h1>My App</h1></body></html>',
+  fileType: 'HTML'
+});
+
+// Response:
+{
+  "detectedType": "HTML",
+  "moduleWrapperApplied": false,
+  "message": "HTML file written without module wrapper"
 }
 ```
 
 **Differences from `gas_raw_write`:**
 - ✅ **Auto-sync**: Writes to both local and remote by default
+- ✅ **Module wrapper**: Automatically wraps JavaScript with `_main()` function
 - ✅ **File type detection**: Optional `fileType` parameter (auto-detected)
 - ✅ **Sync control**: `localOnly`/`remoteOnly` options
 - ✅ **Same path format**: Uses identical `projectId/filename` format
+- ✅ **Safer operations**: Merge-friendly vs. clobbering behavior
 - ❌ **No positioning**: Cannot specify file order (use `gas_raw_write` for that)
-```
+
+### ⚠️ ADVANCED: `gas_raw_write` - Direct File Writer (Use with Caution)
+
+**⚠️ WARNING**: This tool CLOBBERS (completely overwrites) remote files without merging. Use `gas_write` instead for safer operations.
+
+**When to use `gas_raw_write`:**
+- File positioning control (execution order)
+- Intentional complete file replacement
+- Advanced automation scenarios
+- When you explicitly don't want module wrapper
+
+**When NOT to use `gas_raw_write`:**
+- Normal development workflow (use `gas_write`)
+- Collaborative editing (use `gas_write`)
+- When you want module wrapper for `require()` system
+
+### ⚠️ ADVANCED: `gas_raw_cat` - Direct File Reader
+
+**⚠️ NOTE**: Use `gas_cat` instead for better workflow integration.
+
+**When to use `gas_raw_cat`:**
+- Explicit project ID control
+- Automation with multiple projects
+- When you don't want local caching
+
+**When NOT to use `gas_raw_cat`:**
+- Normal development workflow (use `gas_cat`)
+- When current project is set (use `gas_cat`)
+- When you want local-first behavior
 
 ### `gas_rm` - Delete Files
 
@@ -1179,9 +1318,17 @@ const detailed = await callTool('gas_status', {
 
 ## ⚡ Execution Tools
 
-### `gas_run` - Execute Arbitrary JavaScript Code and Function Calls
+### ⭐ RECOMMENDED: `gas_run` - Execute Arbitrary JavaScript Code and Function Calls
+
+**🎯 PREFERRED METHOD**: Use `gas_run` instead of `gas_raw_run` for all code execution. This tool provides automatic project context and better error handling.
 
 🚀 **POWERFUL CODE EXECUTION**: Execute ANY JavaScript statement or function call directly in Google Apps Script. This tool can invoke arbitrary code in a single statement AND call existing functions that reside in the GAS repository, both returning results.
+
+**Key Advantages over `gas_raw_run`:**
+- ✅ **Automatic Project Context**: Works with current project when set via `gas_project_set`
+- ✅ **Better Error Handling**: Provides clearer error messages and recovery suggestions
+- ✅ **Simplified Interface**: No need to specify script ID when current project is set
+- ✅ **Module System Integration**: Seamlessly works with `require()` system from wrapped files
 
 #### Key Capabilities
 - **💻 Arbitrary Code Execution**: Execute any valid JavaScript expression, mathematical operations, object manipulations
@@ -1363,6 +1510,50 @@ const functionLogs = await callTool('gas_run', {
   "js_statement": "Math.PI * 2",
   "result": 6.283185307179586,
   "executedAt": "2024-01-15T14:30:00Z"
+}
+```
+
+### ⚠️ ADVANCED: `gas_raw_run` - Direct Script Execution
+
+**⚠️ NOTE**: Use `gas_run` instead for better workflow integration.
+
+Execute JavaScript code with explicit script ID control. This tool requires you to specify the script ID explicitly.
+
+**When to use `gas_raw_run`:**
+- Explicit script ID control
+- Automation with multiple projects
+- When no current project is set
+- Advanced automation scenarios
+
+**When NOT to use `gas_raw_run`:**
+- Normal development workflow (use `gas_run`)
+- When current project is set (use `gas_run`)
+- When you want automatic project context
+
+#### Input Schema
+```typescript
+interface GasRawRunInput {
+  scriptId: string;      // Must specify script ID explicitly
+  js_statement: string;  // JavaScript statement to execute
+  autoRedeploy?: boolean;
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**Execute with Explicit Script ID**
+```typescript
+const result = await callTool('gas_raw_run', {
+  scriptId: 'abc123def456...',
+  js_statement: 'Math.PI * 2'
+});
+
+// Response:
+{
+  "status": "success",
+  "scriptId": "abc123def456...",
+  "result": 6.283185307179586
 }
 ```
 
