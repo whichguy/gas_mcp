@@ -1,5 +1,5 @@
 import { BaseTool } from './base.js';
-import { LocalFileManager, LocalRootConfig, ProjectInfo } from '../utils/localFileManager.js';
+import { LocalFileManager } from '../utils/localFileManager.js';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -199,50 +199,61 @@ export class GASLocalListProjectsTool extends BaseTool {
   } = {}) {
     const actualWorkingDir = workingDir || this.detectWorkspace();
     const rootPath = await LocalFileManager.getLocalRoot(actualWorkingDir);
-    const projects = await LocalFileManager.listLocalProjects(actualWorkingDir);
+
+    // Get all project directories
+    const projectDirs = await this.getProjectDirectories(rootPath);
+    const projects = [];
+
+    for (const projectDir of projectDirs) {
+      try {
+        const mcpInfo = await LocalFileManager.getMcpInfo(projectDir.name, actualWorkingDir);
+        if (mcpInfo) {
+          const projectEntry: any = {
+            name: mcpInfo.projectName || projectDir.name,
+            scriptId: mcpInfo.projectId,
+            lastSync: mcpInfo.lastSync,
+            created: mcpInfo.created
+          };
+
+          if (mcpInfo.description) {
+            projectEntry.description = mcpInfo.description;
+          }
+
+          if (detailed) {
+            try {
+              const files = await LocalFileManager.getProjectFiles(projectDir.name, actualWorkingDir);
+              const projectPath = await LocalFileManager.getProjectDirectory(projectDir.name, actualWorkingDir);
+              
+              projectEntry.fileCount = files.length;
+              projectEntry.totalSize = files.reduce((sum, f) => sum + f.size, 0);
+              projectEntry.lastModified = files.length > 0 
+                ? new Date(Math.max(...files.map(f => f.lastModified.getTime()))).toISOString()
+                : null;
+              projectEntry.projectPath = projectPath;
+              projectEntry.files = files.map(f => ({
+                name: f.name,
+                size: f.size,
+                lastModified: f.lastModified.toISOString()
+              }));
+            } catch (error) {
+              projectEntry.error = `Failed to read project details: ${error}`;
+            }
+          }
+
+          projects.push(projectEntry);
+        }
+      } catch (error) {
+        // Skip projects that don't have valid appsscript.json
+        continue;
+      }
+    }
 
     const result: any = {
       success: true,
       localRoot: rootPath,
       projectCount: projects.length,
-      projects: []
+      projects
     };
-
-    for (const project of projects) {
-      const projectEntry: any = {
-        name: project.projectName,
-        scriptId: project.scriptId,
-        lastSync: project.lastSync,
-        created: project.created
-      };
-
-      if (project.description) {
-        projectEntry.description = project.description;
-      }
-
-      if (detailed) {
-        try {
-          const files = await LocalFileManager.getProjectFiles(project.projectName, actualWorkingDir);
-          const projectDir = await LocalFileManager.getProjectDirectory(project.projectName, actualWorkingDir);
-          
-          projectEntry.fileCount = files.length;
-          projectEntry.totalSize = files.reduce((sum, f) => sum + f.size, 0);
-          projectEntry.lastModified = files.length > 0 
-            ? new Date(Math.max(...files.map(f => f.lastModified.getTime()))).toISOString()
-            : null;
-          projectEntry.projectPath = projectDir;
-          projectEntry.files = files.map(f => ({
-            name: f.name,
-            size: f.size,
-            lastModified: f.lastModified.toISOString()
-          }));
-        } catch (error) {
-          projectEntry.error = `Failed to read project details: ${error}`;
-        }
-      }
-
-      result.projects.push(projectEntry);
-    }
 
     if (projects.length === 0) {
       result.message = `No local projects found in ${rootPath}`;
@@ -251,6 +262,26 @@ export class GASLocalListProjectsTool extends BaseTool {
     }
 
     return result;
+  }
+
+  private async getProjectDirectories(rootPath: string): Promise<Array<{name: string; path: string}>> {
+    try {
+      const entries = await fsPromises.readdir(rootPath, { withFileTypes: true });
+      const projectDirs = [];
+      
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          projectDirs.push({
+            name: entry.name,
+            path: path.join(rootPath, entry.name)
+          });
+        }
+      }
+      
+      return projectDirs;
+    } catch (error) {
+      return [];
+    }
   }
 
   private detectWorkspace(): string {

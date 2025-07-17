@@ -109,7 +109,7 @@ export class GASProjectSetTool extends BaseTool {
       const skippedCount = mergeResult.skipped.length;
       
       // Get the actual project-specific path for the message
-      const projectPath = await LocalFileManager.getProjectSrcDirectory(projectName, workingDir);
+      const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
       
       pullMessage = filesCached > 0 
         ? ` and merged ${filesCached} files to ${projectPath}` + (skippedCount > 0 ? ` (${skippedCount} local files preserved)` : '')
@@ -125,7 +125,7 @@ export class GASProjectSetTool extends BaseTool {
       title: projectInfo.title,
       filesCached,
       autoPull,
-      localPath: await LocalFileManager.getProjectSrcDirectory(projectName, workingDir),
+              localPath: await LocalFileManager.getProjectDirectory(projectName, workingDir),
       message: `Set current project to '${projectName}'${pullMessage}`
     };
   }
@@ -205,12 +205,12 @@ export class GASProjectGetTool extends BaseTool {
           remoteFiles: remoteFiles.length,
           fileComparisons,
           syncStatus: this.getSyncStatus(fileComparisons),
-          localPath: await LocalFileManager.getProjectSrcDirectory(currentProject.projectName, workingDir)
+          localPath: await LocalFileManager.getProjectDirectory(currentProject.projectName, workingDir)
         };
       } else {
         return {
           currentProject,
-          localPath: await LocalFileManager.getProjectSrcDirectory(currentProject.projectName, workingDir),
+          localPath: await LocalFileManager.getProjectDirectory(currentProject.projectName, workingDir),
           hasLocalFiles: (await LocalFileManager.getProjectFiles(currentProject.projectName, workingDir)).length > 0
         };
       }

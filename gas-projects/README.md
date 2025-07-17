@@ -7,50 +7,48 @@ This directory contains all Google Apps Script projects managed by this MCP serv
 ```
 gas-projects/
 ├── README.md                    # This file
-├── template/                    # Project template for new GAS projects
-│   ├── README.md               # Template documentation
-│   ├── src/                    # Template source files
-│   │   └── appsscript.json     # Base GAS manifest
-│   └── .clasp.json.template    # Clasp configuration template
-│
-└── [project-name]/             # Individual GAS project
-    ├── README.md               # Project documentation
-    ├── project-info.json       # Project metadata
-    ├── src/                    # Source files (.gs, .html, .json)
-    │   ├── appsscript.json     # GAS manifest file
-    │   ├── [main-code].gs      # Main project code
-    │   └── [other-files]       # Additional project files
-    └── deployments/            # Deployment configurations
-        └── deployment-info.json # Deployment metadata
+└── [project-id]/               # Individual GAS project (using script ID)
+    ├── appsscript.json         # GAS manifest (with MCP & git info)
+    ├── Code.gs                 # Main code files directly in project dir
+    ├── utils/                  # Directory structure preserved
+    │   └── helper.gs
+    └── .gitignore              # Git ignore file
 ```
 
 ## **Project Organization Principles**
 
 ### **1. Each Project is Self-Contained**
-- All source files for a project are in its `src/` directory
-- Project metadata is stored in `project-info.json`
-- Deployment information is tracked separately
+- All source files for a project are directly in the project directory
+- Project metadata is stored in `appsscript.json` under the `mcp` section
+- Git information is stored in `appsscript.json` under the `git` section
 
 ### **2. Source Control Friendly**
 - All source files are stored as plain text
 - Easy to track changes and collaborate
 - Clear separation from Google Apps Script's cloud storage
+- No unnecessary subdirectories or cache folders
 
-### **3. Deployment Tracking**
-- Deployment configurations and URLs are tracked
-- Version history maintained locally
-- Easy rollback and deployment management
+### **3. Simplified Structure**
+- No `src/` subdirectories - files are directly accessible
+- No `.project-info.json` - metadata consolidated in `appsscript.json`
+- No `.clasp.json` - not needed for MCP Gas Server
+- No cache or deployments folders - managed via APIs
 
 ## **Adding a New Project**
 
-1. **Copy Template**:
+1. **Create Project via MCP**:
    ```bash
-   cp -r template/ [project-name]/
+   gas_project_create --title "My New Project" --localName "my-project"
    ```
 
-2. **Update Documentation**:
-   - Edit `[project-name]/README.md`
-   - Update `[project-name]/project-info.json`
+2. **Pull Remote Files**:
+   ```bash
+   gas_pull --project "my-project"
+   ```
+
+3. **Start Development**:
+   - Edit files directly in the project directory
+   - Use `gas_push` to sync changes back to Google Apps Script
 
 3. **Add Source Files**:
    - Place `.gs` files in `[project-name]/src/`
