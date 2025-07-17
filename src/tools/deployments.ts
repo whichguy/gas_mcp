@@ -3,6 +3,7 @@ import { GASClient, DeploymentOptions, EntryPointType, WebAppAccess, WebAppExecu
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SCRIPT_ID_SCHEMA } from '../utils/schemaPatterns.js';
+import { SHIM_TEMPLATE } from '../config/shimTemplate.js';
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -805,27 +806,89 @@ export class GASProjectCreateTool extends BaseTool {
     try {
       const project = await this.gasClient.createProject(title, parentId, accessToken);
 
+      // Create the 0_shim.js file
+      const shimResult = await this.create0ShimFile(project.scriptId, accessToken);
+
       // Optionally add to local configuration
+      let localConfigResult = false;
+      let localConfigError: string | undefined;
       if (addToLocalConfig) {
-        const { ProjectResolver } = await import('../utils/projectResolver.js');
-        await ProjectResolver.addProject(localName, project.scriptId, `Created: ${new Date().toLocaleDateString()}`, workingDir);
+        try {
+          const { ProjectResolver } = await import('../utils/projectResolver.js');
+          await ProjectResolver.addProject(localName, project.scriptId, `Created: ${new Date().toLocaleDateString()}`, workingDir);
+          localConfigResult = true;
+        } catch (error: any) {
+          localConfigError = error.message;
+          console.error(`⚠️ [GAS_PROJECT_CREATE] Failed to add to local config: ${error.message}`);
+        }
       }
 
-      return {
+      const result: any = {
         status: 'created',
         scriptId: project.scriptId,
         title: project.title,
-        localName: addToLocalConfig ? localName : undefined,
-        addedToLocalConfig: addToLocalConfig,
+        localName,
+        addedToLocalConfig: localConfigResult,
         createTime: project.createTime,
         updateTime: project.updateTime,
         parentId: project.parentId,
-        instructions: addToLocalConfig 
-          ? `Project created and added to local config as '${localName}'. Use gas_project_set({project: "${localName}"}) to start working.`
-          : 'Project created successfully. Add files with gas_write, then deploy with gas_deploy_create.'
+        shimCreated: shimResult.success,
+        instructions: `Project created with ${shimResult.success ? '0_shim module system' : 'basic setup'} and ${localConfigResult ? 'added to local config' : 'not added to local config'} as '${localName}'. Use gas_project_set({project: "${localName}"}) to start working.`
       };
+
+      // Add debug info if there were errors
+      if (!shimResult.success) {
+        result.shimError = shimResult.error;
+        result.shimDebug = shimResult.debug;
+      }
+      if (localConfigError) {
+        result.localConfigError = localConfigError;
+      }
+
+      return result;
     } catch (error: any) {
       throw new GASApiError(`Project creation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Create the 0_shim.js file in a new project using GASRawWriteTool
+   * @param scriptId - The script ID of the project
+   * @param accessToken - Access token for API calls
+   * @returns Promise with success status and any error details
+   */
+  private async create0ShimFile(scriptId: string, accessToken?: string): Promise<{ success: boolean; error?: string; debug?: any }> {
+    try {
+      const debugInfo: any = {
+        scriptId,
+        shimContentLength: SHIM_TEMPLATE.length
+      };
+      
+      console.error(`🔍 [GAS_PROJECT_CREATE] Debug shim creation:`, debugInfo);
+      console.error(`   - shimContent length: ${SHIM_TEMPLATE.length} characters`);
+      console.error(`   - Using GASRawWriteTool to create file...`);
+      
+      // Use GASRawWriteTool to create the file (position 0 to execute first)
+      const { GASRawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      
+      const writeParams = {
+        path: `${scriptId}/0_shim`,
+        content: SHIM_TEMPLATE,
+        fileType: 'SERVER_JS' as const,
+        position: 0,
+        accessToken
+      };
+      
+      const result = await rawWriteTool.execute(writeParams);
+      
+      console.error(`✅ [GAS_PROJECT_CREATE] 0_shim module system added to project via GASRawWriteTool`);
+      return { success: true, debug: { ...debugInfo, writeResult: result } };
+    } catch (error: any) {
+      const errorMessage = `Failed to add 0_shim: ${error.message}`;
+      console.error(`⚠️ [GAS_PROJECT_CREATE] ${errorMessage}`);
+      console.error(`   - Error stack: ${error.stack}`);
+      return { success: false, error: errorMessage, debug: { error: error.message, stack: error.stack } };
     }
   }
 

@@ -22,65 +22,44 @@
     ]
   },
   "projects": {
-    "SyncGoogleGroups": {
-      "scriptId": "1QAPMb_1TpIMwMEHfi_jq1S7EZFyvRDFkW1FEbmzVssuLtIO3DKMUO0yr",
-      "name": "SyncGoogleGroups",
-      "description": "Google Groups synchronization project"
+    "test-shim-debug": {
+      "scriptId": "1ev5FnylrIbegrS7qNfWL345bSKPdSaXIzmP9Kx5SFkZDQEgu0goKFWij",
+      "name": "test-shim-debug",
+      "description": "Created: 7/17/2025"
     },
-    "fibonacci-calc": {
-      "scriptId": "1kf-Gda6l7oNVlm19kvKoMY66EkvMX6yUjeZraRnhNSxrH0HtmqYFgaym",
-      "name": "fibonacci-calc",
-      "description": "Fibonacci Calculator with organized directory structure"
+    "debug-test-2": {
+      "scriptId": "178Dnpjyh65oo9_9jbLKRoPAw7Z7jqR1v9WzXhZJV1CjBXV3HE6pjHP9G",
+      "name": "debug-test-2",
+      "description": "Created: 7/17/2025"
     },
-    "dir-test-new": {
-      "scriptId": "1XVWXzfs1PkBYoeAIc827fMwy6QJAQlTZG4zpcPbnta23uznHpXfU9Ewy",
-      "name": "dir-test-new",
-      "description": "Created: 6/29/2025"
+    "test-auto-shim-final": {
+      "scriptId": "1fBR80m7O8emOiEnfsK6Wcm5w7CqwWJVwFTWjxP2aTSnUuOUPuZCKM8g5",
+      "name": "test-auto-shim-final",
+      "description": "Created: 7/17/2025"
     },
-    "ai_tools4": {
-      "scriptId": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
-      "name": "ai_tools4",
-      "description": "Created: 7/13/2025"
+    "test-auto-shim-fixed": {
+      "scriptId": "1QonZat26U6PbNpfHUjdOuiP94sDT6aEhgjy8Rv7RNKR3P4dBqOfvfc0u",
+      "name": "test-auto-shim-fixed",
+      "description": "Created: 7/17/2025"
     },
-    "ai_tools3_script": {
-      "scriptId": "1wNWGnXYZtUEgnbfiqi_olmKc-cJYl4lb7W6Nycz7CPiGjyfueHA2Aigj",
-      "name": "ai_tools3_script",
-      "description": "Created: 7/13/2025"
+    "shim-template-test": {
+      "scriptId": "1HGlE7z4a959KVSsP1QJ25jPwlm_HPSb6dknpZYFGyiyscBIKZvRY3g8o",
+      "name": "shim-template-test",
+      "description": "Created: 7/17/2025"
     },
-    "ai_tools4_part2": {
-      "scriptId": "1BOCTY-tqxtBdBL-2LyhFLTgWpWG0ecB_S-WzzYgnyU9c-EAKoFklRQPV",
-      "name": "ai_tools4_part2",
-      "description": "Created: 7/13/2025"
-    },
-    "path-detection-test": {
-      "scriptId": "12itucOkwrzCmTh7d3jSzT8Eb2epyVD9YGroTlcgAEn7WZBnEsYkWV8fk",
-      "name": "path-detection-test",
-      "description": "Created: 7/13/2025"
-    },
-    "module-detection-test": {
-      "scriptId": "1h7V7Ela6YCtcdQYp7xqzqJ08xAZtaOIIjRpkeytq3AEe2ESxKTm7ZGbq",
-      "name": "module-detection-test",
+    "test-shim-verification": {
+      "scriptId": "1mTFpbKl3efLMmH1XrMdZr5-zUicP-qvna-TiRZTXOie-RPVd9M0AR3UU",
+      "name": "test-shim-verification",
       "description": "Created: 7/17/2025"
     }
   },
   "localRoot": {
     "rootPath": "/tmp/gas-projects",
-    "lastUpdated": "2025-07-17T12:51:54.524Z"
+    "lastUpdated": "2025-07-17T14:10:38.333Z"
   },
   "server": {
-    "defaultWorkingDir": "/Users/jameswiese/src/mcp_gas",
+    "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-17T12:58:55.510Z"
-  },
-  "environments": {
-    "dev": {
-      "scriptId": "1QAPMb_1TpIMwMEHfi_jq1S7EZFyvRDFkW1FEbmzVssuLtIO3DKMUO0yr",
-      "name": "SyncGoogleGroups"
-    }
-  },
-  "currentProject": {
-    "projectName": "12itucOkwrzCmTh7d3jSzT8Eb2epyVD9YGroTlcgAEn7WZBnEsYkWV8fk",
-    "scriptId": "12itucOkwrzCmTh7d3jSzT8Eb2epyVD9YGroTlcgAEn7WZBnEsYkWV8fk",
-    "lastSync": "2025-07-17T12:58:55.510Z"
+    "lastModified": "2025-07-17T14:15:01.202Z"
   }
 }
