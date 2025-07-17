@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "npx tsc",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
     "test": "npm run test:core",
     "test:unit": "mocha test/errors/**/*.test.ts test/api/**/*.test.ts test/auth/**/*.test.ts test/tools/**/*.test.ts",
     "test:core": "mocha test/system/consolidated-core.test.ts --timeout 30000",
@@ -27,8 +29,6 @@
     "dev": "npx tsc --watch",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "clean": "rm -rf dist",
-    "prebuild": "npm run clean",
     "setup": "echo '📖 Please set GOOGLE_OAUTH_CLIENT_ID environment variable. See DESKTOP_OAUTH_SETUP.md for instructions.'",
     "docs:deployment": "echo '📖 Opening deployment workflow documentation...' && cat docs/FUNCTION_EXECUTION_DEPLOYMENT.md",
     "docs:auto-auth": "echo '📖 Opening auto-authentication documentation...' && cat docs/AUTO_AUTHENTICATION.md",

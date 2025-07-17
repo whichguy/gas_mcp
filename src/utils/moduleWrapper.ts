@@ -1,13 +1,16 @@
 /**
  * Module wrapper utilities for automatic _main() wrapping and unwrapping
  * Used by gas_write and gas_cat to make the module system transparent
+ * 
+ * IMPORTANT: This utility ensures __defineModule__(_main) is called WITHOUT explicit module names
+ * to use auto-detection. Explicit names are RESERVED for CommonJS system module only.
  */
 
 /**
  * Wraps user content with _main() function and __defineModule__ call
  * @param content - The user's JavaScript code
- * @param moduleName - The name of the module (derived from filename)
- * @returns Wrapped content with _main() function and __defineModule__ call
+ * @param moduleName - The name of the module (derived from filename) - used for documentation only
+ * @returns Wrapped content with _main() function and __defineModule__(_main) call (no explicit name)
  */
 export function wrapModuleContent(content: string, moduleName: string): string {
     // Trim any leading/trailing whitespace
@@ -23,7 +26,7 @@ export function wrapModuleContent(content: string, moduleName: string): string {
     // Empty module
 }
 
-__defineModule__(_main, '${moduleName}');`;
+__defineModule__(_main);`;
     }
     
     // Check if content already has _main function
@@ -32,11 +35,11 @@ __defineModule__(_main, '${moduleName}');`;
     if (hasMainFunction) {
         // Content already has _main function, just ensure it has __defineModule__ call
         if (!trimmedContent.includes('__defineModule__')) {
-            return `${trimmedContent}\n\n__defineModule__(_main, '${moduleName}');`;
+            return `${trimmedContent}\n\n__defineModule__(_main);`;
         }
-        // If it already has __defineModule__, check if it needs explicit name
-        if (trimmedContent.includes('__defineModule__(_main)') && !trimmedContent.includes('__defineModule__(_main,')) {
-            return trimmedContent.replace('__defineModule__(_main)', `__defineModule__(_main, '${moduleName}')`);
+        // If it already has __defineModule__ with explicit name, remove the name parameter
+        if (trimmedContent.includes('__defineModule__(_main,')) {
+            return trimmedContent.replace(/__defineModule__\(_main,\s*'[^']*'\)/, '__defineModule__(_main)');
         }
         return trimmedContent;
     }
@@ -50,7 +53,7 @@ __defineModule__(_main, '${moduleName}');`;
 ${trimmedContent.split('\n').map(line => line ? `  ${line}` : '').join('\n')}
 }
 
-__defineModule__(_main, '${moduleName}');`;
+__defineModule__(_main);`;
 }
 
 /**
@@ -149,7 +152,7 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
     }
     
     // Don't wrap special system files
-    const specialFiles = ['appsscript', '0_shim', '__mcp_gas_run'];
+    const specialFiles = ['appsscript', 'CommonJS', '__mcp_gas_run'];
     const baseFileName = fileName.split('/').pop()?.split('.')[0] || '';
     
     return !specialFiles.includes(baseFileName);

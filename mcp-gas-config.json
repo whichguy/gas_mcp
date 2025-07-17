@@ -51,20 +51,100 @@
       "scriptId": "1mTFpbKl3efLMmH1XrMdZr5-zUicP-qvna-TiRZTXOie-RPVd9M0AR3UU",
       "name": "test-shim-verification",
       "description": "Created: 7/17/2025"
+    },
+    "lazy-loading-test": {
+      "scriptId": "1FBzRyvl6ObrPfI9PLAwmvsjTHiugaoxt4z7ReLEBOx3u1GUBGCRzkU_R",
+      "name": "lazy-loading-test",
+      "description": "Created: 7/17/2025"
+    },
+    "lazy-test": {
+      "scriptId": "1bdlGwN7FUvMIMGVcGqS97Ut5RJ97BOL5_JPEX1lN2h5KLjWAJrjCGwu3",
+      "name": "lazy-test",
+      "description": "Created: 7/17/2025"
+    },
+    "corrected-lazy-loading-test": {
+      "scriptId": "1zDPlp6LFFp0eV5Tp6BOQ85FsG3z-ayGGYSz3-d9hzmqjhikm_8lbiqtr",
+      "name": "corrected-lazy-loading-test",
+      "description": "Created: 7/17/2025"
+    },
+    "final-lazy-loading-test": {
+      "scriptId": "1LUQC-SFf8oiHaMEFDH0Bd2a7fxwE0RmeSMS6tGUs2gXAMfhE__TkEwIc",
+      "name": "final-lazy-loading-test",
+      "description": "Created: 7/17/2025"
+    },
+    "module-test": {
+      "scriptId": "1k1qwjqZeKEtGlF9Vplk7NoOHVEDIjvi4D6qtK5chEFbSmQucooq8GoW_",
+      "name": "module-test",
+      "description": "Created: 7/17/2025"
+    },
+    "module-validation": {
+      "scriptId": "1cm2Zl0iT4zRYmn5COgVCfZYuQuJYkKGWfNiLfmY-bpdD1iGRGBlMmEfb",
+      "name": "module-validation",
+      "description": "Created: 7/17/2025"
+    },
+    "logger-test": {
+      "scriptId": "1OJOknLb0bY6n8Z-vsdMi_o9ZHFPrCy4W7E7VoRF1fe2YR4mxezRfHkwH",
+      "name": "logger-test",
+      "description": "Created: 7/17/2025"
+    },
+    "logger-test-fresh": {
+      "scriptId": "1zoYXqGqYNpGWF1FHwmPrK8m8_cegWPZkzlZ5T6uUH86ahF-mqlLGxYUW",
+      "name": "logger-test-fresh",
+      "description": "Created: 7/17/2025"
+    },
+    "fresh-logger-test": {
+      "scriptId": "1gUnhNUH8cBB0OrW-ZkBHu-77gUzL1IzONwvy74Ag-G91UC_O87hes9BF",
+      "name": "fresh-logger-test",
+      "description": "Created: 7/17/2025"
+    },
+    "final-verification-test": {
+      "scriptId": "1yCVjxCyKiDzQAYzhPVKDd-WSbzrUNGslxtDsh9PT64fIhVqaxZfhSfpB",
+      "name": "final-verification-test",
+      "description": "Created: 7/17/2025"
+    },
+    "template-test-logger": {
+      "scriptId": "1D4L3qLAnq-CZoY2GVR8LKDO6Mmz6MjY8AR_ZgVRaUoIqHYhdUadTJDLB",
+      "name": "template-test-logger",
+      "description": "Created: 7/17/2025"
+    },
+    "static-template-test": {
+      "scriptId": "1Ku8x0opaC9W8yQz2xgvBbUS3xts5uT-IeLxT2hq3hZF5bWnt0N-i3gsn",
+      "name": "static-template-test",
+      "description": "Created: 7/17/2025"
+    },
+    "logger-race-test": {
+      "scriptId": "1D3OQzwUCQ9OQSQVFy6xNkLVLZJsdIksRxLXDP2Wb4RUYssCgzq6_Rskn",
+      "name": "logger-race-test",
+      "description": "Created: 7/17/2025"
+    },
+    "log-test-project": {
+      "scriptId": "1OCd0jBd6NrLVZyS6A6xxnP2CCZkSI3r19S33Fg5xurG3-t39fxoGzIQ5",
+      "name": "log-test-project",
+      "description": "Created: 7/17/2025"
+    },
+    "log-test": {
+      "scriptId": "1T6698DNZ0NhuDgjK6qr0OAjMLhULXw-i3UVfN4Lm9iTMlFwxkoHmubsM",
+      "name": "log-test",
+      "description": "Created: 7/17/2025"
+    },
+    "commonjs-test": {
+      "scriptId": "12-hhOSIwqnIiUEjdPpuGb2uwNbDE1T_laqUxICqzzM6mJmE-EqHsPxxP",
+      "name": "commonjs-test",
+      "description": "Created: 7/17/2025"
     }
   },
   "localRoot": {
     "rootPath": "/tmp/gas-projects",
-    "lastUpdated": "2025-07-17T14:10:38.333Z"
+    "lastUpdated": "2025-07-17T19:35:55.128Z"
   },
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-17T14:18:19.292Z"
+    "lastModified": "2025-07-17T19:39:59.249Z"
   },
   "currentProject": {
-    "projectName": "1mTFpbKl3efLMmH1XrMdZr5-zUicP-qvna-TiRZTXOie-RPVd9M0AR3UU",
-    "scriptId": "1mTFpbKl3efLMmH1XrMdZr5-zUicP-qvna-TiRZTXOie-RPVd9M0AR3UU",
-    "lastSync": "2025-07-17T14:18:19.292Z"
+    "projectName": "1T6698DNZ0NhuDgjK6qr0OAjMLhULXw-i3UVfN4Lm9iTMlFwxkoHmubsM",
+    "scriptId": "1T6698DNZ0NhuDgjK6qr0OAjMLhULXw-i3UVfN4Lm9iTMlFwxkoHmubsM",
+    "lastSync": "2025-07-17T19:39:59.249Z"
   }
 }

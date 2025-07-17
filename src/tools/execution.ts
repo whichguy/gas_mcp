@@ -2,7 +2,7 @@ import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { ValidationError, GASApiError, AuthenticationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
-import { GASCodeGenerator } from '../utils/codeGeneration.js';
+import { CodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
 import open from 'open';
@@ -22,7 +22,7 @@ export class GASRunTool extends BaseTool {
     properties: {
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed.',
+        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed. LLM TIP: Logger output is automatically captured in response.logger_output - no need to explicitly call Logger.getLog().',
         minLength: 1,
         maxLength: 2000,
         examples: [
@@ -39,7 +39,9 @@ export class GASRunTool extends BaseTool {
           'require("MathLibrary").fibonacci(10)',
           'require("Utils").processData(inputArray)',
           'const calc = require("Calculator"); calc.multiply(4, 6)',
-          'const math = require("MathLibrary"); math.factorial(5)'
+          'const math = require("MathLibrary"); math.factorial(5)',
+          // Debugging with automatic logger capture
+          'console.log("Debug message"); Logger.log("Another message"); return "result";'
         ]
       },
       project: {
@@ -85,6 +87,47 @@ export class GASRunTool extends BaseTool {
         builtinServices: 'Google Apps Script services: SpreadsheetApp.create(), DriveApp.getFiles()',
         userFunctions: 'Functions from files: require("ModuleName").functionName(args)'
       }
+    },
+    responseSchema: {
+      type: 'object',
+      description: 'Response from gas_run execution with result and logger output',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['success', 'error'],
+          description: 'Execution status indicator'
+        },
+        result: {
+          description: 'The actual result of the JavaScript execution (any type)'
+        },
+        logger_output: {
+          type: 'string',
+          description: 'All accumulated logger output from console.log(), Logger.log(), and other logging during execution. Includes module loading messages, debug output, and any previous logging in the session.'
+        },
+        scriptId: {
+          type: 'string',
+          description: 'The Google Apps Script project ID that was executed'
+        },
+        js_statement: {
+          type: 'string',
+          description: 'The JavaScript statement that was executed'
+        },
+        executedAt: {
+          type: 'string',
+          format: 'date-time',
+          description: 'ISO timestamp of when the execution occurred'
+        },
+        error: {
+          type: 'object',
+          description: 'Error details (only present when status is "error")',
+          properties: {
+            type: { type: 'string', description: 'Error type/category' },
+            message: { type: 'string', description: 'Human-readable error message' },
+            originalError: { type: 'string', description: 'Original error message if available' }
+          }
+        }
+      },
+      required: ['status', 'result', 'logger_output', 'scriptId', 'js_statement', 'executedAt']
     }
   };
 
@@ -607,7 +650,7 @@ export class GASRawRunTool extends BaseTool {
       },
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed.',
+        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed. LLM TIP: Logger output is automatically captured in response.logger_output - no need to explicitly call Logger.getLog().',
         minLength: 1,
         maxLength: 2000,
         examples: [
@@ -624,7 +667,9 @@ export class GASRawRunTool extends BaseTool {
           'require("MathLibrary").fibonacci(10)',
           'require("Utils").processData(inputArray)',
           'const calc = require("Calculator"); calc.multiply(4, 6)',
-          'const math = require("MathLibrary"); math.factorial(5)'
+          'const math = require("MathLibrary"); math.factorial(5)',
+          // Debugging with automatic logger capture
+          'console.log("Debug message"); Logger.log("Another message"); return "result";'
         ],
         llmHints: {
           capability: 'Full JavaScript ES6+ support plus Google Apps Script services',
@@ -632,7 +677,8 @@ export class GASRawRunTool extends BaseTool {
           functions: 'Can call functions defined in project files using require("ModuleName").functionName()',
           services: 'Access to SpreadsheetApp, DriveApp, GmailApp, etc.',
           return: 'Return values are automatically JSON-serialized for response',
-          debugging: 'Use console.log() for debugging output in execution logs'
+          debugging: 'Use console.log() for debugging output in execution logs',
+          logCapture: 'Logger output is automatically captured in response.logger_output field'
         }
       },
       autoRedeploy: {
@@ -684,6 +730,47 @@ export class GASRawRunTool extends BaseTool {
         subsequentRuns: 'Typically 1-2 seconds for execution',
         optimization: 'Complex operations benefit from being moved to project files'
       }
+    },
+    responseSchema: {
+      type: 'object',
+      description: 'Response from gas_raw_run execution with result and logger output',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['success', 'error'],
+          description: 'Execution status indicator'
+        },
+        result: {
+          description: 'The actual result of the JavaScript execution (any type)'
+        },
+        logger_output: {
+          type: 'string',
+          description: 'All accumulated logger output from console.log(), Logger.log(), and other logging during execution. Includes module loading messages, debug output, and any previous logging in the session.'
+        },
+        scriptId: {
+          type: 'string',
+          description: 'The Google Apps Script project ID that was executed'
+        },
+        js_statement: {
+          type: 'string',
+          description: 'The JavaScript statement that was executed'
+        },
+        executedAt: {
+          type: 'string',
+          format: 'date-time',
+          description: 'ISO timestamp of when the execution occurred'
+        },
+        error: {
+          type: 'object',
+          description: 'Error details (only present when status is "error")',
+          properties: {
+            type: { type: 'string', description: 'Error type/category' },
+            message: { type: 'string', description: 'Human-readable error message' },
+            originalError: { type: 'string', description: 'Original error message if available' }
+          }
+        }
+      },
+      required: ['status', 'result', 'logger_output', 'scriptId', 'js_statement', 'executedAt']
     }
   };
 
@@ -793,9 +880,34 @@ export class GASRawRunTool extends BaseTool {
         return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken);
       }
       if (!autoRedeploy) {
-        throw new Error(`Execution failed and autoRedeploy is disabled. ${error.message}`);
+        // Return structured error response with logger output if available
+        return {
+          status: 'error',
+          scriptId,
+          js_statement,
+          error: {
+            type: 'AutoRedeployDisabled',
+            message: `Execution failed and autoRedeploy is disabled. ${error.message}`,
+            originalError: error.message
+          },
+          logger_output: error.loggerOutput || '',
+          executedAt: new Date().toISOString()
+        };
       }
-      throw error;
+      
+      // Return structured error response with logger output if available
+      return {
+        status: 'error',
+        scriptId,
+        js_statement,
+        error: {
+          type: error.name || 'ExecutionError',
+          message: error.message,
+          statusCode: error.statusCode || 500
+        },
+        logger_output: error.loggerOutput || '',
+        executedAt: new Date().toISOString()
+      };
     }
   }
 
@@ -1190,11 +1302,15 @@ export class GASRawRunTool extends BaseTool {
           // Clear timeout and return success
           clearTimeout(timeoutId);
           
+          // Extract logger output from retry result if it exists
+          const retryLoggerOutput = (retryResult && typeof retryResult === 'object' && retryResult.logger_output) || '';
+          
           return {
             status: 'success',
             scriptId,
             js_statement,
-            result: retryResult,
+            result: retryResult && typeof retryResult === 'object' && retryResult.result !== undefined ? retryResult.result : retryResult,
+            logger_output: retryLoggerOutput,
             executedAt: new Date().toISOString(),
             cookieAuthUsed: true
           };
@@ -1211,6 +1327,17 @@ export class GASRawRunTool extends BaseTool {
           errorBody = await response.text();
         } catch (bodyError) {
           errorBody = `[Failed to read error body: ${bodyError}]`;
+        }
+        
+        // Try to parse error body as JSON to extract logger output
+        let loggerOutput = '';
+        try {
+          const errorJson = JSON.parse(errorBody);
+          if (errorJson.logger_output) {
+            loggerOutput = errorJson.logger_output;
+          }
+        } catch {
+          // Not JSON, continue without logger output
         }
         
         // ENHANCED ERROR DEBUG with HTTP codes
@@ -1239,6 +1366,7 @@ export class GASRawRunTool extends BaseTool {
           body: errorBody
         };
         (error as any).responseBody = errorBody;
+        (error as any).loggerOutput = loggerOutput;
         (error as any).config = {
           url: executionUrl,
           method: 'GET'
@@ -1344,6 +1472,7 @@ export class GASRawRunTool extends BaseTool {
             scriptId,
             js_statement,
             result: result.payload,
+            logger_output: result.logger_output || '',
             executedAt: new Date().toISOString()
           };
         } else if (result.type === 'exception') {
@@ -1353,12 +1482,16 @@ export class GASRawRunTool extends BaseTool {
         }
       }
       
-      // Return simple success response
+      // Extract logger output from the result if it exists
+      const loggerOutput = (result && typeof result === 'object' && result.logger_output) || '';
+      
+      // Return simple success response with logger output
       return {
         status: 'success',
         scriptId,
         js_statement,
-        result,
+        result: result && typeof result === 'object' && result.result !== undefined ? result.result : result,
+        logger_output: loggerOutput,
         executedAt: new Date().toISOString()
       };
     } catch (error: any) {
@@ -1385,6 +1518,7 @@ export class GASRawRunTool extends BaseTool {
       if (error.name === 'AbortError') {
         const timeoutError = new Error(`Request timeout: Google Apps Script did not respond within 30 seconds`);
         (timeoutError as any).statusCode = 408;
+        (timeoutError as any).loggerOutput = error.loggerOutput || '';
         throw timeoutError;
       }
       
@@ -1392,7 +1526,13 @@ export class GASRawRunTool extends BaseTool {
       if (error.message?.includes('Response body reading timeout')) {
         const timeoutError = new Error(`Response reading timeout: Google Apps Script response body took longer than 15 seconds to read`);
         (timeoutError as any).statusCode = 408;
+        (timeoutError as any).loggerOutput = error.loggerOutput || '';
         throw timeoutError;
+      }
+      
+      // Preserve logger output in re-thrown errors
+      if (error.loggerOutput) {
+        (error as any).loggerOutput = error.loggerOutput;
       }
       
       // Re-throw other errors
@@ -1592,14 +1732,14 @@ export class GASRawRunTool extends BaseTool {
     // Add execution shim if needed
     if (!shimExists) {
       console.error('Creating execution shim...');
-      const shimCode = GASCodeGenerator.generateCode({
+      const shimCode = CodeGenerator.generateProjectFiles({
         type: 'head_deployment',
         timezone: 'America/Los_Angeles',
         includeTestFunctions: true,
         mcpVersion: '1.0.0'
       });
       
-      const shimFile = shimCode.files.find(file => file.name === '__mcp_gas_run');
+      const shimFile = shimCode.files.find((file: GASFile) => file.name === '__mcp_gas_run');
       if (!shimFile?.source) {
         throw new Error('Failed to generate execution shim code');
       }
