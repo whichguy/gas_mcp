@@ -13,6 +13,8 @@
  */
 
 import { GASFile } from '../api/gasClient.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface ProxyCodeOptions {
   type: 'head_deployment' | 'execution_api';
@@ -30,450 +32,152 @@ export interface CodeGenerationResult {
 }
 
 /**
- * Consolidated Google Apps Script Code Generator
- * 
- * **System Architecture:**
- * - `__mcp_gas_run` - System with built-in dynamic execution
- * - Built-in `__gas_run` function for runtime code execution
- * - Dynamic function execution via Function constructor
- * 
- * **Replaces these duplicate functions:**
- * - `GASClient.generateMcpGasRunClass()` - System generation
- * - `GASRunTool.getProxyFunctionCode()` - Proxy function generation
- * 
- * **Benefits of dynamic execution architecture:**
- * - Built-in function execution without external dependencies
- * - Runtime code execution via Function constructor
- * - Self-contained system with dynamic capabilities
- * - Easier deployment and maintenance
- * - No separation between system and user code needed
+ * Simple template reader that reads template content from src directory
+ * @param templateName - The template filename (e.g., '__mcp_gas_run.js', 'CommonJS.js')
+ * @returns Template content as string
  */
-export class GASCodeGenerator {
-  
+function getTemplate(templateName: string): string {
+  try {
+    // Get the directory of this file - when compiled, this will be in dist/src/utils/
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+    
+    // Determine if we're running from compiled code (dist/) or source code (src/)
+    let srcDir: string;
+    if (currentDir.includes('/dist/')) {
+      // Running from compiled code: dist/src/utils -> go up to project root, then to src
+      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
+      srcDir = path.join(projectRoot, 'src');
+    } else {
+      // Running from source code: src/utils -> go up to src
+      srcDir = path.join(currentDir, '..');
+    }
+    
+    const templatePath = path.join(srcDir, templateName);
+    
+    return fs.readFileSync(templatePath, 'utf8');
+  } catch (error) {
+    throw new Error(`Template ${templateName} not found: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Comprehensive code generation for Google Apps Script projects
+ * Supports multiple deployment types and user code integration
+ */
+export class CodeGenerator {
   /**
-   * Generate complete Google Apps Script code based on options
-   * 
-   * **Unified API** that replaces multiple specialized functions:
-   * - HEAD deployment: Generates system with built-in dynamic execution + manifest
-   * - Execution API: Generates API executable code
-   * 
-   * @param options - Configuration for code generation type and features
+   * Generate complete GAS project files based on options
+   * @param options - Configuration for code generation
    * @returns Generated files with metadata
    */
-  static generateCode(options: ProxyCodeOptions): CodeGenerationResult {
-    const timezone = options.timezone || 'America/Los_Angeles';
-    const mcpVersion = options.mcpVersion || '1.0.0';
-    const responseFormat = options.responseFormat || 'structured';
-    const includeTestFunctions = options.includeTestFunctions !== false;
+  static generateProjectFiles(options: ProxyCodeOptions): CodeGenerationResult {
+    const { 
+      type, 
+      userCode = '', 
+      timezone = 'America/New_York', 
+      includeTestFunctions = false,
+      mcpVersion = '1.3.3',
+      responseFormat = 'structured'
+    } = options;
 
-    switch (options.type) {
-      case 'head_deployment':
-        return this.generateHeadDeployment(
-          options.userCode || '', 
-          timezone, 
-          includeTestFunctions,
-          mcpVersion
-        );
+    const files: GASFile[] = [];
+    let totalLines = 0;
 
-      case 'execution_api':
-        return this.generateExecutionApi(mcpVersion);
+    // Always include the MCP system file
+    const mcpSystemContent = this.generateMcpClassFile(timezone, mcpVersion);
+    files.push({
+      name: '__mcp_gas_run',
+      type: 'SERVER_JS',
+      source: mcpSystemContent
+    });
+    totalLines += mcpSystemContent.split('\n').length;
 
-      default:
-        throw new Error(`Unsupported code generation type: ${options.type}`);
-    }
-  }
+    // Always include the CommonJS module system
+    const shimContent = this.generateShimFile();
+    files.push({
+      name: 'CommonJS',
+      type: 'SERVER_JS', 
+      source: shimContent
+    });
+    totalLines += shimContent.split('\n').length;
 
-  /**
-   * Generate HEAD deployment files (replaces GASClient methods)
-   * 
-   * **Features:**
-   * - `generateMcpClassFile()` - System with built-in dynamic execution
-   * - Built-in __gas_run function for runtime code execution
-   * 
-   * **Improvements:**
-   * - Self-contained dynamic execution system
-   * - Runtime code execution via Function constructor
-   * - No external user function dependencies
-   */
-  private static generateHeadDeployment(
-    userCode: string, 
-    timezone: string, 
-    includeTestFunctions: boolean,
-    mcpVersion: string
-  ): CodeGenerationResult {
-    
-    const files: GASFile[] = [
-      // Manifest file with proper entry point configuration for both Web App and API Executable
-      {
-        name: 'appsscript',
-        type: 'JSON',
-        source: JSON.stringify({
-          timeZone: timezone,
-          dependencies: {},
-          webapp: {
-            access: "MYSELF",
-            executeAs: "USER_DEPLOYING"
-          },
-          executionApi: {
-            access: "MYSELF"
-          },
-          exceptionLogging: "STACKDRIVER",
-          runtimeVersion: "V8"
-        }, null, 2)
-      },
-      
-      // Well-known MCP class file (loaded first) - SYSTEM SHIM ONLY
-      {
-        name: '__mcp_gas_run',
+    // Add user code if provided
+    if (userCode.trim()) {
+      files.push({
+        name: 'Code',
         type: 'SERVER_JS',
-        source: this.generateMcpClassFile(timezone, mcpVersion)
-      }
-      
-      // User functions expected to be in separate .gs files (e.g., Code.gs or custom files)
-      // This maintains clean separation between system infrastructure and user code
-    ];
+        source: userCode
+      });
+      totalLines += userCode.split('\n').length;
+    }
 
-    const totalLines = files.reduce((sum, file) => sum + (file.source?.split('\n').length || 0), 0);
+    // Add test functions if requested
+    if (includeTestFunctions) {
+      const testContent = this.generateTestFunctions();
+      files.push({
+        name: 'TestFunctions',
+        type: 'SERVER_JS',
+        source: testContent
+      });
+      totalLines += testContent.split('\n').length;
+    }
 
     return {
       files,
       totalLines,
-      description: `HEAD deployment with ${files.length} files (${totalLines} total lines) - system with built-in dynamic execution`
+      description: `Generated ${files.length} files for ${type} deployment (${totalLines} total lines)`
     };
   }
 
   /**
-   * Generate Execution API code
-   */
-  private static generateExecutionApi(mcpVersion: string): CodeGenerationResult {
-    const apiCode = `
-/**
- * MCP Execution API Implementation
- * Optimized for direct API calls via gas_run_api_exec
- * Version: ${mcpVersion}
- */
-
-// API-optimized functions would go here
-// This is a placeholder for future API-specific code generation
-`;
-
-    const files: GASFile[] = [{
-      name: 'api_executable.gs',
-      type: 'SERVER_JS',
-      source: apiCode
-    }];
-
-    return {
-      files,
-      totalLines: apiCode.split('\n').length,
-      description: `Execution API code optimized for direct API calls`
-    };
-  }
-
-  /**
-   * Generate MCP class file (replaces generateMcpGasRunClass)
-   * 
-   * **SYSTEM SHIM ONLY - NEVER MODIFIED AFTER CREATION**
-   * - Provides web app entry points (doGet/doPost)
+   * Generate the main MCP system file
+   * Contains:
+   * - doGet/doPost handlers for web app endpoints
    * - Built-in __gas_run function for dynamic code execution
    * - System exception handler (__mcp_handleMcpException)
    * - Uses Function constructor for runtime code execution
    * - ALL USER CODE MUST BE IN SEPARATE .GS FILES
    */
   private static generateMcpClassFile(timezone: string, mcpVersion: string): string {
-    return `/**
- * MCP Gas Run System - Dynamic JavaScript Execution for Google Apps Script
- * 
- * SECURITY: Designed for HEAD deployments, allows redirect handling (/dev → /exec)
- * USAGE: Send JavaScript code via GET params or POST body for execution
- * VERSION: 1.3.1
- * 
- * Examples:
- * GET:  ?func=Math.max(10,20,30)
- * POST: {"func": "new Date().getTime()"}
- * POST: const x = 5; const y = 10; x * y;
- */
-
-/**
- * GET endpoint - executes JavaScript from URL parameters
- * 
- * @param {Object} e - Event object from Google Apps Script
- * @param {Object} e.parameter - URL parameters
- * @returns {TextOutput} JSON response with execution result or error
- * 
- * @example
- * ?func=Math.max(10,20,30)
- * ?func=new Date().getTime()
- * ?func=Session.getActiveUser().getEmail()
- * ?func=JSON.stringify({hello: "world"})
- * ?func=nonExistentFunction()  // Will throw exception
- * 
- * Success Response:
- *   {"function_called":"Math.max(10,20,30)","result":30,"success":true,"execution_time_ms":1.234}
- * 
- * Error Response:
- *   {"error":true,"context":"execution","function_called":"badCode()","message":"ReferenceError: badCode is not defined"}
- */
-function doGet(e) {
-  try {
-    validateDevMode();
-    const js_statement = extractGetParams(e.parameter);
-    if (!js_statement) {
-      throw new Error('No JavaScript code provided. Use ?func=yourCode');
-    }
-    return __gas_run(js_statement);
-  } catch (error) {
-    return errorResponse(error, 'doGet');
-  }
-}
-
-/**
- * POST endpoint - executes JavaScript from POST body
- * 
- * @param {Object} e - Event object from Google Apps Script
- * @param {Object} e.postData - POST data object
- * @param {string} e.postData.contents - Raw POST body content
- * @returns {TextOutput} JSON response with execution result or error
- * 
- * @example
- * JSON Examples:
- *   {"func": "Math.PI * 2"}                           → result: 6.283185307179586
- *   {"func": "new Date().toISOString()"}              → result: "2025-06-15T10:30:45.123Z"
- *   {"func": "DriveApp.getRootFolder().getName()"}    → result: "My Drive"
- * 
- * Raw JavaScript Examples (returns result of last expression):
- *   const x = 5; const y = 10; x * y;                 → result: 50
- *   function greet(name) { return \`Hello \${name}!\`; } greet("World");  → result: "Hello World!"
- *   (() => { const arr = [1,2,3]; return arr.reduce((a,b) => a+b); })()  → result: 6
- *   (() => { throw new Error("Custom error"); })()   → Will throw exception
- * 
- * Success Response:
- *   {"function_called":"const x = 5; x * 2","result":10,"success":true,"execution_time_ms":0.891}
- * 
- * Error Response:
- *   {"error":true,"context":"execution","function_called":"badCode","message":"Error: Custom error"}
- */
-function doPost(e) {
-  try {
-    validateDevMode();
-    const js_statement = extractPostData(e.postData?.contents);
-    if (!js_statement) {
-      throw new Error('No JavaScript code provided. Send JSON {"func": "code"} or raw JavaScript');
-    }
-    return __gas_run(js_statement);
-  } catch (error) {
-    return errorResponse(error, 'doPost');
-  }
-}
-
-/**
- * Security check - validates execution context
- * 
- * Only allows /dev URLs (HEAD deployments) for dynamic execution
- * Fetch logic will handle any redirects automatically
- * 
- * @throws {Error} If not a /dev URL (HEAD deployment)
- * 
- * @example
- * // HEAD deployment (allowed):     https://script.google.com/macros/s/ABC123/dev
- * // Domain-specific (allowed):     https://script.google.com/a/macros/domain.com/s/ABC123/dev
- * // Versioned deployment (blocked): https://script.google.com/macros/s/ABC123/exec
- */
-function validateDevMode() {
-  const url = ScriptApp.getService().getUrl();
-  
-  // Strict validation: Only allow /dev URLs (HEAD deployments)
-  if (!url.endsWith('/dev')) {
-    throw new Error('Dynamic execution only available in dev mode (HEAD deployments ending in /dev). Current URL: ' + url);
-  }
-  
-  console.error('[MCP_GAS_RUN] Executing on HEAD deployment (/dev URL)');
-}
-
-/**
- * Extract JavaScript code from GET parameters
- * 
- * @param {Object} params - URL parameters object
- * @param {string} [params.func] - JavaScript code to execute
- * @returns {string} JavaScript code or empty string if not found
- * 
- * @example
- * extractGetParams({func: "Math.max(1,2,3)"}) // returns "Math.max(1,2,3)"
- * extractGetParams({other: "value"}) // returns ""
- */
-function extractGetParams(params = {}) {
-  return params.func || '';
-}
-
-/**
- * Extract JavaScript code from POST data (JSON or raw)
- * 
- * @param {string} postData - Raw POST body content
- * @returns {string} JavaScript code or empty string if not found
- * 
- * @example
- * // JSON format
- * extractPostData('{"func": "Math.PI"}') // returns "Math.PI"
- * 
- * // Raw JavaScript - returns result of last expression
- * extractPostData('const x = 5; x * 2;') // returns "const x = 5; x * 2;" → evaluates to 10
- * extractPostData('function add(a,b) { return a+b; } add(3,4);') // returns the code → evaluates to 7
- * 
- * // Empty/invalid
- * extractPostData('') // returns ""
- */
-function extractPostData(postData) {
-  if (!postData) return '';
-  
-  try {
-    // Try JSON parsing first
-    const parsed = JSON.parse(postData);
-    return parsed.func || '';
-  } catch (e) {
-    // Fall back to raw JavaScript code
-    return postData.trim();
-  }
-}
-
-/**
- * Creates a function from a JS string, returning the value of the 
- * last expression. This robust version correctly handles 'return'
- * as a whole word, distinguishing it from variable names.
- * @param {string} code - The JavaScript code snippet.
- * @returns {Function} A new function that executes the code.
- */
-function createFunction(code) {
-  const trimmedCode = code.trim();
-  if (trimmedCode === '') return new Function('');
-
-  // Regex to test for a standalone 'return' keyword at the start.
-  const isReturnStatement = /^return($|[\s;])/.test(trimmedCode);
-  
-  const lastSemicolon = trimmedCode.lastIndexOf(';');
-
-  // Case 1: No semicolon
-  if (lastSemicolon === -1) {
-    return new Function(
-      isReturnStatement ? trimmedCode : \`return \${trimmedCode}\`
-    );
+    return getTemplate('__mcp_gas_run.js');
   }
 
-  // Case 2: Semicolon exists
-  const declarations = trimmedCode.substring(0, lastSemicolon + 1);
-  const finalPart = trimmedCode.substring(lastSemicolon + 1).trim();
-
-  const finalPartIsReturn = /^return($|[\s;])/.test(finalPart);
-
-  const functionBody = (finalPart === '' || finalPartIsReturn)
-    ? trimmedCode
-    : \`\${declarations} return \${finalPart}\`;
-
-  return new Function(functionBody);
-}
-
-/**
- * Core execution engine - runs JavaScript code dynamically
- * PERFORMANCE OPTIMIZED for repeated calls and simple expressions
- * 
- * @param {string} js_statement - JavaScript code to execute
- * @returns {TextOutput} JSON response with result and execution time
- */
-function __gas_run(js_statement) {
-  const startTime = Date.now();
-  
-  // 🚀 PERFORMANCE OPTIMIZATION: Skip logging for simple expressions
-  const isSimpleExpression = /^[a-zA-Z0-9_.\$\s*/()+-]+$/.test(js_statement) && 
-                            js_statement.length < 50 && 
-                            !js_statement.includes('function') && 
-                            !js_statement.includes('const') && 
-                            !js_statement.includes('let') && 
-                            !js_statement.includes('var');
-  
-  if (!isSimpleExpression) {
-    console.error(\`[GAS_RUN] Executing: \${js_statement}\`);
+  /**
+   * Generate the CommonJS module system file
+   * Contains the module loading and require() system
+   */
+  private static generateShimFile(): string {
+    return getTemplate('CommonJS.js');
   }
 
-  try {
-    // 🚀 PERFORMANCE OPTIMIZATION: Direct eval for simple math expressions
-    if (isSimpleExpression && /^[\d\s*/.()+-]+$/.test(js_statement)) {
-      const result = eval(js_statement);
-      const duration = Date.now() - startTime;
-      
-      return jsonResponse({
-        function_called: js_statement,
-        result: result,
-        success: true,
-        execution_time_ms: duration,
-        execution_type: 'fast_eval'
-      });
-    }
-    
-    // Standard function construction for complex expressions
-    const fn = createFunction(js_statement);
-    const result = fn();
-    const duration = Date.now() - startTime;
-    
-    return jsonResponse({
-      function_called: js_statement,
-      result: result,
-      success: true,
-      execution_time_ms: duration,
-      execution_type: 'function_constructor'
-    });
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(\`[GAS_RUN ERROR] \${js_statement}: \${error.toString()}\`);
-    return errorResponse(error, 'execution', js_statement);
-  }
+  /**
+   * Generate test functions for debugging and validation
+   */
+  private static generateTestFunctions(): string {
+    return `
+/**
+ * Test functions for MCP Gas integration
+ * These functions help validate the system is working correctly
+ */
+
+function testBasicExecution() {
+  return "Basic execution test passed";
 }
 
-/**
- * Standardized JSON response helper
- * 
- * @param {Object} data - Data object to serialize as JSON
- * @returns {TextOutput} Google Apps Script TextOutput with JSON MIME type
- * 
- * @example
- * jsonResponse({success: true, result: 42})
- * // Returns TextOutput with: {"success":true,"result":42}
- */
-function jsonResponse(data) {
-  return ContentService
-    .createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
+function testMathOperations() {
+  return {
+    addition: 2 + 3,
+    multiplication: 4 * 5,
+    timestamp: new Date().toISOString()
+  };
 }
 
-/**
- * Standardized error response
- * 
- * @param {Error} error - Error object to format
- * @param {string} context - Context where error occurred (e.g., 'doGet', 'execution')
- * @param {string} [code='unknown'] - JavaScript code that caused the error
- * @returns {TextOutput} JSON error response
- * 
- * @example
- * errorResponse(new Error("Test error"), "execution", "badCode()")
- * // Returns: {"error":true,"context":"execution","function_called":"badCode()","message":"Error: Test error"}
- */
-function errorResponse(error, context, code = 'unknown') {
-  console.error(\`Error in \${context}:\`, error.toString());
-  
-  const currentUrl = ScriptApp.getService().getUrl();
-  
-  return jsonResponse({
-    error: true,
-    context: context,
-    function_called: code,
-    message: error.toString(),
-    accessed_url: currentUrl,
-    url_type: currentUrl.endsWith('/dev') ? 'HEAD deployment (testing)' : currentUrl.endsWith('/exec') ? 'Deployment (may be redirected from /dev)' : 'Unknown deployment type',
-    debug_info: {
-      timestamp: new Date().toISOString(),
-      deployment_mode: currentUrl.endsWith('/dev') ? 'development' : currentUrl.endsWith('/exec') ? 'redirected' : 'unknown'
-    }
-  });
+function testLoggerCapture() {
+  Logger.log("Test log message 1");
+  Logger.log("Test log message 2");
+  return "Logger test completed";
 }
-`;
+`.trim();
   }
 
   /**
@@ -485,16 +189,9 @@ function errorResponse(error, context, code = 'unknown') {
   }
 
   /**
-   * Utility method to get default options for a generation type
-   * Helpful for consistent defaults across the application
+   * Get template content by name (for external use)
    */
-  static getDefaultOptions(type: ProxyCodeOptions['type']): ProxyCodeOptions {
-    return {
-      type,
-      timezone: 'America/Los_Angeles',
-      includeTestFunctions: true,
-      mcpVersion: '1.0.0',
-      responseFormat: 'structured'
-    };
+  static getTemplateContent(templateName: string): string {
+    return getTemplate(templateName);
   }
 } 

@@ -806,7 +806,7 @@ export class GASProjectCreateTool extends BaseTool {
     try {
       const project = await this.gasClient.createProject(title, parentId, accessToken);
 
-      // Create the 0_shim.js file
+      // Create the CommonJS.js file
       const shimResult = await this.create0ShimFile(project.scriptId, accessToken);
 
       // Optionally add to local configuration
@@ -833,7 +833,7 @@ export class GASProjectCreateTool extends BaseTool {
         updateTime: project.updateTime,
         parentId: project.parentId,
         shimCreated: shimResult.success,
-        instructions: `Project created with ${shimResult.success ? '0_shim module system' : 'basic setup'} and ${localConfigResult ? 'added to local config' : 'not added to local config'} as '${localName}'. Use gas_project_set({project: "${localName}"}) to start working.`
+        instructions: `Project created with ${shimResult.success ? 'CommonJS module system' : 'basic setup'} and ${localConfigResult ? 'added to local config' : 'not added to local config'} as '${localName}'. Use gas_project_set({project: "${localName}"}) to start working.`
       };
 
       // Add debug info if there were errors
@@ -852,7 +852,7 @@ export class GASProjectCreateTool extends BaseTool {
   }
 
   /**
-   * Create the 0_shim.js file in a new project using GASRawWriteTool
+   * Create the CommonJS.js file in a new project using GASRawWriteTool
    * @param scriptId - The script ID of the project
    * @param accessToken - Access token for API calls
    * @returns Promise with success status and any error details
@@ -873,7 +873,7 @@ export class GASProjectCreateTool extends BaseTool {
       const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
-        path: `${scriptId}/0_shim`,
+        path: `${scriptId}/CommonJS`,
         content: SHIM_TEMPLATE,
         fileType: 'SERVER_JS' as const,
         position: 0,
@@ -882,10 +882,10 @@ export class GASProjectCreateTool extends BaseTool {
       
       const result = await rawWriteTool.execute(writeParams);
       
-      console.error(`✅ [GAS_PROJECT_CREATE] 0_shim module system added to project via GASRawWriteTool`);
+      console.error(`✅ [GAS_PROJECT_CREATE] CommonJS module system added to project via GASRawWriteTool`);
       return { success: true, debug: { ...debugInfo, writeResult: result } };
     } catch (error: any) {
-      const errorMessage = `Failed to add 0_shim: ${error.message}`;
+              const errorMessage = `Failed to add CommonJS: ${error.message}`;
       console.error(`⚠️ [GAS_PROJECT_CREATE] ${errorMessage}`);
       console.error(`   - Error stack: ${error.stack}`);
       return { success: false, error: errorMessage, debug: { error: error.message, stack: error.stack } };

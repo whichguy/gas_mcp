@@ -153,6 +153,8 @@ function _main(
 __defineModule__(_main);
 ```
 
+**🚨 IMPORTANT**: The `__defineModule__(_main)` call uses auto-detection for module names. **DO NOT pass explicit module names** like `__defineModule__(_main, 'ModuleName')` - this is RESERVED for the CommonJS system module only. User modules should always use auto-detection.
+
 This enables seamless `require()` functionality across your Google Apps Script modules.
 
 ### ⭐ RECOMMENDED: `gas_cat` - Smart File Reader
