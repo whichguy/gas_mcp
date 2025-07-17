@@ -93,7 +93,7 @@
       "description": "Created: 7/17/2025"
     },
     "fresh-logger-test": {
-      "scriptId": "1gUnhNUH8cBB0OrW-ZkBHu-77gUzL1IzONwvy74Ag-G91UC_O87hes9BF",
+      "scriptId": "161idgZIs-G7MBy-M9vS5jbATfUwkZ14OGOVPyQ93jmGhYXZ9mb43pGZT",
       "name": "fresh-logger-test",
       "description": "Created: 7/17/2025"
     },
@@ -140,11 +140,11 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-17T19:39:59.249Z"
+    "lastModified": "2025-07-17T20:00:42.104Z"
   },
   "currentProject": {
-    "projectName": "1T6698DNZ0NhuDgjK6qr0OAjMLhULXw-i3UVfN4Lm9iTMlFwxkoHmubsM",
-    "scriptId": "1T6698DNZ0NhuDgjK6qr0OAjMLhULXw-i3UVfN4Lm9iTMlFwxkoHmubsM",
-    "lastSync": "2025-07-17T19:39:59.249Z"
+    "projectName": "161idgZIs-G7MBy-M9vS5jbATfUwkZ14OGOVPyQ93jmGhYXZ9mb43pGZT",
+    "scriptId": "161idgZIs-G7MBy-M9vS5jbATfUwkZ14OGOVPyQ93jmGhYXZ9mb43pGZT",
+    "lastSync": "2025-07-17T20:00:42.104Z"
   }
 }
