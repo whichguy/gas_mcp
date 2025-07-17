@@ -27,35 +27,56 @@ export interface FileComparison {
   lastModified?: Date;
 }
 
+
+
 /**
- * Local root configuration
+ * Git information for appsscript.json
  */
-export interface LocalRootConfig {
-  rootPath: string;
-  lastUpdated: string;
+export interface GitInfo {
+  repository?: string;
+  branch?: string;
+  commit?: string;
+  lastSync?: string;
+  remote?: string;
+  status?: 'clean' | 'dirty' | 'conflicted';
 }
 
 /**
- * Project-specific metadata
+ * MCP-specific metadata for appsscript.json
  */
-export interface ProjectInfo {
-  projectName: string;
-  scriptId: string;
+export interface McpInfo {
+  projectId: string;
+  projectName?: string;
+  localRoot: string;
   lastSync: string;
-  created: string;
+  created?: string;
   description?: string;
+  cacheVersion: string;
+}
+
+/**
+ * Enhanced appsscript.json structure
+ */
+export interface EnhancedAppsscriptJson {
+  timeZone: string;
+  dependencies: {
+    enabledAdvancedServices?: any[];
+  };
+  exceptionLogging: string;
+  runtimeVersion: string;
+  git?: GitInfo;
+  mcp?: McpInfo;
 }
 
 /**
  * Utility class for local file system operations
  * Handles configurable root directory with project-specific folders for gas sync functionality
+ * NO LONGER USES src/ subdirectories - files are stored directly in project directory
  */
 export class LocalFileManager {
   private static readonly DEFAULT_ROOT = '/tmp/gas-projects';
-  private static readonly LOCAL_ROOT_CONFIG = '.gas-local-root.json';
-  private static readonly PROJECT_INFO_FILE = '.project-info.json';
-  private static readonly SRC_DIR = 'src';
-  private static readonly IGNORE_FILES = ['.DS_Store', 'Thumbs.db', '.gitignore', '.project-info.json'];
+
+  private static readonly IGNORE_FILES = ['.DS_Store', 'Thumbs.db', '.gitignore'];
   private static readonly SUPPORTED_EXTENSIONS = ['.gs', '.js', '.html', '.json'];
 
   /**
@@ -101,11 +122,7 @@ export class LocalFileManager {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
     
     try {
-      // Check if configuration already exists
-      const configPath = path.join(actualWorkingDir, this.LOCAL_ROOT_CONFIG);
-      await fs.access(configPath);
-      
-      // Configuration exists, return the configured path
+      // Try to get existing configuration
       return await this.getLocalRoot(actualWorkingDir);
     } catch (error) {
       // No configuration exists, initialize with default
@@ -121,106 +138,150 @@ export class LocalFileManager {
   }
 
   /**
-   * Get the project-specific directory path
+   * Get the project-specific directory path (NO src/ subdirectory)
    */
   static async getProjectDirectory(projectName: string, workingDir?: string): Promise<string> {
     const localRoot = await this.getLocalRoot(workingDir);
     return path.join(localRoot, projectName);
   }
 
-  /**
-   * Get the project-specific src directory path
-   */
-  static async getProjectSrcDirectory(projectName: string, workingDir?: string): Promise<string> {
-    const projectDir = await this.getProjectDirectory(projectName, workingDir);
-    return path.join(projectDir, this.SRC_DIR);
-  }
+
 
   /**
-   * Ensure project directory structure exists
+   * Ensure project directory structure exists (NO src/ subdirectory)
    */
   static async ensureProjectDirectory(projectName: string, workingDir?: string): Promise<string> {
     const projectDir = await this.getProjectDirectory(projectName, workingDir);
-    const srcDir = path.join(projectDir, this.SRC_DIR);
     
-    await fs.mkdir(srcDir, { recursive: true });
+    // Create the project directory directly (no src/ subdirectory)
+    await fs.mkdir(projectDir, { recursive: true });
     return projectDir;
   }
 
+
+
   /**
-   * Save project metadata
+   * Get all files from a project directory (NO src/ subdirectory)
    */
-  static async saveProjectInfo(projectInfo: ProjectInfo, workingDir?: string): Promise<void> {
-    const projectDir = await this.ensureProjectDirectory(projectInfo.projectName, workingDir);
-    const infoPath = path.join(projectDir, this.PROJECT_INFO_FILE);
-    await fs.writeFile(infoPath, JSON.stringify(projectInfo, null, 2));
+  static async getProjectFiles(projectName: string, workingDir?: string): Promise<LocalFile[]> {
+    const projectPath = await this.getProjectDirectory(projectName, workingDir);
+    
+    try {
+      await fs.access(projectPath);
+    } catch (error) {
+      // project directory doesn't exist
+      return [];
+    }
+
+    const files: LocalFile[] = [];
+    await this.scanDirectory(projectPath, projectPath, files);
+    return files;
   }
 
   /**
-   * Load project metadata
+   * Get git information from appsscript.json
    */
-  static async loadProjectInfo(projectName: string, workingDir?: string): Promise<ProjectInfo | null> {
+  static async getGitInfo(projectName: string, workingDir?: string): Promise<GitInfo | null> {
     try {
       const projectDir = await this.getProjectDirectory(projectName, workingDir);
-      const infoPath = path.join(projectDir, this.PROJECT_INFO_FILE);
-      const content = await fs.readFile(infoPath, 'utf-8');
-      return JSON.parse(content);
+      const appsscriptPath = path.join(projectDir, 'appsscript.json');
+      
+      const content = await fs.readFile(appsscriptPath, 'utf-8');
+      const appsscript = JSON.parse(content) as EnhancedAppsscriptJson;
+      
+      return appsscript.git || null;
     } catch (error) {
       return null;
     }
   }
 
   /**
-   * Get all files from a project's src directory
+   * Update git information in appsscript.json
    */
-  static async getProjectFiles(projectName: string, workingDir?: string): Promise<LocalFile[]> {
-    const srcPath = await this.getProjectSrcDirectory(projectName, workingDir);
+  static async updateGitInfo(projectName: string, gitInfo: GitInfo, workingDir?: string): Promise<void> {
+    const projectDir = await this.getProjectDirectory(projectName, workingDir);
+    const appsscriptPath = path.join(projectDir, 'appsscript.json');
+    
+    let appsscript: EnhancedAppsscriptJson;
     
     try {
-      await fs.access(srcPath);
+      const content = await fs.readFile(appsscriptPath, 'utf-8');
+      appsscript = JSON.parse(content);
     } catch (error) {
-      // src directory doesn't exist
-      return [];
+      // Create default appsscript.json if it doesn't exist
+      appsscript = {
+        timeZone: "America/New_York",
+        dependencies: {},
+        exceptionLogging: "STACKDRIVER",
+        runtimeVersion: "V8"
+      };
     }
-
-    const files: LocalFile[] = [];
-    await this.scanDirectory(srcPath, srcPath, files);
-    return files;
+    
+    // Update git information
+    appsscript.git = {
+      ...appsscript.git,
+      ...gitInfo,
+      lastSync: new Date().toISOString()
+    };
+    
+    await fs.writeFile(appsscriptPath, JSON.stringify(appsscript, null, 2));
   }
 
   /**
-   * Get all files from the local src directory (LEGACY - use getProjectFiles instead)
+   * Get MCP information from appsscript.json
    */
-  static async getLocalFiles(workingDir?: string): Promise<LocalFile[]> {
-    // This is legacy - try to determine current project and use project-specific files
-    const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    
+  static async getMcpInfo(projectName: string, workingDir?: string): Promise<McpInfo | null> {
     try {
-      // Try to get current project from .gas-current.json
-      const currentPath = path.join(actualWorkingDir, '.gas-current.json');
-      const currentContent = await fs.readFile(currentPath, 'utf-8');
-      const current = JSON.parse(currentContent);
+      const projectDir = await this.getProjectDirectory(projectName, workingDir);
+      const appsscriptPath = path.join(projectDir, 'appsscript.json');
       
-      if (current.projectName) {
-        return await this.getProjectFiles(current.projectName, actualWorkingDir);
-      }
+      const content = await fs.readFile(appsscriptPath, 'utf-8');
+      const appsscript = JSON.parse(content) as EnhancedAppsscriptJson;
+      
+      return appsscript.mcp || null;
     } catch (error) {
-      // No current project set, fall back to legacy src directory
+      return null;
     }
+  }
+
+
+
+  /**
+   * Update MCP information in appsscript.json
+   */
+  static async updateMcpInfo(projectName: string, mcpInfo: Partial<McpInfo>, workingDir?: string): Promise<void> {
+    const projectDir = await this.getProjectDirectory(projectName, workingDir);
+    const appsscriptPath = path.join(projectDir, 'appsscript.json');
     
-    // Legacy: Use workspace src directory
-    const srcPath = path.join(actualWorkingDir, this.SRC_DIR);
+    let appsscript: EnhancedAppsscriptJson;
     
     try {
-      await fs.access(srcPath);
+      const content = await fs.readFile(appsscriptPath, 'utf-8');
+      appsscript = JSON.parse(content);
     } catch (error) {
-      // src directory doesn't exist
-      return [];
+      // Create default appsscript.json if it doesn't exist
+      appsscript = {
+        timeZone: "America/New_York",
+        dependencies: {},
+        exceptionLogging: "STACKDRIVER",
+        runtimeVersion: "V8"
+      };
     }
-
-    const files: LocalFile[] = [];
-    await this.scanDirectory(srcPath, srcPath, files);
-    return files;
+    
+    // Update MCP information - ensure required fields are present
+    const updatedMcpInfo: McpInfo = {
+      projectId: mcpInfo.projectId || appsscript.mcp?.projectId || projectName,
+      projectName: mcpInfo.projectName || appsscript.mcp?.projectName || projectName,
+      localRoot: mcpInfo.localRoot || appsscript.mcp?.localRoot || await this.getLocalRoot(workingDir),
+      lastSync: new Date().toISOString(),
+      created: mcpInfo.created || appsscript.mcp?.created || new Date().toISOString(),
+      description: mcpInfo.description || appsscript.mcp?.description,
+      cacheVersion: mcpInfo.cacheVersion || appsscript.mcp?.cacheVersion || "1.0.0"
+    };
+    
+    appsscript.mcp = updatedMcpInfo;
+    
+    await fs.writeFile(appsscriptPath, JSON.stringify(appsscript, null, 2));
   }
 
   /**
@@ -310,10 +371,10 @@ export class LocalFileManager {
     workingDir?: string
   ): Promise<void> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = await this.getProjectSrcDirectory(projectName, actualWorkingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
     
-    // Ensure the src directory exists
-    await fs.mkdir(srcPath, { recursive: true });
+    // Ensure the project directory exists
+    await fs.mkdir(projectPath, { recursive: true });
 
     for (const file of files) {
       const extension = this.getFileExtension(file.type, file.content);
@@ -321,11 +382,11 @@ export class LocalFileManager {
       // ✅ FIX: Parse directory structure from GAS filename
       // Convert "utils/helper" → "utils/helper.js" with proper directory structure
       const fileName = file.name;
-      const filePath = path.join(srcPath, `${fileName}${extension}`);
+      const filePath = path.join(projectPath, `${fileName}${extension}`);
       
       // Create directory for the file if it's in a subdirectory
       const fileDir = path.dirname(filePath);
-      if (fileDir !== srcPath) {
+      if (fileDir !== projectPath) {
         await fs.mkdir(fileDir, { recursive: true });
       }
       
@@ -338,16 +399,16 @@ export class LocalFileManager {
    */
   static async writeLocalFiles(files: Array<{name: string; content: string; type?: string}>, workingDir?: string): Promise<void> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = await this.ensureSrcDirectory(actualWorkingDir);
+    const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
 
     for (const file of files) {
       const extension = this.getFileExtension(file.type, file.content);
       const fileName = this.normalizeFileName(file.name);
-      const filePath = path.join(srcPath, `${fileName}${extension}`);
+      const filePath = path.join(projectPath, `${fileName}${extension}`);
       
       // Create directory for the file if it's in a subdirectory
       const fileDir = path.dirname(filePath);
-      if (fileDir !== srcPath) {
+      if (fileDir !== projectPath) {
         await fs.mkdir(fileDir, { recursive: true });
       }
       
@@ -373,10 +434,10 @@ export class LocalFileManager {
     summary: string;
   }> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = await this.getProjectSrcDirectory(projectName, actualWorkingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
     
-    // Ensure the src directory exists
-    await fs.mkdir(srcPath, { recursive: true });
+    // Ensure the project directory exists
+    await fs.mkdir(projectPath, { recursive: true });
 
     const written: string[] = [];
     const skipped: string[] = [];
@@ -392,11 +453,11 @@ export class LocalFileManager {
       // ✅ FIX: Parse directory structure from GAS filename
       // Convert "utils/helper" → "utils/helper.js" with proper directory structure
       const fileName = remoteFile.name;
-      const filePath = path.join(srcPath, `${fileName}${extension}`);
+      const filePath = path.join(projectPath, `${fileName}${extension}`);
       
       // Create directory for the file if it's in a subdirectory
       const fileDir = path.dirname(filePath);
-      if (fileDir !== srcPath) {
+      if (fileDir !== projectPath) {
         await fs.mkdir(fileDir, { recursive: true });
       }
 
@@ -453,14 +514,14 @@ export class LocalFileManager {
     summary: string;
   }> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = await this.ensureSrcDirectory(actualWorkingDir);
+    const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
 
     const written: string[] = [];
     const skipped: string[] = [];
     const overwritten: string[] = [];
 
     // Get existing local files
-    const localFiles = await this.getLocalFiles(actualWorkingDir);
+    const localFiles = await this.getProjectFiles(actualWorkingDir, actualWorkingDir);
     const localFileMap = new Map(localFiles.map(f => [f.name, f]));
 
     for (const remoteFile of remoteFiles) {
@@ -469,11 +530,11 @@ export class LocalFileManager {
       // ✅ FIX: Parse directory structure from GAS filename
       // Convert "utils/helper" → "utils/helper.js" with proper directory structure
       const fileName = remoteFile.name;
-      const filePath = path.join(srcPath, `${fileName}${extension}`);
+      const filePath = path.join(projectPath, `${fileName}${extension}`);
       
       // Create directory for the file if it's in a subdirectory
       const fileDir = path.dirname(filePath);
-      if (fileDir !== srcPath) {
+      if (fileDir !== projectPath) {
         await fs.mkdir(fileDir, { recursive: true });
       }
 
@@ -532,13 +593,13 @@ export class LocalFileManager {
    */
   static async readProjectFile(projectName: string, name: string, workingDir?: string): Promise<string | null> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = await this.getProjectSrcDirectory(projectName, actualWorkingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
     
     // Try different extensions
     for (const extension of this.SUPPORTED_EXTENSIONS) {
       try {
         const fileName = this.normalizeFileName(name);
-        const filePath = path.join(srcPath, `${fileName}${extension}`);
+        const filePath = path.join(projectPath, `${fileName}${extension}`);
         const content = await fs.readFile(filePath, 'utf-8');
         return content;
       } catch (error: any) {
@@ -552,7 +613,7 @@ export class LocalFileManager {
 
     // Also try without extension (for files like README, etc.)
     try {
-      const filePath = path.join(srcPath, name);
+      const filePath = path.join(projectPath, name);
       const content = await fs.readFile(filePath, 'utf-8');
       return content;
     } catch (error: any) {
@@ -569,13 +630,13 @@ export class LocalFileManager {
    */
   static async readLocalFile(name: string, workingDir?: string): Promise<string | null> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = path.join(actualWorkingDir, this.SRC_DIR);
+    const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
     
     // Try different extensions
     for (const extension of this.SUPPORTED_EXTENSIONS) {
       try {
         const fileName = this.normalizeFileName(name);
-        const filePath = path.join(srcPath, `${fileName}${extension}`);
+        const filePath = path.join(projectPath, `${fileName}${extension}`);
         const content = await fs.readFile(filePath, 'utf-8');
         return content;
       } catch (error: any) {
@@ -589,7 +650,7 @@ export class LocalFileManager {
 
     // Also try without extension (for files like README, etc.)
     try {
-      const filePath = path.join(srcPath, name);
+      const filePath = path.join(projectPath, name);
       const content = await fs.readFile(filePath, 'utf-8');
       return content;
     } catch (error: any) {
@@ -606,13 +667,13 @@ export class LocalFileManager {
    */
   static async getProjectFilePath(projectName: string, name: string, workingDir?: string): Promise<string | null> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = await this.getProjectSrcDirectory(projectName, actualWorkingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
     
     // Try different extensions
     for (const extension of this.SUPPORTED_EXTENSIONS) {
       try {
         const fileName = this.normalizeFileName(name);
-        const filePath = path.join(srcPath, `${fileName}${extension}`);
+        const filePath = path.join(projectPath, `${fileName}${extension}`);
         await fs.access(filePath);
         return filePath;
       } catch (error) {
@@ -623,7 +684,7 @@ export class LocalFileManager {
 
     // Also try without extension
     try {
-      const filePath = path.join(srcPath, name);
+      const filePath = path.join(projectPath, name);
       await fs.access(filePath);
       return filePath;
     } catch (error) {
@@ -638,74 +699,25 @@ export class LocalFileManager {
    */
   static getLocalFilePath(name: string, workingDir?: string): string | null {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = path.join(actualWorkingDir, this.SRC_DIR);
-    
-    // Try different extensions
-    for (const extension of this.SUPPORTED_EXTENSIONS) {
-      try {
-        const fileName = this.normalizeFileName(name);
-        const filePath = path.join(srcPath, `${fileName}${extension}`);
-        require('fs').accessSync(filePath);
-        return filePath;
-      } catch (error) {
-        // File doesn't exist with this extension, try next
-        continue;
-      }
-    }
-
-    // Also try without extension
-    try {
-      const filePath = path.join(srcPath, name);
-      require('fs').accessSync(filePath);
-      return filePath;
-    } catch (error) {
-      // File doesn't exist
-    }
-
+    // Note: This method is synchronous, so we can't use async ensureProjectDirectory
+    // For now, we'll use a synchronous approach or return null
     return null;
   }
 
-  /**
-   * List all local projects
-   */
-  static async listLocalProjects(workingDir?: string): Promise<ProjectInfo[]> {
-    const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const localRoot = await this.getLocalRoot(actualWorkingDir);
-    
-    try {
-      await fs.access(localRoot);
-    } catch (error) {
-      // Local root doesn't exist yet
-      return [];
-    }
 
-    const projects: ProjectInfo[] = [];
-    const entries = await fs.readdir(localRoot, { withFileTypes: true });
-    
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const projectInfo = await this.loadProjectInfo(entry.name, actualWorkingDir);
-        if (projectInfo) {
-          projects.push(projectInfo);
-        }
-      }
-    }
-    
-    return projects;
-  }
 
   /**
    * Delete a file from local src directory
    */
   static async deleteLocalFile(name: string, workingDir?: string): Promise<void> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = path.join(actualWorkingDir, this.SRC_DIR);
+    const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
     
     // Try different extensions
     for (const extension of this.SUPPORTED_EXTENSIONS) {
       try {
         const fileName = this.normalizeFileName(name);
-        const filePath = path.join(srcPath, `${fileName}${extension}`);
+        const filePath = path.join(projectPath, `${fileName}${extension}`);
         await fs.unlink(filePath);
         return;
       } catch (error: any) {
@@ -725,14 +737,14 @@ export class LocalFileManager {
    */
   static async clearLocalFiles(workingDir?: string): Promise<void> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = path.join(actualWorkingDir, this.SRC_DIR);
+    const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
     
     try {
-      await fs.rm(srcPath, { recursive: true, force: true });
+      await fs.rm(projectPath, { recursive: true, force: true });
     } catch (error: any) {
       // Directory might not exist, which is fine
       if (error.code !== 'ENOENT') {
-        throw new FileOperationError('clear', srcPath, error.message);
+        throw new FileOperationError('clear', projectPath, error.message);
       }
     }
   }
@@ -831,32 +843,7 @@ export class LocalFileManager {
     return '.js';
   }
 
-  /**
-   * Ensure src directory exists
-   */
-  static async ensureSrcDirectory(workingDir?: string): Promise<string> {
-    const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const srcPath = path.join(actualWorkingDir, this.SRC_DIR);
-    await fs.mkdir(srcPath, { recursive: true });
-    return srcPath;
-  }
 
-  /**
-   * Get src directory path
-   */
-  static getSrcDirectory(workingDir?: string): string {
-    const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    return path.join(actualWorkingDir, this.SRC_DIR);
-  }
-
-  /**
-   * Check if src directory exists and has files
-   */
-  static async hasSrcFiles(workingDir?: string): Promise<boolean> {
-    const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const files = await this.getLocalFiles(actualWorkingDir);
-    return files.length > 0;
-  }
 
   /**
    * Detect the proper workspace directory by looking for package.json or similar markers

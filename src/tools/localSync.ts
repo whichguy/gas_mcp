@@ -123,35 +123,22 @@ export class GASPullTool extends BaseTool {
       );
     }
 
-    // Save/update project metadata
-    const projectInfo = {
+
+    
+    // Update MCP info in appsscript.json
+    await LocalFileManager.updateMcpInfo(projectName, {
+      projectId: scriptId,
       projectName,
-      scriptId,
-      lastSync: new Date().toISOString(),
-      created: new Date().toISOString(), // Will be overwritten if project already exists
       description: `Google Apps Script project synced from ${scriptId}`
-    };
-
-    // Check if project info already exists to preserve creation date
-    const existingInfo = await LocalFileManager.loadProjectInfo(projectName, workingDir);
-    if (existingInfo) {
-      projectInfo.created = existingInfo.created;
-      if (existingInfo.description) {
-        projectInfo.description = existingInfo.description;
-      }
-    }
-
-    await LocalFileManager.saveProjectInfo(projectInfo, workingDir);
+    }, workingDir);
 
     const projectDir = await LocalFileManager.getProjectDirectory(projectName, workingDir);
-    const srcDir = await LocalFileManager.getProjectSrcDirectory(projectName, workingDir);
 
     return {
       success: true,
       projectName,
       scriptId,
       projectDir,
-      srcDir,
       ...result,
       message: `${result.summary} to project '${projectName}'`
     };
@@ -291,12 +278,10 @@ export class GASPushTool extends BaseTool {
     const successCount = results.filter(r => r.status === 'success').length;
     const errorCount = results.filter(r => r.status === 'error').length;
 
-    // Update project metadata with last sync time
-    const existingInfo = await LocalFileManager.loadProjectInfo(projectName, workingDir);
-    if (existingInfo) {
-      existingInfo.lastSync = new Date().toISOString();
-      await LocalFileManager.saveProjectInfo(existingInfo, workingDir);
-    }
+    // Update MCP info in appsscript.json with last sync time
+    await LocalFileManager.updateMcpInfo(projectName, {
+      lastSync: new Date().toISOString()
+    }, workingDir);
 
     return {
       success: errorCount === 0,
@@ -417,8 +402,7 @@ export class GASStatusTool extends BaseTool {
       summary,
       localFiles: localFiles.length,
       remoteFiles: remoteFiles.length,
-      projectDir: await LocalFileManager.getProjectDirectory(projectName, workingDir),
-      srcDir: await LocalFileManager.getProjectSrcDirectory(projectName, workingDir)
+      projectDir: await LocalFileManager.getProjectDirectory(projectName, workingDir)
     };
 
     // Add file details if requested
