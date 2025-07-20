@@ -14,9 +14,8 @@ export class GASProcessListTool extends BaseTool {
     properties: {
       pageSize: {
         type: 'number',
-        description: 'Maximum number of processes to return (1-50, default: 50). LLM RECOMMENDATION: Use 50 for comprehensive data, smaller values for quick checks.',
+        description: 'Maximum number of processes to return (default: 50). LLM RECOMMENDATION: Use larger values for comprehensive data, smaller values for quick checks.',
         minimum: 1,
-        maximum: 50,
         default: 50,
         llmHints: {
           typical: 'Use default 50 for most cases',
@@ -168,9 +167,8 @@ export class GASProcessListScriptTool extends BaseTool {
       },
       pageSize: {
         type: 'number',
-        description: 'Maximum number of processes to return (1-50, default: 50). LLM RECOMMENDATION: Use 50 for comprehensive analysis.',
+        description: 'Maximum number of processes to return (default: 50). LLM RECOMMENDATION: Use larger values for comprehensive analysis.',
         minimum: 1,
-        maximum: 50,
         default: 50,
         llmHints: {
           debugging: 'Use 50 to see all recent executions for debugging',
