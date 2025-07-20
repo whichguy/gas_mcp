@@ -23,6 +23,12 @@ export interface GASFile {
   name: string;
   type: 'SERVER_JS' | 'HTML' | 'JSON';
   source?: string;
+  createTime?: string;          // ✅ Creation timestamp from API
+  updateTime?: string;          // ✅ Last modified timestamp from API
+  lastModifyUser?: {            // ✅ Last user who modified the file
+    name?: string;
+    email?: string;
+  };
   functionSet?: {
     values: Array<{
       name: string;
@@ -779,6 +785,13 @@ export class GASClient {
         name: file.name,
         type: file.type,
         source: file.source,
+        // ✅ NEW: Extract timestamp fields that API provides
+        createTime: file.createTime,
+        updateTime: file.updateTime,
+        lastModifyUser: file.lastModifyUser ? {
+          name: file.lastModifyUser.name,
+          email: file.lastModifyUser.email
+        } : undefined,
         functionSet: file.functionSet
       }));
 
