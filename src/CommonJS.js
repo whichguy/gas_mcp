@@ -43,8 +43,8 @@
 
   /**
    * Detects the module name from the current stack trace
-   * Enhanced to work with Google Apps Script's stack trace format
-   * @returns {string} The detected module name
+   * Enhanced to work with Google Apps Script's stack trace format and preserve directory structure
+   * @returns {string} The detected module name with full path (e.g., "ai_tools/BaseConnector")
    * @throws {Error} If unable to detect module name from stack trace
    */
   function __detectModuleName__() {
@@ -67,8 +67,45 @@
           continue;
         }
         
-        // Try pattern: (FileName:line:column)
-        let match = line.match(/\(([^/:()]+):\d+:\d+\)/);
+        // ENHANCED: Pattern for Google Apps Script virtual paths: "at path/filename:line:column"
+        // This preserves the full directory structure (e.g., "ai_tools/BaseConnector")
+        let match = line.match(/at\s+([^/\s:]+\/)?([^/\s:]+(?:\/[^/\s:]+)*):\d+:\d+/);
+        Logger.log(`🔍 DEBUG: Pattern Enhanced GAS "at [path/]filename:line:column" match:`, match);
+        if (match) {
+          // If we have a path prefix, combine it with the filename part
+          const pathPrefix = match[1] ? match[1].replace(/\/$/, '') : ''; // Remove trailing slash
+          const filePart = match[2];
+          const fullPath = pathPrefix ? `${pathPrefix}/${filePart}` : filePart;
+          
+          Logger.log(`🔍 DEBUG: Pattern Enhanced extracted full path: "${fullPath}"`);
+          if (fullPath && 
+              fullPath !== 'eval' && 
+              fullPath !== 'anonymous' &&
+              !fullPath.startsWith('__') &&
+              fullPath !== 'CommonJS') {
+            Logger.log(`🔍 DEBUG: Pattern Enhanced SUCCESS - returning: "${fullPath}"`);
+            return fullPath;
+          }
+        }
+        
+        // Alternative pattern: "at full/path/filename:line:column" (single capture group)
+        match = line.match(/at\s+([^/\s:]+(?:\/[^/\s:]+)+):\d+:\d+/);
+        Logger.log(`🔍 DEBUG: Pattern Alternative "at full/path/filename:line:column" match:`, match);
+        if (match) {
+          const fullPath = match[1];
+          Logger.log(`🔍 DEBUG: Pattern Alternative extracted full path: "${fullPath}"`);
+          if (fullPath && 
+              fullPath !== 'eval' && 
+              fullPath !== 'anonymous' &&
+              !fullPath.startsWith('__') &&
+              fullPath !== 'CommonJS') {
+            Logger.log(`🔍 DEBUG: Pattern Alternative SUCCESS - returning: "${fullPath}"`);
+            return fullPath;
+          }
+        }
+        
+        // Try pattern: (FileName:line:column) - for simple files without directories
+        match = line.match(/\(([^/:()]+):\d+:\d+\)/);
         Logger.log(`🔍 DEBUG: Pattern 1 "(FileName:line:column)" match:`, match);
         if (match) {
           const fileName = match[1];
@@ -76,13 +113,14 @@
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
-              !fileName.startsWith('__')) {
+              !fileName.startsWith('__') &&
+              fileName !== 'CommonJS') {
             Logger.log(`🔍 DEBUG: Pattern 1 SUCCESS - returning: "${fileName}"`);
             return fileName;
           }
         }
         
-        // Try pattern: at functionName (FileName:line:column)
+        // Try pattern: at functionName (FileName:line:column) - for simple files
         match = line.match(/at\s+[^(]*\(([^/:()]+):\d+:\d+\)/);
         Logger.log(`🔍 DEBUG: Pattern 2 "at functionName (FileName:line:column)" match:`, match);
         if (match) {
@@ -91,13 +129,14 @@
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
-              !fileName.startsWith('__')) {
+              !fileName.startsWith('__') &&
+              fileName !== 'CommonJS') {
             Logger.log(`🔍 DEBUG: Pattern 2 SUCCESS - returning: "${fileName}"`);
             return fileName;
           }
         }
         
-        // Try pattern: FileName.gs:line
+        // Try pattern: FileName.gs:line - for simple files
         match = line.match(/([^/\s]+)\.gs:\d+/);
         Logger.log(`🔍 DEBUG: Pattern 3 "FileName.gs:line" match:`, match);
         if (match) {
@@ -106,13 +145,14 @@
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
-              !fileName.startsWith('__')) {
+              !fileName.startsWith('__') &&
+              fileName !== 'CommonJS') {
             Logger.log(`🔍 DEBUG: Pattern 3 SUCCESS - returning: "${fileName}"`);
             return fileName;
           }
         }
         
-        // Try pattern: at FileName.functionName
+        // Try pattern: at FileName.functionName - for simple files
         match = line.match(/at\s+([^.\s]+)\./);
         Logger.log(`🔍 DEBUG: Pattern 4 "at FileName.functionName" match:`, match);
         if (match) {
@@ -121,13 +161,14 @@
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
-              !fileName.startsWith('__')) {
+              !fileName.startsWith('__') &&
+              fileName !== 'CommonJS') {
             Logger.log(`🔍 DEBUG: Pattern 4 SUCCESS - returning: "${fileName}"`);
             return fileName;
           }
         }
         
-        // Try pattern: at FileName:line:column (Google Apps Script format) - FIXED ESCAPING
+        // Try pattern: at FileName:line:column (Google Apps Script format) - for simple files
         match = line.match(/at\s+([^/\s:]+):\d+:\d+/);
         Logger.log(`🔍 DEBUG: Pattern 5 "at FileName:line:column" match:`, match);
         if (match) {
@@ -136,13 +177,14 @@
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
-              !fileName.startsWith('__')) {
+              !fileName.startsWith('__') &&
+              fileName !== 'CommonJS') {
             Logger.log(`🔍 DEBUG: Pattern 5 SUCCESS - returning: "${fileName}"`);
             return fileName;
           }
         }
         
-        // Try pattern: FileName:line:column (without "at" prefix)
+        // Try pattern: FileName:line:column (without "at" prefix) - for simple files
         match = line.match(/^\s*([^/\s:()]+):\d+:\d+/);
         Logger.log(`🔍 DEBUG: Pattern 6 "FileName:line:column" match:`, match);
         if (match) {
@@ -151,7 +193,8 @@
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
-              !fileName.startsWith('__')) {
+              !fileName.startsWith('__') &&
+              fileName !== 'CommonJS') {
             Logger.log(`🔍 DEBUG: Pattern 6 SUCCESS - returning: "${fileName}"`);
             return fileName;
           }
@@ -203,65 +246,136 @@
 
   /**
    * Loads a module on demand
-   * @param {string} moduleName - The name of the module to load
+   * @param {string} moduleName - The name or path of the module to load
    * @returns {Object} The module exports
    */
   function require(moduleName) {
-    // Return cached module if already loaded
-    if (modules[moduleName]) {
-      return modules[moduleName].exports;
+    // Normalize the module name
+    function normalize(name) {
+      // Remove leading './' or '../'
+      name = name.replace(/^\.\/?/, '');
+      name = name.replace(/^\.\.\/?/, '');
+      // Remove trailing .js
+      if (name.endsWith('.js')) name = name.slice(0, -3);
+      return name;
     }
-    
-    // Check if module factory exists
-    if (!moduleFactories[moduleName]) {
-      throw new Error(`Module not found: ${moduleName}. Available modules: ${Object.keys(moduleFactories).join(', ')}`);
+    const candidates = [];
+    // 1. As given
+    candidates.push(moduleName);
+    // 2. Normalized (strip ./, ../, .js)
+    const norm = normalize(moduleName);
+    if (norm !== moduleName) candidates.push(norm);
+    // 3. Add .js if not present
+    if (!norm.endsWith('.js')) candidates.push(norm + '.js');
+    // 4. Remove directory if present (try just the basename)
+    const base = norm.split('/').pop();
+    if (base && base !== norm) {
+      candidates.push(base);
+      if (!base.endsWith('.js')) candidates.push(base + '.js');
     }
-    
+    // Try all candidates in order
+    let found = null;
+    for (const candidate of candidates) {
+      if (modules[candidate]) return modules[candidate].exports;
+      if (moduleFactories[candidate]) {
+        found = candidate;
+        break;
+      }
+    }
+    if (!found) {
+      throw new Error(`Module not found: ${moduleName}. Tried: ${candidates.join(', ')}. Available modules: ${Object.keys(moduleFactories).join(', ')}`);
+    }
     // Detect circular dependencies
-    if (loadingModules.has(moduleName)) {
-      throw new Error(`Circular dependency detected: ${moduleName}`);
+    if (loadingModules.has(found)) {
+      throw new Error(`Circular dependency detected: ${found}`);
     }
-    
     // Mark as loading
-    loadingModules.add(moduleName);
-    
+    loadingModules.add(found);
     try {
       // Create module object
       const module = { exports: {} };
-      modules[moduleName] = module;
-      
+      modules[found] = module;
       // Set current module for the factory
       const previousModule = globalThis.__currentModule;
       globalThis.__currentModule = module;
-      
-      Logger.log(`🔄 Loading module: ${moduleName}`);
-      
+      Logger.log(`🔄 Loading module: ${found}`);
       // Call the factory function
-      const result = moduleFactories[moduleName](module, module.exports, require);
-      
+      const result = moduleFactories[found](module, module.exports, require);
       // If factory returns something, use it as exports
       if (result !== undefined) {
         module.exports = result;
       }
-      
       // Restore previous module
       globalThis.__currentModule = previousModule;
-      
-      Logger.log(`✅ Module loaded: ${moduleName}`);
+      Logger.log(`✅ Module loaded: ${found}`);
       return module.exports;
-      
     } finally {
       // Remove from loading set
-      loadingModules.delete(moduleName);
+      loadingModules.delete(found);
     }
   }
 
   /**
-   * Gets the current module being loaded
-   * @returns {Object} The current module object
+   * Gets the current module object (for use in _main functions)
+   * Enhanced to preserve directory structure
+   * @returns {Object} - The current module object
    */
   function __getCurrentModule__() {
-    return globalThis.__currentModule || { exports: {} };
+    try {
+      throw new Error();
+    } catch (e) {
+      const stack = e.stack;
+      const lines = stack.split('\n');
+      
+      // Look for the calling module in the stack trace
+      for (const line of lines) {
+        // Enhanced pattern to handle virtual paths like "ai_chat/client_example"
+        // Try to capture full directory structure first
+        let match = line.match(/at\s+([^/\s:]+(?:\/[^/\s:]+)+):\d+:\d+/);
+        if (match) {
+          const fullPath = match[1];
+          if (fullPath && 
+              fullPath !== 'eval' && 
+              fullPath !== 'anonymous' &&
+              !fullPath.startsWith('__') &&
+              fullPath !== 'CommonJS') {
+            return modules[fullPath] || __createModule__(fullPath);
+          }
+        }
+        
+        // Alternative pattern with optional path prefix and filename part
+        match = line.match(/at\s+([^/\s:]+\/)?([^/\s:]+(?:\/[^/\s:]+)*):\d+:\d+/);
+        if (match) {
+          const pathPrefix = match[1] ? match[1].replace(/\/$/, '') : '';
+          const filePart = match[2];
+          const fullPath = pathPrefix ? `${pathPrefix}/${filePart}` : filePart;
+          
+          if (fullPath && 
+              fullPath !== 'eval' && 
+              fullPath !== 'anonymous' &&
+              !fullPath.startsWith('__') &&
+              fullPath !== 'CommonJS') {
+            return modules[fullPath] || __createModule__(fullPath);
+          }
+        }
+        
+        // Fallback to original pattern for simple files without directories
+        match = line.match(/at\s+([^/\s:()]+):\d+:\d+/);
+        if (match) {
+          const fileName = match[1];
+          if (fileName && 
+              fileName !== 'eval' && 
+              fileName !== 'anonymous' &&
+              !fileName.startsWith('__') &&
+              fileName !== 'CommonJS') {
+            return modules[fileName] || __createModule__(fileName);
+          }
+        }
+      }
+    }
+    
+    // Fallback to a default module
+    return __createModule__('unknown');
   }
 
   /**

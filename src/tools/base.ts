@@ -281,6 +281,7 @@ export abstract class BaseTool implements Tool {
             return token;
           }
         }
+
       } catch (error: any) {
         // Log auth errors but continue to fallback
         console.warn(`⚠️ [${this.name}] Session auth error:`, error.message);
@@ -640,4 +641,6 @@ export abstract class BaseTool implements Tool {
     return value;
   }
   };
+
+
 } 

@@ -159,11 +159,19 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
 }
 
 /**
- * Extracts module name from file path
- * @param filePath - The file path (e.g., "projectId/utils/helpers")
- * @returns The module name (e.g., "helpers")
+ * Extracts module name from file path, preserving directory structure
+ * @param filePath - The file path (e.g., "projectId/utils/helpers" or "utils/helpers")
+ * @returns The module name with preserved path structure (e.g., "utils/helpers")
  */
 export function getModuleName(filePath: string): string {
     const parts = filePath.split('/');
-    return parts[parts.length - 1];
+    
+    // If path includes a project ID (first part is typically 44+ chars), skip it
+    if (parts.length > 1 && parts[0].length > 40) {
+        // Return everything after project ID, preserving directory structure
+        return parts.slice(1).join('/');
+    }
+    
+    // Otherwise return the full path (no project ID detected)
+    return filePath;
 } 
