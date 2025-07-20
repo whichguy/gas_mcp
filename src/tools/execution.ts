@@ -22,26 +22,66 @@ export class GASRunTool extends BaseTool {
     properties: {
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed. LLM TIP: Logger output is automatically captured in response.logger_output - no need to explicitly call Logger.getLog().',
+        description: 'JavaScript statement to execute directly in Google Apps Script. UNLIMITED EXECUTION: Can execute (1) ANY JavaScript expressions/statements of any length, (2) ALL Google Apps Script built-in services and objects, (3) Function calls from files using require("ModuleName") pattern. ALL GAS SERVICES AVAILABLE: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and more. No wrapper functions needed. Logger output automatically captured.',
         minLength: 1,
-        maxLength: 2000,
+        maxLength: 500000, // Massive increase to 500k characters for unlimited operations
         examples: [
-          // Inline expressions and built-in services (direct execution)
+          // Basic JavaScript and Math
           'Math.PI * 2',
           'new Date().toISOString()',
-          'Session.getActiveUser().getEmail()',
-          'SpreadsheetApp.create("My New Sheet").getId()',
-          'DriveApp.getFiles().next().getName()',
           '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
           'JSON.stringify({message: "Hello", timestamp: new Date()})',
-          // Function calls from files (require namespace first)
+          
+          // Google Apps Script Services - Drive
+          'DriveApp.getRootFolder().getName()',
+          'DriveApp.getFiles().next().getName()',
+          'DriveApp.createFile("test.txt", "Hello World").getId()',
+          'DriveApp.getFilesByName("MyFile").hasNext()',
+          
+          // Google Apps Script Services - Spreadsheets
+          'SpreadsheetApp.create("My New Sheet").getId()',
+          'SpreadsheetApp.getActiveSheet().getRange("A1").setValue("Hello")',
+          'SpreadsheetApp.openById("your-sheet-id").getSheets().length',
+          
+          // Google Apps Script Services - Gmail
+          'GmailApp.getInboxThreads(0, 5).length',
+          'GmailApp.search("is:unread").length',
+          
+          // Google Apps Script Services - Calendar
+          'CalendarApp.getDefaultCalendar().getName()',
+          'CalendarApp.getAllCalendars().length',
+          
+          // Google Apps Script Services - Documents
+          'DocumentApp.create("New Doc").getId()',
+          
+          // Google Apps Script Services - Utilities
+          'Utilities.getUuid()',
+          'Utilities.base64Encode("Hello World")',
+          'Utilities.formatDate(new Date(), "GMT", "yyyy-MM-dd")',
+          
+          // Google Apps Script Services - Properties & Cache
+          'PropertiesService.getScriptProperties().getKeys().length',
+          'CacheService.getScriptCache().get("test")',
+          
+          // Google Apps Script Services - URL Fetch
+          'UrlFetchApp.fetch("https://api.github.com/zen").getContentText()',
+          
+          // Session and User Info
+          'Session.getActiveUser().getEmail()',
+          'Session.getTemporaryActiveUserKey()',
+          'Session.getScriptTimeZone()',
+          
+          // Function calls from project files
           'require("Calculator").add(5, 3)',
           'require("MathLibrary").fibonacci(10)',
-          'require("Utils").processData(inputArray)',
+          'require("Utils").processData([1,2,3,4,5])',
           'const calc = require("Calculator"); calc.multiply(4, 6)',
-          'const math = require("MathLibrary"); math.factorial(5)',
-          // Debugging with automatic logger capture
-          'console.log("Debug message"); Logger.log("Another message"); return "result";'
+          
+          // Complex multi-line operations
+          'const sheet = SpreadsheetApp.create("Data Analysis"); const data = [[1,2,3],[4,5,6]]; sheet.getActiveSheet().getRange(1,1,2,3).setValues(data); return sheet.getId()',
+          
+          // Error handling and logging
+          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }'
         ]
       },
       project: {
@@ -65,8 +105,22 @@ export class GASRunTool extends BaseTool {
       },
       autoRedeploy: {
         type: 'boolean',
-        description: 'Enable automatic deployment infrastructure setup. LLM RECOMMENDATION: Leave as true (default) unless you want to manage deployments manually.',
+        description: 'Enable automatic deployment infrastructure setup. FLEXIBLE OPTIONS: true (default) = auto-create deployments as needed, false = use existing deployments only, "force" = always create new deployment. Set to false for faster execution on pre-configured projects.',
         default: true
+      },
+      executionTimeout: {
+        type: 'number',
+        description: 'Maximum execution timeout in seconds (default: 780 = 13 minutes). Set higher for long-running operations. Maximum: 3600 seconds (1 hour).',
+        default: 780,
+        minimum: 780,
+        maximum: 3600
+      },
+      responseTimeout: {
+        type: 'number', 
+        description: 'Maximum response reading timeout in seconds (default: 780 = 13 minutes). Set higher for large response payloads.',
+        default: 780,
+        minimum: 780,
+        maximum: 3600
       },
       workingDir: {
         type: 'string',
@@ -143,6 +197,8 @@ export class GASRunTool extends BaseTool {
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const js_statement = this.validate.string(params.js_statement, 'js_statement', 'JavaScript execution');
     const autoRedeploy = params.autoRedeploy !== false;
+    const executionTimeout = Math.min(Math.max(params.executionTimeout || 780, 780), 3600); // 13m-1h range
+    const responseTimeout = Math.min(Math.max(params.responseTimeout || 780, 780), 3600); // 13m-1h range
     
     // Get auth token first for project resolution
     const accessToken = await this.getAuthToken(params);
@@ -166,6 +222,8 @@ export class GASRunTool extends BaseTool {
       scriptId,
       js_statement,
       autoRedeploy,
+      executionTimeout,
+      responseTimeout,
       accessToken
     });
   }
@@ -650,46 +708,113 @@ export class GASRawRunTool extends BaseTool {
       },
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. LLM CRITICAL: Can execute (1) ANY inline JavaScript expressions/statements, (2) Google Apps Script built-in services, (3) Function calls from files MUST use require("ModuleName") to access namespaces. No wrapper functions needed. LLM TIP: Logger output is automatically captured in response.logger_output - no need to explicitly call Logger.getLog().',
+        description: 'JavaScript statement to execute directly in Google Apps Script. UNLIMITED EXECUTION: Can execute (1) ANY JavaScript expressions/statements of any length, (2) ALL Google Apps Script built-in services and objects, (3) Function calls from files using require("ModuleName") pattern. ALL GAS SERVICES AVAILABLE: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and more. No wrapper functions needed. Logger output automatically captured.',
         minLength: 1,
-        maxLength: 2000,
+        maxLength: 500000, // Massive increase to 500k characters for unlimited operations
         examples: [
-          // Inline expressions and built-in services (direct execution)
+          // Basic JavaScript and Math
           'Math.PI * 2',
-          'new Date().toISOString()', 
-          'Session.getActiveUser().getEmail()',
-          'SpreadsheetApp.create("My New Sheet").getId()',
-          'DriveApp.getFiles().next().getName()',
+          'new Date().toISOString()',
           '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
           'JSON.stringify({message: "Hello", timestamp: new Date()})',
-          // Function calls from files (require namespace first)
+          
+          // Google Apps Script Services - Drive
+          'DriveApp.getRootFolder().getName()',
+          'DriveApp.getFiles().next().getName()',
+          'DriveApp.createFile("test.txt", "Hello World").getId()',
+          'DriveApp.getFilesByName("MyFile").hasNext()',
+          
+          // Google Apps Script Services - Spreadsheets
+          'SpreadsheetApp.create("My New Sheet").getId()',
+          'SpreadsheetApp.getActiveSheet().getRange("A1").setValue("Hello")',
+          'SpreadsheetApp.openById("your-sheet-id").getSheets().length',
+          
+          // Google Apps Script Services - Gmail
+          'GmailApp.getInboxThreads(0, 5).length',
+          'GmailApp.search("is:unread").length',
+          
+          // Google Apps Script Services - Calendar
+          'CalendarApp.getDefaultCalendar().getName()',
+          'CalendarApp.getAllCalendars().length',
+          
+          // Google Apps Script Services - Documents
+          'DocumentApp.create("New Doc").getId()',
+          
+          // Google Apps Script Services - Utilities
+          'Utilities.getUuid()',
+          'Utilities.base64Encode("Hello World")',
+          'Utilities.formatDate(new Date(), "GMT", "yyyy-MM-dd")',
+          
+          // Google Apps Script Services - Properties & Cache
+          'PropertiesService.getScriptProperties().getKeys().length',
+          'CacheService.getScriptCache().get("test")',
+          
+          // Google Apps Script Services - URL Fetch
+          'UrlFetchApp.fetch("https://api.github.com/zen").getContentText()',
+          
+          // Session and User Info
+          'Session.getActiveUser().getEmail()',
+          'Session.getTemporaryActiveUserKey()',
+          'Session.getScriptTimeZone()',
+          
+          // Function calls from project files
           'require("Calculator").add(5, 3)',
           'require("MathLibrary").fibonacci(10)',
-          'require("Utils").processData(inputArray)',
+          'require("Utils").processData([1,2,3,4,5])',
           'const calc = require("Calculator"); calc.multiply(4, 6)',
-          'const math = require("MathLibrary"); math.factorial(5)',
-          // Debugging with automatic logger capture
-          'console.log("Debug message"); Logger.log("Another message"); return "result";'
+          
+          // Complex multi-line operations
+          'const sheet = SpreadsheetApp.create("Data Analysis"); const data = [[1,2,3],[4,5,6]]; sheet.getActiveSheet().getRange(1,1,2,3).setValues(data); return sheet.getId()',
+          
+          // Error handling and logging
+          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }'
         ],
         llmHints: {
-          capability: 'Full JavaScript ES6+ support plus Google Apps Script services',
-          expressions: 'Can execute mathematical expressions, object operations, API calls',
+          capability: 'UNLIMITED JavaScript ES6+ support plus ALL Google Apps Script services - no restrictions',
+          expressions: 'Can execute any mathematical expressions, object operations, API calls of any complexity',
           functions: 'Can call functions defined in project files using require("ModuleName").functionName()',
-          services: 'Access to SpreadsheetApp, DriveApp, GmailApp, etc.',
+          services: 'FULL ACCESS: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and ALL other GAS services',
           return: 'Return values are automatically JSON-serialized for response',
-          debugging: 'Use console.log() for debugging output in execution logs',
-          logCapture: 'Logger output is automatically captured in response.logger_output field'
+          debugging: 'Use console.log() or Logger.log() for debugging output in execution logs',
+          logCapture: 'Logger output is automatically captured in response.logger_output field',
+          size: 'Up to 500,000 characters supported - write extremely complex multi-line operations freely',
+          performance: 'Configurable timeouts up to 1 hour for long-running operations'
         }
       },
       autoRedeploy: {
         type: 'boolean',
-        description: 'Enable automatic deployment infrastructure setup. LLM RECOMMENDATION: Leave as true (default) unless you want to manage deployments manually. Ensures project has web app deployment for code execution.',
+        description: 'Enable automatic deployment infrastructure setup. FLEXIBLE OPTIONS: true (default) = auto-create deployments as needed, false = use existing deployments only, "force" = always create new deployment. Set to false for faster execution on pre-configured projects.',
         default: true,
         llmHints: {
           recommended: 'Keep true for seamless operation - tool handles deployment complexity',
           manual: 'Set false only if managing deployments separately with gas_deploy_create',
           infrastructure: 'Creates HEAD deployment with /dev URL for testing latest code',
-          performance: 'Automatic setup may add 2-3 seconds to first execution'
+          performance: 'Set false for faster execution on pre-configured projects',
+          flexible: 'Supports boolean true/false or string "force" for always creating new deployments'
+        }
+      },
+      executionTimeout: {
+        type: 'number',
+        description: 'Maximum execution timeout in seconds (default: 780 = 13 minutes). Set higher for long-running operations. Maximum: 3600 seconds (1 hour).',
+        default: 780,
+        minimum: 780,
+        maximum: 3600,
+        llmHints: {
+          longOperations: 'Increase for complex calculations, large data processing, or multiple API calls',
+          maximum: 'Maximum 1 hour (3600 seconds) to prevent indefinite hanging',
+          default: '13 minutes (780 seconds) provides generous time for most operations'
+        }
+      },
+      responseTimeout: {
+        type: 'number', 
+        description: 'Maximum response reading timeout in seconds (default: 780 = 13 minutes). Set higher for large response payloads.',
+        default: 780,
+        minimum: 780,
+        maximum: 3600,
+        llmHints: {
+          largeResponses: 'Increase for operations that return large amounts of data',
+          typical: '13 minutes (780 seconds) provides generous time for large responses',
+          maximum: 'Maximum 1 hour (3600 seconds) for extremely large datasets'
         }
       },
       accessToken: {
@@ -798,6 +923,8 @@ export class GASRawRunTool extends BaseTool {
     const scriptId = this.validate.scriptId(params.scriptId, 'dynamic JS execution');
     const js_statement = this.validate.string(params.js_statement, 'JavaScript statement');
     const autoRedeploy = params.autoRedeploy !== false;
+    const executionTimeout = Math.min(Math.max(params.executionTimeout || 780, 780), 3600); // 13m-1h range
+    const responseTimeout = Math.min(Math.max(params.responseTimeout || 780, 780), 3600); // 13m-1h range
 
     if (!js_statement?.trim()) {
       throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
@@ -811,7 +938,7 @@ export class GASRawRunTool extends BaseTool {
       accessToken = params.accessToken || await this.tryGetAuthToken();
       
       // 🚀 PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
-      return await this.executeOptimistic(scriptId, js_statement, accessToken || '');
+      return await this.executeOptimistic(scriptId, js_statement, accessToken || '', executionTimeout, responseTimeout, autoRedeploy);
     } catch (error: any) {
       // Check for authentication errors (401/403)
       const statusCode = error.statusCode || error.response?.status || error.data?.statusCode;
@@ -872,29 +999,29 @@ export class GASRawRunTool extends BaseTool {
           }
         }
         
+        if (!autoRedeploy) {
+          // Return structured error response with logger output if available
+          return {
+            status: 'error',
+            scriptId,
+            js_statement,
+            error: {
+              type: 'AutoRedeployDisabled',
+              message: `Execution failed and autoRedeploy is disabled. ${error.message}`,
+              originalError: error.message
+            },
+            logger_output: error.loggerOutput || '',
+            executedAt: new Date().toISOString()
+          };
+        }
+        
         // Set up infrastructure and retry
         console.error(`🏗️ [INFRASTRUCTURE SETUP] Setting up deployment infrastructure...`);
         await this.setupInfrastructure(scriptId, accessToken);
         
         // NEW: Retry logic for deployment delays with test function validation
-        return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken);
+        return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout);
       }
-      if (!autoRedeploy) {
-        // Return structured error response with logger output if available
-        return {
-          status: 'error',
-          scriptId,
-          js_statement,
-          error: {
-            type: 'AutoRedeployDisabled',
-            message: `Execution failed and autoRedeploy is disabled. ${error.message}`,
-            originalError: error.message
-          },
-          logger_output: error.loggerOutput || '',
-          executedAt: new Date().toISOString()
-        };
-      }
-      
       // Return structured error response with logger output if available
       return {
         status: 'error',
@@ -915,7 +1042,7 @@ export class GASRawRunTool extends BaseTool {
    * Execute with retry logic for deployment delays
    * Tests with a simple function first, then retries the actual function
    */
-  private async executeWithDeploymentRetry(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
+  private async executeWithDeploymentRetry(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780): Promise<any> {
     const maxRetryDuration = 60000; // 60 seconds total
     const retryInterval = 2000; // 2 seconds between retries
     const startTime = Date.now();
@@ -942,7 +1069,7 @@ export class GASRawRunTool extends BaseTool {
           // Test if deployment is ready with a simple function that requests JSON
           try {
             console.error(`🧪 [DEPLOYMENT TEST] Testing deployment with doGet function - requesting JSON response`);
-            await this.executeOptimisticWithJsonRequest(scriptId, 'new Date().toISOString()', accessToken);
+            await this.executeOptimisticWithJsonRequest(scriptId, 'new Date().toISOString()', accessToken, executionTimeout, responseTimeout);
             console.error(`✅ [DEPLOYMENT TEST] Test function succeeded with HTTP 200, deployment is ready`);
             
             // Deployment is ready, try the actual function one more time
@@ -995,15 +1122,16 @@ export class GASRawRunTool extends BaseTool {
   }
 
   // Special version for deployment testing that explicitly requests JSON
-  private async executeOptimisticWithJsonRequest(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
+  private async executeOptimisticWithJsonRequest(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780): Promise<any> {
     const executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
     const startTime = Date.now();
     
-    // HANGING FIX: Add timeout protection to prevent indefinite hangs
+    // CONFIGURABLE TIMEOUT: Add timeout protection with user-defined timeout  
     const abortController = new AbortController();
+    const timeoutMs = executionTimeout * 1000; // Convert seconds to milliseconds
     const timeoutId = setTimeout(() => {
       abortController.abort();
-    }, 30000); // 30-second timeout
+    }, timeoutMs);
 
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
@@ -1119,7 +1247,7 @@ export class GASRawRunTool extends BaseTool {
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
-        const timeoutError = new Error('Deployment test timeout after 30 seconds');
+        const timeoutError = new Error(`Deployment test timeout after ${executionTimeout} seconds`);
         (timeoutError as any).statusCode = 408;
         throw timeoutError;
       }
@@ -1133,7 +1261,7 @@ export class GASRawRunTool extends BaseTool {
     return [404, 403, 500].includes(statusCode) || isHtmlError;
   }
 
-  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string): Promise<any> {
+  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780, autoRedeploy: boolean = true): Promise<any> {
     const startTime = Date.now();
     
     // 🚀 PERFORMANCE OPTIMIZATION: Check cached deployment URL first
@@ -1168,11 +1296,12 @@ export class GASRawRunTool extends BaseTool {
       }
     }
     
-    // HANGING FIX: Add timeout protection to prevent indefinite hangs
+    // CONFIGURABLE TIMEOUT: Add timeout protection with user-defined timeout
     const abortController = new AbortController();
+    const timeoutMs = executionTimeout * 1000; // Convert seconds to milliseconds
     const timeoutId = setTimeout(() => {
       abortController.abort();
-    }, 30000); // 30-second timeout
+    }, timeoutMs);
 
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
@@ -1388,8 +1517,8 @@ export class GASRawRunTool extends BaseTool {
             response.json(),
             new Promise<never>((_, reject) => {
               setTimeout(() => {
-                reject(new Error('Response body reading timeout after 15 seconds'));
-              }, 15000);
+                reject(new Error(`Response body reading timeout after ${responseTimeout} seconds`));
+              }, responseTimeout * 1000);
             })
           ]);
           isJson = true;
@@ -1400,8 +1529,8 @@ export class GASRawRunTool extends BaseTool {
             response.text(),
             new Promise<never>((_, reject) => {
               setTimeout(() => {
-                reject(new Error('Response body reading timeout after 15 seconds'));
-              }, 15000);
+                reject(new Error(`Response body reading timeout after ${responseTimeout} seconds`));
+              }, responseTimeout * 1000);
             })
           ]);
           try {
@@ -1516,7 +1645,7 @@ export class GASRawRunTool extends BaseTool {
       
       // Handle timeout specifically
       if (error.name === 'AbortError') {
-        const timeoutError = new Error(`Request timeout: Google Apps Script did not respond within 30 seconds`);
+        const timeoutError = new Error(`Request timeout: Google Apps Script did not respond within ${executionTimeout} seconds`);
         (timeoutError as any).statusCode = 408;
         (timeoutError as any).loggerOutput = error.loggerOutput || '';
         throw timeoutError;
@@ -1524,7 +1653,7 @@ export class GASRawRunTool extends BaseTool {
       
       // Handle response reading timeout
       if (error.message?.includes('Response body reading timeout')) {
-        const timeoutError = new Error(`Response reading timeout: Google Apps Script response body took longer than 15 seconds to read`);
+        const timeoutError = new Error(`Response reading timeout: Google Apps Script response body took longer than ${responseTimeout} seconds to read`);
         (timeoutError as any).statusCode = 408;
         (timeoutError as any).loggerOutput = error.loggerOutput || '';
         throw timeoutError;
