@@ -25,7 +25,6 @@ export class GASCatTool extends BaseTool {
         description: 'File path (filename only if current project set, or full projectId/filename)',
         pattern: '^([a-zA-Z0-9_-]{5,60}/[a-zA-Z0-9_.//-]+|[a-zA-Z0-9_.//-]+)$',
         minLength: 1,
-        maxLength: 200,
         examples: [
           'utils.gs',                    // Uses current project
           'models/User.gs',              // Uses current project  
@@ -305,7 +304,6 @@ export class GASWriteTool extends BaseTool {
         description: 'Full path to file: projectId/filename (WITHOUT extension). Same format as gas_raw_write for consistency.',
         pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
         minLength: 25,
-        maxLength: 200,
         examples: [
           'abc123def456.../utils',                // → utils.gs
           'abc123def456.../models/User',          // → models/User.gs  
@@ -315,8 +313,7 @@ export class GASWriteTool extends BaseTool {
       },
       content: {
         type: 'string',
-        description: 'File content to write. Content type automatically detected for proper file extension.',
-        maxLength: 100000
+        description: 'File content to write. Content type automatically detected for proper file extension.'
       },
       fileType: {
         type: 'string',
@@ -538,7 +535,6 @@ export class GASWriteTool extends BaseTool {
           scriptId,
           filename,
           type: fileType,
-          content,
           size: content.length,
           updated: true
         };
@@ -647,7 +643,6 @@ export class GASWriteTool extends BaseTool {
         
         results.localFile = {
           path: filePath,
-          content: content,
           size: content.length,
           updated: true
         };
@@ -665,7 +660,6 @@ export class GASWriteTool extends BaseTool {
       path: path,
       projectId: scriptId,
       filename,
-      content,
       size: content.length,
       workflow: 'local-first-git',
       results,
@@ -926,7 +920,6 @@ export class GASRawWriteTool extends BaseTool {
         description: 'Full path to file: projectId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (projectId/appsscript), never in subfolders.',
         pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
         minLength: 25,
-        maxLength: 200,
         examples: [
           'abc123def456.../fibonacci',
           'abc123def456.../utils/helpers',
@@ -947,7 +940,6 @@ export class GASRawWriteTool extends BaseTool {
         type: 'string',
         description: 'File content to write. ⚠️ WARNING: This content will COMPLETELY REPLACE the existing file. LLM FLEXIBILITY: Supports JavaScript/Apps Script, HTML, JSON. Content type automatically detected for proper file extension.',
         minLength: 0,
-        maxLength: 100000,
         examples: [
           'function fibonacci(n) { return n <= 1 ? n : fibonacci(n-1) + fibonacci(n-2); }',
           '<!DOCTYPE html><html><body><h1>My Web App</h1></body></html>',
@@ -958,7 +950,7 @@ export class GASRawWriteTool extends BaseTool {
           javascript: 'Apps Script functions, ES6+ syntax, Google services (SpreadsheetApp, etc.)',
           html: 'HTML templates for web apps, can include CSS and JavaScript',
           json: 'Configuration files like appsscript.json for project settings',
-          limits: 'Maximum 100KB per file (Google Apps Script limit)',
+          limits: 'File size limits enforced by Google Apps Script API',
           encoding: 'UTF-8 encoding, supports international characters',
           danger: 'This content will OVERWRITE the entire remote file - existing content will be lost'
         }
@@ -967,7 +959,6 @@ export class GASRawWriteTool extends BaseTool {
         type: 'number',
         description: 'File execution order position (0-based). LLM USE: Controls order in Apps Script editor and execution sequence. Lower numbers execute first.',
         minimum: 0,
-        maximum: 100,
         llmHints: {
           execution: 'Lower numbers execute first in Apps Script runtime',
           organization: 'Use for dependencies: utilities first (0), main code later (1,2,3)',

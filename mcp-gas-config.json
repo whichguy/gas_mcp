@@ -131,31 +131,6 @@
       "scriptId": "12-hhOSIwqnIiUEjdPpuGb2uwNbDE1T_laqUxICqzzM6mJmE-EqHsPxxP",
       "name": "commonjs-test",
       "description": "Created: 7/17/2025"
-    },
-    "error-test-project": {
-      "scriptId": "14CZFULwiGIyz7VMDoDl_yyHU9x_031SQAyy171WG9_UOBYfuoOjfFdrE",
-      "name": "error-test-project",
-      "description": "Created: 7/20/2025"
-    },
-    "auto-mcp-test": {
-      "scriptId": "1ZZNSjggUC0HbbRv7poNi3tUvqD0n8i9xeeHSO9ycyLOL90SrWYBNnnvI",
-      "name": "auto-mcp-test",
-      "description": "Created: 7/20/2025"
-    },
-    "clean-auto-test": {
-      "scriptId": "1awjVeIC8lEk7oeRmB4ZK1XhQI78fR9G-Ax7nL4VH3HWCNrcGtjmIZ_Ij",
-      "name": "clean-auto-test",
-      "description": "Created: 7/20/2025"
-    },
-    "complete-auto-test": {
-      "scriptId": "1XZH6TZrbUm3z_EOLdUKq0DXAeM8SB6w7cZA2Dgzfdw1tschoBCz3h0ii",
-      "name": "complete-auto-test",
-      "description": "Created: 7/20/2025"
-    },
-    "gas-run-test-head": {
-      "scriptId": "1w0AEnAi6cO_K75Do4t-QH8U3IzAdqvDLhw7mMuTlEZZsVkK_vJwXwpbo",
-      "name": "gas-run-test-head",
-      "description": "Created: 7/20/2025"
     }
   },
   "localRoot": {
@@ -165,11 +140,11 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-20T22:30:49.148Z"
+    "lastModified": "2025-07-20T23:26:52.585Z"
   },
   "currentProject": {
-    "projectName": "14CZFULwiGIyz7VMDoDl_yyHU9x_031SQAyy171WG9_UOBYfuoOjfFdrE",
-    "scriptId": "14CZFULwiGIyz7VMDoDl_yyHU9x_031SQAyy171WG9_UOBYfuoOjfFdrE",
-    "lastSync": "2025-07-20T22:12:06.479Z"
+    "projectName": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
+    "scriptId": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
+    "lastSync": "2025-07-20T23:26:52.584Z"
   }
 }

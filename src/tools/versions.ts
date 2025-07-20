@@ -114,9 +114,8 @@ export class GASVersionListTool extends BaseTool {
       },
       pageSize: {
         type: 'number',
-        description: 'Maximum number of versions to return (1-50, default: 50). LLM RECOMMENDATION: Use 50 to see complete version history.',
+        description: 'Maximum number of versions to return (default: 50). LLM RECOMMENDATION: Use larger values to see complete version history.',
         minimum: 1,
-        maximum: 50,
         default: 50,
         llmHints: {
           complete: 'Use 50 to see all versions in most cases',

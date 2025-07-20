@@ -24,7 +24,6 @@ export class GASRunTool extends BaseTool {
         type: 'string',
         description: 'JavaScript statement to execute directly in Google Apps Script. UNLIMITED EXECUTION: Can execute (1) ANY JavaScript expressions/statements of any length, (2) ALL Google Apps Script built-in services and objects, (3) Function calls from files using require("ModuleName") pattern. ALL GAS SERVICES AVAILABLE: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and more. No wrapper functions needed. Logger output automatically captured.',
         minLength: 1,
-        maxLength: 500000, // Massive increase to 500k characters for unlimited operations
         examples: [
           // Basic JavaScript and Math
           'Math.PI * 2',
@@ -710,7 +709,6 @@ export class GASRawRunTool extends BaseTool {
         type: 'string',
         description: 'JavaScript statement to execute directly in Google Apps Script. UNLIMITED EXECUTION: Can execute (1) ANY JavaScript expressions/statements of any length, (2) ALL Google Apps Script built-in services and objects, (3) Function calls from files using require("ModuleName") pattern. ALL GAS SERVICES AVAILABLE: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and more. No wrapper functions needed. Logger output automatically captured.',
         minLength: 1,
-        maxLength: 500000, // Massive increase to 500k characters for unlimited operations
         examples: [
           // Basic JavaScript and Math
           'Math.PI * 2',

@@ -366,7 +366,7 @@ export class GASDeployListTool extends BaseTool {
       scriptId: SCRIPT_ID_SCHEMA,
       pageSize: {
         type: 'number',
-        description: 'Maximum number of deployments to return (default: 50)',
+        description: 'Maximum number of deployments to return (default: 50). Let Google Apps Script API define pagination limits.',
         default: 50
       },
       pageToken: {
@@ -697,7 +697,6 @@ export class GASProjectCreateTool extends BaseTool {
         type: 'string',
         description: 'Human-readable title for the new project. LLM GUIDANCE: Use descriptive names that indicate the project purpose. This appears in Google Drive and Apps Script dashboard.',
         minLength: 1,
-        maxLength: 100,
         examples: [
           'Fibonacci Calculator',
           'Spreadsheet Automation Tool',
@@ -714,8 +713,7 @@ export class GASProjectCreateTool extends BaseTool {
       localName: {
         type: 'string',
         description: 'Optional local project name to add to .gas-projects.json configuration. If not provided, uses title.',
-        minLength: 1,
-        maxLength: 50
+        minLength: 1
       },
       addToLocalConfig: {
         type: 'boolean',

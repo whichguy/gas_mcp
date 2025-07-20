@@ -255,7 +255,7 @@ export class GASProjectAddTool extends BaseTool {
         type: 'string',
         description: 'Project name (used as identifier)',
         minLength: 1,
-        maxLength: 50
+        // Let Google Apps Script API define project name limits
       },
       scriptId: {
         type: 'string',
