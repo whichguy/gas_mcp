@@ -1379,8 +1379,52 @@ export class GASRawRunTool extends BaseTool {
       
       console.error(`📡 [GAS_RUN RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
       
-      // Check for 302/200 responses with non-JSON content (requires cookie auth)
-      if ((response.status === 302 || response.status === 200) && !contentType.includes('application/json')) {
+      // Check for 302/200/500 responses with non-JSON content (requires cookie auth)
+      // BUT exclude responses that contain JavaScript execution errors 
+      if ((response.status === 302 || response.status === 200 || response.status === 500) && !contentType.includes('application/json')) {
+        // Read response body to check if it's a domain auth page or execution error
+        const responseBodyCheck = await response.clone().text();
+        
+        // CRITICAL: Distinguish domain auth from execution errors
+        const isExecutionError = responseBodyCheck.includes('ReferenceError:') || 
+                                 responseBodyCheck.includes('SyntaxError:') ||
+                                 responseBodyCheck.includes('TypeError:') ||
+                                 responseBodyCheck.includes('Error:') ||
+                                 responseBodyCheck.includes('(line ') ||
+                                 responseBodyCheck.includes('file "');
+        
+        if (isExecutionError) {
+          console.error(`❌ [EXECUTION ERROR] HTTP ${response.status} contains JavaScript error - returning error response instead of domain auth`);
+          
+          // Return execution error as structured response (don't trigger domain auth)
+          return {
+            status: 'error', // Correctly mark as error since execution failed
+            scriptId,
+            js_statement,
+            error: {
+              type: 'EXECUTION_ERROR',
+              message: responseBodyCheck.includes('ReferenceError:') ? 
+                        responseBodyCheck.split('ReferenceError:')[1].split('\n')[0].trim() :
+                        responseBodyCheck.includes('SyntaxError:') ?
+                        responseBodyCheck.split('SyntaxError:')[1].split('\n')[0].trim() :
+                        'JavaScript execution error',
+              statusCode: response.status,
+              context: 'execution',
+              function_called: js_statement,
+              accessed_url: response.url,
+              url_type: response.url.endsWith('/dev') ? 'HEAD deployment (testing)' : 'Unknown deployment type',
+              debug_info: {
+                timestamp: new Date().toISOString(),
+                deployment_mode: 'development',
+                httpStatus: response.status,
+                errorSource: 'project_initialization'
+              }
+            },
+            logger_output: '',
+            executedAt: new Date().toISOString()
+          };
+        }
+        
         console.error(`🌐 [COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - calling gas_run_auth`);
         
         try {

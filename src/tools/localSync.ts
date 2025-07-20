@@ -105,22 +105,23 @@ export class GASPullTool extends BaseTool {
 
     let result;
     if (force) {
-      // Force mode: overwrite all local files
-      await LocalFileManager.writeProjectFiles(projectName, remoteFilesForMerge, workingDir);
+      // Force mode and default mode are now the same - simple overwrite
+      const copyResult = await LocalFileManager.copyRemoteToLocal(projectName, remoteFilesForMerge, workingDir);
       result = {
-        written: remoteFilesForMerge.map(f => f.name),
+        written: copyResult.filesList,
         skipped: [],
         overwritten: [],
-        summary: `Force pulled ${remoteFilesForMerge.length} files`
+        summary: `Pulled ${copyResult.filesWritten} files (overwrote local copies)`
       };
     } else {
-      // Merge mode: preserve local changes (default)
-      result = await LocalFileManager.mergeProjectFiles(
-        projectName,
-        remoteFilesForMerge,
-        workingDir,
-        { preserveLocal: true }
-      );
+      // Default mode: simple overwrite (no more complex merging)
+      const copyResult = await LocalFileManager.copyRemoteToLocal(projectName, remoteFilesForMerge, workingDir);
+      result = {
+        written: copyResult.filesList,
+        skipped: [],
+        overwritten: [],
+        summary: `Pulled ${copyResult.filesWritten} files (overwrote local copies)`
+      };
     }
 
 

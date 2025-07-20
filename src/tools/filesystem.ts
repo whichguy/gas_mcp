@@ -23,6 +23,9 @@ export class GASCatTool extends BaseTool {
       path: {
         type: 'string',
         description: 'File path (filename only if current project set, or full projectId/filename)',
+        pattern: '^([a-zA-Z0-9_-]{5,60}/[a-zA-Z0-9_.//-]+|[a-zA-Z0-9_.//-]+)$',
+        minLength: 1,
+        maxLength: 200,
         examples: [
           'utils.gs',                    // Uses current project
           'models/User.gs',              // Uses current project  
@@ -64,7 +67,7 @@ export class GASCatTool extends BaseTool {
     const preferLocal = params.preferLocal !== false;
     let filePath = params.path;
 
-    // Try to resolve path with current project context
+    // Try to resolve path with current project context if needed
     try {
       const parsedPath = parsePath(filePath);
       
@@ -77,73 +80,210 @@ export class GASCatTool extends BaseTool {
       // If no current project, the path must be complete
       const parsedPath = parsePath(filePath);
       if (!parsedPath.isFile) {
-        throw new ValidationError('path', filePath, 'filename or projectId/filename (set current project with gas_project_set)');
+        throw new ValidationError('path', filePath, 'complete project-id/filename path or set current project with gas_project_set');
       }
     }
 
-    const parsedPath = parsePath(filePath);
-    const filename = parsedPath.filename!;
+    // SECURITY: Validate path BEFORE authentication
+    const path = this.validate.filePath(filePath, 'file reading');
+    const parsedPath = parsePath(path);
+    
+    if (!parsedPath.isFile) {
+      throw new ValidationError('path', path, 'file path (must include filename)');
+    }
 
-    // Try local file first if preferred and current project is set
-    if (preferLocal) {
-      try {
-        const localContent = await LocalFileManager.readLocalFile(filename, workingDir);
-        if (localContent) {
-          // Detect file type from filename for local files
-          let fileType: string;
-          if (filename.toLowerCase() === 'appsscript') {
-            fileType = 'JSON';
-          } else if (filename.toLowerCase().endsWith('.html') || filename.toLowerCase().endsWith('.htm')) {
-            fileType = 'HTML';
-          } else if (filename.toLowerCase().endsWith('.json')) {
-            fileType = 'JSON';
-          } else {
-            fileType = 'SERVER_JS'; // Default for .gs files and others
+    const scriptId = parsedPath.projectId;
+    const filename = parsedPath.filename;
+    
+    if (!filename) {
+      throw new ValidationError('path', path, 'file path must include a filename');
+    }
+    
+    const projectName = scriptId; // Use scriptId as project name
+
+    // 🎯 GIT INTEGRATION: Ensure project has git repository
+    const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
+    if (gitStatus.isNewRepo) {
+      console.error(`🔧 [GAS_CAT] Initialized new git repository for project: ${projectName}`);
+    }
+
+    // After path validation passes, check authentication
+    const accessToken = await this.getAuthToken(params);
+
+    // 🔍 SYNC VERIFICATION: Check if local and remote are in sync
+    let syncStatus: {
+      inSync: boolean;
+      differences: {
+        onlyLocal: string[];
+        onlyRemote: string[];
+        contentDiffers: string[];
+      };
+      summary: string;
+    } | null = null;
+    let remoteFiles: any[] = [];
+    
+    try {
+      console.error(`🔍 [GAS_CAT] Verifying sync status with remote...`);
+      remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      syncStatus = await LocalFileManager.verifySyncStatus(projectName, remoteFiles, workingDir);
+      
+      console.error(`📊 [GAS_CAT] ${syncStatus.summary}`);
+      
+      // 🎯 AUTO-SYNC: Handle first-time access and major sync issues
+      const shouldAutoSync = (this as any).shouldAutoSync(syncStatus, remoteFiles.length);
+      
+      if (shouldAutoSync.pull) {
+        console.error(`🔄 [GAS_CAT] ${shouldAutoSync.reason} - Auto-pulling all remote files...`);
+        
+        try {
+          const pullResult = await LocalFileManager.copyRemoteToLocal(projectName, remoteFiles, workingDir);
+          console.error(`✅ [GAS_CAT] Auto-pulled ${pullResult.filesWritten} files to establish local baseline`);
+          
+          // Create initial git commit for baseline
+          if (gitStatus.gitInitialized && pullResult.filesWritten > 0) {
+            const commitResult = await LocalFileManager.autoCommitChanges(
+              projectName,
+              pullResult.filesList,
+              `Initial sync: pulled ${pullResult.filesWritten} files from remote`,
+              workingDir
+            );
+            
+            if (commitResult.committed) {
+              console.error(`🎯 [GAS_CAT] Created baseline commit: ${commitResult.commitHash}`);
+            }
           }
           
-          // Unwrap module content for SERVER_JS files
-          const unwrappedContent = shouldWrapContent(fileType, filename) 
-            ? unwrapModuleContent(localContent)
-            : localContent;
+          // Re-verify sync status after pull
+          syncStatus = await LocalFileManager.verifySyncStatus(projectName, remoteFiles, workingDir);
+          console.error(`📊 [GAS_CAT] After auto-sync: ${syncStatus.summary}`);
           
-          return {
-            path: filePath,
-            filename,
-            source: 'local',
-            content: unwrappedContent,
-            size: unwrappedContent.length,
-            localPath: LocalFileManager.getLocalFilePath(filename, workingDir)
-          };
+        } catch (pullError: any) {
+          console.error(`⚠️ [GAS_CAT] Auto-pull failed: ${pullError.message} - continuing with manual operation`);
         }
-      } catch (error) {
-        // Local file doesn't exist, fall back to remote
+      } else if (!syncStatus.inSync) {
+        console.error(`⚠️ [GAS_CAT] Sync differences detected:`);
+        if (syncStatus.differences.onlyLocal.length > 0) {
+          console.error(`   📁 Local-only files: ${syncStatus.differences.onlyLocal.join(', ')}`);
+        }
+        if (syncStatus.differences.onlyRemote.length > 0) {
+          console.error(`   ☁️ Remote-only files: ${syncStatus.differences.onlyRemote.join(', ')}`);
+        }
+        if (syncStatus.differences.contentDiffers.length > 0) {
+          console.error(`   📝 Content differs: ${syncStatus.differences.contentDiffers.join(', ')}`);
+        }
+        console.error(`💡 [GAS_CAT] Use gas_pull to sync local with remote, or gas_push to sync remote with local`);
+      }
+    } catch (syncError: any) {
+      console.error(`⚠️ [GAS_CAT] Sync verification failed: ${syncError.message}`);
+      // Continue with operation even if sync check fails
+    }
+
+    let result: any;
+    let source: 'local' | 'remote' = 'remote';
+
+        if (preferLocal) {
+      // Try to read from local first
+      try {
+        const localContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
+        if (localContent) {
+          result = {
+            path: filePath,
+            projectId: scriptId,
+            filename,
+            content: localContent,
+            source: 'local',
+            fileExtension: LocalFileManager.getFileExtensionFromName(filename),
+            syncStatus: syncStatus ? {
+              inSync: syncStatus.inSync,
+              differences: syncStatus.differences,
+              message: syncStatus.summary
+            } : null,
+            gitRepository: {
+              initialized: gitStatus.gitInitialized,
+              path: gitStatus.repoPath,
+              isNewRepo: gitStatus.isNewRepo
+            }
+          };
+          source = 'local';
+          console.error(`📖 [GAS_CAT] Successfully read from local file: ${filename}`);
+        }
+      } catch (localError: any) {
+        console.error(`⚠️ [GAS_CAT] Local file not found, falling back to remote: ${localError.message}`);
+        // Fall back to remote
       }
     }
 
-    // Fall back to remote read
-    const accessToken = await this.getAuthToken(params);
-    const files = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
-    const file = files.find((f: any) => f.name === filename);
+    // Read from remote if local failed or not preferred
+    if (!result || source !== 'local') {
+      const remoteFile = remoteFiles.find((file: any) => file.name === filename);
+      
+      if (!remoteFile) {
+        throw new ValidationError('filename', filename, 'existing file in the project');
+      }
 
-    if (!file) {
-      throw new FileOperationError('read', filePath, 'file not found in local or remote');
+      result = {
+        path: filePath,
+        projectId: scriptId,
+        filename,
+        content: remoteFile.source || remoteFile.content || '',
+        source: 'remote',
+        fileType: remoteFile.type,
+        fileExtension: LocalFileManager.getFileExtensionFromName(filename),
+        syncStatus: syncStatus ? {
+          inSync: syncStatus.inSync,
+          differences: syncStatus.differences,
+          message: syncStatus.summary
+        } : null,
+        gitRepository: {
+          initialized: gitStatus.gitInitialized,
+          path: gitStatus.repoPath,
+          isNewRepo: gitStatus.isNewRepo
+        }
+      };
+      source = 'remote';
+      console.error(`☁️ [GAS_CAT] Successfully read from remote file: ${filename}`);
     }
 
-    // Unwrap module content for SERVER_JS files
-    const rawContent = file.source || '';
-    const unwrappedContent = shouldWrapContent(file.type, filename) 
-      ? unwrapModuleContent(rawContent)
-      : rawContent;
+    return result;
+  }
 
-    return {
-      path: filePath,
-      projectId: parsedPath.projectId,
-      filename,
-      source: 'remote',
-      type: file.type,
-      content: unwrappedContent,
-      size: unwrappedContent.length
+  /**
+   * Determine if auto-sync should be triggered based on sync status.
+   * Conservative logic to avoid losing local changes.
+   */
+  private shouldAutoSync(syncStatus: {
+    inSync: boolean;
+    differences: {
+      onlyLocal: string[];
+      onlyRemote: string[];
+      contentDiffers: string[];
     };
+    summary: string;
+  } | null, totalRemoteFiles: number): { pull: boolean; reason: string } {
+    if (!syncStatus) {
+      return { pull: false, reason: 'No sync status available' };
+    }
+
+    // Check for first-time access: no local files but remote files exist
+    const hasNoLocalFiles = syncStatus.differences.onlyLocal.length === 0 && 
+                            syncStatus.differences.contentDiffers.length === 0;
+    const hasRemoteFiles = syncStatus.differences.onlyRemote.length > 0;
+    
+    if (hasNoLocalFiles && hasRemoteFiles) {
+      return { pull: true, reason: 'First-time project access (no local files)' };
+    }
+
+    // Check for major out of sync: many remote-only files
+    if (syncStatus.differences.onlyRemote.length >= 3) {
+      return { pull: true, reason: `Missing ${syncStatus.differences.onlyRemote.length} remote files locally` };
+    }
+
+    // Don't auto-pull if there are local changes that could be lost
+    if (syncStatus.differences.onlyLocal.length > 0 || syncStatus.differences.contentDiffers.length > 0) {
+      return { pull: false, reason: 'Local changes detected - manual sync required' };
+    }
+
+    return { pull: false, reason: 'Sync status acceptable' };
   }
 }
 
@@ -155,7 +295,7 @@ export class GASCatTool extends BaseTool {
  */
 export class GASWriteTool extends BaseTool {
   public name = 'gas_write';
-  public description = '✍️ RECOMMENDED: Smart file writer - auto-syncs to local and remote with explicit project path';
+  public description = '✍️ RECOMMENDED: Smart file writer - remote-first workflow with auto-sync to local';
   
   public inputSchema = {
     type: 'object',
@@ -205,8 +345,8 @@ export class GASWriteTool extends BaseTool {
     },
     required: ['path', 'content'],
     llmGuidance: {
-      whenToUse: 'Use for normal file writing with explicit project paths. Automatically syncs to both local and remote.',
-      workflow: 'Use with explicit paths: gas_write({path: "projectId/filename", content: "..."})',
+      whenToUse: 'Use for normal file writing with explicit project paths. Remote-first workflow ensures safety.',
+      workflow: 'Use with explicit paths: gas_write({path: "projectId/filename", content: "..."}) - writes to remote first, then commits to git, then updates local file',
       alternatives: 'Use gas_raw_write when you need single-destination writes or advanced file positioning'
     }
   };
@@ -223,121 +363,349 @@ export class GASWriteTool extends BaseTool {
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const localOnly = params.localOnly || false;
     const remoteOnly = params.remoteOnly || false;
-    const filePath = params.path;
-    const content = params.content;
 
     if (localOnly && remoteOnly) {
       throw new ValidationError('localOnly/remoteOnly', 'both true', 'only one can be true');
     }
 
-    // SECURITY: Validate path BEFORE authentication - same validation as gas_raw_write
-    const path = this.validate.filePath(filePath, 'file writing');
+    // SECURITY: Validate path BEFORE authentication (like gas_raw_write)
+    const path = this.validate.filePath(params.path, 'file writing');
     
     const parsedPath = parsePath(path);
     
     if (!parsedPath.isFile) {
-      throw new ValidationError('path', path, 'file path (must include projectId/filename)');
+      throw new ValidationError('path', path, 'file path (must include filename)');
     }
 
     const scriptId = parsedPath.projectId;
-    let filename = parsedPath.filename!;
+    const filename = parsedPath.filename;
+    
+    if (!filename) {
+      throw new ValidationError('path', path, 'file path must include a filename');
+    }
+    
+    const projectName = scriptId; // Use scriptId as project name
+    const content = params.content;
 
-    // ⚠️ SPECIAL FILE VALIDATION: appsscript.json must be in root (same as gas_raw_write)
-    if (filename.toLowerCase() === 'appsscript' || filename.toLowerCase() === 'appsscript.json') {
-      // Check if appsscript is being placed in subfolder (path has directory)
-      if (parsedPath.directory && parsedPath.directory !== '') {
-        throw new ValidationError(
-          'path', 
-          path, 
-          'appsscript.json must be in project root (projectId/appsscript), not in subfolders'
-        );
-      }
-      console.error(`✅ Special file appsscript.json validated - correctly placed in project root`);
+    // 🎯 REMOTE-FIRST WORKFLOW: Step 1 - Ensure git repository
+    console.error(`🎯 [GAS_WRITE] Starting remote-first workflow for: ${projectName}/${filename}`);
+    const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
+    
+    if (gitStatus.isNewRepo) {
+      console.error(`🔧 [GAS_WRITE] Initialized new git repository: ${gitStatus.repoPath}`);
+    } else {
+      console.error(`✅ [GAS_WRITE] Using existing git repository: ${gitStatus.repoPath}`);
     }
 
-    // Determine file type for wrapping decisions
-    let fileType: 'SERVER_JS' | 'HTML' | 'JSON';
-    if (params.fileType) {
-      fileType = params.fileType as 'SERVER_JS' | 'HTML' | 'JSON';
-    } else {
-      // Use same detection logic as gas_raw_write for consistency
-      if (filename.toLowerCase() === 'appsscript') {
-        fileType = 'JSON';
-      } else if (filename.toLowerCase().endsWith('.html') || filename.toLowerCase().endsWith('.htm')) {
-        fileType = 'HTML';
-      } else if (filename.toLowerCase().endsWith('.json')) {
-        fileType = 'JSON';
-      } else if (filename.toLowerCase().endsWith('.js') || filename.toLowerCase().endsWith('.gs')) {
-        fileType = 'SERVER_JS';
+    // After path validation passes, check authentication
+    const accessToken = await this.getAuthToken(params);
+
+    // 🔍 REMOTE-FIRST WORKFLOW: Step 2 - Verify sync status with remote
+    let syncStatus: {
+      inSync: boolean;
+      differences: {
+        onlyLocal: string[];
+        onlyRemote: string[];
+        contentDiffers: string[];
+      };
+      summary: string;
+    } | null = null;
+    let remoteFiles: any[] = [];
+    
+    if (!localOnly) {
+      try {
+        console.error(`🔍 [GAS_WRITE] Verifying sync status with remote...`);
+        remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        syncStatus = await LocalFileManager.verifySyncStatus(projectName, remoteFiles, workingDir);
+        
+        console.error(`📊 [GAS_WRITE] ${syncStatus.summary}`);
+        
+        // 🎯 AUTO-SYNC: Handle first-time access and major sync issues  
+        const shouldAutoSync = (this as any).shouldAutoSync(syncStatus, remoteFiles.length);
+        
+        if (shouldAutoSync.pull) {
+          console.error(`🔄 [GAS_WRITE] ${shouldAutoSync.reason} - Auto-pulling all remote files before write...`);
+          
+          try {
+            const pullResult = await LocalFileManager.copyRemoteToLocal(projectName, remoteFiles, workingDir);
+            console.error(`✅ [GAS_WRITE] Auto-pulled ${pullResult.filesWritten} files to establish baseline`);
+            
+            // Create initial git commit for baseline
+            if (gitStatus.gitInitialized && pullResult.filesWritten > 0) {
+              const commitResult = await LocalFileManager.autoCommitChanges(
+                projectName,
+                pullResult.filesList,
+                `Initial baseline: pulled ${pullResult.filesWritten} files from remote`,
+                workingDir
+              );
+              
+              if (commitResult.committed) {
+                console.error(`🎯 [GAS_WRITE] Created baseline commit: ${commitResult.commitHash}`);
+              }
+            }
+            
+            // Re-verify sync status after pull
+            syncStatus = await LocalFileManager.verifySyncStatus(projectName, remoteFiles, workingDir);
+            console.error(`📊 [GAS_WRITE] After auto-sync: ${syncStatus.summary}`);
+            
+          } catch (pullError: any) {
+            console.error(`⚠️ [GAS_WRITE] Auto-pull failed: ${pullError.message} - continuing with write operation`);
+          }
+        } else if (!syncStatus.inSync) {
+          console.error(`⚠️ [GAS_WRITE] Sync differences detected - proceeding with write:`);
+          if (syncStatus.differences.onlyLocal.length > 0) {
+            console.error(`   📁 Local-only files: ${syncStatus.differences.onlyLocal.join(', ')}`);
+          }
+          if (syncStatus.differences.onlyRemote.length > 0) {
+            console.error(`   ☁️ Remote-only files: ${syncStatus.differences.onlyRemote.join(', ')}`);
+          }
+          if (syncStatus.differences.contentDiffers.length > 0) {
+            console.error(`   📝 Content differs: ${syncStatus.differences.contentDiffers.join(', ')}`);
+          }
+          
+          if (shouldAutoSync.reason === 'Local changes detected - manual sync required') {
+            console.error(`💡 [GAS_WRITE] Recommendation: Review local changes and use gas_pull/gas_push to sync manually before writing`);
+          }
+        }
+        
+        if (!syncStatus.inSync) {
+          // Enhanced warning for users about potential conflicts
+          console.error(`⚠️ [GAS_WRITE] NOTICE: Writing to out-of-sync project. Your changes will be committed to git for safety.`);
+        }
+      } catch (syncError: any) {
+        console.error(`⚠️ [GAS_WRITE] Sync verification failed: ${syncError.message} - proceeding anyway`);
+      }
+    }
+
+    // 📝 REMOTE-FIRST WORKFLOW: Step 3 - Read current local content for comparison
+    let previousLocalContent: string | null = null;
+    try {
+      previousLocalContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
+      if (previousLocalContent) {
+        console.error(`📖 [GAS_WRITE] Read current local content (${previousLocalContent.length} chars)`);
       } else {
-        // Content-based detection as fallback
-        const trimmed = content.trim();
-        if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html>')) {
-          fileType = 'HTML';
-        } else if (trimmed.startsWith('{') && trimmed.endsWith('}') && filename === 'appsscript') {
-          fileType = 'JSON';
+        console.error(`📄 [GAS_WRITE] No existing local file - creating new file`);
+      }
+    } catch (error: any) {
+      console.error(`📄 [GAS_WRITE] No existing local file found - creating new: ${error.message}`);
+    }
+
+    // Handle appsscript.json special case validation
+    if (filename.toLowerCase() === 'appsscript' || filename.toLowerCase() === 'appsscript.json') {
+      // Special handling logic can be added here if needed
+      console.error(`🔧 [GAS_WRITE] Writing manifest file: ${filename}`);
+    }
+
+    // 🚀 REMOTE-FIRST WORKFLOW: Step 4 - Push to remote FIRST
+    let results: any = {};
+    
+    if (!localOnly) {
+      try {
+        console.error(`🚀 [GAS_WRITE] REMOTE-FIRST: Pushing to remote: ${scriptId}/${filename}`);
+        
+        // Use gas_raw_write logic for remote push
+        const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        
+        // Find existing file or determine file type
+        const existingFile = currentFiles.find((f: any) => f.name === filename);
+        const fileType = existingFile?.type || this.determineFileType(filename, content);
+        
+        // Create new file object
+        const newFile = {
+          name: filename,
+          type: fileType as any,
+          source: content
+        };
+        
+        let updatedFiles: any[];
+        
+        if (existingFile) {
+          // Update existing file
+          updatedFiles = currentFiles.map((f: any) => 
+            f.name === filename ? newFile : f
+          );
         } else {
-          fileType = 'SERVER_JS';
+          // Add new file
+          updatedFiles = [...currentFiles, newFile];
+        }
+        
+        // Push to remote
+        const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
+        
+        console.error(`✅ [GAS_WRITE] Remote push successful - proceeding with local operations`);
+        
+        results.remoteFile = {
+          scriptId,
+          filename,
+          type: fileType,
+          content,
+          size: content.length,
+          updated: true
+        };
+        
+      } catch (remoteError: any) {
+        console.error(`❌ [GAS_WRITE] Remote push failed: ${remoteError.message}`);
+        throw new Error(`Remote write failed - aborting local operations: ${remoteError.message}`);
+      }
+    }
+
+    // 🎯 REMOTE-FIRST WORKFLOW: Step 5 - Generate smart commit message (after remote success)
+    let commitMessage = `Update ${filename}`;
+    
+    if (previousLocalContent !== null) {
+      const isNewFile = previousLocalContent === null;
+      const contentChanged = previousLocalContent !== content;
+      
+      if (isNewFile) {
+        commitMessage = `Add ${filename}`;
+      } else if (contentChanged) {
+        const prevLength = previousLocalContent.length;
+        const newLength = content.length;
+        const sizeDiff = newLength - prevLength;
+        
+        if (Math.abs(sizeDiff) > 100) {
+          commitMessage = `Update ${filename} (${sizeDiff > 0 ? '+' : ''}${sizeDiff} chars)`;
+        } else {
+          commitMessage = `Update ${filename}`;
+        }
+        
+        // Try to detect function changes for smarter messages
+        try {
+          const prevFunctions = (previousLocalContent.match(/function\s+(\w+)/g) || []).map((f: string) => f.replace('function ', ''));
+          const newFunctions = (content.match(/function\s+(\w+)/g) || []).map((f: string) => f.replace('function ', ''));
+          
+          const addedFunctions = newFunctions.filter((f: string) => !prevFunctions.includes(f));
+          const removedFunctions = prevFunctions.filter((f: string) => !newFunctions.includes(f));
+          
+          if (addedFunctions.length > 0 || removedFunctions.length > 0) {
+            const changes = [];
+            if (addedFunctions.length > 0) changes.push(`add ${addedFunctions.join(', ')}`);
+            if (removedFunctions.length > 0) changes.push(`remove ${removedFunctions.join(', ')}`);
+            commitMessage = `${changes.join(', ')} in ${filename}`;
+          }
+        } catch (functionAnalysisError) {
+          // Fallback to simple message if function analysis fails
+          console.error(`⚠️ [GAS_WRITE] Function analysis failed, using simple commit message`);
         }
       }
+    } else {
+      commitMessage = `Add ${filename}`;
     }
 
-    // Wrap content for SERVER_JS files
-    const moduleName = getModuleName(filename);
-    const wrappedContent = shouldWrapContent(fileType, filename) 
-      ? wrapModuleContent(content, moduleName)
-      : content;
+    // 🔄 REMOTE-FIRST WORKFLOW: Step 6 - Auto-commit to git (only after remote success)
+    let gitCommitResult: any = null;
+    
+    if (!remoteOnly && gitStatus.gitInitialized) {
+      try {
+        console.error(`🔄 [GAS_WRITE] Remote succeeded - committing to git: "${commitMessage}"`);
+        
+        // First write the local file temporarily for git commit
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+        const fullFilename = filename + fileExtension;
+        const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+        const path = await import('path');
+        const filePath = path.join(projectPath, fullFilename);
+        
+        await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
+        
+        gitCommitResult = await LocalFileManager.autoCommitChanges(
+          projectName, 
+          [filename], 
+          commitMessage, 
+          workingDir
+        );
+        
+        if (gitCommitResult.committed) {
+          console.error(`✅ [GAS_WRITE] Git commit successful: ${gitCommitResult.commitHash}`);
+        } else {
+          console.error(`ℹ️ [GAS_WRITE] ${gitCommitResult.message}`);
+        }
+      } catch (commitError: any) {
+        console.error(`⚠️ [GAS_WRITE] Git commit failed: ${commitError.message} - but remote write succeeded`);
+        gitCommitResult = {
+          committed: false,
+          message: `Git commit failed: ${commitError.message}`
+        };
+      }
+    }
 
-    const results = {
-      path: filePath,
-      projectId: scriptId,
-      filename,
-      content: wrappedContent,
-      originalContent: content,
-      wrapped: shouldWrapContent(fileType, filename),
-      localWritten: false,
-      remoteWritten: false,
-      size: wrappedContent.length
-    };
-
-    // Write to local ./src/ 
+    // 💾 REMOTE-FIRST WORKFLOW: Step 7 - Write local file (final step)
     if (!remoteOnly) {
       try {
-        await LocalFileManager.writeLocalFile(filename, wrappedContent, fileType, workingDir);
-        results.localWritten = true;
-      } catch (error: any) {
-        console.error(`Failed to write local file: ${error.message}`);
-      }
-    }
-
-    // Write to remote project
-    if (!localOnly && scriptId) {
-      try {
-        const accessToken = await this.getAuthToken(params);
+        console.error(`💾 [GAS_WRITE] Final step - ensuring local file is written: ${projectName}/${filename}`);
         
-        // Use the improved updateFile method with explicit file type
-        await this.gasClient.updateFile(scriptId, filename, wrappedContent, undefined, accessToken, fileType);
-        results.remoteWritten = true;
-        (results as any).detectedType = fileType;
-      } catch (error: any) {
-        console.error(`Failed to write remote file: ${error.message}`);
-        // If local write succeeded but remote failed, this is still a partial success
+        // Write to local project directory (might be redundant from git step above, but ensures consistency)
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+        const fullFilename = filename + fileExtension;
+        const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+        const path = await import('path');
+        const filePath = path.join(projectPath, fullFilename);
+        
+        await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
+        
+        console.error(`✅ [GAS_WRITE] Local file finalized: ${filePath}`);
+        
+        results.localFile = {
+          path: filePath,
+          content: content,
+          size: content.length,
+          updated: true
+        };
+      } catch (writeError: any) {
+        console.error(`⚠️ [GAS_WRITE] Local file write failed: ${writeError.message} - but remote and git operations succeeded`);
+        results.localFile = {
+          error: writeError.message,
+          updated: false
+        };
       }
     }
 
-    const syncStatus = localOnly ? 'local-only' : 
-                      remoteOnly ? 'remote-only' : 
-                      (results.localWritten && results.remoteWritten) ? 'synced' :
-                      results.localWritten ? 'local-only' :
-                      results.remoteWritten ? 'remote-only' : 'failed';
-
+    // 📊 Return comprehensive results
     return {
-      ...results,
-      syncStatus,
-      message: `File ${syncStatus === 'synced' ? 'synced to local and remote' : 
-                      syncStatus === 'local-only' ? 'written to local only' :
-                      syncStatus === 'remote-only' ? 'written to remote only' : 'write failed'}`
+      path: path,
+      projectId: scriptId,
+      filename,
+      content,
+      size: content.length,
+      workflow: 'local-first-git',
+      results,
+      gitRepository: {
+        initialized: gitStatus.gitInitialized,
+        path: gitStatus.repoPath,
+        isNewRepo: gitStatus.isNewRepo,
+        commitResult: gitCommitResult
+      },
+      syncStatus: syncStatus ? {
+        inSync: syncStatus.inSync,
+        differences: syncStatus.differences,
+        message: syncStatus.summary
+      } : null,
+      operations: {
+        localWrite: !remoteOnly,
+        remoteWrite: !localOnly,
+        gitCommit: gitCommitResult?.committed || false,
+        syncVerification: !!syncStatus
+      },
+      summary: `Successfully ${gitCommitResult?.committed ? 'committed and ' : ''}${localOnly ? 'wrote locally' : remoteOnly ? 'pushed to remote' : 'synchronized local and remote'}`
     };
+  }
+
+  /**
+   * Determine file type from filename and content
+   */
+  private determineFileType(filename: string, content: string): string {
+    if (filename.toLowerCase() === 'appsscript') {
+      return 'JSON';
+    }
+    
+    const trimmed = content.trim();
+    if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html>')) {
+      return 'HTML';
+    } else if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      return 'JSON';
+    } else {
+      return 'SERVER_JS';
+    }
   }
 }
 
@@ -358,8 +726,8 @@ export class GASListTool extends BaseTool {
       },
       detailed: {
         type: 'boolean',
-        default: false,
-        description: 'Include detailed file information (size, type, etc.)'
+        default: true,
+        description: 'Include detailed file information (size, type, timestamps, last modifier, etc.) - defaults to true'
       },
       recursive: {
         type: 'boolean',
@@ -384,7 +752,7 @@ export class GASListTool extends BaseTool {
     const accessToken = await this.getAuthToken(params);
     
     const path = params.path || '';
-    const detailed = params.detailed || false;
+    const detailed = params.detailed !== false;  // ✅ Default to true, only false if explicitly set
     const recursive = params.recursive !== false;
     
     const parsedPath = parsePath(path);
@@ -437,7 +805,10 @@ export class GASListTool extends BaseTool {
       ...(detailed && {
         size: (file.source || '').length,
         position: index,
-        lastModified: file.lastModified || null
+        // ✅ NEW: Return actual API timestamps instead of hardcoded null
+        createTime: file.createTime || null,
+        updateTime: file.updateTime || null,
+        lastModifyUser: file.lastModifyUser || null
       })
     }));
 

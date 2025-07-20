@@ -90,30 +90,19 @@ export class GASProjectSetTool extends BaseTool {
     let pullMessage = '';
 
     if (autoPull) {
-      // Get project files and merge them locally (automatic gas_pull with merge)
-      const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-      
-      const remoteFiles = files.map((file: any) => ({
+      // Cache files locally using simple copy (overwrites existing)
+      const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      const filesForLocal = remoteFiles.map((file: any) => ({
         name: file.name,
         content: file.source || '',
         type: file.type
       }));
 
-      // Use project-specific directory instead of legacy workspace src
-      const mergeResult = await LocalFileManager.mergeProjectFiles(projectName, remoteFiles, workingDir, {
-        preserveLocal: true,
-        overwriteModified: false
-      });
-
-      filesCached = mergeResult.written.length + mergeResult.overwritten.length;
-      const skippedCount = mergeResult.skipped.length;
-      
-      // Get the actual project-specific path for the message
-      const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
-      
-      pullMessage = filesCached > 0 
-        ? ` and merged ${filesCached} files to ${projectPath}` + (skippedCount > 0 ? ` (${skippedCount} local files preserved)` : '')
-        : ` (${skippedCount} files already exist locally - no changes needed)`;
+      const copyResult = await LocalFileManager.copyRemoteToLocal(projectName, filesForLocal, workingDir);
+      filesCached = copyResult.filesWritten;
+      pullMessage = copyResult.filesWritten > 0 ? 
+        `Cached ${copyResult.filesWritten} files locally (overwrote existing)` : 
+        'No files to cache';
     } else {
       pullMessage = ' (autoPull disabled - use gas_pull to sync)';
     }

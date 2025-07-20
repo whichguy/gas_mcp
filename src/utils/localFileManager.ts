@@ -417,7 +417,54 @@ export class LocalFileManager {
   }
 
   /**
-   * Merge remote files with local project files, handling conflicts intelligently
+   * Simple copy remote files to local (overwrites existing local files)
+   * This replaces the complex merge logic with a simple git-like pull model
+   */
+  static async copyRemoteToLocal(
+    projectName: string,
+    remoteFiles: Array<{name: string; content: string; type?: string}>, 
+    workingDir?: string
+  ): Promise<{
+    filesWritten: number;
+    filesList: string[];
+    projectPath: string;
+  }> {
+    const actualWorkingDir = this.getWorkingDirectory(workingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
+    
+    // Ensure the project directory exists
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const filesList: string[] = [];
+
+    for (const remoteFile of remoteFiles) {
+      const extension = this.getFileExtension(remoteFile.type, remoteFile.content);
+      
+      // Parse directory structure from GAS filename
+      const fileName = remoteFile.name;
+      const filePath = path.join(projectPath, `${fileName}${extension}`);
+      
+      // Create directory for the file if it's in a subdirectory
+      const fileDir = path.dirname(filePath);
+      if (fileDir !== projectPath) {
+        await fs.mkdir(fileDir, { recursive: true });
+      }
+      
+      // Simple overwrite - no merge logic
+      await fs.writeFile(filePath, remoteFile.content, 'utf-8');
+      filesList.push(remoteFile.name);
+    }
+
+    return {
+      filesWritten: remoteFiles.length,
+      filesList,
+      projectPath
+    };
+  }
+
+  /**
+   * @deprecated Use copyRemoteToLocal instead for simple overwrite behavior
+   * Complex merge logic is being phased out for simpler git-like workflow
    */
   static async mergeProjectFiles(
     projectName: string,
@@ -433,72 +480,22 @@ export class LocalFileManager {
     overwritten: string[];
     summary: string;
   }> {
-    const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
+    // For backward compatibility, just call the simple version
+    console.warn('⚠️ mergeProjectFiles is deprecated - use copyRemoteToLocal for simple overwrite behavior');
     
-    // Ensure the project directory exists
-    await fs.mkdir(projectPath, { recursive: true });
-
-    const written: string[] = [];
-    const skipped: string[] = [];
-    const overwritten: string[] = [];
-
-    // Get existing local files
-    const localFiles = await this.getProjectFiles(projectName, actualWorkingDir);
-    const localFileMap = new Map(localFiles.map(f => [f.name, f]));
-
-    for (const remoteFile of remoteFiles) {
-      const extension = this.getFileExtension(remoteFile.type, remoteFile.content);
-      
-      // ✅ FIX: Parse directory structure from GAS filename
-      // Convert "utils/helper" → "utils/helper.js" with proper directory structure
-      const fileName = remoteFile.name;
-      const filePath = path.join(projectPath, `${fileName}${extension}`);
-      
-      // Create directory for the file if it's in a subdirectory
-      const fileDir = path.dirname(filePath);
-      if (fileDir !== projectPath) {
-        await fs.mkdir(fileDir, { recursive: true });
-      }
-
-      const localFile = localFileMap.get(remoteFile.name);
-      
-      if (!localFile) {
-        // File doesn't exist locally, write it
-        await fs.writeFile(filePath, remoteFile.content, 'utf-8');
-        written.push(remoteFile.name);
-      } else if (localFile.content === remoteFile.content) {
-        // File is identical, skip
-        skipped.push(remoteFile.name);
-      } else {
-        // File is different, handle based on options
-        if (options.preserveLocal) {
-          // Preserve local changes
-          skipped.push(remoteFile.name);
-        } else if (options.overwriteModified) {
-          // Overwrite local changes
-          await fs.writeFile(filePath, remoteFile.content, 'utf-8');
-          overwritten.push(remoteFile.name);
-        } else {
-          // Default: overwrite if remote is newer or same timestamp
-          await fs.writeFile(filePath, remoteFile.content, 'utf-8');
-          overwritten.push(remoteFile.name);
-        }
-      }
-    }
-
-    const summary = `Merged ${remoteFiles.length} remote files: ${written.length} new, ${overwritten.length} updated, ${skipped.length} skipped`;
+    const result = await this.copyRemoteToLocal(projectName, remoteFiles, workingDir);
     
     return {
-      written,
-      skipped,
-      overwritten,
-      summary
+      written: result.filesList,
+      skipped: [],
+      overwritten: [], // All files are effectively overwritten in simple model
+      summary: `Copied ${result.filesWritten} files from remote (simple overwrite mode)`
     };
   }
 
   /**
-   * Merge remote files with local files (LEGACY - use mergeProjectFiles instead)
+   * @deprecated Use copyRemoteToLocal instead for simple overwrite behavior  
+   * Complex merge logic is being phased out for simpler git-like workflow
    */
   static async mergeRemoteFiles(
     remoteFiles: Array<{name: string; content: string; type?: string}>, 
@@ -513,64 +510,19 @@ export class LocalFileManager {
     overwritten: string[];
     summary: string;
   }> {
+    // For backward compatibility, use current working directory as project name
+    console.warn('⚠️ mergeRemoteFiles is deprecated - use copyRemoteToLocal for simple overwrite behavior');
+    
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
-
-    const written: string[] = [];
-    const skipped: string[] = [];
-    const overwritten: string[] = [];
-
-    // Get existing local files
-    const localFiles = await this.getProjectFiles(actualWorkingDir, actualWorkingDir);
-    const localFileMap = new Map(localFiles.map(f => [f.name, f]));
-
-    for (const remoteFile of remoteFiles) {
-      const extension = this.getFileExtension(remoteFile.type, remoteFile.content);
-      
-      // ✅ FIX: Parse directory structure from GAS filename
-      // Convert "utils/helper" → "utils/helper.js" with proper directory structure
-      const fileName = remoteFile.name;
-      const filePath = path.join(projectPath, `${fileName}${extension}`);
-      
-      // Create directory for the file if it's in a subdirectory
-      const fileDir = path.dirname(filePath);
-      if (fileDir !== projectPath) {
-        await fs.mkdir(fileDir, { recursive: true });
-      }
-
-      const localFile = localFileMap.get(remoteFile.name);
-      
-      if (!localFile) {
-        // File doesn't exist locally, write it
-        await fs.writeFile(filePath, remoteFile.content, 'utf-8');
-        written.push(remoteFile.name);
-      } else if (localFile.content === remoteFile.content) {
-        // File is identical, skip
-        skipped.push(remoteFile.name);
-      } else {
-        // File is different, handle based on options
-        if (options.preserveLocal) {
-          // Preserve local changes
-          skipped.push(remoteFile.name);
-        } else if (options.overwriteModified) {
-          // Overwrite local changes
-          await fs.writeFile(filePath, remoteFile.content, 'utf-8');
-          overwritten.push(remoteFile.name);
-        } else {
-          // Default: overwrite if remote is newer or same timestamp
-          await fs.writeFile(filePath, remoteFile.content, 'utf-8');
-          overwritten.push(remoteFile.name);
-        }
-      }
-    }
-
-    const summary = `Merged ${remoteFiles.length} remote files: ${written.length} new, ${overwritten.length} updated, ${skipped.length} skipped`;
+    const projectName = actualWorkingDir; // Use working dir as project name (legacy behavior)
+    
+    const result = await this.copyRemoteToLocal(projectName, remoteFiles, workingDir);
     
     return {
-      written,
-      skipped,
-      overwritten,
-      summary
+      written: result.filesList,
+      skipped: [],
+      overwritten: [], // All files are effectively overwritten in simple model
+      summary: `Copied ${result.filesWritten} files from remote (simple overwrite mode)`
     };
   }
 
@@ -622,6 +574,37 @@ export class LocalFileManager {
       }
     }
 
+    return null;
+  }
+
+  /**
+   * Read a single file from project-specific directory
+   */
+  static async readFileFromProject(projectName: string, fileName: string, workingDir?: string): Promise<string | null> {
+    const actualWorkingDir = this.getWorkingDirectory(workingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
+    
+    // Try different extensions based on GAS file types
+    const extensions = ['.gs', '.html', '.json', ''];
+    
+    for (const extension of extensions) {
+      try {
+        const fullFileName = fileName + extension;
+        const filePath = path.join(projectPath, fullFileName);
+        const content = await fs.readFile(filePath, 'utf-8');
+        console.error(`📖 [READ PROJECT FILE] Successfully read: ${projectPath}/${fullFileName}`);
+        return content;
+      } catch (error: any) {
+        if (error.code !== 'ENOENT') {
+          throw new Error(`Failed to read file ${fileName}: ${error.message}`);
+        }
+        // File doesn't exist with this extension, try next
+        continue;
+      }
+    }
+    
+    // File not found with any extension
+    console.error(`📁 [READ PROJECT FILE] File not found: ${projectName}/${fileName} (tried extensions: ${extensions.join(', ')})`);
     return null;
   }
 
@@ -915,5 +898,326 @@ export class LocalFileManager {
    */
   static getResolvedWorkingDirectory(workingDir?: string): string {
     return this.getWorkingDirectory(workingDir);
+  }
+
+  /**
+   * Ensure project directory has git repository initialized
+   */
+  static async ensureProjectGitRepo(projectName: string, workingDir?: string): Promise<{
+    gitInitialized: boolean;
+    isNewRepo: boolean;
+    repoPath: string;
+  }> {
+    const actualWorkingDir = this.getWorkingDirectory(workingDir);
+    
+    // 🔧 CRITICAL FIX: Ensure the project directory exists BEFORE git operations
+    const projectPath = await this.ensureProjectDirectory(projectName, actualWorkingDir);
+    
+    try {
+      // Check if .git directory exists
+      const gitPath = path.join(projectPath, '.git');
+      const gitExists = await fs.access(gitPath).then(() => true).catch(() => false);
+      
+      if (gitExists) {
+        return {
+          gitInitialized: true,
+          isNewRepo: false,
+          repoPath: projectPath
+        };
+      }
+      
+      // Initialize git repository
+      console.error(`🔧 [GIT INIT] Initializing git repository for project: ${projectName}`);
+      const { spawn } = await import('child_process');
+      
+      await new Promise<void>((resolve, reject) => {
+        const gitInit = spawn('git', ['init'], { 
+          cwd: projectPath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        gitInit.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        gitInit.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        gitInit.on('close', (code) => {
+          if (code === 0) {
+            console.error(`✅ [GIT INIT] Repository initialized: ${projectPath}`);
+            resolve();
+          } else {
+            console.error(`❌ [GIT INIT] Failed: ${stderr}`);
+            reject(new Error(`Git init failed: ${stderr}`));
+          }
+        });
+      });
+      
+      // Create initial .gitignore
+      const gitignoreContent = `# MCP Gas Server
+.env
+.env.local
+*.log
+node_modules/
+.DS_Store
+`;
+      
+      await fs.writeFile(path.join(projectPath, '.gitignore'), gitignoreContent);
+      
+      return {
+        gitInitialized: true,
+        isNewRepo: true,
+        repoPath: projectPath
+      };
+      
+    } catch (error: any) {
+      console.error(`⚠️ [GIT INIT] Failed to initialize git repo: ${error.message}`);
+      return {
+        gitInitialized: false,
+        isNewRepo: false,
+        repoPath: projectPath
+      };
+    }
+  }
+
+  /**
+   * Verify sync status between local and remote files
+   */
+  static async verifySyncStatus(
+    projectName: string,
+    remoteFiles: Array<{name: string; content: string; type?: string}>,
+    workingDir?: string
+  ): Promise<{
+    inSync: boolean;
+    differences: {
+      onlyLocal: string[];
+      onlyRemote: string[];
+      contentDiffers: string[];
+    };
+    summary: string;
+  }> {
+    const actualWorkingDir = this.getWorkingDirectory(workingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
+    
+    const differences = {
+      onlyLocal: [] as string[],
+      onlyRemote: [] as string[],
+      contentDiffers: [] as string[]
+    };
+    
+    try {
+      // Get local files
+      const localFiles = new Map<string, string>();
+      
+      try {
+        const files = await fs.readdir(projectPath);
+        for (const filename of files) {
+          if (filename.startsWith('.')) continue; // Skip git and hidden files
+          
+          const filePath = path.join(projectPath, filename);
+          const stat = await fs.stat(filePath);
+          
+          if (stat.isFile()) {
+            const content = await fs.readFile(filePath, 'utf-8');
+            // Convert filename back to GAS format (remove extension)
+            const gasName = this.convertToGasFileName(filename);
+            localFiles.set(gasName, content);
+          }
+        }
+      } catch (error) {
+        // Directory doesn't exist or is empty
+        console.error(`📁 [SYNC CHECK] Local project directory not found or empty: ${projectPath}`);
+      }
+      
+      // Create remote files map
+      const remoteFilesMap = new Map<string, string>();
+      for (const remoteFile of remoteFiles) {
+        remoteFilesMap.set(remoteFile.name, remoteFile.content);
+      }
+      
+      // Check for files only in local
+      for (const [localName, localContent] of localFiles) {
+        if (!remoteFilesMap.has(localName)) {
+          differences.onlyLocal.push(localName);
+        } else {
+          // Check content differences
+          const remoteContent = remoteFilesMap.get(localName)!;
+          if (localContent.trim() !== remoteContent.trim()) {
+            differences.contentDiffers.push(localName);
+          }
+        }
+      }
+      
+      // Check for files only in remote
+      for (const [remoteName] of remoteFilesMap) {
+        if (!localFiles.has(remoteName)) {
+          differences.onlyRemote.push(remoteName);
+        }
+      }
+      
+      const inSync = differences.onlyLocal.length === 0 && 
+                     differences.onlyRemote.length === 0 && 
+                     differences.contentDiffers.length === 0;
+      
+      const summary = inSync 
+        ? `✅ Local and remote are in sync (${localFiles.size} files)`
+        : `⚠️ Sync differences: ${differences.onlyLocal.length} local-only, ${differences.onlyRemote.length} remote-only, ${differences.contentDiffers.length} content differs`;
+      
+      return {
+        inSync,
+        differences,
+        summary
+      };
+      
+    } catch (error: any) {
+      console.error(`❌ [SYNC CHECK] Error verifying sync status: ${error.message}`);
+      return {
+        inSync: false,
+        differences,
+        summary: `Sync check failed: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Get file extension for a given filename (different from the private method that takes type/content)
+   */
+  static getFileExtensionFromName(filename: string): string {
+    if (filename.toLowerCase() === 'appsscript') {
+      return '.json';
+    } else if (filename.includes('.')) {
+      return '';  // Already has extension
+    } else {
+      return '.gs'; // Default for Google Apps Script files
+    }
+  }
+
+  /**
+   * Convert local filename back to GAS format
+   */
+  private static convertToGasFileName(filename: string): string {
+    // Remove file extensions to get GAS filename
+    if (filename.endsWith('.gs')) {
+      return filename.slice(0, -3);
+    } else if (filename.endsWith('.html')) {
+      return filename.slice(0, -5);
+    } else if (filename.endsWith('.json')) {
+      return filename.slice(0, -5);
+    }
+    return filename;
+  }
+
+  /**
+   * Auto-commit changes to project git repository
+   */
+  static async autoCommitChanges(
+    projectName: string,
+    changedFiles: string[],
+    commitMessage: string,
+    workingDir?: string
+  ): Promise<{
+    committed: boolean;
+    commitHash?: string;
+    message: string;
+  }> {
+    const actualWorkingDir = this.getWorkingDirectory(workingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
+    
+    try {
+      const { spawn } = await import('child_process');
+      
+      // First, add changed files
+      await new Promise<void>((resolve, reject) => {
+        const gitAdd = spawn('git', ['add', '.'], { 
+          cwd: projectPath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let stderr = '';
+        gitAdd.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        gitAdd.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Git add failed: ${stderr}`));
+          }
+        });
+      });
+      
+      // Check if there are changes to commit
+      const hasChanges = await new Promise<boolean>((resolve) => {
+        const gitStatus = spawn('git', ['status', '--porcelain'], { 
+          cwd: projectPath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let stdout = '';
+        gitStatus.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        gitStatus.on('close', () => {
+          resolve(stdout.trim().length > 0);
+        });
+      });
+      
+      if (!hasChanges) {
+        return {
+          committed: false,
+          message: 'No changes to commit'
+        };
+      }
+      
+      // Commit changes
+      const commitHash = await new Promise<string>((resolve, reject) => {
+        const gitCommit = spawn('git', ['commit', '-m', commitMessage], { 
+          cwd: projectPath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        gitCommit.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        gitCommit.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        gitCommit.on('close', (code) => {
+          if (code === 0) {
+            // Extract commit hash from output
+            const hashMatch = stdout.match(/\[.*?([a-f0-9]+)\]/);
+            const hash = hashMatch ? hashMatch[1] : 'unknown';
+            resolve(hash);
+          } else {
+            reject(new Error(`Git commit failed: ${stderr}`));
+          }
+        });
+      });
+      
+      return {
+        committed: true,
+        commitHash,
+        message: `Committed changes: ${changedFiles.length} files`
+      };
+      
+    } catch (error: any) {
+      console.error(`❌ [GIT COMMIT] Failed to commit changes: ${error.message}`);
+      return {
+        committed: false,
+        message: `Commit failed: ${error.message}`
+      };
+    }
   }
 } 
