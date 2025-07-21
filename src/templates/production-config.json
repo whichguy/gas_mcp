@@ -1,0 +1,120 @@
+{
+  "environments": {
+    "development": {
+      "oauth": {
+        "client_id": "428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com",
+        "type": "uwp",
+        "redirect_uris": [
+          "http://127.0.0.1/*",
+          "http://localhost/*"
+        ]
+      },
+      "localRoot": {
+        "rootPath": "./gas-projects-dev"
+      },
+      "server": {
+        "defaultWorkingDir": "./workspace-dev"
+      },
+      "logging": {
+        "level": "debug",
+        "enableStackTraces": true,
+        "enableBrowserLaunch": true
+      },
+      "timeouts": {
+        "executionTimeout": 300,
+        "responseTimeout": 300
+      }
+    },
+    "staging": {
+      "oauth": {
+        "client_id": "428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com",
+        "type": "uwp",
+        "redirect_uris": [
+          "http://127.0.0.1/*",
+          "http://localhost/*",
+          "${MCP_GAS_STAGING_REDIRECT_URI}"
+        ]
+      },
+      "localRoot": {
+        "rootPath": "${MCP_GAS_PROJECTS_ROOT}/staging"
+      },
+      "server": {
+        "defaultWorkingDir": "${MCP_GAS_WORKSPACE}/staging"
+      },
+      "logging": {
+        "level": "info",
+        "enableStackTraces": true,
+        "enableBrowserLaunch": false
+      },
+      "timeouts": {
+        "executionTimeout": 600,
+        "responseTimeout": 600
+      },
+      "monitoring": {
+        "errorSheetId": "${STAGING_ERROR_SHEET_ID}",
+        "alertEmail": "${STAGING_ALERT_EMAIL}"
+      }
+    },
+    "production": {
+      "oauth": {
+        "client_id": "428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com",
+        "type": "uwp",
+        "redirect_uris": [
+          "${MCP_GAS_PRODUCTION_REDIRECT_URI}"
+        ]
+      },
+      "localRoot": {
+        "rootPath": "${MCP_GAS_PROJECTS_ROOT}/production"
+      },
+      "server": {
+        "defaultWorkingDir": "${MCP_GAS_WORKSPACE}/production"
+      },
+      "logging": {
+        "level": "warn",
+        "enableStackTraces": false,
+        "enableBrowserLaunch": false,
+        "sanitizeErrors": true
+      },
+      "timeouts": {
+        "executionTimeout": 900,
+        "responseTimeout": 900
+      },
+      "monitoring": {
+        "errorSheetId": "${PRODUCTION_ERROR_SHEET_ID}",
+        "alertEmail": "${PRODUCTION_ALERT_EMAIL}",
+        "healthCheckInterval": 300000,
+        "enableMetrics": true
+      },
+      "security": {
+        "enableTokenMasking": true,
+        "restrictRedirectUris": true,
+        "requireHttps": true
+      }
+    }
+  },
+  "defaultTimezone": "${MCP_GAS_TIMEZONE:-America/New_York}",
+  "templates": {
+    "errorHandler": "error-handler.gs",
+    "healthCheck": "health-check.gs",
+    "monitoring": "monitoring.gs"
+  },
+  "deployment": {
+    "production": {
+      "entryPointType": "WEB_APP",
+      "webAppAccess": "DOMAIN",
+      "webAppExecuteAs": "USER_DEPLOYING",
+      "description": "Production deployment - ${DEPLOYMENT_VERSION}"
+    },
+    "staging": {
+      "entryPointType": "WEB_APP", 
+      "webAppAccess": "MYSELF",
+      "webAppExecuteAs": "USER_DEPLOYING",
+      "description": "Staging deployment - ${DEPLOYMENT_VERSION}"
+    },
+    "development": {
+      "entryPointType": "EXECUTION_API",
+      "accessLevel": "MYSELF",
+      "description": "Development deployment - ${DEPLOYMENT_VERSION}"
+    }
+  }
+} 

@@ -56,11 +56,14 @@ export interface McpGasConfig {
  */
 const DEFAULT_CONFIG: McpGasConfig = {
   oauth: {
+    // HARDCODED: Client ID is public and tied to the application
     client_id: "428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com",
     type: "uwp",
     redirect_uris: [
       "http://127.0.0.1/*",
-      "http://localhost/*"
+      "http://localhost/*",
+      // PRODUCTION: Support custom redirect URIs for different environments
+      ...(process.env.MCP_GAS_REDIRECT_URIS ? process.env.MCP_GAS_REDIRECT_URIS.split(',') : [])
     ],
     scopes: [
       "https://www.googleapis.com/auth/script.projects",
@@ -79,11 +82,19 @@ const DEFAULT_CONFIG: McpGasConfig = {
   },
   projects: {},
   localRoot: {
-    rootPath: '/tmp/gas-projects',
+    // PRODUCTION-READY: Use persistent directory
+    rootPath: process.env.MCP_GAS_PROJECTS_ROOT || 
+      (process.platform === 'win32' 
+        ? path.join(process.env.USERPROFILE || 'C:\\Users\\Default', '.mcp-gas', 'projects')
+        : path.join(process.env.HOME || '/var/lib/mcp-gas', '.mcp-gas', 'projects')),
     lastUpdated: new Date().toISOString()
   },
   server: {
-    defaultWorkingDir: '/tmp/mcp-gas-workspace',
+    // PRODUCTION-READY: Use persistent workspace
+    defaultWorkingDir: process.env.MCP_GAS_WORKSPACE || 
+      (process.platform === 'win32' 
+        ? path.join(process.env.USERPROFILE || 'C:\\Users\\Default', '.mcp-gas', 'workspace')
+        : path.join(process.env.HOME || '/var/lib/mcp-gas', '.mcp-gas', 'workspace')),
     configVersion: "1.0.0",
     lastModified: new Date().toISOString()
   }

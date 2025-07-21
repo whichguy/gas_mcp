@@ -74,7 +74,11 @@ export interface EnhancedAppsscriptJson {
  * NO LONGER USES src/ subdirectories - files are stored directly in project directory
  */
 export class LocalFileManager {
-  private static readonly DEFAULT_ROOT = '/tmp/gas-projects';
+  // PRODUCTION-READY: Use persistent directory instead of volatile /tmp
+  private static readonly DEFAULT_ROOT = process.env.MCP_GAS_PROJECTS_ROOT || 
+    (process.platform === 'win32' 
+      ? path.join(process.env.USERPROFILE || 'C:\\Users\\Default', '.mcp-gas', 'projects')
+      : path.join(process.env.HOME || '/var/lib/mcp-gas', '.mcp-gas', 'projects'));
 
   private static readonly IGNORE_FILES = ['.DS_Store', 'Thumbs.db', '.gitignore'];
   private static readonly SUPPORTED_EXTENSIONS = ['.gs', '.js', '.html', '.json'];
@@ -867,10 +871,13 @@ export class LocalFileManager {
       }
     }
     
-    // Fallback: Use /tmp as the workspace for MCP environments
-    const tmpWorkspace = '/tmp/mcp-gas-workspace';
-    console.error(`⚠️ [LocalFileManager] Could not detect workspace, using fallback: ${tmpWorkspace}`);
-    return tmpWorkspace;
+    // PRODUCTION-READY: Use persistent workspace fallback
+    const persistentWorkspace = process.env.MCP_GAS_WORKSPACE || 
+      (process.platform === 'win32' 
+        ? path.join(process.env.USERPROFILE || 'C:\\Users\\Default', '.mcp-gas', 'workspace')
+        : path.join(process.env.HOME || '/var/lib/mcp-gas', '.mcp-gas', 'workspace'));
+    console.error(`⚠️ [LocalFileManager] Could not detect workspace, using persistent fallback: ${persistentWorkspace}`);
+    return persistentWorkspace;
   }
 
   /**
