@@ -301,12 +301,12 @@ export class GasGrepTool extends BaseTool {
     const pathMode = params.pathMode || 'auto';
     const parsedPath = parsePath(path);
 
-    if (!parsedPath.projectId) {
-      throw new ValidationError('path', path, 'valid project path (projectId or projectId/path)');
+    if (!parsedPath.scriptId) {
+      throw new ValidationError('path', path, 'valid project path (scriptId or scriptId/path)');
     }
 
     // Get all files from project
-    const allFiles = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
+    const allFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
 
     // Convert to GASFile format
     const gasFiles: GASFile[] = allFiles.map((file: any) => ({
@@ -322,14 +322,14 @@ export class GasGrepTool extends BaseTool {
       
       // Use new regex/wildcard path matching
       return gasFiles.filter(file => 
-        matchesPathPattern(file.name, filterPattern, pathMode, parsedPath.projectId)
+        matchesPathPattern(file.name, filterPattern, pathMode, parsedPath.scriptId)
       );
     } else if (parsedPath.isWildcard || pathMode === 'regex') {
       // Handle wildcard/regex patterns in the full path
-      const fullPattern = path.substring(parsedPath.projectId!.length + 1); // Remove "projectId/"
+      const fullPattern = path.substring(parsedPath.scriptId!.length + 1); // Remove "scriptId/"
       
       return gasFiles.filter(file => 
-        matchesPathPattern(file.name, fullPattern, pathMode, parsedPath.projectId)
+        matchesPathPattern(file.name, fullPattern, pathMode, parsedPath.scriptId)
       );
     }
 
@@ -345,9 +345,9 @@ export class GasGrepTool extends BaseTool {
     for (const fileName of fileNames) {
       try {
         const parsedPath = parsePath(fileName);
-        if (!parsedPath.projectId) continue;
+        if (!parsedPath.scriptId) continue;
 
-        const projectFiles = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
+        const projectFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
         const targetFile = projectFiles.find((f: any) => f.name === (parsedPath.filename || parsedPath.directory));
         
         if (targetFile) {
@@ -373,12 +373,12 @@ export class GasGrepTool extends BaseTool {
   private extractProjectId(params: any): string | undefined {
     if (params.files && params.files.length > 0) {
       const parsedPath = parsePath(params.files[0]);
-      return parsedPath.projectId || undefined;
+      return parsedPath.scriptId || undefined;
     }
 
     if (params.path) {
       const parsedPath = parsePath(params.path);
-      return parsedPath.projectId || undefined;
+      return parsedPath.scriptId || undefined;
     }
 
     return undefined;
@@ -418,7 +418,7 @@ export class GasRawGrepTool extends BaseTool {
       },
       path: {
         type: 'string',
-        description: 'Full path to project or files: projectId/path/pattern (explicit project ID required). Always retrieves content via direct API calls, never uses local cached files. Same content processing as gas_raw_cat.',
+        description: 'Full path to project or files: scriptId/path/pattern (explicit script ID required). Always retrieves content via direct API calls, never uses local cached files. Same content processing as gas_raw_cat.',
         default: '',
         examples: [
           'abc123def456.../project',               // Search entire project (full content including wrappers via API)
@@ -624,13 +624,13 @@ export class GasRawGrepTool extends BaseTool {
     const pathMode = params.pathMode || 'auto';
     const parsedPath = parsePath(path);
 
-    if (!parsedPath.projectId) {
-      throw new ValidationError('path', path, 'valid project path with explicit project ID (projectId or projectId/path)');
+    if (!parsedPath.scriptId) {
+      throw new ValidationError('path', path, 'valid project path with explicit script ID (scriptId or scriptId/path)');
     }
 
     // 🔧 DIRECT API CALL: Get all files from project (never uses local cache)
-    console.error(`🔧 [GAS_RAW_GREP] Making direct API call to retrieve project content: ${parsedPath.projectId}`);
-    const allFiles = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
+    console.error(`🔧 [GAS_RAW_GREP] Making direct API call to retrieve project content: ${parsedPath.scriptId}`);
+    const allFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
 
     // Convert to GASFile format
     const gasFiles: GASFile[] = allFiles.map((file: any) => ({
@@ -645,14 +645,14 @@ export class GasRawGrepTool extends BaseTool {
       const filterPattern = parsedPath.directory || parsedPath.filename || '';
       
       return gasFiles.filter(file => 
-        matchesPathPattern(file.name, filterPattern, pathMode, parsedPath.projectId)
+        matchesPathPattern(file.name, filterPattern, pathMode, parsedPath.scriptId)
       );
     } else if (parsedPath.isWildcard || pathMode === 'regex') {
       // Handle wildcard/regex patterns in the full path
-      const fullPattern = path.substring(parsedPath.projectId!.length + 1); // Remove "projectId/"
+      const fullPattern = path.substring(parsedPath.scriptId!.length + 1); // Remove "scriptId/"
       
       return gasFiles.filter(file => 
-        matchesPathPattern(file.name, fullPattern, pathMode, parsedPath.projectId)
+        matchesPathPattern(file.name, fullPattern, pathMode, parsedPath.scriptId)
       );
     }
 
@@ -668,14 +668,14 @@ export class GasRawGrepTool extends BaseTool {
     for (const fileName of fileNames) {
       try {
         const parsedPath = parsePath(fileName);
-        if (!parsedPath.projectId) {
-          console.error(`⚠️ [GAS_RAW_GREP] Skipping file without explicit project ID: ${fileName}`);
+        if (!parsedPath.scriptId) {
+          console.error(`⚠️ [GAS_RAW_GREP] Skipping file without explicit script ID: ${fileName}`);
           continue;
         }
 
         // 🔧 DIRECT API CALL: Get project files (never uses local cache)
         console.error(`🔧 [GAS_RAW_GREP] Making direct API call for file: ${fileName}`);
-        const projectFiles = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
+        const projectFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
         const targetFile = projectFiles.find((f: any) => f.name === (parsedPath.filename || parsedPath.directory));
         
         if (targetFile) {
@@ -701,12 +701,12 @@ export class GasRawGrepTool extends BaseTool {
   private extractProjectId(params: any): string | undefined {
     if (params.files && params.files.length > 0) {
       const parsedPath = parsePath(params.files[0]);
-      return parsedPath.projectId || undefined;
+      return parsedPath.scriptId || undefined;
     }
 
     if (params.path) {
       const parsedPath = parsePath(params.path);
-      return parsedPath.projectId || undefined;
+      return parsedPath.scriptId || undefined;
     }
 
     return undefined;

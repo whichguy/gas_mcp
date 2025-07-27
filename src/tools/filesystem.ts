@@ -22,7 +22,7 @@ export class GASCatTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'File path (filename only if current project set, or full projectId/filename). For SERVER_JS files, CommonJS wrapper will be automatically removed to show clean user code for editing while preserving access to require(), module, and exports when executed.',
+        description: 'File path (filename only if current project set, or full scriptId/filename). For SERVER_JS files, CommonJS wrapper will be automatically removed to show clean user code for editing while preserving access to require(), module, and exports when executed.',
         pattern: '^([a-zA-Z0-9_-]{5,60}/[a-zA-Z0-9_.//-]+|[a-zA-Z0-9_.//-]+)$',
         minLength: 1,
         examples: [
@@ -94,7 +94,7 @@ export class GASCatTool extends BaseTool {
       throw new ValidationError('path', path, 'file path (must include filename)');
     }
 
-    const scriptId = parsedPath.projectId;
+    const scriptId = parsedPath.scriptId;
     const filename = parsedPath.filename;
     
     if (!filename) {
@@ -360,7 +360,7 @@ export class GASWriteTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: projectId/filename (WITHOUT extension). Same format as gas_raw_write for consistency.',
+        description: 'Full path to file: scriptId/filename (WITHOUT extension). Same format as gas_raw_write for consistency.',
         pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
         minLength: 25,
         examples: [
@@ -442,7 +442,7 @@ export class GASWriteTool extends BaseTool {
       throw new ValidationError('path', path, 'file path (must include filename)');
     }
 
-    const scriptId = parsedPath.projectId;
+    const scriptId = parsedPath.scriptId;
     const filename = parsedPath.filename;
     
     if (!filename) {
@@ -895,15 +895,15 @@ export class GASListTool extends BaseTool {
     
     const parsedPath = parsePath(path);
 
-    if (!parsedPath.projectId) {
+    if (!parsedPath.scriptId) {
       return await this.listProjects(detailed, accessToken);
     } else if (parsedPath.isProject) {
-      return await this.listProjectFiles(parsedPath.projectId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
+      return await this.listProjectFiles(parsedPath.scriptId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
     } else if (parsedPath.isWildcard) {
       // Handle wildcard patterns
-      return await this.listProjectFiles(parsedPath.projectId, parsedPath.pattern || '', detailed, recursive, wildcardMode, accessToken);
+      return await this.listProjectFiles(parsedPath.scriptId, parsedPath.pattern || '', detailed, recursive, wildcardMode, accessToken);
     } else if (parsedPath.isDirectory) {
-      return await this.listProjectFiles(parsedPath.projectId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
+      return await this.listProjectFiles(parsedPath.scriptId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
     } else {
       throw new ValidationError('path', path, 'valid project, directory, or wildcard pattern');
     }
@@ -1039,7 +1039,7 @@ export class GASRawCatTool extends BaseTool {
     // After path validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
-    const files = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
+    const files = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
     const file = files.find((f: any) => f.name === parsedPath.filename);
 
     if (!file) {
@@ -1048,7 +1048,7 @@ export class GASRawCatTool extends BaseTool {
 
     return {
       path,
-      projectId: parsedPath.projectId,
+      scriptId: parsedPath.scriptId,
       filename: parsedPath.filename,
       type: file.type,
       content: file.source || '',
@@ -1312,7 +1312,7 @@ export class GASRawWriteTool extends BaseTool {
     console.error(`📝 Writing file: ${filename} with type: ${gasFileType}`);
     
     const updatedFiles = await this.gasClient.updateFile(
-      parsedPath.projectId,
+      parsedPath.scriptId,
       filename,
       content,
       position,
@@ -1323,7 +1323,7 @@ export class GASRawWriteTool extends BaseTool {
     return {
       status: 'success',
       path,
-      projectId: parsedPath.projectId,
+      scriptId: parsedPath.scriptId,
       filename: filename,
       size: content.length,
       position: updatedFiles.findIndex((f: any) => f.name === filename),
@@ -1373,12 +1373,12 @@ export class GASRemoveTool extends BaseTool {
     // After validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
-    const updatedFiles = await this.gasClient.deleteFile(parsedPath.projectId, parsedPath.filename!, accessToken);
+    const updatedFiles = await this.gasClient.deleteFile(parsedPath.scriptId, parsedPath.filename!, accessToken);
 
     return {
       status: 'deleted',
       path,
-      projectId: parsedPath.projectId,
+      scriptId: parsedPath.scriptId,
       filename: parsedPath.filename,
       remainingFiles: updatedFiles.length
     };
@@ -1446,8 +1446,8 @@ export class GASMoveTool extends BaseTool {
     const fromResolution = resolveHybridProjectId(params.scriptId, params.from, 'move operation (from)');
     const toResolution = resolveHybridProjectId(params.scriptId, params.to, 'move operation (to)');
     
-    const fromProjectId = fromResolution.projectId;
-    const toProjectId = toResolution.projectId;
+    const fromProjectId = fromResolution.scriptId;
+    const toProjectId = toResolution.scriptId;
     const fromFilename = fromResolution.cleanPath;
     const toFilename = toResolution.cleanPath;
     
@@ -1564,8 +1564,8 @@ export class GASCopyTool extends BaseTool {
     const fromResolution = resolveHybridProjectId(params.scriptId, params.from, 'copy operation (from)');
     const toResolution = resolveHybridProjectId(params.scriptId, params.to, 'copy operation (to)');
     
-    const fromProjectId = fromResolution.projectId;
-    const toProjectId = toResolution.projectId;
+    const fromProjectId = fromResolution.scriptId;
+    const toProjectId = toResolution.scriptId;
     const fromFilename = fromResolution.cleanPath;
     const toFilename = toResolution.cleanPath;
     

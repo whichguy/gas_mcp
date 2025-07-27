@@ -41,7 +41,7 @@ export interface GrepSearchResult {
   matches: GrepFileResult[];
   searchTime: number;
   tokenEstimate: number;
-  projectId?: string;
+  scriptId?: string;
 }
 
 export interface GrepSearchOptions {
@@ -114,12 +114,12 @@ export function matchesPathPattern(
   filename: string,
   pathPattern: string,
   mode: 'wildcard' | 'regex' | 'auto',
-  projectId?: string
+  scriptId?: string
 ): boolean {
-  // Remove project ID prefix for consistent matching
+  // Remove script ID prefix for consistent matching
   let targetPath = filename;
-  if (projectId && pathPattern.startsWith(projectId + '/')) {
-    pathPattern = pathPattern.substring(projectId.length + 1);
+  if (scriptId && pathPattern.startsWith(scriptId + '/')) {
+    pathPattern = pathPattern.substring(scriptId.length + 1);
   }
   
   // Handle different path modes
@@ -139,9 +139,9 @@ export function matchesPathPattern(
     case 'auto':
       const detectedMode = detectPathMode(pathPattern);
       if (detectedMode === 'regex') {
-        return matchesPathPattern(filename, pathPattern, 'regex', projectId);
+        return matchesPathPattern(filename, pathPattern, 'regex', scriptId);
       } else {
-        return matchesPathPattern(filename, pathPattern, 'wildcard', projectId);
+        return matchesPathPattern(filename, pathPattern, 'wildcard', scriptId);
       }
       
     default:
@@ -189,7 +189,7 @@ export class GrepSearchEngine {
   async searchFiles(
     files: GASFile[], 
     options: GrepSearchOptions,
-    projectId?: string
+    scriptId?: string
   ): Promise<GrepSearchResult> {
     const startTime = Date.now();
     
@@ -258,7 +258,7 @@ export class GrepSearchEngine {
       matches: fileResults,
       searchTime,
       tokenEstimate,
-      projectId
+      scriptId
     };
   }
 

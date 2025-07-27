@@ -227,7 +227,7 @@ const files = await callTool('gas_ls', {
 // Response shows files grouped by filename prefixes (not real folders):
 {
   "type": "files",
-  "projectId": "abc123def456...",
+  "scriptId": "abc123def456...",
   "items": [
     {
       "name": "Code.gs",                    // Root level file
@@ -263,7 +263,7 @@ const aiToolsFiles = await callTool('gas_ls', {
 // Finds all files with "ai_tools/" prefix
 {
   "type": "files",
-  "projectId": "abc123def456...",
+  "scriptId": "abc123def456...",
   "pattern": "ai_tools/*",
   "isWildcard": true,
   "wildcardMode": "auto",
@@ -628,7 +628,7 @@ exports.multiply = multiply;`
 {
   "status": "success",
   "path": "abc123def456.../MathUtils",
-  "projectId": "abc123def456...",
+  "scriptId": "abc123def456...",
   "filename": "MathUtils",
   "size": 187,
   "syncStatus": "synced",
@@ -799,8 +799,8 @@ const moveResult = await callTool('gas_mv', {
   "status": "moved",
   "from": "OldName.gs",
   "to": "NewName.gs",
-  "fromProjectId": "abc123def456...",
-  "toProjectId": "abc123def456...",
+  "fromScriptId": "abc123def456...",
+  "toScriptId": "abc123def456...",
   "isCrossProject": false,
   "message": "Moved OldName.gs to NewName.gs within project abc123de..."
 }
@@ -819,8 +819,8 @@ const moveResult = await callTool('gas_mv', {
   "status": "moved",
   "from": "utils.gs",
   "to": "xyz789abc.../backup.gs",
-  "fromProjectId": "abc123def456...",
-  "toProjectId": "xyz789abc...",
+  "fromScriptId": "abc123def456...",
+  "toScriptId": "xyz789abc...",
   "isCrossProject": true,
   "message": "Moved utils.gs from project abc123de... to backup.gs in project xyz789ab..."
 }
@@ -855,8 +855,8 @@ const copyResult = await callTool('gas_cp', {
   "status": "copied",
   "from": "utils.gs",
   "to": "utils-backup.gs",
-  "fromProjectId": "abc123def456...",
-  "toProjectId": "abc123def456...",
+  "fromScriptId": "abc123def456...",
+  "toScriptId": "abc123def456...",
   "isCrossProject": false,
   "size": 1024,
   "message": "Copied utils.gs to utils-backup.gs within project abc123de..."
