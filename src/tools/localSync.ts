@@ -128,7 +128,7 @@ export class GASPullTool extends BaseTool {
     
     // Update MCP info in appsscript.json
     await LocalFileManager.updateMcpInfo(projectName, {
-      projectId: scriptId,
+      scriptId: scriptId,
       projectName,
       description: `Google Apps Script project synced from ${scriptId}`
     }, workingDir);

@@ -190,7 +190,7 @@ export class GASCatTool extends BaseTool {
         if (localContent) {
           result = {
             path: filePath,
-            projectId: scriptId,
+            scriptId: scriptId,
             filename,
             content: localContent,
             source: 'local',
@@ -225,7 +225,7 @@ export class GASCatTool extends BaseTool {
 
       result = {
         path: filePath,
-        projectId: scriptId,
+        scriptId: scriptId,
         filename,
         content: remoteFile.source || remoteFile.content || '',
         source: 'remote',
@@ -407,7 +407,7 @@ export class GASWriteTool extends BaseTool {
     required: ['path', 'content'],
     llmGuidance: {
       whenToUse: 'Use for normal file writing with explicit project paths. Remote-first workflow ensures safety.',
-      workflow: 'Use with explicit paths: gas_write({path: "projectId/filename", content: "..."}) - writes to remote first, then commits to git, then updates local file',
+                workflow: 'Use with explicit paths: gas_write({path: "scriptId/filename", content: "..."}) - writes to remote first, then commits to git, then updates local file',
       alternatives: 'Use gas_raw_write when you need single-destination writes or advanced file positioning',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
       moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
@@ -784,7 +784,7 @@ export class GASWriteTool extends BaseTool {
     // 📊 Return comprehensive results
     return {
       path: path,
-      projectId: scriptId,
+      scriptId: scriptId,
       filename,
       size: content.length,
       workflow: 'remote-first-git',
@@ -842,17 +842,17 @@ export class GASListTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Path to list with optional wildcard patterns. Supports * (any chars) and ? (single char). Examples: "projectId/*.gs", "projectId/utils/*", "projectId/test?". NOTE: appsscript.json will always be included in listings if present in the project.',
+        description: 'Path to list with optional wildcard patterns. Supports * (any chars) and ? (single char). Examples: "scriptId/*.gs", "scriptId/utils/*", "scriptId/test?". NOTE: appsscript.json will always be included in listings if present in the project.',
         default: '',
         examples: [
           '',                              // All projects
-          'projectId',                     // All files in project
-          'projectId/*.gs',               // All .gs files
-          'projectId/utils/*',            // All files in utils/ folder
-          'projectId/api/*.json',         // All JSON files in api/ folder  
-          'projectId/test?',              // Files like test1, test2, testA
-          'projectId/*/config',           // All config files in any subfolder
-          'projectId/models/User*'        // Files starting with "models/User"
+          'scriptId',                     // All files in project
+          'scriptId/*.gs',               // All .gs files
+          'scriptId/utils/*',            // All files in utils/ folder
+          'scriptId/api/*.json',         // All JSON files in api/ folder  
+          'scriptId/test?',              // Files like test1, test2, testA
+          'scriptId/*/config',           // All config files in any subfolder
+          'scriptId/models/User*'        // Files starting with "models/User"
         ]
       },
       detailed: {
@@ -983,7 +983,7 @@ export class GASListTool extends BaseTool {
     return {
       type: 'files',
       path: directory ? `${projectId}/${directory}` : projectId,
-      projectId,
+      scriptId: projectId,
       directory,
       pattern: directory,
       isWildcard: isWildcardPattern(directory),
@@ -1010,7 +1010,7 @@ export class GASRawCatTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: projectId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
+        description: 'Full path to file: scriptId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
       },
       accessToken: {
         type: 'string',
@@ -1094,7 +1094,7 @@ export class GASRawWriteTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: projectId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (projectId/appsscript), never in subfolders.',
+        description: 'Full path to file: scriptId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (scriptId/appsscript), never in subfolders.',
         pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
         minLength: 25,
         examples: [
@@ -1105,11 +1105,11 @@ export class GASRawWriteTool extends BaseTool {
           'abc123def456.../appsscript'
         ],
         llmHints: {
-          format: 'projectId/filename (no extension)',
+          format: 'scriptId/filename (no extension)',
           extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON',
           organization: 'Use "/" in filename for logical organization (not real folders)',
           autoDetection: 'File type detected from content: JavaScript, HTML, JSON',
-          specialFiles: 'appsscript.json MUST be in root: projectId/appsscript (never projectId/subfolder/appsscript)',
+          specialFiles: 'appsscript.json MUST be in root: scriptId/appsscript (never scriptId/subfolder/appsscript)',
           warning: 'This tool OVERWRITES the entire file - use gas_write for safer merging'
         }
       },
@@ -1243,7 +1243,7 @@ export class GASRawWriteTool extends BaseTool {
         throw new ValidationError(
           'path', 
           path, 
-          'appsscript.json must be in project root (projectId/appsscript), not in subfolders'
+          'appsscript.json must be in project root (scriptId/appsscript), not in subfolders'
         );
       }
       console.error(`✅ Special file appsscript.json validated - correctly placed in project root`);
@@ -1344,7 +1344,7 @@ export class GASRemoveTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: projectId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
+        description: 'Full path to file: scriptId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
       },
       accessToken: {
         type: 'string',
@@ -1407,7 +1407,7 @@ export class GASMoveTool extends BaseTool {
       },
       from: {
         type: 'string',
-        description: 'Source path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        description: 'Source path: filename OR scriptId/filename (without extension). If embedded script ID provided, overrides scriptId parameter.',
         examples: [
           'utils.gs',                           // Uses scriptId
           'ai_tools/helper.gs',                // Uses scriptId with subdirectory
@@ -1416,7 +1416,7 @@ export class GASMoveTool extends BaseTool {
       },
       to: {
         type: 'string',
-        description: 'Destination path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        description: 'Destination path: filename OR scriptId/filename (without extension). If embedded script ID provided, overrides scriptId parameter.',
         examples: [
           'renamed.gs',                        // Same project (uses scriptId)
           'backup/utils.gs',                   // Same project with subdirectory
@@ -1525,7 +1525,7 @@ export class GASCopyTool extends BaseTool {
       },
       from: {
         type: 'string',
-        description: 'Source path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        description: 'Source path: filename OR scriptId/filename (without extension). If embedded script ID provided, overrides scriptId parameter.',
         examples: [
           'utils.gs',                           // Uses scriptId
           'ai_tools/helper.gs',                // Uses scriptId with subdirectory
@@ -1534,7 +1534,7 @@ export class GASCopyTool extends BaseTool {
       },
       to: {
         type: 'string',
-        description: 'Destination path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        description: 'Destination path: filename OR scriptId/filename (without extension). If embedded script ID provided, overrides scriptId parameter.',
         examples: [
           'utils-copy.gs',                     // Same project (uses scriptId)
           'backup/utils.gs',                   // Same project with subdirectory

@@ -64,7 +64,7 @@ export class GasGrepTool extends BaseTool {
       },
       path: {
         type: 'string',
-        description: 'Project or file path with wildcard/regex support. Searches clean user code in matching files (same content processing as gas_cat). Examples: "projectId" (entire project), "projectId/utils/*" (wildcard), "projectId/.*Controller.*" (regex)',
+        description: 'Project or file path with wildcard/regex support. Searches clean user code in matching files (same content processing as gas_cat). Examples: "scriptId" (entire project), "scriptId/utils/*" (wildcard), "scriptId/.*Controller.*" (regex)',
         default: '',
         examples: [
           'scriptId',                      // Search entire project (user code only)

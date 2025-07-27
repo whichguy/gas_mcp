@@ -45,7 +45,7 @@ export interface GitInfo {
  * MCP-specific metadata for appsscript.json
  */
 export interface McpInfo {
-  projectId: string;
+  scriptId: string;
   projectName?: string;
   localRoot: string;
   lastSync: string;
@@ -274,7 +274,7 @@ export class LocalFileManager {
     
     // Update MCP information - ensure required fields are present
     const updatedMcpInfo: McpInfo = {
-      projectId: mcpInfo.projectId || appsscript.mcp?.projectId || projectName,
+      scriptId: mcpInfo.scriptId || appsscript.mcp?.scriptId || projectName,
       projectName: mcpInfo.projectName || appsscript.mcp?.projectName || projectName,
       localRoot: mcpInfo.localRoot || appsscript.mcp?.localRoot || await this.getLocalRoot(workingDir),
       lastSync: new Date().toISOString(),
