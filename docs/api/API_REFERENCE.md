@@ -351,13 +351,68 @@ const files = await callTool('gas_ls', {
 
 **🎯 RECOMMENDED**: Server-side content search with pattern matching and wildcard support.
 
-Search clean user code (unwrapped from CommonJS wrappers) across Google Apps Script projects using regex or literal patterns. Provides **server-side search** to minimize token usage while delivering powerful grep-like capabilities on the actual code developers write and edit.
+Search **clean user code** (unwrapped from CommonJS wrappers) across Google Apps Script projects using regex or literal patterns. This searches the same content that `gas_cat` shows - the actual code developers write and edit, without system-generated wrappers.
+
+**Content Examined**: Same as `gas_cat` - unwrapped user code only
+- ✅ Your actual functions and logic
+- ✅ `require()` calls you wrote
+- ✅ `module.exports` and `exports.func` assignments  
+- ❌ No `_main()` wrapper functions
+- ❌ No `__defineModule__()` calls
+- ❌ No `globalThis.__getCurrentModule()` system code
 
 ### `gas_raw_grep` - Search File Contents (Full Content)
 
 **⚠️ ADVANCED**: Server-side content search including system-generated code.
 
-Search complete file content including CommonJS wrappers and system-generated code across Google Apps Script projects. Use this when you need to search CommonJS module system internals or debug wrapper-related issues.
+Search **complete file content** including CommonJS wrappers and system-generated code across Google Apps Script projects. This searches the same content that `gas_raw_cat` shows - the full files including all system infrastructure.
+
+**Content Examined**: Same as `gas_raw_cat` - complete file content
+- ✅ All user code (your functions and logic)
+- ✅ CommonJS `_main()` wrapper functions
+- ✅ `__defineModule__()` system calls
+- ✅ `globalThis.__getCurrentModule()` infrastructure
+- ✅ Complete module system internals
+
+#### Content Comparison Example
+
+**Example File**: `Calculator.gs`
+
+**What `gas_cat` shows (and `gas_grep` searches):**
+```javascript
+function add(a, b) {
+  return a + b;
+}
+
+function multiply(a, b) {
+  return a * b;
+}
+
+exports.add = add;
+exports.multiply = multiply;
+```
+
+**What `gas_raw_cat` shows (and `gas_raw_grep` searches):**
+```javascript
+function _main(
+  module = globalThis.__getCurrentModule(),
+  exports = module.exports,
+  require = globalThis.require
+) {
+  function add(a, b) {
+    return a + b;
+  }
+
+  function multiply(a, b) {
+    return a * b;
+  }
+
+  exports.add = add;
+  exports.multiply = multiply;
+}
+
+__defineModule__(_main);
+```
 
 #### Input Schema
 ```typescript
@@ -381,6 +436,65 @@ interface GasGrepInput {
 
 #### Usage Examples
 
+**Search Clean User Code (`gas_grep`)**
+```typescript
+// Find user functions (clean code search)
+const userFunctions = await callTool('gas_grep', {
+  pattern: 'function\\s+(\\w+)',
+  path: 'abc123def456.../Calculator',
+  searchMode: 'regex'
+});
+
+// Result: Finds only user functions like "function add", "function multiply"
+// ✅ Finds: function add(a, b)
+// ✅ Finds: function multiply(a, b)  
+// ❌ Skips: function _main() wrapper
+```
+
+**Search Complete Content (`gas_raw_grep`)**
+```typescript
+// Find ALL functions including system wrappers
+const allFunctions = await callTool('gas_raw_grep', {
+  pattern: 'function\\s+(\\w+)',
+  path: 'abc123def456.../Calculator',
+  searchMode: 'regex'
+});
+
+// Result: Finds user functions AND system wrappers
+// ✅ Finds: function add(a, b)
+// ✅ Finds: function multiply(a, b)
+// ✅ Finds: function _main() wrapper
+```
+
+**Debug CommonJS Module System**
+```typescript
+// Search for module system internals (only raw_grep finds these)
+const moduleInternals = await callTool('gas_raw_grep', {
+  pattern: '__defineModule__|_main\\s*\\(',
+  path: 'abc123def456...',
+  searchMode: 'regex'
+});
+
+// Result: Finds CommonJS infrastructure
+// ✅ Finds: __defineModule__(_main);
+// ✅ Finds: function _main(
+// ✅ Finds: globalThis.__getCurrentModule()
+```
+
+**Search User Module Dependencies**
+```typescript
+// Both tools find require() calls in user code
+const dependencies = await callTool('gas_grep', {  // or gas_raw_grep
+  pattern: 'require\\([\'"`]([^\'"`]+)[\'"`]\\)',
+  path: 'abc123def456...',
+  searchMode: 'regex'
+});
+
+// Result: Finds user require() calls
+// ✅ gas_grep: require("Utils") in user code
+// ✅ gas_raw_grep: require("Utils") in user code + system context
+```
+
 **🆕 Regex Path Filtering (Enhanced)**
 ```typescript
 // Find functions in Controllers (regex path)
@@ -398,158 +512,6 @@ const utilities = await callTool('gas_grep', {
   pathMode: 'regex',
   searchMode: 'literal'
 });
-
-// Find test files with specific extensions (regex)
-const testFiles = await callTool('gas_grep', {
-  pattern: 'describe\\(',
-  path: 'abc123def456.../.*\\.(test|spec)$',
-  pathMode: 'regex',
-  searchMode: 'regex'
-});
-
-// Complex path filtering with regex
-const complexSearch = await callTool('gas_grep', {
-  pattern: 'TODO:|FIXME:',
-  path: 'abc123def456.../((src|lib)/.*|.*Controller.*)',
-  pathMode: 'regex',
-  excludeFiles: ['*/test/*']
-});
-```
-
-**Find Function Definitions**
-```typescript
-const results = await callTool('gas_grep', {
-  pattern: 'function\\s+(\\w+)',
-  path: 'abc123def456.../ai_tools/*',
-  searchMode: 'regex',
-  contextLines: 2
-});
-
-// Response:
-{
-  "searchPattern": "function\\s+(\\w+)",
-  "searchMode": "regex",
-  "totalMatches": 15,
-  "filesSearched": 25,
-  "tokenEstimate": 450,
-  "matches": [
-    {
-      "fileName": "ai_tools/BaseConnector",
-      "totalMatches": 3,
-      "matches": [
-        {
-          "lineNumber": 23,
-          "line": "function initialize() {",
-          "context": {
-            "before": ["// Setup configuration", "class BaseConnector {"],
-            "after": ["  const config = getConfig();", "  this.setup(config);"]
-          },
-          "matchStart": 0,
-          "matchEnd": 19,
-          "matchText": "function initialize"
-        }
-      ]
-    }
-  ]
-}
-```
-
-**Find TODO Items**
-```typescript
-const todos = await callTool('gas_grep', {
-  pattern: 'TODO:|FIXME:|HACK:',
-  path: 'abc123def456...',
-  searchMode: 'regex',
-  excludeFiles: ['*/test/*', '*/CommonJS'],
-  maxResults: 20
-});
-
-// Find all TODO comments excluding test files
-```
-
-**Search Specific Files**
-```typescript
-const apiUsage = await callTool('gas_grep', {
-  pattern: 'require\\([\'"]([^\'"]+)[\'"]\\)',
-  files: [
-    'abc123def456.../ai_tools/BaseConnector',
-    'abc123def456.../ai_tools/ClaudeConnector'
-  ],
-  searchMode: 'regex',
-  contextLines: 1
-});
-
-// Find all require() calls in specific files
-```
-
-**Find Security Issues**
-```typescript
-const security = await callTool('gas_grep', {
-  pattern: '(api[_-]?key|secret|token|password)\\s*[=:]',
-  path: 'abc123def456.../*',
-  searchMode: 'regex',
-  caseSensitive: false,
-  includeFileTypes: ['SERVER_JS']
-});
-
-// Find potential hardcoded secrets
-```
-
-**Compact Output for Quick Scanning**
-```typescript
-const logs = await callTool('gas_grep', {
-  pattern: 'console\\.log|Logger\\.log',
-  path: 'abc123def456.../src/*',
-  searchMode: 'regex',
-  compact: true,
-  maxResults: 30
-});
-
-// Response includes formattedOutput:
-// "ai_tools/BaseConnector:45:  console.log('Debug info');"
-// "utils/helpers:12:  Logger.log('Processing data');"
-```
-
-#### Advanced Features
-
-**Token Management**
-- **Automatic truncation** if results exceed 20,000 tokens
-- **Context control** (0-10 lines before/after matches)
-- **Result limiting** (max 200 matches per query)
-- **File size limits** (skips files >50KB)
-
-**Pattern Safety**
-- **ReDoS protection** (detects dangerous regex patterns)
-- **Pattern validation** (max 200 chars, complexity limits)
-- **Auto-detection** of literal vs regex patterns
-- **Escape handling** for special characters
-
-**Search Optimization**
-- **Enhanced path filtering** with regex and wildcard support
-- **Regex path patterns** for complex file selection (e.g., `.*Controller.*`, `(utils|helpers)/.*`)
-- **Auto-detection** of wildcard vs regex path patterns
-- **File type filtering** (SERVER_JS, HTML, JSON)
-- **Exclude patterns** with wildcard/regex support
-- **Performance metrics** (search time, token estimates)
-
-#### Error Handling
-
-```typescript
-// Invalid pattern
-{
-  "error": "Invalid pattern: Pattern too long (max 200 characters)"
-}
-
-// Dangerous regex
-{
-  "error": "Invalid pattern: Potentially expensive regex pattern detected. Avoid nested quantifiers like (.*)*"
-}
-
-// No matches found
-{
-  "totalMatches": 0,
-  "message": "No files found matching the specified criteria"
-}
 ```
 
 ### `gas_cat` - Read File Contents
