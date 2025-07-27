@@ -257,23 +257,23 @@ export class MCPValidator {
       minLength: 1,
       maxLength: 500, // Reasonable path length limit
       customValidator: (value) => {
-        // Split path into projectId and filename parts
+        // Split path into scriptId and filename parts
         const pathParts = value.split('/');
-        const projectId = pathParts[0];
+        const scriptId = pathParts[0];
         const filename = pathParts[pathParts.length - 1];
         
-        // Validate project ID format (if present)
-        if (projectId) {
-          if (!/^[a-zA-Z0-9_-]+$/.test(projectId)) {
-            return `Project ID can only contain letters, numbers, underscores, and hyphens`;
+        // Validate script ID format (if present)
+        if (scriptId) {
+          if (!/^[a-zA-Z0-9_-]+$/.test(scriptId)) {
+            return `Script ID can only contain letters, numbers, underscores, and hyphens`;
           }
-          if (projectId.length < 5 || projectId.length > 60) {
-            return `Project ID must be 5-60 characters long`;
+          if (scriptId.length < 5 || scriptId.length > 60) {
+            return `Script ID must be 5-60 characters long`;
           }
         }
         
         // Validate filename (if present)
-        if (filename && filename !== projectId) {
+        if (filename && filename !== scriptId) {
           if (filename.includes(' ')) {
             return `File names cannot contain spaces`;
           }
