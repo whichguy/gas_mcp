@@ -271,7 +271,7 @@ export class MCPGasServer {
    * ### 🔧 Filesystem Operations - ADVANCED (4 tools)
    * - `gas_raw_cat` - ⚠️ Advanced: Read with explicit project ID paths
    * - `gas_raw_write` - ⚠️ Advanced: Write with explicit project ID paths
-   * - `gas_raw_grep` - ⚠️ Advanced: Search full content including CommonJS wrappers
+   * - `gas_raw_grep` - ⚠️ Advanced: Search full content (API-only, never local files)
    * - `gas_raw_copy` - ⚠️ Advanced: Remote-to-remote file copying with merge strategies
    * 
    * ### 🏗️ Project Management (4 tools)
@@ -354,7 +354,7 @@ export class MCPGasServer {
       // 🔧 Filesystem operations - ADVANCED raw tools (explicit project IDs)
       new GASRawCatTool(authManager),        // ⚠️ Advanced: Explicit project ID paths
       new GASRawWriteTool(authManager),      // ⚠️ Advanced: Explicit project ID paths
-      new GasRawGrepTool(authManager),       // ⚠️ Advanced: Search full content including CommonJS wrappers
+      new GasRawGrepTool(authManager),       // ⚠️ Advanced: Search full content (API-only, never local files)
       new GASRawCopyTool(authManager),       // ⚠️ Advanced: Remote-to-remote file copying
       
       // 🏗️ Project management

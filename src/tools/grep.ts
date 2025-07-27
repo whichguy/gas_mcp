@@ -24,10 +24,13 @@ import {
 /**
  * gas_grep - Search clean user code (unwrapped from CommonJS)
  * Shows search results from the actual code developers write and edit
+ * 
+ * Currently makes direct API calls like gas_raw_grep, but designed to potentially
+ * support local file access in the future (following gas_cat vs gas_raw_cat pattern)
  */
 export class GasGrepTool extends BaseTool {
   public name = 'gas_grep';
-  public description = '🔍 RECOMMENDED: Search clean user code with automatic CommonJS unwrapping - shows search results from the actual code developers write and edit';
+  public description = '🔍 RECOMMENDED: Search clean user code with automatic CommonJS unwrapping - shows search results from the actual code developers write and edit. Currently API-only.';
   
   public inputSchema = {
     type: 'object',
@@ -38,7 +41,8 @@ export class GasGrepTool extends BaseTool {
       moduleAccess: 'Your search will find require("ModuleName") calls, module.exports = {...} assignments, and exports.func = ... usage in clean user code without system wrapper noise.',
       whenToUse: 'Use for normal code searches. Automatically handles CommonJS unwrapping for cleaner results.',
       workflow: 'Searches through the clean user code that developers actually write and edit',
-      contentComparison: 'gas_grep searches the same content that gas_cat shows (unwrapped user code), while gas_raw_grep searches the same content that gas_raw_cat shows (full file including CommonJS wrappers)'
+      contentComparison: 'gas_grep searches the same content that gas_cat shows (unwrapped user code), while gas_raw_grep searches the same content that gas_raw_cat shows (full file including CommonJS wrappers)',
+      currentBehavior: 'Currently makes direct API calls like gas_raw_grep, but may support local file access in the future'
     },
     properties: {
       pattern: {
@@ -383,18 +387,21 @@ export class GasGrepTool extends BaseTool {
 
 /**
  * gas_raw_grep - Search raw file content (including CommonJS wrappers)
- * Shows search results from the complete file content including system-generated code
+ * 
+ * ⚠️ ADVANCED TOOL - Always makes direct API calls, never uses local files
+ * This tool requires explicit project IDs and makes direct API access only
+ * Use gas_grep for normal development workflow with potential local file support
  */
 export class GasRawGrepTool extends BaseTool {
   public name = 'gas_raw_grep';
-  public description = '🔧 ADVANCED: Search file contents with explicit project ID control and full content including CommonJS wrappers';
+  public description = '🔧 ADVANCED: Search file contents with explicit project ID control and full content including CommonJS wrappers. Always makes direct API calls.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       pattern: {
         type: 'string',
-        description: 'Search pattern (supports regex and literal text). Searches complete file content (same content as gas_raw_cat shows) including CommonJS wrappers. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
+        description: 'Search pattern (supports regex and literal text). Searches complete file content (same content as gas_raw_cat shows) including CommonJS wrappers via direct API calls only. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
         minLength: 1,
         examples: [
           'require\\\\(',                    // Find require calls (in user code + system context)
@@ -411,16 +418,16 @@ export class GasRawGrepTool extends BaseTool {
       },
       path: {
         type: 'string',
-        description: 'Project or file path with wildcard/regex support. Searches complete file content in matching files (same content processing as gas_raw_cat) including CommonJS wrappers and system code.',
+        description: 'Full path to project or files: projectId/path/pattern (explicit project ID required). Always retrieves content via direct API calls, never uses local cached files. Same content processing as gas_raw_cat.',
         default: '',
         examples: [
-          'projectId',                      // Search entire project (full file content including wrappers)
-          'projectId/ai_tools/*',          // Wildcard: ai_tools directory (full content including wrappers)
-          'projectId/*Connector*',         // Wildcard: files containing Connector (full content including wrappers)
-          'projectId/.*Controller.*',      // Regex: files containing Controller (full content including wrappers)
-          'projectId/(utils|helpers)/.*',  // Regex: utils OR helpers directories (full content including wrappers)
-          'projectId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (full content including wrappers)
-          'projectId/test/*/*.test'        // Wildcard: test files in subdirectories (full content including wrappers)
+          'abc123def456.../project',               // Search entire project (full content including wrappers via API)
+          'abc123def456.../ai_tools/*',          // Wildcard: ai_tools directory (full content via API)
+          'abc123def456.../*Connector*',         // Wildcard: files containing Connector (full content via API)
+          'abc123def456.../.*Controller.*',      // Regex: files containing Controller (full content via API)
+          'abc123def456.../(utils|helpers)/.*',  // Regex: utils OR helpers directories (full content via API)
+          'abc123def456.../.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (full content via API)
+          'abc123def456.../test/*/*.test'        // Wildcard: test files in subdirectories (full content via API)
         ]
       },
       pathMode: {
@@ -432,10 +439,10 @@ export class GasRawGrepTool extends BaseTool {
       files: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Specific file list to search (alternative to path parameter)',
+        description: 'Specific file list to search with explicit project IDs (alternative to path parameter). Always retrieved via direct API calls.',
         examples: [
-          ['projectId/utils/helpers', 'projectId/models/User'],
-          ['projectId/ai_tools/BaseConnector', 'projectId/ai_tools/ClaudeConnector']
+          ['abc123def456.../utils/helpers', 'abc123def456.../models/User'],
+          ['abc123def456.../ai_tools/BaseConnector', 'abc123def456.../ai_tools/ClaudeConnector']
         ]
       },
       searchMode: {
@@ -496,7 +503,7 @@ export class GasRawGrepTool extends BaseTool {
         description: 'Files to exclude from search (supports wildcards)',
         examples: [
           ['*/test/*', '*/CommonJS'],
-          ['projectId/dist/*', 'projectId/node_modules/*']
+          ['abc123def456.../dist/*', 'abc123def456.../node_modules/*']
         ]
       },
       includeFileTypes: {
@@ -530,8 +537,6 @@ export class GasRawGrepTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    const accessToken = await this.getAuthToken(params);
-    
     // Validate required parameters
     if (!params.pattern) {
       throw new ValidationError('pattern', params.pattern, 'non-empty search pattern');
@@ -562,8 +567,11 @@ export class GasRawGrepTool extends BaseTool {
       }
     }
 
-    // Determine target files (raw content)
-    const files = await this.getTargetFiles(params, accessToken);
+    // ⚠️ CRITICAL: Always authenticate before making API calls
+    const accessToken = await this.getAuthToken(params);
+
+    // 🔧 ADVANCED: Get target files via direct API calls only (never uses local files)
+    const files = await this.getTargetFilesViaAPI(params, accessToken);
     
     if (files.length === 0) {
       return {
@@ -578,16 +586,18 @@ export class GasRawGrepTool extends BaseTool {
         searchTime: 0,
         tokenEstimate: 0,
         message: 'No files found matching the specified criteria',
-        contentType: 'raw-content (includes CommonJS wrappers)'
+        contentType: 'raw-content (includes CommonJS wrappers)',
+        dataSource: 'direct-api-call'
       };
     }
 
     // Execute search
     const results = await this.grepEngine.searchFiles(files, searchOptions, this.extractProjectId(params));
 
-    // Add metadata about content processing
+    // Add metadata about content processing and data source
     (results as any).contentType = 'raw-content (includes CommonJS wrappers)';
-    (results as any).note = 'Search performed on complete file content including CommonJS wrappers and system code. Use gas_grep to search only user code.';
+    (results as any).dataSource = 'direct-api-call';
+    (results as any).note = 'Search performed on complete file content including CommonJS wrappers and system code retrieved via direct API calls. Use gas_grep to search only user code.';
 
     // Add formatted output for different display modes
     if (searchOptions.compact) {
@@ -600,24 +610,26 @@ export class GasRawGrepTool extends BaseTool {
   }
 
   /**
-   * Get target files based on path/files parameters
+   * Get target files via direct API calls only (never uses local files)
+   * This follows the same pattern as gas_raw_cat - always direct API access
    */
-  private async getTargetFiles(params: any, accessToken?: string): Promise<GASFile[]> {
-    // If specific files provided, get those
+  private async getTargetFilesViaAPI(params: any, accessToken: string): Promise<GASFile[]> {
+    // If specific files provided, get those via API
     if (params.files && Array.isArray(params.files) && params.files.length > 0) {
-      return await this.getSpecificFiles(params.files, accessToken);
+      return await this.getSpecificFilesViaAPI(params.files, accessToken);
     }
 
-    // Use path parameter (with wildcard/regex support)
+    // Use path parameter (with wildcard/regex support) via API
     const path = params.path || '';
     const pathMode = params.pathMode || 'auto';
     const parsedPath = parsePath(path);
 
     if (!parsedPath.projectId) {
-      throw new ValidationError('path', path, 'valid project path (projectId or projectId/path)');
+      throw new ValidationError('path', path, 'valid project path with explicit project ID (projectId or projectId/path)');
     }
 
-    // Get all files from project
+    // 🔧 DIRECT API CALL: Get all files from project (never uses local cache)
+    console.error(`🔧 [GAS_RAW_GREP] Making direct API call to retrieve project content: ${parsedPath.projectId}`);
     const allFiles = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
 
     // Convert to GASFile format
@@ -632,7 +644,6 @@ export class GasRawGrepTool extends BaseTool {
     if (parsedPath.directory || parsedPath.filename) {
       const filterPattern = parsedPath.directory || parsedPath.filename || '';
       
-      // Use new regex/wildcard path matching
       return gasFiles.filter(file => 
         matchesPathPattern(file.name, filterPattern, pathMode, parsedPath.projectId)
       );
@@ -649,16 +660,21 @@ export class GasRawGrepTool extends BaseTool {
   }
 
   /**
-   * Get specific files by name
+   * Get specific files by name via direct API calls only
    */
-  private async getSpecificFiles(fileNames: string[], accessToken?: string): Promise<GASFile[]> {
+  private async getSpecificFilesViaAPI(fileNames: string[], accessToken: string): Promise<GASFile[]> {
     const files: GASFile[] = [];
 
     for (const fileName of fileNames) {
       try {
         const parsedPath = parsePath(fileName);
-        if (!parsedPath.projectId) continue;
+        if (!parsedPath.projectId) {
+          console.error(`⚠️ [GAS_RAW_GREP] Skipping file without explicit project ID: ${fileName}`);
+          continue;
+        }
 
+        // 🔧 DIRECT API CALL: Get project files (never uses local cache)
+        console.error(`🔧 [GAS_RAW_GREP] Making direct API call for file: ${fileName}`);
         const projectFiles = await this.gasClient.getProjectContent(parsedPath.projectId, accessToken);
         const targetFile = projectFiles.find((f: any) => f.name === (parsedPath.filename || parsedPath.directory));
         
@@ -671,8 +687,8 @@ export class GasRawGrepTool extends BaseTool {
           });
         }
       } catch (error) {
-        // Skip invalid file references
-        console.error(`Failed to load file ${fileName}:`, error);
+        // Skip invalid file references but log for debugging
+        console.error(`⚠️ [GAS_RAW_GREP] Failed to load file via API ${fileName}:`, error);
       }
     }
 

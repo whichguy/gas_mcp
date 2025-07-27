@@ -104,7 +104,7 @@ gas_run --script-id="[scriptId]" --function-name="myFunction"
 - `gas_write` - Create/update files
 - `gas_cat` - Read file contents (clean user code, unwrapped)
 - `gas_grep` - **Search file contents** with pattern matching (same clean content as `gas_cat`)
-- `gas_raw_grep` - **Search file contents** including CommonJS wrappers (same full content as `gas_raw_cat`)
+- `gas_raw_grep` - **Search file contents** including CommonJS wrappers (same full content as `gas_raw_cat`, API-only)
 - `gas_mv` - Move/rename files
 - `gas_cp` - Copy files
 - `gas_rm` - Delete files
@@ -147,6 +147,7 @@ exports.calculateTax = calculateTax;
 - Searches the same content `gas_raw_cat` shows
 - Includes CommonJS wrappers and system code
 - Full file infrastructure for debugging
+- **Always makes direct API calls** (never uses local files)
 ```javascript
 // What gas_raw_grep searches:
 function _main(
