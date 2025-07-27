@@ -1,6 +1,6 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath } from '../api/pathParser.js';
+import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern } from '../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
@@ -835,15 +835,25 @@ export class GASWriteTool extends BaseTool {
  */
 export class GASListTool extends BaseTool {
   public name = 'gas_ls';
-  public description = 'List files and directories in a Google Apps Script project. SPECIAL FILE: Always shows appsscript.json if present - this manifest file must exist in project root and contains essential project metadata.';
+  public description = 'List files and directories in a Google Apps Script project with wildcard pattern support. SPECIAL FILE: Always shows appsscript.json if present - this manifest file must exist in project root and contains essential project metadata.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       path: {
         type: 'string',
-        description: 'Path to list: empty for all projects, projectId for project files, projectId/prefix for logical grouping (no real folders in GAS). NOTE: appsscript.json will always be included in listings if present in the project.',
-        default: ''
+        description: 'Path to list with optional wildcard patterns. Supports * (any chars) and ? (single char). Examples: "projectId/*.gs", "projectId/utils/*", "projectId/test?". NOTE: appsscript.json will always be included in listings if present in the project.',
+        default: '',
+        examples: [
+          '',                              // All projects
+          'projectId',                     // All files in project
+          'projectId/*.gs',               // All .gs files
+          'projectId/utils/*',            // All files in utils/ folder
+          'projectId/api/*.json',         // All JSON files in api/ folder  
+          'projectId/test?',              // Files like test1, test2, testA
+          'projectId/*/config',           // All config files in any subfolder
+          'projectId/models/User*'        // Files starting with "models/User"
+        ]
       },
       detailed: {
         type: 'boolean',
@@ -854,6 +864,12 @@ export class GASListTool extends BaseTool {
         type: 'boolean',
         default: true,
         description: 'List files with matching filename prefixes (no real directories exist in GAS)'
+      },
+      wildcardMode: {
+        type: 'string',
+        enum: ['filename', 'fullpath', 'auto'],
+        default: 'auto',
+        description: 'Wildcard matching mode: filename (match basename only), fullpath (match full path), auto (detect from pattern)'
       },
       accessToken: {
         type: 'string',
@@ -875,15 +891,21 @@ export class GASListTool extends BaseTool {
     const path = params.path || '';
     const detailed = params.detailed !== false;  // ✅ Default to true, only false if explicitly set
     const recursive = params.recursive !== false;
+    const wildcardMode = params.wildcardMode || 'auto';
     
     const parsedPath = parsePath(path);
 
     if (!parsedPath.projectId) {
       return await this.listProjects(detailed, accessToken);
     } else if (parsedPath.isProject) {
-      return await this.listProjectFiles(parsedPath.projectId, parsedPath.directory || '', detailed, recursive, accessToken);
+      return await this.listProjectFiles(parsedPath.projectId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
+    } else if (parsedPath.isWildcard) {
+      // Handle wildcard patterns
+      return await this.listProjectFiles(parsedPath.projectId, parsedPath.pattern || '', detailed, recursive, wildcardMode, accessToken);
+    } else if (parsedPath.isDirectory) {
+      return await this.listProjectFiles(parsedPath.projectId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
     } else {
-      throw new ValidationError('path', path, 'valid project or directory path');
+      throw new ValidationError('path', path, 'valid project, directory, or wildcard pattern');
     }
   }
 
@@ -911,14 +933,39 @@ export class GASListTool extends BaseTool {
     directory: string, 
     detailed: boolean,
     recursive: boolean,
+    wildcardMode: string,
     accessToken?: string
   ): Promise<any> {
     const files = await this.gasClient.getProjectContent(projectId, accessToken);
     
-    // Filter by filename prefix if specified (GAS has no real directories)
-    const filteredFiles = directory 
-      ? files.filter((file: any) => matchesDirectory(file.name, directory))
-      : files;
+    // Enhanced filtering with wildcard support
+    let filteredFiles: any[];
+    
+    if (isWildcardPattern(directory)) {
+      // Wildcard pattern matching
+      filteredFiles = files.filter((file: any) => {
+        switch (wildcardMode) {
+          case 'filename':
+            const basename = getBaseName(file.name);
+            return matchesPattern(basename, getBaseName(directory));
+          
+          case 'fullpath':
+            return matchesPattern(file.name, directory);
+          
+          case 'auto':
+          default:
+            // Auto-detect: use fullpath if pattern contains '/', else filename
+            return directory.includes('/') 
+              ? matchesPattern(file.name, directory)
+              : matchesPattern(getBaseName(file.name), directory);
+        }
+      });
+    } else {
+      // Simple directory prefix matching (existing behavior)
+      filteredFiles = directory 
+        ? files.filter((file: any) => matchesDirectory(file.name, directory))
+        : files;
+    }
 
     const items = filteredFiles.map((file: any, index: number) => ({
       name: file.name,
@@ -938,9 +985,12 @@ export class GASListTool extends BaseTool {
       path: directory ? `${projectId}/${directory}` : projectId,
       projectId,
       directory,
+      pattern: directory,
+      isWildcard: isWildcardPattern(directory),
+      wildcardMode: wildcardMode,
+      matchedFiles: filteredFiles.length,
       items,
-      totalFiles: files.length,
-      filteredFiles: items.length
+      totalFiles: files.length
     };
   }
 }
