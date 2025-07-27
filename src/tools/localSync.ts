@@ -89,7 +89,7 @@ export class GASPullTool extends BaseTool {
     const force = params.force || false;
     
     // Resolve project parameter to script ID (uses current project if not specified)
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
+    const scriptId = await ProjectResolver.resolveScriptId(params.project, workingDir, accessToken);
     
     // Get project name for directories
     const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
@@ -205,7 +205,7 @@ export class GASPushTool extends BaseTool {
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     // Resolve project parameter to script ID (uses current project if not specified)
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
+    const scriptId = await ProjectResolver.resolveScriptId(params.project, workingDir, accessToken);
     
     // Get project name
     const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 
@@ -358,7 +358,7 @@ export class GASStatusTool extends BaseTool {
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     // Resolve project parameter to script ID (uses current project if not specified)
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
+    const scriptId = await ProjectResolver.resolveScriptId(params.project, workingDir, accessToken);
     
     // Get project name
     const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDir) || 

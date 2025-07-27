@@ -74,9 +74,9 @@ export class GASCatTool extends BaseTool {
       const parsedPath = parsePath(filePath);
       
       if (!parsedPath.isFile) {
-        // Path doesn't have project ID, try to use current project
-        const currentProjectId = await ProjectResolver.getCurrentProjectId(workingDir);
-        filePath = `${currentProjectId}/${filePath}`;
+        // Path doesn't have script ID, try to use current project
+        const currentScriptId = await ProjectResolver.getCurrentScriptId(workingDir);
+        filePath = `${currentScriptId}/${filePath}`;
       }
     } catch (error) {
       // If no current project, the path must be complete
@@ -929,14 +929,14 @@ export class GASListTool extends BaseTool {
   }
 
   private async listProjectFiles(
-    projectId: string, 
+    scriptId: string, 
     directory: string, 
     detailed: boolean,
     recursive: boolean,
     wildcardMode: string,
     accessToken?: string
   ): Promise<any> {
-    const files = await this.gasClient.getProjectContent(projectId, accessToken);
+    const files = await this.gasClient.getProjectContent(scriptId, accessToken);
     
     // Enhanced filtering with wildcard support
     let filteredFiles: any[];
@@ -982,8 +982,8 @@ export class GASListTool extends BaseTool {
 
     return {
       type: 'files',
-      path: directory ? `${projectId}/${directory}` : projectId,
-      scriptId: projectId,
+      path: directory ? `${scriptId}/${directory}` : scriptId,
+      scriptId: scriptId,
       directory,
       pattern: directory,
       isWildcard: isWildcardPattern(directory),

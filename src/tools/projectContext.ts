@@ -96,7 +96,7 @@ export class GASProjectSetTool extends BaseTool {
     console.error(`🎯 [GAS_PROJECT_SET] Starting enhanced project setup with ${syncStrategy} sync strategy`);
     
     // Resolve project parameter to script ID
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
+    const scriptId = await ProjectResolver.resolveScriptId(params.project, workingDir, accessToken);
     
     // Get project info using EXISTING gas_info functionality
     const projectInfo = await this.gasClient.getProject(scriptId, accessToken);

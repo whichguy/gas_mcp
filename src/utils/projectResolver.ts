@@ -63,10 +63,10 @@ export class ProjectResolver {
    * Resolve project parameter to script ID
    * Supports: project names, environment shortcuts, direct script IDs, current project, remote title search
    */
-  static async resolveProjectId(projectParam?: ProjectParam, workingDir: string = ProjectResolver.getSafeWorkingDir(), accessToken?: string): Promise<string> {
+  static async resolveScriptId(projectParam?: ProjectParam, workingDir: string = ProjectResolver.getSafeWorkingDir(), accessToken?: string): Promise<string> {
     if (!projectParam) {
       // No parameter = current project
-      return await this.getCurrentProjectId(workingDir);
+      return await this.getCurrentScriptId(workingDir);
     }
 
     if (typeof projectParam === 'string') {
@@ -154,7 +154,7 @@ export class ProjectResolver {
   /**
    * Get current project script ID from .gas-current.json
    */
-  static async getCurrentProjectId(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<string> {
+  static async getCurrentScriptId(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<string> {
     try {
       const currentPath = path.join(workingDir, this.CURRENT_FILE);
       const content = await fs.readFile(currentPath, 'utf-8');
