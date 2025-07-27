@@ -329,4 +329,75 @@ export function sortFilesForExecution<T extends { name: string; order?: number }
     // Alphabetical as fallback
     return a.name.localeCompare(b.name);
   });
-} 
+}
+
+/**
+ * Hybrid project ID resolution for tools that support both scriptId parameter and path-embedded project IDs
+ */
+export interface HybridPathResolution {
+  projectId: string;
+  cleanPath: string;  // Path without embedded project ID
+  wasEmbedded: boolean;  // True if project ID came from path, false if from parameter
+}
+
+/**
+ * Resolve project ID from either scriptId parameter or path-embedded project ID
+ * 
+ * @param scriptId - The scriptId parameter (can be empty string to force path extraction)
+ * @param path - The path that may contain embedded project ID
+ * @param operation - Operation name for error messages
+ * @returns Resolved project ID and clean path
+ * 
+ * Resolution logic:
+ * 1. If scriptId provided and path has no embedded project ID → use scriptId
+ * 2. If scriptId provided and path has embedded project ID → use embedded (override)
+ * 3. If scriptId empty and path has embedded project ID → use embedded
+ * 4. If scriptId empty and path has no embedded project ID → throw error
+ */
+export function resolveHybridProjectId(
+  scriptId: string | undefined, 
+  path: string, 
+  operation: string = 'operation'
+): HybridPathResolution {
+  const parsedPath = parsePath(path);
+  
+  // Case 1 & 2: scriptId provided
+  if (scriptId && scriptId.trim()) {
+    // Validate scriptId format
+    if (!/^[a-zA-Z0-9_-]{44}$/.test(scriptId)) {
+      throw new ValidationError('scriptId', scriptId, '44-character Google Apps Script project ID');
+    }
+    
+    if (parsedPath.projectId) {
+      // Case 2: scriptId provided but path has embedded project ID → use embedded (override)
+      return {
+        projectId: parsedPath.projectId,
+        cleanPath: parsedPath.filename || parsedPath.directory || parsedPath.pattern || '',
+        wasEmbedded: true
+      };
+    } else {
+      // Case 1: scriptId provided and path has no embedded project ID → use scriptId
+      return {
+        projectId: scriptId,
+        cleanPath: path,
+        wasEmbedded: false
+      };
+    }
+  }
+  
+  // Case 3: scriptId empty, check if path has embedded project ID
+  if (parsedPath.projectId) {
+    return {
+      projectId: parsedPath.projectId,
+      cleanPath: parsedPath.filename || parsedPath.directory || parsedPath.pattern || '',
+      wasEmbedded: true
+    };
+  }
+  
+  // Case 4: Both scriptId empty and no embedded project ID → error
+  throw new ValidationError(
+    'projectId', 
+    'missing', 
+    `Either provide scriptId parameter or embed project ID in path (e.g., "projectId/filename") for ${operation}`
+  );
+}

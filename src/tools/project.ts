@@ -15,9 +15,12 @@ export class GASMkdirTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      projectId: {
+      scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID'
+        description: 'Google Apps Script project ID (44 characters)',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44
       },
       directoryPath: {
         type: 'string',
@@ -28,7 +31,7 @@ export class GASMkdirTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['projectId', 'directoryPath']
+    required: ['scriptId', 'directoryPath']
   };
 
   private gasClient: GASClient;
@@ -41,7 +44,7 @@ export class GASMkdirTool extends BaseTool {
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
     
-    const projectId = this.validate.scriptId(params.projectId, 'project operation');
+    const scriptId = this.validate.scriptId(params.scriptId, 'project operation');
     const directoryPath = this.validate.string(params.directoryPath, 'directoryPath', 'project operation');
 
     // Validate directory path format
@@ -54,12 +57,12 @@ export class GASMkdirTool extends BaseTool {
     const placeholderFile = `${directoryPath}/.gitkeep`;
     const placeholderContent = `# Placeholder file for logical organization: ${directoryPath}\n# Note: Google Apps Script has no real folders - this is just a filename with prefix "${directoryPath}/"`;
 
-    const updatedFiles = await this.gasClient.updateFile(projectId, placeholderFile, placeholderContent, undefined, accessToken);
+    const updatedFiles = await this.gasClient.updateFile(scriptId, placeholderFile, placeholderContent, undefined, accessToken);
 
     return {
       status: 'created',
       directoryPath,
-      projectId,
+      scriptId,
       placeholderFile,
       totalFiles: updatedFiles.length,
       message: `Created logical organization prefix: ${directoryPath} (no real folder created - this is a filename prefix)`
@@ -77,9 +80,12 @@ export class GASInfoTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      projectId: {
+      scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID'
+        description: 'Google Apps Script project ID (44 characters)',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44
       },
       includeContent: {
         type: 'boolean',
@@ -91,7 +97,7 @@ export class GASInfoTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['projectId']
+    required: ['scriptId']
   };
 
   private gasClient: GASClient;
@@ -104,11 +110,11 @@ export class GASInfoTool extends BaseTool {
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
     
-    const projectId = this.validate.scriptId(params.projectId, 'project operation');
+    const scriptId = this.validate.scriptId(params.scriptId, 'project operation');
     const includeContent = this.validate.boolean(params.includeContent || false, 'includeContent', 'project operation');
 
     // Get project metadata and files
-    const files = await this.gasClient.getProjectContent(projectId, accessToken);
+    const files = await this.gasClient.getProjectContent(scriptId, accessToken);
     
     // Analyze project structure
     const filesByType = files.reduce((acc: any, file: any) => {
@@ -137,7 +143,7 @@ export class GASInfoTool extends BaseTool {
     }, {});
 
     const result: any = {
-      projectId,
+      scriptId,
       totalFiles: files.length,
       totalSize,
       filesByType,
@@ -174,9 +180,12 @@ export class GASReorderTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      projectId: {
+      scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID'
+        description: 'Google Apps Script project ID (44 characters)',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44
       },
       fileName: {
         type: 'string',
@@ -191,7 +200,7 @@ export class GASReorderTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['projectId', 'fileName', 'newPosition']
+    required: ['scriptId', 'fileName', 'newPosition']
   };
 
   private gasClient: GASClient;
@@ -204,12 +213,12 @@ export class GASReorderTool extends BaseTool {
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
     
-    const projectId = this.validate.scriptId(params.projectId, 'project operation');
+    const scriptId = this.validate.scriptId(params.scriptId, 'project operation');
     const fileName = this.validate.string(params.fileName, 'fileName', 'project operation');
     const newPosition = this.validate.number(params.newPosition, 'newPosition', 'project operation', 0);
 
     // Get current files
-    const files = await this.gasClient.getProjectContent(projectId, accessToken);
+    const files = await this.gasClient.getProjectContent(scriptId, accessToken);
     
     // Find the target file
     const targetFile = files.find((f: any) => f.name === fileName);
@@ -233,11 +242,11 @@ export class GASReorderTool extends BaseTool {
     reorderedFiles.splice(newPosition, 0, movedFile);
 
     // Update the project with new file order
-    await this.gasClient.updateProjectContent(projectId, reorderedFiles, accessToken);
+    await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
 
     return {
       status: 'reordered',
-      projectId,
+      scriptId,
       fileName,
       oldPosition: currentIndex,
       newPosition,
