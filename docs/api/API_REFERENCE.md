@@ -353,6 +353,8 @@ const files = await callTool('gas_ls', {
 
 Search **clean user code** (unwrapped from CommonJS wrappers) across Google Apps Script projects using regex or literal patterns. This searches the same content that `gas_cat` shows - the actual code developers write and edit, without system-generated wrappers.
 
+**🔄 CURRENT BEHAVIOR**: Currently makes direct API calls like `gas_raw_grep`, but designed to potentially support local file access in the future (like `gas_cat` vs `gas_raw_cat` pattern).
+
 **Content Examined**: Same as `gas_cat` - unwrapped user code only
 - ✅ Your actual functions and logic
 - ✅ `require()` calls you wrote
@@ -367,12 +369,16 @@ Search **clean user code** (unwrapped from CommonJS wrappers) across Google Apps
 
 Search **complete file content** including CommonJS wrappers and system-generated code across Google Apps Script projects. This searches the same content that `gas_raw_cat` shows - the full files including all system infrastructure.
 
+**🔧 ALWAYS DIRECT API CALLS**: Like `gas_raw_cat`, this tool never uses local cached files and always makes direct API calls to Google Apps Script. Requires explicit project IDs in all paths.
+
 **Content Examined**: Same as `gas_raw_cat` - complete file content
 - ✅ All user code (your functions and logic)
 - ✅ CommonJS `_main()` wrapper functions
 - ✅ `__defineModule__()` system calls
 - ✅ `globalThis.__getCurrentModule()` infrastructure
 - ✅ Complete module system internals
+
+**Data Source**: Direct Google Apps Script API calls only (never local files)
 
 #### Content Comparison Example
 
@@ -2788,4 +2794,4 @@ const complexTest = await callTool('gas_run', {
 
 ---
 
-This comprehensive API reference provides all the information needed to effectively use the MCP Gas Server tools in AI-assisted development workflows. 
+  This comprehensive API reference provides all the information needed to effectively use the MCP Gas Server tools in AI-assisted development workflows.
