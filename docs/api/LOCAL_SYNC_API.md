@@ -20,7 +20,7 @@ Use these for day-to-day development. They handle local/remote sync automaticall
 | Tool | Purpose | Key Features | When to Use |
 |------|---------|-------------|-------------|
 | **`gas_project_set`** | Set project & auto-pull | Project context management | Start working on a project |
-| **`gas_write`** | Auto-sync writer with module wrapper | **🎯 Automatic `_main()` wrapper for `require()` system** | Edit files with explicit paths (projectId/filename) |
+| **`gas_write`** | Auto-sync writer with module wrapper | **🎯 Automatic `_main()` wrapper for `require()` system** | Edit files with explicit paths (scriptId/filename) |
 | **`gas_cat`** | Smart reader | Local-first, remote fallback | Read files (local-first, remote fallback) |
 | **`gas_run`** | Current project execution | Works with current project context | Run code in current project |
 

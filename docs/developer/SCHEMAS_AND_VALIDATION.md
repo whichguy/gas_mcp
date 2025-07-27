@@ -140,7 +140,7 @@ interface GasLsInput {
   "properties": {
     "path": {
       "type": "string",
-      "description": "Path to list: empty for all projects, projectId for project files",
+      "description": "Path to list: empty for all projects, scriptId for project files",
       "pattern": "^[a-zA-Z0-9_/-]*$",
       "maxLength": 200
     },
@@ -170,7 +170,7 @@ interface GasLsInput {
 
 ```typescript
 interface GasCatInput {
-  path: string;                     // Full path: projectId/filename.gs or just filename if current project set
+  path: string;                     // Full path: scriptId/filename.gs or just filename if current project set
   preferLocal?: boolean;            // Prefer local file over remote when both exist (default: true)
   workingDir?: string;              // Working directory (defaults to current directory)
   accessToken?: string;             // Optional access token
@@ -184,7 +184,7 @@ interface GasCatInput {
   "properties": {
     "path": {
       "type": "string",
-      "description": "Full path to file: projectId/path/to/file.ext",
+      "description": "Full path to file: scriptId/path/to/file.ext",
       "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_.//-]+$",
       "minLength": 3,
       "maxLength": 200
@@ -212,7 +212,7 @@ interface GasCatInput {
 
 ```typescript
 interface GasWriteInput {
-  path: string;                     // Full path: projectId/filename (WITHOUT extension)
+  path: string;                     // Full path: scriptId/filename (WITHOUT extension)
   content: string;                  // Your raw code content (will be wrapped automatically)
   fileType?: 'SERVER_JS' | 'HTML' | 'JSON';  // Optional - auto-detected if not provided
   localOnly?: boolean;              // Write only to local (skip remote sync)
@@ -229,7 +229,7 @@ interface GasWriteInput {
   "properties": {
     "path": {
       "type": "string",
-      "description": "Full path to file: projectId/path/to/file.ext",
+      "description": "Full path to file: scriptId/path/to/file.ext",
       "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_./-]+$",
       "minLength": 3,
       "maxLength": 200

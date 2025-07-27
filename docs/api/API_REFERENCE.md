@@ -529,7 +529,7 @@ Read the contents of a specific file in a Google Apps Script project with intell
 #### Input Schema
 ```typescript
 interface GasCatInput {
-  path: string;  // Format: "projectId/filename.gs" or just "filename" if current project is set
+  path: string;  // Format: "scriptId/filename.gs" or just "filename" if current project is set
   preferLocal?: boolean;  // Prefer local file over remote when both exist (default: true)
   workingDir?: string;    // Working directory (defaults to current directory)
   accessToken?: string;
@@ -588,7 +588,7 @@ Create new files or update existing files in Google Apps Script projects with au
 #### Input Schema
 ```typescript
 interface GasWriteInput {
-  path: string;         // Format: "projectId/filename" (WITHOUT extension) - same as gas_raw_write
+  path: string;         // Format: "scriptId/filename" (WITHOUT extension) - same as gas_raw_write
   content: string;      // Your raw code content (will be wrapped automatically)
   fileType?: 'SERVER_JS' | 'HTML' | 'JSON';  // Optional - auto-detected if not provided
   localOnly?: boolean;  // Write only to local (skip remote sync)
@@ -708,7 +708,7 @@ const htmlResult = await callTool('gas_write', {
 - ✅ **Module wrapper**: Automatically wraps JavaScript with `_main()` function
 - ✅ **File type detection**: Optional `fileType` parameter (auto-detected)
 - ✅ **Sync control**: `localOnly`/`remoteOnly` options
-- ✅ **Same path format**: Uses identical `projectId/filename` format
+- ✅ **Same path format**: Uses identical `scriptId/filename` format
 - ✅ **Safer operations**: Merge-friendly vs. clobbering behavior
 - ❌ **No positioning**: Cannot specify file order (use `gas_raw_write` for that)
 
@@ -748,7 +748,7 @@ Delete files from Google Apps Script projects with safety confirmations.
 #### Input Schema
 ```typescript
 interface GasRmInput {
-  path: string;  // Format: "projectId/filename.gs"
+  path: string;  // Format: "scriptId/filename.gs"
   accessToken?: string;
 }
 ```
@@ -772,49 +772,96 @@ const deleteResult = await callTool('gas_rm', {
 
 ### `gas_mv` - Move/Rename Files
 
-Move or rename files within Google Apps Script projects.
+Move or rename files within Google Apps Script projects (supports cross-project moves).
 
 #### Input Schema
 ```typescript
 interface GasMvInput {
-  from: string;  // Format: "projectId/oldname.gs"
-  to: string;    // Format: "projectId/newname"
+  scriptId: string;  // Required: Google Apps Script project ID (44 characters)
+  from: string;      // Source path: filename OR scriptId/filename (overrides scriptId)
+  to: string;        // Destination path: filename OR scriptId/filename (overrides scriptId)
   accessToken?: string;
 }
 ```
 
 #### Usage Examples
 
-**Rename File**
+**Rename File Within Project**
 ```typescript
 const moveResult = await callTool('gas_mv', {
-  from: 'abc123def456.../OldName.gs',
-  to: 'abc123def456.../NewName'
+  scriptId: 'abc123def456...',
+  from: 'OldName.gs',
+  to: 'NewName.gs'
 });
 
 // Response:
 {
-  "success": true,
-  "oldName": "OldName.gs",
-  "newName": "NewName.gs",
-  "message": "File renamed successfully"
+  "status": "moved",
+  "from": "OldName.gs",
+  "to": "NewName.gs",
+  "fromProjectId": "abc123def456...",
+  "toProjectId": "abc123def456...",
+  "isCrossProject": false,
+  "message": "Moved OldName.gs to NewName.gs within project abc123de..."
+}
+```
+
+**Cross-Project Move**
+```typescript
+const moveResult = await callTool('gas_mv', {
+  scriptId: 'abc123def456...',  // Default project
+  from: 'utils.gs',             // Uses default project
+  to: 'xyz789abc.../backup.gs'  // Different project (overrides scriptId)
+});
+
+// Response:
+{
+  "status": "moved",
+  "from": "utils.gs",
+  "to": "xyz789abc.../backup.gs",
+  "fromProjectId": "abc123def456...",
+  "toProjectId": "xyz789abc...",
+  "isCrossProject": true,
+  "message": "Moved utils.gs from project abc123de... to backup.gs in project xyz789ab..."
 }
 ```
 
 ### `gas_cp` - Copy Files
 
-Copy files between Google Apps Script projects.
+Copy files within or between Google Apps Script projects (supports cross-project copies).
 
 #### Input Schema
 ```typescript
 interface GasCpInput {
-  from: string;  // Format: "sourceProjectId/filename.gs"
-  to: string;    // Format: "targetProjectId/filename"
+  scriptId: string;  // Required: Google Apps Script project ID (44 characters)
+  from: string;      // Source path: filename OR scriptId/filename (overrides scriptId)
+  to: string;        // Destination path: filename OR scriptId/filename (overrides scriptId)
   accessToken?: string;
 }
 ```
 
 #### Usage Examples
+
+**Copy File Within Project**
+```typescript
+const copyResult = await callTool('gas_cp', {
+  scriptId: 'abc123def456...',
+  from: 'utils.gs',
+  to: 'utils-backup.gs'
+});
+
+// Response:
+{
+  "status": "copied",
+  "from": "utils.gs",
+  "to": "utils-backup.gs",
+  "fromProjectId": "abc123def456...",
+  "toProjectId": "abc123def456...",
+  "isCrossProject": false,
+  "size": 1024,
+  "message": "Copied utils.gs to utils-backup.gs within project abc123de..."
+}
+```
 
 **Copy File Between Projects**
 ```typescript
@@ -1040,7 +1087,7 @@ Get detailed information about Google Apps Script projects.
 #### Input Schema
 ```typescript
 interface GasInfoInput {
-  projectId: string;
+  scriptId: string;  // Required: Google Apps Script project ID (44 characters)
   includeContent?: boolean;
   accessToken?: string;
 }
@@ -1051,7 +1098,7 @@ interface GasInfoInput {
 **Get Project Info**
 ```typescript
 const projectInfo = await callTool('gas_info', {
-  projectId: 'abc123def456...',
+  scriptId: 'abc123def456...',
   includeContent: false
 });
 
@@ -1102,7 +1149,7 @@ Change the execution order of files within a Google Apps Script project.
 #### Input Schema
 ```typescript
 interface GasReorderInput {
-  projectId: string;
+  scriptId: string;  // Required: Google Apps Script project ID (44 characters)
   fileName: string;
   newPosition: number;
   accessToken?: string;
@@ -1114,7 +1161,7 @@ interface GasReorderInput {
 **Reorder File Position**
 ```typescript
 const reorderResult = await callTool('gas_reorder', {
-  projectId: 'abc123def456...',
+  scriptId: 'abc123def456...',
   fileName: 'Utils.gs',
   newPosition: 0  // Move to first position
 });
