@@ -1,6 +1,6 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridProjectId } from '../api/pathParser.js';
+import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
@@ -1442,9 +1442,9 @@ export class GASMoveTool extends BaseTool {
     // SECURITY: Validate parameters BEFORE authentication
     const accessToken = await this.getAuthToken(params);
     
-    // Resolve project IDs using hybrid approach (supports cross-project moves)
-    const fromResolution = resolveHybridProjectId(params.scriptId, params.from, 'move operation (from)');
-    const toResolution = resolveHybridProjectId(params.scriptId, params.to, 'move operation (to)');
+    // Resolve script IDs using hybrid approach (supports cross-project moves)
+    const fromResolution = resolveHybridScriptId(params.scriptId, params.from, 'move operation (from)');
+    const toResolution = resolveHybridScriptId(params.scriptId, params.to, 'move operation (to)');
     
     const fromProjectId = fromResolution.scriptId;
     const toProjectId = toResolution.scriptId;
@@ -1560,9 +1560,9 @@ export class GASCopyTool extends BaseTool {
     // SECURITY: Validate parameters BEFORE authentication
     const accessToken = await this.getAuthToken(params);
     
-    // Resolve project IDs using hybrid approach (supports cross-project copies)
-    const fromResolution = resolveHybridProjectId(params.scriptId, params.from, 'copy operation (from)');
-    const toResolution = resolveHybridProjectId(params.scriptId, params.to, 'copy operation (to)');
+    // Resolve script IDs using hybrid approach (supports cross-project copies)
+    const fromResolution = resolveHybridScriptId(params.scriptId, params.from, 'copy operation (from)');
+    const toResolution = resolveHybridScriptId(params.scriptId, params.to, 'copy operation (to)');
     
     const fromProjectId = fromResolution.scriptId;
     const toProjectId = toResolution.scriptId;
