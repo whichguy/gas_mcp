@@ -173,9 +173,9 @@ export function parsePath(path: string): ParsedPath {
   const parts = path.split('/').filter(part => part.length > 0);
   const scriptId = parts[0];
 
-  // Validate script ID format (GAS script IDs are typically base64-like)
-  if (!/^[a-zA-Z0-9_-]{10,}$/.test(scriptId)) {
-    throw new ValidationError('scriptId', scriptId, 'valid GAS script ID (alphanumeric, _, -, min 10 chars)');
+  // Validate script ID format (Google Drive file IDs are typically 25-60 characters)
+  if (!/^[a-zA-Z0-9_-]{25,60}$/.test(scriptId)) {
+    throw new ValidationError('scriptId', scriptId, 'valid Google Apps Script project ID (25-60 characters, alphanumeric, _, -)');
   }
 
   // Check for wildcard patterns in the entire path
@@ -349,43 +349,31 @@ export interface HybridPathResolution {
  * @returns Resolved script ID and clean path
  * 
  * Resolution logic:
- * 1. If scriptId provided and path has no embedded script ID → use scriptId
- * 2. If scriptId provided and path has embedded script ID → use embedded (override)
- * 3. If scriptId empty and path has embedded script ID → use embedded
- * 4. If scriptId empty and path has no embedded script ID → throw error
+ * 1. If scriptId provided → use scriptId, treat path as clean filename/path (no script ID prefix expected)
+ * 2. If scriptId empty and path has embedded script ID → use embedded script ID
+ * 3. If scriptId empty and path has no embedded script ID → throw error
  */
 export function resolveHybridScriptId(
   scriptId: string | undefined, 
   path: string, 
   operation: string = 'operation'
 ): HybridPathResolution {
-  const parsedPath = parsePath(path);
-  
-  // Case 1 & 2: scriptId provided
+  // Case 1: scriptId provided → use it, treat path as clean
   if (scriptId && scriptId.trim()) {
-    // Validate scriptId format
-    if (!/^[a-zA-Z0-9_-]{44}$/.test(scriptId)) {
-      throw new ValidationError('scriptId', scriptId, '44-character Google Apps Script project ID');
+    // Validate scriptId format (Google Drive file IDs are typically 25-60 characters)
+    if (!/^[a-zA-Z0-9_-]{25,60}$/.test(scriptId)) {
+      throw new ValidationError('scriptId', scriptId, 'valid Google Apps Script project ID (25-60 characters, alphanumeric, _, -)');
     }
     
-    if (parsedPath.scriptId) {
-      // Case 2: scriptId provided but path has embedded script ID → use embedded (override)
-      return {
-        scriptId: parsedPath.scriptId,
-        cleanPath: parsedPath.filename || parsedPath.directory || parsedPath.pattern || '',
-        wasEmbedded: true
-      };
-    } else {
-      // Case 1: scriptId provided and path has no embedded script ID → use scriptId
-      return {
-        scriptId: scriptId,
-        cleanPath: path,
-        wasEmbedded: false
-      };
-    }
+    return {
+      scriptId: scriptId,
+      cleanPath: path,
+      wasEmbedded: false
+    };
   }
   
-  // Case 3: scriptId empty, check if path has embedded script ID
+  // Case 2: scriptId empty, check if path has embedded script ID
+  const parsedPath = parsePath(path);
   if (parsedPath.scriptId) {
     return {
       scriptId: parsedPath.scriptId,
@@ -394,7 +382,7 @@ export function resolveHybridScriptId(
     };
   }
   
-  // Case 4: Both scriptId empty and no embedded script ID → error
+  // Case 3: Both scriptId empty and no embedded script ID → error
   throw new ValidationError(
     'scriptId', 
     'missing', 

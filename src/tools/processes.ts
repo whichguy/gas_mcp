@@ -157,9 +157,9 @@ export class GASProcessListScriptTool extends BaseTool {
       scriptId: {
         type: 'string',
         description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project.',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44,
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60,
         llmHints: {
           obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
           format: '44-character Google Drive file ID, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5Jm'

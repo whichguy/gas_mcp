@@ -20,15 +20,25 @@ export class GASCatTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID (44 characters)',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789'
+        ]
+      },
       path: {
         type: 'string',
-        description: 'File path (filename only if current project set, or full scriptId/filename). For SERVER_JS files, CommonJS wrapper will be automatically removed to show clean user code for editing while preserving access to require(), module, and exports when executed.',
+        description: 'File path (filename only, or scriptId/filename if scriptId parameter is empty). For SERVER_JS files, CommonJS wrapper will be automatically removed to show clean user code for editing while preserving access to require(), module, and exports when executed.',
         pattern: '^([a-zA-Z0-9_-]{5,60}/[a-zA-Z0-9_.//-]+|[a-zA-Z0-9_.//-]+)$',
         minLength: 1,
         examples: [
-          'utils.gs',                    // Uses current project
-          'models/User.gs',              // Uses current project  
-          'abc123def456.../helpers.gs'   // Explicit project ID
+          'utils.gs',                    // Uses scriptId parameter
+          'models/User.gs',              // Uses scriptId parameter  
+          'abc123def456.../helpers.gs'   // Overrides scriptId parameter if provided
         ]
       },
       preferLocal: {
@@ -45,11 +55,12 @@ export class GASCatTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['path'],
+    required: ['scriptId', 'path'],
     llmGuidance: {
       whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
-      workflow: 'Set project with gas_project_set, then just use filename: gas_cat({path: "utils.gs"})',
+      workflow: 'Use with explicit scriptId: gas_cat({scriptId: "abc123...", path: "utils.gs"})',
       alternatives: 'Use gas_raw_cat only when you need explicit project ID control',
+      pathRequirement: 'Provide scriptId parameter and simple filename in path, or embed scriptId in path and leave scriptId parameter empty.',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When reading files, the outer _main() wrapper is removed to show clean user code for editing. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
       moduleAccess: 'Your code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
       editingWorkflow: 'Files are unwrapped for editing convenience and will be automatically re-wrapped with CommonJS structure when saved via gas_write.'
@@ -67,27 +78,13 @@ export class GASCatTool extends BaseTool {
     const { LocalFileManager } = await import('../utils/localFileManager.js');
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const preferLocal = params.preferLocal !== false;
-    let filePath = params.path;
 
-    // Try to resolve path with current project context if needed
-    try {
-      const parsedPath = parsePath(filePath);
-      
-      if (!parsedPath.isFile) {
-        // Path doesn't have script ID, try to use current project
-        const currentScriptId = await ProjectResolver.getCurrentScriptId(workingDir);
-        filePath = `${currentScriptId}/${filePath}`;
-      }
-    } catch (error) {
-      // If no current project, the path must be complete
-      const parsedPath = parsePath(filePath);
-      if (!parsedPath.isFile) {
-        throw new ValidationError('path', filePath, 'complete project-id/filename path or set current project with gas_project_set');
-      }
-    }
+    // Use hybrid script ID resolution
+    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path);
+    const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
 
     // SECURITY: Validate path BEFORE authentication
-    const path = this.validate.filePath(filePath, 'file reading');
+    const path = this.validate.filePath(fullPath, 'file reading');
     const parsedPath = parsePath(path);
     
     if (!parsedPath.isFile) {
@@ -189,7 +186,7 @@ export class GASCatTool extends BaseTool {
         const localContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
         if (localContent) {
           result = {
-            path: filePath,
+            path: fullPath,
             scriptId: scriptId,
             filename,
             content: localContent,
@@ -224,7 +221,7 @@ export class GASCatTool extends BaseTool {
       }
 
       result = {
-        path: filePath,
+        path: fullPath,
         scriptId: scriptId,
         filename,
         content: remoteFile.source || remoteFile.content || '',
@@ -358,16 +355,26 @@ export class GASWriteTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID (44 characters)',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789'
+        ]
+      },
       path: {
         type: 'string',
-        description: 'Full path to file: scriptId/filename (WITHOUT extension). Same format as gas_raw_write for consistency.',
-        pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
-        minLength: 25,
+        description: 'File path (filename only, or scriptId/filename if scriptId parameter is empty). For writing files with automatic CommonJS integration.',
+        pattern: '^([a-zA-Z0-9_-]{5,60}/[a-zA-Z0-9_.//-]+|[a-zA-Z0-9_.//-]+)$',
+        minLength: 1,
         examples: [
-          'abc123def456.../utils',                // → utils.gs
-          'abc123def456.../models/User',          // → models/User.gs  
-          'abc123def456.../helpers',              // → helpers.gs
-          'abc123def456.../appsscript'            // → appsscript.json
+          'utils',                       // Uses scriptId parameter → utils.gs
+          'models/User',                 // Uses scriptId parameter → models/User.gs  
+          'abc123def456.../helpers',     // Overrides scriptId parameter → helpers.gs
+          'appsscript'                   // Uses scriptId parameter → appsscript.json
         ]
       },
       content: {
@@ -404,10 +411,10 @@ export class GASWriteTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['path', 'content'],
+    required: ['scriptId', 'path', 'content'],
     llmGuidance: {
-      whenToUse: 'Use for normal file writing with explicit project paths. Remote-first workflow ensures safety.',
-                workflow: 'Use with explicit paths: gas_write({path: "scriptId/filename", content: "..."}) - writes to remote first, then commits to git, then updates local file',
+      whenToUse: 'Use for normal file writing with explicit scriptId parameter. Remote-first workflow ensures safety.',
+      workflow: 'Use with explicit scriptId: gas_write({scriptId: "abc123...", path: "filename", content: "..."})',
       alternatives: 'Use gas_raw_write when you need single-destination writes or advanced file positioning',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
       moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
@@ -433,8 +440,12 @@ export class GASWriteTool extends BaseTool {
       throw new ValidationError('localOnly/remoteOnly', 'both true', 'only one can be true');
     }
 
+    // Use hybrid script ID resolution
+    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path);
+    const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
+
     // SECURITY: Validate path BEFORE authentication (like gas_raw_write)
-    const path = this.validate.filePath(params.path, 'file writing');
+    const path = this.validate.filePath(fullPath, 'file writing');
     
     const parsedPath = parsePath(path);
     
@@ -840,15 +851,28 @@ export class GASListTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID (optional - can also be embedded in path)',
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
+          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
+        ]
+      },
       path: {
         type: 'string',
-        description: 'Path to list with optional wildcard patterns. Supports * (any chars) and ? (single char). Examples: "scriptId/*.gs", "scriptId/utils/*", "scriptId/test?". NOTE: appsscript.json will always be included in listings if present in the project.',
+        description: 'Path to list with optional wildcard patterns. If scriptId parameter is provided, this should be a relative path (e.g., "utils/*"). If scriptId is empty, this should include the script ID prefix (e.g., "scriptId/utils/*"). For listing all projects, use empty string.',
         default: '',
         examples: [
           '',                              // All projects
-          'scriptId',                     // All files in project
-          'scriptId/*.gs',               // All .gs files
-          'scriptId/utils/*',            // All files in utils/ folder
+          'scriptId',                     // All files in project (if no scriptId param)
+          '*.gs',                        // All .gs files (if scriptId param provided)
+          'utils/*',                     // All files in utils/ (if scriptId param provided)
+          'scriptId/*.gs',               // All .gs files (if no scriptId param)
+          'scriptId/utils/*',            // All files in utils/ (if no scriptId param)
           'scriptId/api/*.json',         // All JSON files in api/ folder  
           'scriptId/test?',              // Files like test1, test2, testA
           'scriptId/*/config',           // All config files in any subfolder
@@ -888,24 +912,39 @@ export class GASListTool extends BaseTool {
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
     
+    const { resolveHybridScriptId } = await import('../api/pathParser.js');
+    
     const path = params.path || '';
+    const scriptId = params.scriptId || '';
     const detailed = params.detailed !== false;  // ✅ Default to true, only false if explicitly set
     const recursive = params.recursive !== false;
     const wildcardMode = params.wildcardMode || 'auto';
     
-    const parsedPath = parsePath(path);
-
-    if (!parsedPath.scriptId) {
-      return await this.listProjects(detailed, accessToken);
-    } else if (parsedPath.isProject) {
-      return await this.listProjectFiles(parsedPath.scriptId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
-    } else if (parsedPath.isWildcard) {
-      // Handle wildcard patterns
-      return await this.listProjectFiles(parsedPath.scriptId, parsedPath.pattern || '', detailed, recursive, wildcardMode, accessToken);
-    } else if (parsedPath.isDirectory) {
-      return await this.listProjectFiles(parsedPath.scriptId, parsedPath.directory || '', detailed, recursive, wildcardMode, accessToken);
+    // Use hybrid resolution to get scriptId and clean path
+    let finalScriptId: string;
+    let cleanPath: string;
+    
+    if (!path || path === '') {
+      // Empty path = list all projects (ignore scriptId)
+      finalScriptId = '';
+      cleanPath = '';
     } else {
-      throw new ValidationError('path', path, 'valid project, directory, or wildcard pattern');
+      try {
+        const resolved = resolveHybridScriptId(scriptId, path);
+        finalScriptId = resolved.scriptId;
+        cleanPath = resolved.cleanPath;
+      } catch (error: any) {
+        // If hybrid resolution fails, fall back to original parsePath logic
+        const parsedPath = parsePath(path);
+        finalScriptId = parsedPath.scriptId || '';
+        cleanPath = parsedPath.directory || parsedPath.pattern || '';
+      }
+    }
+
+    if (!finalScriptId) {
+      return await this.listProjects(detailed, accessToken);
+    } else {
+      return await this.listProjectFiles(finalScriptId, cleanPath, detailed, recursive, wildcardMode, accessToken);
     }
   }
 
@@ -1010,7 +1049,7 @@ export class GASRawCatTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: scriptId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
+        description: 'Full path to file: scriptId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected). REQUIRED: Must include explicit scriptId prefix (e.g., "abc123def.../filename") - current project context is not used.'
       },
       accessToken: {
         type: 'string',
@@ -1094,23 +1133,23 @@ export class GASRawWriteTool extends BaseTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: scriptId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (scriptId/appsscript), never in subfolders.',
+        description: 'Full path to file: scriptId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (scriptId/appsscript), never in subfolders. REQUIRED: Must include explicit scriptId prefix (e.g., "abc123def.../filename") - current project context is not used.',
         pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
         minLength: 25,
         examples: [
-          'abc123def456.../fibonacci',
-          'abc123def456.../utils/helpers',
-          'abc123def456.../Code',
-          'abc123def456.../models/User',
-          'abc123def456.../appsscript'
+          'abc123def456.../fibonacci',    // → fibonacci.gs
+          'abc123def456.../utils/helpers', // → utils/helpers.gs  
+          'abc123def456.../Code',         // → Code.gs
+          'abc123def456.../models/User',  // → models/User.gs
+          'abc123def456.../appsscript'    // → appsscript.json (MUST be root level)
         ],
         llmHints: {
           format: 'scriptId/filename (no extension)',
           extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON',
           organization: 'Use "/" in filename for logical organization (not real folders)',
-          autoDetection: 'File type detected from content: JavaScript, HTML, JSON',
           specialFiles: 'appsscript.json MUST be in root: scriptId/appsscript (never scriptId/subfolder/appsscript)',
-          warning: 'This tool OVERWRITES the entire file - use gas_write for safer merging'
+          warning: 'This tool OVERWRITES the entire file - use gas_write for safer merging',
+          autoDetection: 'File type detected from content: JavaScript, HTML, JSON'
         }
       },
       content: {
@@ -1342,16 +1381,26 @@ export class GASRemoveTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID (44 characters)',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789'
+        ]
+      },
       path: {
         type: 'string',
-        description: 'Full path to file: scriptId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
+        description: 'File path (filename only, or scriptId/filename if scriptId parameter is empty). Extensions are auto-detected and should not be included.'
       },
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['path']
+    required: ['scriptId', 'path']
   };
 
   private gasClient: GASClient;
@@ -1362,8 +1411,12 @@ export class GASRemoveTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
+    // Use hybrid script ID resolution
+    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path);
+    const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
+
     // SECURITY: Validate path BEFORE authentication
-    const path = this.validate.filePath(params.path, 'file operation');
+    const path = this.validate.filePath(fullPath, 'file operation');
     const parsedPath = parsePath(path);
     
     if (!parsedPath.isFile) {
