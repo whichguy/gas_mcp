@@ -297,7 +297,7 @@ Update your Cursor configuration to include the config file:
 |------|-------------|----------------|
 | `gas_ls` | List projects/files **with wildcard support** | `path?` (supports `*` and `?` patterns), `detailed?`, `wildcardMode?` |
 | **`gas_cat`** | **✅ Smart reader** (local-first, remote fallback) | `path` |
-| **`gas_write`** | **✅ Auto-sync writer** (local + remote) | `path` (projectId/filename), `content` |
+| **`gas_write`** | **✅ Auto-sync writer** (local + remote) | `path` (scriptId/filename), `content` |
 | **`gas_grep`** | **✅ Content search** (server-side with patterns) | `pattern`, `path?` (wildcards/regex), `pathMode?`, `searchMode?` |
 | `gas_rm` | Delete files | `path` |
 | `gas_mv` | Move/rename files | `from`, `to` |
@@ -308,7 +308,7 @@ Update your Cursor configuration to include the config file:
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
-| `gas_raw_cat` | Read files with explicit project ID | `path` (full projectId/filename) |
+| `gas_raw_cat` | Read files with explicit project ID | `path` (full scriptId/filename) |
 | `gas_raw_write` | ⚠️ Write files with explicit project ID (CLOBBERS remote files - use gas_write for safe merging) | `path`, `content` |
 | `gas_raw_copy` | Copy files between projects | `from`, `to` |
 
@@ -341,9 +341,9 @@ Update your Cursor configuration to include the config file:
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
-| `gas_mkdir` | Create logical directories | `projectId`, `directoryPath` |
-| `gas_info` | Get project information | `projectId`, `includeContent?` |
-| `gas_reorder` | Change file execution order | `projectId`, `fileName`, `newPosition` |
+| `gas_mkdir` | Create logical directories | `scriptId`, `directoryPath` |
+| `gas_info` | Get project information | `scriptId`, `includeContent?` |
+| `gas_reorder` | Change file execution order | `scriptId`, `fileName`, `newPosition` |
 | `gas_project_metrics` | Get project analytics | `scriptId`, `metricsGranularity?` |
 
 ### Local Sync & Project Context (4 tools)
@@ -475,7 +475,7 @@ const todos = await gas_grep({
 
 // Get detailed project information
 const info = await gas_info({ 
-  projectId: project.scriptId,
+      scriptId: project.scriptId,
   includeContent: true 
 });
 ```
@@ -598,7 +598,7 @@ const apiResult = await gas_run_api_exec({
 |------|-------------|----------------|
 | `gas_project_create` | Create new GAS project | `title`, `parentId?` |
 | `gas_ls` | List projects and files with **wildcard patterns** (`*`, `?`) | `path` (supports wildcards), `detailed?`, `recursive?`, `wildcardMode?` |
-| `gas_info` | Get project details | `projectId`, `includeContent?` |
+| `gas_info` | Get project details | `scriptId`, `includeContent?` |
 
 ### File Operation Tools
 
