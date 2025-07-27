@@ -7,9 +7,12 @@ export interface ParsedPath {
   projectId: string;
   filename?: string;
   directory?: string;
+  pattern?: string;        // NEW: wildcard pattern if detected
   isProject: boolean;
   isFile: boolean;
   isDirectory: boolean;
+  isWildcard: boolean;     // NEW: true if contains wildcards
+  wildcardType: 'none' | 'simple' | 'complex';  // NEW: wildcard complexity
 }
 
 /**
@@ -21,6 +24,105 @@ export const FILE_TYPE_MAP: Record<string, string> = {
   '.html': 'HTML',
   '.json': 'JSON'
 };
+
+/**
+ * Regex cache for wildcard patterns (performance optimization)
+ */
+const regexCache = new Map<string, RegExp>();
+
+/**
+ * Check if a pattern contains wildcard characters
+ */
+export function isWildcardPattern(pattern: string): boolean {
+  return pattern.includes('*') || pattern.includes('?');
+}
+
+/**
+ * Convert wildcard pattern to JavaScript RegExp
+ * Supports: * (any chars), ? (single char), literal characters
+ */
+export function wildcardToRegex(pattern: string): RegExp {
+  // Escape special regex characters except * and ?
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Escape regex special chars
+    .replace(/\*/g, '.*')                   // * becomes .*
+    .replace(/\?/g, '.');                   // ? becomes .
+  
+  return new RegExp(`^${escaped}$`, 'i');  // Case-insensitive, full match
+}
+
+/**
+ * Get cached regex for pattern (performance optimization)
+ */
+export function getCachedRegex(pattern: string): RegExp {
+  if (!regexCache.has(pattern)) {
+    regexCache.set(pattern, wildcardToRegex(pattern));
+  }
+  return regexCache.get(pattern)!;
+}
+
+/**
+ * Validate wildcard patterns for safety
+ */
+export function validateWildcardPattern(pattern: string): { valid: boolean; error?: string } {
+  try {
+    // Test regex compilation
+    wildcardToRegex(pattern);
+    
+    // Check for potentially expensive patterns
+    const wildcardCount = (pattern.match(/[*?]/g) || []).length;
+    if (wildcardCount > 10) {
+      return { valid: false, error: 'Too many wildcards (max 10)' };
+    }
+    
+    // Check for invalid consecutive wildcards
+    if (/\*+\*/.test(pattern)) {
+      return { valid: false, error: 'Invalid pattern: consecutive wildcards' };
+    }
+    
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: `Invalid wildcard pattern: ${error}` };
+  }
+}
+
+/**
+ * Determine wildcard pattern complexity
+ */
+export function getPatternComplexity(pattern: string): 'simple' | 'medium' | 'complex' {
+  if (!isWildcardPattern(pattern)) return 'simple';
+  
+  const wildcardCount = (pattern.match(/[*?]/g) || []).length;
+  const hasDirectoryWildcards = /[*?].*\/|\/.*[*?]/.test(pattern);
+  
+  if (wildcardCount === 1 && !hasDirectoryWildcards) return 'simple';
+  if (wildcardCount <= 3 && !hasDirectoryWildcards) return 'medium';
+  return 'complex';
+}
+
+/**
+ * Enhanced directory/pattern matching with wildcard support
+ */
+export function matchesPattern(filename: string, pattern: string): boolean {
+  if (!pattern) return true;
+  
+  // If no wildcards, use simple prefix matching (faster)
+  if (!isWildcardPattern(pattern)) {
+    const normalizedPattern = pattern.endsWith('/') ? pattern : pattern + '/';
+    return filename.startsWith(normalizedPattern);
+  }
+  
+  // Validate pattern before using
+  const validation = validateWildcardPattern(pattern);
+  if (!validation.valid) {
+    console.error(`Invalid wildcard pattern "${pattern}": ${validation.error}`);
+    return false;
+  }
+  
+  // Wildcard pattern matching
+  const regex = getCachedRegex(pattern);
+  return regex.test(filename);
+}
 
 /**
  * REMOVED: No longer manipulating filenames or adding extensions
@@ -53,6 +155,7 @@ export function getFileType(filename: string): string {
 /**
  * Parse a path in the format: "" | "projectId" | "projectId/path/to/file[.ext]"
  * Files can have extensions or not - extensions will be inferred from context
+ * Now supports wildcard patterns with * and ? characters
  */
 export function parsePath(path: string): ParsedPath {
   // Empty path = list all projects
@@ -61,7 +164,9 @@ export function parsePath(path: string): ParsedPath {
       projectId: '',
       isProject: false,
       isFile: false,
-      isDirectory: true
+      isDirectory: true,
+      isWildcard: false,
+      wildcardType: 'none'
     };
   }
 
@@ -73,13 +178,40 @@ export function parsePath(path: string): ParsedPath {
     throw new ValidationError('projectId', projectId, 'valid GAS project ID (alphanumeric, _, -, min 10 chars)');
   }
 
+  // Check for wildcard patterns in the entire path
+  const hasWildcards = isWildcardPattern(path);
+  
+  if (hasWildcards) {
+    // Extract pattern (everything after projectId)
+    const pattern = parts.slice(1).join('/');
+    const wildcardComplexity = getPatternComplexity(pattern);
+    
+    // Validate wildcard pattern
+    const validation = validateWildcardPattern(pattern);
+    if (!validation.valid) {
+      throw new ValidationError('pattern', pattern, validation.error || 'invalid wildcard pattern');
+    }
+    
+    return {
+      projectId,
+      pattern,
+      isProject: false,
+      isFile: false,
+      isDirectory: false,
+      isWildcard: true,
+      wildcardType: wildcardComplexity === 'simple' ? 'simple' : 'complex'
+    };
+  }
+
   // Just project ID = list files in project
   if (parts.length === 1) {
     return {
       projectId,
       isProject: true,
       isFile: false,
-      isDirectory: false
+      isDirectory: false,
+      isWildcard: false,
+      wildcardType: 'none'
     };
   }
 
@@ -117,7 +249,9 @@ export function parsePath(path: string): ParsedPath {
       directory,
       isProject: false,
       isFile: true,
-      isDirectory: false
+      isDirectory: false,
+      isWildcard: false,
+      wildcardType: 'none'
     };
   } else {
     // Treat as directory
@@ -126,7 +260,9 @@ export function parsePath(path: string): ParsedPath {
       directory: filename,
       isProject: false,
       isFile: false,
-      isDirectory: true
+      isDirectory: true,
+      isWildcard: false,
+      wildcardType: 'none'
     };
   }
 }
@@ -156,12 +292,11 @@ export function joinPath(projectId: string, ...parts: string[]): string {
 }
 
 /**
- * Check if a filename matches a directory filter
+ * Check if a filename matches a directory filter (backward compatibility)
+ * Now supports wildcard patterns via matchesPattern
  */
 export function matchesDirectory(filename: string, directory: string): boolean {
-  if (!directory) return true;
-  const normalizedDir = directory.endsWith('/') ? directory : directory + '/';
-  return filename.startsWith(normalizedDir);
+  return matchesPattern(filename, directory);
 }
 
 /**
