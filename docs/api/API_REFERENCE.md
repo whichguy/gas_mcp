@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-This comprehensive API reference documents all 45 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
+This comprehensive API reference documents all 46 MCP Gas tools with detailed schemas, examples, and error handling patterns. Designed to optimize AI-assisted development with Claude in Cursor IDE.
 
 ## 📋 Table of Contents
 
@@ -345,6 +345,211 @@ const files = await callTool('gas_ls', {
   path: 'abc123def456.../models/*',
   wildcardMode: 'fullpath'  // Match complete path
 });
+```
+
+### `gas_grep` - Search File Contents (Clean User Code)
+
+**🎯 RECOMMENDED**: Server-side content search with pattern matching and wildcard support.
+
+Search clean user code (unwrapped from CommonJS wrappers) across Google Apps Script projects using regex or literal patterns. Provides **server-side search** to minimize token usage while delivering powerful grep-like capabilities on the actual code developers write and edit.
+
+### `gas_raw_grep` - Search File Contents (Full Content)
+
+**⚠️ ADVANCED**: Server-side content search including system-generated code.
+
+Search complete file content including CommonJS wrappers and system-generated code across Google Apps Script projects. Use this when you need to search CommonJS module system internals or debug wrapper-related issues.
+
+#### Input Schema
+```typescript
+interface GasGrepInput {
+  pattern: string;                        // Search pattern (regex or literal)
+  path?: string;                         // Project/file path with wildcard/regex support
+  pathMode?: 'wildcard' | 'regex' | 'auto';  // Path pattern interpretation
+  files?: string[];                      // Alternative: specific file list
+  searchMode?: 'regex' | 'literal' | 'auto';  // Pattern interpretation
+  caseSensitive?: boolean;               // Case sensitivity (default: false)
+  wholeWord?: boolean;                   // Match whole words only
+  maxResults?: number;                   // Max matches (default: 50, max: 200)
+  maxFilesSearched?: number;            // Max files to search (default: 100)
+  contextLines?: number;                // Lines before/after match (default: 2)
+  compact?: boolean;                    // Use compact output format
+  excludeFiles?: string[];              // Files to exclude (wildcards supported)
+  includeFileTypes?: string[];          // Filter by file types
+  accessToken?: string;
+}
+```
+
+#### Usage Examples
+
+**🆕 Regex Path Filtering (Enhanced)**
+```typescript
+// Find functions in Controllers (regex path)
+const controllers = await callTool('gas_grep', {
+  pattern: 'function\\s+(\\w+)',
+  path: 'abc123def456.../.*Controller.*',
+  pathMode: 'regex',
+  searchMode: 'regex'
+});
+
+// Search utils OR helpers directories (regex alternation)
+const utilities = await callTool('gas_grep', {
+  pattern: 'require(',
+  path: 'abc123def456.../(utils|helpers)/.*',
+  pathMode: 'regex',
+  searchMode: 'literal'
+});
+
+// Find test files with specific extensions (regex)
+const testFiles = await callTool('gas_grep', {
+  pattern: 'describe\\(',
+  path: 'abc123def456.../.*\\.(test|spec)$',
+  pathMode: 'regex',
+  searchMode: 'regex'
+});
+
+// Complex path filtering with regex
+const complexSearch = await callTool('gas_grep', {
+  pattern: 'TODO:|FIXME:',
+  path: 'abc123def456.../((src|lib)/.*|.*Controller.*)',
+  pathMode: 'regex',
+  excludeFiles: ['*/test/*']
+});
+```
+
+**Find Function Definitions**
+```typescript
+const results = await callTool('gas_grep', {
+  pattern: 'function\\s+(\\w+)',
+  path: 'abc123def456.../ai_tools/*',
+  searchMode: 'regex',
+  contextLines: 2
+});
+
+// Response:
+{
+  "searchPattern": "function\\s+(\\w+)",
+  "searchMode": "regex",
+  "totalMatches": 15,
+  "filesSearched": 25,
+  "tokenEstimate": 450,
+  "matches": [
+    {
+      "fileName": "ai_tools/BaseConnector",
+      "totalMatches": 3,
+      "matches": [
+        {
+          "lineNumber": 23,
+          "line": "function initialize() {",
+          "context": {
+            "before": ["// Setup configuration", "class BaseConnector {"],
+            "after": ["  const config = getConfig();", "  this.setup(config);"]
+          },
+          "matchStart": 0,
+          "matchEnd": 19,
+          "matchText": "function initialize"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Find TODO Items**
+```typescript
+const todos = await callTool('gas_grep', {
+  pattern: 'TODO:|FIXME:|HACK:',
+  path: 'abc123def456...',
+  searchMode: 'regex',
+  excludeFiles: ['*/test/*', '*/CommonJS'],
+  maxResults: 20
+});
+
+// Find all TODO comments excluding test files
+```
+
+**Search Specific Files**
+```typescript
+const apiUsage = await callTool('gas_grep', {
+  pattern: 'require\\([\'"]([^\'"]+)[\'"]\\)',
+  files: [
+    'abc123def456.../ai_tools/BaseConnector',
+    'abc123def456.../ai_tools/ClaudeConnector'
+  ],
+  searchMode: 'regex',
+  contextLines: 1
+});
+
+// Find all require() calls in specific files
+```
+
+**Find Security Issues**
+```typescript
+const security = await callTool('gas_grep', {
+  pattern: '(api[_-]?key|secret|token|password)\\s*[=:]',
+  path: 'abc123def456.../*',
+  searchMode: 'regex',
+  caseSensitive: false,
+  includeFileTypes: ['SERVER_JS']
+});
+
+// Find potential hardcoded secrets
+```
+
+**Compact Output for Quick Scanning**
+```typescript
+const logs = await callTool('gas_grep', {
+  pattern: 'console\\.log|Logger\\.log',
+  path: 'abc123def456.../src/*',
+  searchMode: 'regex',
+  compact: true,
+  maxResults: 30
+});
+
+// Response includes formattedOutput:
+// "ai_tools/BaseConnector:45:  console.log('Debug info');"
+// "utils/helpers:12:  Logger.log('Processing data');"
+```
+
+#### Advanced Features
+
+**Token Management**
+- **Automatic truncation** if results exceed 20,000 tokens
+- **Context control** (0-10 lines before/after matches)
+- **Result limiting** (max 200 matches per query)
+- **File size limits** (skips files >50KB)
+
+**Pattern Safety**
+- **ReDoS protection** (detects dangerous regex patterns)
+- **Pattern validation** (max 200 chars, complexity limits)
+- **Auto-detection** of literal vs regex patterns
+- **Escape handling** for special characters
+
+**Search Optimization**
+- **Enhanced path filtering** with regex and wildcard support
+- **Regex path patterns** for complex file selection (e.g., `.*Controller.*`, `(utils|helpers)/.*`)
+- **Auto-detection** of wildcard vs regex path patterns
+- **File type filtering** (SERVER_JS, HTML, JSON)
+- **Exclude patterns** with wildcard/regex support
+- **Performance metrics** (search time, token estimates)
+
+#### Error Handling
+
+```typescript
+// Invalid pattern
+{
+  "error": "Invalid pattern: Pattern too long (max 200 characters)"
+}
+
+// Dangerous regex
+{
+  "error": "Invalid pattern: Potentially expensive regex pattern detected. Avoid nested quantifiers like (.*)*"
+}
+
+// No matches found
+{
+  "totalMatches": 0,
+  "message": "No files found matching the specified criteria"
+}
 ```
 
 ### `gas_cat` - Read File Contents

@@ -55,6 +55,12 @@ gas_ls --path="[scriptId]" --detailed=true
 gas_ls --path="[scriptId]/utils/*" --detailed=true     # All files in utils/
 gas_ls --path="[scriptId]/*Connector*" --detailed=true # All connector files
 gas_ls --path="[scriptId]/test/*/*.test" --detailed=true # All test files
+
+# Search file contents with patterns (ENHANCED!)
+gas_grep --pattern="function\\s+(\\w+)" --path="[scriptId]/.*Controller.*" --path-mode=regex --search-mode=regex
+gas_grep --pattern="require(" --path="[scriptId]/(utils|helpers)/.*" --path-mode=regex --search-mode=literal
+gas_grep --pattern="TODO:|FIXME:" --path="[scriptId]/*" --path-mode=wildcard --exclude-files="*/test/*"
+gas_grep --pattern="\\.(test|spec)$" --path="[scriptId]/.*\\.(test|spec)$" --path-mode=regex --context-lines=3
 ```
 
 ### **3. Deploy and Execute**
@@ -97,6 +103,8 @@ gas_run --script-id="[scriptId]" --function-name="myFunction"
 ### **📝 File Operations**
 - `gas_write` - Create/update files
 - `gas_cat` - Read file contents
+- `gas_grep` - **Search file contents** with pattern matching (clean user code)
+- `gas_raw_grep` - **Search file contents** including CommonJS wrappers (advanced)
 - `gas_mv` - Move/rename files
 - `gas_cp` - Copy files
 - `gas_rm` - Delete files
