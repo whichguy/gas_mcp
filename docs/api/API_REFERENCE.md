@@ -1643,14 +1643,14 @@ const detailed = await callTool('gas_status', {
 
 ### ⭐ RECOMMENDED: `gas_run` - Execute Arbitrary JavaScript Code and Function Calls
 
-**🎯 PREFERRED METHOD**: Use `gas_run` instead of `gas_raw_run` for all code execution. This tool provides automatic project context and better error handling.
+**🎯 EXECUTION TOOL**: Direct JavaScript execution in Google Apps Script with automatic deployment handling.
 
 🚀 **POWERFUL CODE EXECUTION**: Execute ANY JavaScript statement or function call directly in Google Apps Script. This tool can invoke arbitrary code in a single statement AND call existing functions that reside in the GAS repository, both returning results.
 
-**Key Advantages over `gas_raw_run`:**
-- ✅ **Automatic Project Context**: Works with current project when set via `gas_project_set`
+**Key Features:**
+- ✅ **Direct Script ID**: Requires explicit script ID parameter for precise project targeting
+- ✅ **Automatic Deployment**: Handles deployment infrastructure automatically
 - ✅ **Better Error Handling**: Provides clearer error messages and recovery suggestions
-- ✅ **Simplified Interface**: No need to specify script ID when current project is set
 - ✅ **Module System Integration**: Seamlessly works with `require()` system from wrapped files
 
 #### Key Capabilities
@@ -1677,9 +1677,9 @@ const detailed = await callTool('gas_status', {
 #### Input Schema
 ```typescript
 interface GasRunInput {
+  scriptId: string;      // REQUIRED: Google Apps Script project ID (25-60 characters)
   js_statement: string;  // ANY JavaScript statement or function call
                         // 💡 TIP: Use Logger.getLog() to capture current execution logs
-  project?: string | object;     // Project reference (uses current if not specified)
   autoRedeploy?: boolean;        // Auto-setup deployment (default: true)
   workingDir?: string;           // Working directory
   accessToken?: string;          // Optional access token
@@ -1692,18 +1692,21 @@ interface GasRunInput {
 ```typescript
 // Simple math
 const mathResult = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'Math.PI * 2'
 });
 // Returns: 6.283185307179586
 
 // Complex calculations
 const calculation = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'Math.sqrt(16) + Math.pow(2, 3)'
 });
 // Returns: 12
 
 // Array reduction
 const sum = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: '[1,2,3,4,5].reduce((sum, num) => sum + num, 0)'
 });
 // Returns: 15
@@ -1713,24 +1716,28 @@ const sum = await callTool('gas_run', {
 ```typescript
 // Get timezone
 const timezone = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'Session.getScriptTimeZone()'
 });
 // Returns: "America/Los_Angeles"
 
 // Get user email
 const email = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'Session.getActiveUser().getEmail()'
 });
 // Returns: "user@example.com"
 
 // Create new spreadsheet
 const sheetId = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'SpreadsheetApp.create("My New Sheet").getId()'
 });
 // Returns: "1abc123def456..."
 
 // Get Drive root folder name
 const folderName = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'DriveApp.getRootFolder().getName()'
 });
 // Returns: "My Drive"
@@ -1740,12 +1747,14 @@ const folderName = await callTool('gas_run', {
 ```typescript
 // Call a fibonacci function you've defined in your project
 const fibResult = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'require("MathLibrary").fibonacci(10)'
 });
 // Returns: 55 (if fibonacci function exists in MathLibrary module)
 
 // Call custom business logic
 const total = await callTool('gas_run', {
+  scriptId: '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ',
   js_statement: 'require("Calculator").calculateOrderTotal([{price: 10, qty: 2}, {price: 5, qty: 3}])'
 });
 // Returns: result of your custom function
@@ -1794,13 +1803,13 @@ const result = await callTool('gas_run', {
 // Using environment shortcuts
 const envResult = await callTool('gas_run', {
   js_statement: 'require("Config").getEnvironmentInfo()',
-  project: { dev: true }
+  scriptId: { dev: true }
 });
 
 // Using project name
 const namedResult = await callTool('gas_run', {
   js_statement: 'require("DataProcessor").processData()',
-  project: 'my-calculator'
+  scriptId: 'my-calculator'
 });
 ```
 
