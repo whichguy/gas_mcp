@@ -9,7 +9,7 @@
 
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath, isWildcardPattern, matchesPattern } from '../api/pathParser.js';
+import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../api/pathParser.js';
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { 
@@ -62,18 +62,29 @@ export class GasGrepTool extends BaseTool {
           'class\\\\s+(\\\\w+)',           // Find user class definitions
         ]
       },
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID',
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
+          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
+        ]
+      },
       path: {
         type: 'string',
-        description: 'Project or file path with wildcard/regex support. Searches clean user code in matching files (same content processing as gas_cat). Examples: "scriptId" (entire project), "scriptId/utils/*" (wildcard), "scriptId/.*Controller.*" (regex)',
+        description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Searches clean user code in matching files (same content processing as gas_cat). Examples: "" (entire project), "utils/*" (wildcard), ".*Controller.*" (regex).',
         default: '',
         examples: [
-          'scriptId',                      // Search entire project (user code only)
-          'scriptId/ai_tools/*',          // Wildcard: ai_tools directory (user code only)  
-          'scriptId/*Connector*',         // Wildcard: files containing Connector (user code only)
-          'scriptId/.*Controller.*',      // Regex: files containing Controller (user code only)
-          'scriptId/(utils|helpers)/.*',  // Regex: utils OR helpers directories (user code only)
-          'scriptId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (user code only)
-          'scriptId/test/*/*.test'        // Wildcard: test files in subdirectories (user code only)
+          '',                            // Search entire project (user code only)
+          'ai_tools/*',                  // Wildcard: ai_tools directory (user code only)  
+          '*Connector*',                 // Wildcard: files containing Connector (user code only)
+          '.*Controller.*',              // Regex: files containing Controller (user code only)
+          '(utils|helpers)/.*',          // Regex: utils OR helpers directories (user code only)
+          '.*\\.(test|spec)$',          // Regex: test files ending in .test or .spec (user code only)
+          'test/*/*.test'                // Wildcard: test files in subdirectories (user code only)
         ]
       },
       pathMode: {
@@ -170,7 +181,7 @@ export class GasGrepTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['pattern']
+    required: ['scriptId', 'pattern']
   };
 
   private gasClient: GASClient;
@@ -288,7 +299,7 @@ export class GasGrepTool extends BaseTool {
   }
 
   /**
-   * Get target files based on path/files parameters (raw content)
+   * Get target files for search (shared by gas_grep and gas_raw_grep patterns)
    */
   private async getTargetFiles(params: any, accessToken?: string): Promise<GASFile[]> {
     // If specific files provided, get those
@@ -296,17 +307,13 @@ export class GasGrepTool extends BaseTool {
       return await this.getSpecificFiles(params.files, accessToken);
     }
 
-    // Use path parameter (with wildcard/regex support)
-    const path = params.path || '';
-    const pathMode = params.pathMode || 'auto';
-    const parsedPath = parsePath(path);
-
-    if (!parsedPath.scriptId) {
-      throw new ValidationError('path', path, 'valid project path (scriptId or scriptId/path)');
-    }
+    // Use hybrid script ID resolution
+    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path || '');
+    const scriptId = hybridResolution.scriptId;
+    const searchPath = hybridResolution.cleanPath;
 
     // Get all files from project
-    const allFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
+    const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
     // Convert to GASFile format
     const gasFiles: GASFile[] = allFiles.map((file: any) => ({
@@ -316,23 +323,17 @@ export class GasGrepTool extends BaseTool {
       size: (file.source || '').length
     }));
 
-    // Apply path filtering with enhanced regex/wildcard support
-    if (parsedPath.directory || parsedPath.filename) {
-      const filterPattern = parsedPath.directory || parsedPath.filename || '';
+    // Apply path filtering if search path is provided
+    if (searchPath && searchPath.trim() !== '') {
+      const pathMode = params.pathMode || 'auto';
       
       // Use new regex/wildcard path matching
       return gasFiles.filter(file => 
-        matchesPathPattern(file.name, filterPattern, pathMode, parsedPath.scriptId)
-      );
-    } else if (parsedPath.isWildcard || pathMode === 'regex') {
-      // Handle wildcard/regex patterns in the full path
-      const fullPattern = path.substring(parsedPath.scriptId!.length + 1); // Remove "scriptId/"
-      
-      return gasFiles.filter(file => 
-        matchesPathPattern(file.name, fullPattern, pathMode, parsedPath.scriptId)
+        matchesPathPattern(file.name, searchPath, pathMode, scriptId)
       );
     }
 
+    // Return all files if no path filter
     return gasFiles;
   }
 
@@ -371,6 +372,11 @@ export class GasGrepTool extends BaseTool {
    * Extract script ID from parameters
    */
   private extractScriptId(params: any): string | undefined {
+    // Prioritize explicit scriptId parameter
+    if (params.scriptId && params.scriptId.trim()) {
+      return params.scriptId;
+    }
+
     if (params.files && params.files.length > 0) {
       const parsedPath = parsePath(params.files[0]);
       return parsedPath.scriptId || undefined;
@@ -404,30 +410,41 @@ export class GasRawGrepTool extends BaseTool {
         description: 'Search pattern (supports regex and literal text). Searches complete file content (same content as gas_raw_cat shows) including CommonJS wrappers via direct API calls only. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
         minLength: 1,
         examples: [
-          'require\\\\(',                    // Find require calls (in user code + system context)
-          'function\\\\s+(\\\\w+)',          // Find ALL function definitions (user + _main wrappers)
-          '_main\\\\s*\\\\(',                // Find CommonJS _main wrappers (only in raw content)
-          '__defineModule__',               // Find module system calls (only in raw content)
-          'globalThis\\.__getCurrentModule', // Find module system internals (only in raw content)
-          'module\\s*=\\s*globalThis',      // Find CommonJS parameter setup (only in raw content)
-          'exports\\s*=\\s*module\\.exports', // Find CommonJS parameter setup (only in raw content)
-          'TODO:|FIXME:',                   // Find todo items (user code + any in wrappers)
-          'console\\\\.log',                // Find console.log statements (user + system)
-          'Logger\\\\.log',                 // Find Logger.log statements (user + system)
+          'require\\\\(',                      // Find require calls in full content
+          'function\\\\s+(\\\\w+)',            // Find all function definitions including wrappers
+          '_main\\\\s*\\\\(',                 // Find CommonJS main wrapper functions
+          '__defineModule__',                  // Find CommonJS system module definition calls
+          'globalThis\\.__getCurrentModule',   // Find module system calls
+          'module\\s*=\\s*globalThis',        // Find module assignments
+          'exports\\s*=\\s*module\\.exports', // Find exports assignments
+          'TODO:|FIXME:',                      // Find todo items in full context
+          'console\\\\.log',                   // Find console.log in all content
+          'Logger\\\\.log',                    // Find Logger.log in all content
+        ]
+      },
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID',
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
+          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
         ]
       },
       path: {
         type: 'string',
-        description: 'Full path to project or files: scriptId/path/pattern (explicit script ID required). Always retrieves content via direct API calls, never uses local cached files. Same content processing as gas_raw_cat.',
+        description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Always retrieves content via direct API calls, never uses local cached files. Same content processing as gas_raw_cat.',
         default: '',
         examples: [
-          'abc123def456.../project',               // Search entire project (full content including wrappers via API)
-          'abc123def456.../ai_tools/*',          // Wildcard: ai_tools directory (full content via API)
-          'abc123def456.../*Connector*',         // Wildcard: files containing Connector (full content via API)
-          'abc123def456.../.*Controller.*',      // Regex: files containing Controller (full content via API)
-          'abc123def456.../(utils|helpers)/.*',  // Regex: utils OR helpers directories (full content via API)
-          'abc123def456.../.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (full content via API)
-          'abc123def456.../test/*/*.test'        // Wildcard: test files in subdirectories (full content via API)
+          '',                            // Search entire project (includes CommonJS wrappers)
+          'ai_tools/*',                  // Wildcard: ai_tools directory (full content)
+          '*Connector*',                 // Wildcard: files containing Connector (full content)
+          '.*Controller.*',              // Regex: files containing Controller (full content)
+          '(utils|helpers)/.*',          // Regex: utils OR helpers directories (full content)
+          '.*\\.(test|spec)$',          // Regex: test files ending in .test or .spec (full content)
+          'test/*/*.test'                // Wildcard: test files in subdirectories (full content)
         ]
       },
       pathMode: {
@@ -524,7 +541,7 @@ export class GasRawGrepTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['pattern']
+    required: ['scriptId', 'pattern']
   };
 
   private gasClient: GASClient;
@@ -610,8 +627,7 @@ export class GasRawGrepTool extends BaseTool {
   }
 
   /**
-   * Get target files via direct API calls only (never uses local files)
-   * This follows the same pattern as gas_raw_cat - always direct API access
+   * Get target files via direct API calls (used by gas_raw_grep for consistency)
    */
   private async getTargetFilesViaAPI(params: any, accessToken: string): Promise<GASFile[]> {
     // If specific files provided, get those via API
@@ -619,18 +635,14 @@ export class GasRawGrepTool extends BaseTool {
       return await this.getSpecificFilesViaAPI(params.files, accessToken);
     }
 
-    // Use path parameter (with wildcard/regex support) via API
-    const path = params.path || '';
-    const pathMode = params.pathMode || 'auto';
-    const parsedPath = parsePath(path);
-
-    if (!parsedPath.scriptId) {
-      throw new ValidationError('path', path, 'valid project path with explicit script ID (scriptId or scriptId/path)');
-    }
+    // Use hybrid script ID resolution
+    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path || '');
+    const scriptId = hybridResolution.scriptId;
+    const searchPath = hybridResolution.cleanPath;
 
     // 🔧 DIRECT API CALL: Get all files from project (never uses local cache)
-    console.error(`🔧 [GAS_RAW_GREP] Making direct API call to retrieve project content: ${parsedPath.scriptId}`);
-    const allFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
+    console.error(`🔧 [GAS_RAW_GREP] Making direct API call to retrieve project content: ${scriptId}`);
+    const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
     // Convert to GASFile format
     const gasFiles: GASFile[] = allFiles.map((file: any) => ({
@@ -640,22 +652,16 @@ export class GasRawGrepTool extends BaseTool {
       size: (file.source || '').length
     }));
 
-    // Apply path filtering with enhanced regex/wildcard support
-    if (parsedPath.directory || parsedPath.filename) {
-      const filterPattern = parsedPath.directory || parsedPath.filename || '';
+    // Apply path filtering if search path is provided
+    if (searchPath && searchPath.trim() !== '') {
+      const pathMode = params.pathMode || 'auto';
       
       return gasFiles.filter(file => 
-        matchesPathPattern(file.name, filterPattern, pathMode, parsedPath.scriptId)
-      );
-    } else if (parsedPath.isWildcard || pathMode === 'regex') {
-      // Handle wildcard/regex patterns in the full path
-      const fullPattern = path.substring(parsedPath.scriptId!.length + 1); // Remove "scriptId/"
-      
-      return gasFiles.filter(file => 
-        matchesPathPattern(file.name, fullPattern, pathMode, parsedPath.scriptId)
+        matchesPathPattern(file.name, searchPath, pathMode, scriptId)
       );
     }
 
+    // Return all files if no path filter
     return gasFiles;
   }
 
@@ -699,6 +705,11 @@ export class GasRawGrepTool extends BaseTool {
    * Extract script ID from parameters
    */
   private extractScriptId(params: any): string | undefined {
+    // Prioritize explicit scriptId parameter
+    if (params.scriptId && params.scriptId.trim()) {
+      return params.scriptId;
+    }
+
     if (params.files && params.files.length > 0) {
       const parsedPath = parsePath(params.files[0]);
       return parsedPath.scriptId || undefined;

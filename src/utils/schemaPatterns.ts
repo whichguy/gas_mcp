@@ -46,15 +46,14 @@ export const ACCESS_TOKEN_SCHEMA = {
  */
 export const SCRIPT_ID_SCHEMA = {
   type: 'string',
-  description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project.',
-  pattern: '^[a-zA-Z0-9_-]{44}$',
-  minLength: 44,
-  maxLength: 44,
-  llmHints: {
-    obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
-    format: '44-character Google Drive file ID, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5Jm',
-    validation: 'Tool will validate this is a real, accessible project ID'
-  }
+  description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid Google Drive file ID for an Apps Script project.',
+  pattern: '^[a-zA-Z0-9_-]{25,60}$',
+  minLength: 25,
+  maxLength: 60,
+  examples: [
+    '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
+    '1p3DDxPcgw23lzn2NQl3gM7Nkztki3VmmES46FbLm5IPHizEdJzsQjvAN'
+  ]
 } as const;
 
 /**
@@ -154,7 +153,7 @@ export const AUTH_ERROR_HANDLING = {
 export const SCRIPT_ERROR_HANDLING = {
   ...AUTH_ERROR_HANDLING,
   'ScriptNotFound': 'Verify scriptId is correct and accessible',
-  'InvalidScriptId': 'ScriptId must be a valid 44-character Google Drive file ID for an Apps Script project'
+  'InvalidScriptId': 'ScriptId must be a valid Google Drive file ID for an Apps Script project (25-60 characters, alphanumeric, _, -)'
 } as const;
 
 /**
