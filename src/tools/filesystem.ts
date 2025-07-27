@@ -1,6 +1,6 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern } from '../api/pathParser.js';
+import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridProjectId } from '../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
@@ -1390,25 +1390,45 @@ export class GASRemoveTool extends BaseTool {
  */
 export class GASMoveTool extends BaseTool {
   public name = 'gas_mv';
-  public description = 'Move or rename a file in a Google Apps Script project';
+  public description = 'Move or rename a file in a Google Apps Script project (supports cross-project moves)';
   
   public inputSchema = {
     type: 'object',
     properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID (44 characters) - used as default, can be overridden by embedded project IDs in paths',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789'
+        ]
+      },
       from: {
         type: 'string',
-        description: 'Source path: projectId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
+        description: 'Source path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        examples: [
+          'utils.gs',                           // Uses scriptId
+          'ai_tools/helper.gs',                // Uses scriptId with subdirectory
+          '1abc2def.../utils.gs'               // Overrides scriptId
+        ]
       },
       to: {
         type: 'string',
-        description: 'Destination path: projectId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-added)'
+        description: 'Destination path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        examples: [
+          'renamed.gs',                        // Same project (uses scriptId)
+          'backup/utils.gs',                   // Same project with subdirectory
+          '1xyz9abc.../utils.gs'              // Different project (cross-project move)
+        ]
       },
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['from', 'to']
+    required: ['scriptId', 'from', 'to']
   };
 
   private gasClient: GASClient;
@@ -1419,43 +1439,67 @@ export class GASMoveTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    // SECURITY: Validate paths BEFORE authentication
-    const fromPath = this.validate.filePath(params.from, 'file operation');
-    const toPath = this.validate.filePath(params.to, 'file operation');
-    
-    const parsedFrom = parsePath(fromPath);
-    const parsedTo = parsePath(toPath);
-    
-    if (!parsedFrom.isFile || !parsedTo.isFile) {
-      throw new ValidationError('path', 'from/to', 'file paths (must include filename)');
-    }
-
-    if (parsedFrom.projectId !== parsedTo.projectId) {
-      throw new FileOperationError('move', fromPath, 'cannot move files between projects');
-    }
-    
-    // After validation passes, check authentication
+    // SECURITY: Validate parameters BEFORE authentication
     const accessToken = await this.getAuthToken(params);
+    
+    // Resolve project IDs using hybrid approach (supports cross-project moves)
+    const fromResolution = resolveHybridProjectId(params.scriptId, params.from, 'move operation (from)');
+    const toResolution = resolveHybridProjectId(params.scriptId, params.to, 'move operation (to)');
+    
+    const fromProjectId = fromResolution.projectId;
+    const toProjectId = toResolution.projectId;
+    const fromFilename = fromResolution.cleanPath;
+    const toFilename = toResolution.cleanPath;
+    
+    // Validate that we have actual filenames
+    if (!fromFilename || !toFilename) {
+      throw new ValidationError('path', 'from/to', 'valid filenames (cannot be empty)');
+    }
 
-    // Get current file content
-    const files = await this.gasClient.getProjectContent(parsedFrom.projectId, accessToken);
-    const sourceFile = files.find((f: any) => f.name === parsedFrom.filename);
+    // Get source file content
+    const sourceFiles = await this.gasClient.getProjectContent(fromProjectId, accessToken);
+    const sourceFile = sourceFiles.find((f: any) => f.name === fromFilename);
 
     if (!sourceFile) {
-      throw new FileOperationError('move', fromPath, 'source file not found');
+      throw new FileOperationError('move', params.from, 'source file not found');
     }
 
-    // Create file with new name and delete old one
-    await this.gasClient.updateFile(parsedTo.projectId, parsedTo.filename!, sourceFile.source || '', undefined, accessToken);
-    const updatedFiles = await this.gasClient.deleteFile(parsedFrom.projectId, parsedFrom.filename!, accessToken);
-
-    return {
-      status: 'moved',
-      from: fromPath,
-      to: toPath,
-      projectId: parsedFrom.projectId,
-      totalFiles: updatedFiles.length
-    };
+    // For cross-project moves, we copy then delete. For same-project, we can rename in place.
+    if (fromProjectId === toProjectId) {
+      // Same project: rename/move file
+      await this.gasClient.updateFile(toProjectId, toFilename, sourceFile.source || '', undefined, accessToken);
+      const updatedFiles = await this.gasClient.deleteFile(fromProjectId, fromFilename, accessToken);
+      
+      return {
+        status: 'moved',
+        from: params.from,
+        to: params.to,
+        fromProjectId,
+        toProjectId,
+        isCrossProject: false,
+        totalFiles: updatedFiles.length,
+        message: `Moved ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`
+      };
+    } else {
+      // Cross-project: copy to destination, then delete from source
+      await this.gasClient.updateFile(toProjectId, toFilename, sourceFile.source || '', undefined, accessToken);
+      const updatedSourceFiles = await this.gasClient.deleteFile(fromProjectId, fromFilename, accessToken);
+      
+      // Get destination file count
+      const destFiles = await this.gasClient.getProjectContent(toProjectId, accessToken);
+      
+      return {
+        status: 'moved',
+        from: params.from,
+        to: params.to,
+        fromProjectId,
+        toProjectId,
+        isCrossProject: true,
+        sourceFilesRemaining: updatedSourceFiles.length,
+        destFilesTotal: destFiles.length,
+        message: `Moved ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
+      };
+    }
   }
 }
 
@@ -1464,25 +1508,45 @@ export class GASMoveTool extends BaseTool {
  */
 export class GASCopyTool extends BaseTool {
   public name = 'gas_cp';
-  public description = 'Copy a file in a Google Apps Script project';
+  public description = 'Copy a file in a Google Apps Script project (supports cross-project copies)';
   
   public inputSchema = {
     type: 'object',
     properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID (44 characters) - used as default, can be overridden by embedded project IDs in paths',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789'
+        ]
+      },
       from: {
         type: 'string',
-        description: 'Source path: projectId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected)'
+        description: 'Source path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        examples: [
+          'utils.gs',                           // Uses scriptId
+          'ai_tools/helper.gs',                // Uses scriptId with subdirectory
+          '1abc2def.../utils.gs'               // Overrides scriptId
+        ]
       },
       to: {
         type: 'string',
-        description: 'Destination path: projectId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-added)'
+        description: 'Destination path: filename OR projectId/filename (without extension). If embedded project ID provided, overrides scriptId parameter.',
+        examples: [
+          'utils-copy.gs',                     // Same project (uses scriptId)
+          'backup/utils.gs',                   // Same project with subdirectory
+          '1xyz9abc.../utils.gs'              // Different project (cross-project copy)
+        ]
       },
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['from', 'to']
+    required: ['scriptId', 'from', 'to']
   };
 
   private gasClient: GASClient;
@@ -1493,32 +1557,35 @@ export class GASCopyTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
-    // SECURITY: Validate paths BEFORE authentication
-    const fromPath = this.validate.filePath(params.from, 'file operation');
-    const toPath = this.validate.filePath(params.to, 'file operation');
-    
-    const parsedFrom = parsePath(fromPath);
-    const parsedTo = parsePath(toPath);
-    
-    if (!parsedFrom.isFile || !parsedTo.isFile) {
-      throw new ValidationError('path', 'from/to', 'file paths (must include filename)');
-    }
-    
-    // After validation passes, check authentication
+    // SECURITY: Validate parameters BEFORE authentication
     const accessToken = await this.getAuthToken(params);
+    
+    // Resolve project IDs using hybrid approach (supports cross-project copies)
+    const fromResolution = resolveHybridProjectId(params.scriptId, params.from, 'copy operation (from)');
+    const toResolution = resolveHybridProjectId(params.scriptId, params.to, 'copy operation (to)');
+    
+    const fromProjectId = fromResolution.projectId;
+    const toProjectId = toResolution.projectId;
+    const fromFilename = fromResolution.cleanPath;
+    const toFilename = toResolution.cleanPath;
+    
+    // Validate that we have actual filenames
+    if (!fromFilename || !toFilename) {
+      throw new ValidationError('path', 'from/to', 'valid filenames (cannot be empty)');
+    }
 
     // Get source file content
-    const files = await this.gasClient.getProjectContent(parsedFrom.projectId, accessToken);
-    const sourceFile = files.find((f: any) => f.name === parsedFrom.filename);
+    const sourceFiles = await this.gasClient.getProjectContent(fromProjectId, accessToken);
+    const sourceFile = sourceFiles.find((f: any) => f.name === fromFilename);
 
     if (!sourceFile) {
-      throw new FileOperationError('copy', fromPath, 'source file not found');
+      throw new FileOperationError('copy', params.from, 'source file not found');
     }
 
     // Create copy in destination
     const updatedFiles = await this.gasClient.updateFile(
-      parsedTo.projectId,
-      parsedTo.filename!,
+      toProjectId,
+      toFilename,
       sourceFile.source || '',
       undefined,
       accessToken
@@ -1526,12 +1593,16 @@ export class GASCopyTool extends BaseTool {
 
     return {
       status: 'copied',
-      from: fromPath,
-      to: toPath,
-      sourceProject: parsedFrom.projectId,
-      destProject: parsedTo.projectId,
+      from: params.from,
+      to: params.to,
+      fromProjectId,
+      toProjectId,
+      isCrossProject: fromProjectId !== toProjectId,
       size: (sourceFile.source || '').length,
-      totalFiles: updatedFiles.length
+      totalFiles: updatedFiles.length,
+      message: fromProjectId === toProjectId 
+        ? `Copied ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`
+        : `Copied ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
     };
   }
 }
