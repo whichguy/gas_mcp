@@ -4,7 +4,7 @@ import { ValidationError } from '../errors/mcpErrors.js';
  * Parsed path information for GAS operations
  */
 export interface ParsedPath {
-  projectId: string;
+  scriptId: string;
   filename?: string;
   directory?: string;
   pattern?: string;        // NEW: wildcard pattern if detected
@@ -153,7 +153,7 @@ export function getFileType(filename: string): string {
 }
 
 /**
- * Parse a path in the format: "" | "projectId" | "projectId/path/to/file[.ext]"
+ * Parse a path in the format: "" | "scriptId" | "scriptId/path/to/file[.ext]"
  * Files can have extensions or not - extensions will be inferred from context
  * Now supports wildcard patterns with * and ? characters
  */
@@ -161,7 +161,7 @@ export function parsePath(path: string): ParsedPath {
   // Empty path = list all projects
   if (!path || path === '') {
     return {
-      projectId: '',
+      scriptId: '',
       isProject: false,
       isFile: false,
       isDirectory: true,
@@ -171,18 +171,18 @@ export function parsePath(path: string): ParsedPath {
   }
 
   const parts = path.split('/').filter(part => part.length > 0);
-  const projectId = parts[0];
+  const scriptId = parts[0];
 
-  // Validate project ID format (GAS project IDs are typically base64-like)
-  if (!/^[a-zA-Z0-9_-]{10,}$/.test(projectId)) {
-    throw new ValidationError('projectId', projectId, 'valid GAS project ID (alphanumeric, _, -, min 10 chars)');
+  // Validate script ID format (GAS script IDs are typically base64-like)
+  if (!/^[a-zA-Z0-9_-]{10,}$/.test(scriptId)) {
+    throw new ValidationError('scriptId', scriptId, 'valid GAS script ID (alphanumeric, _, -, min 10 chars)');
   }
 
   // Check for wildcard patterns in the entire path
   const hasWildcards = isWildcardPattern(path);
   
   if (hasWildcards) {
-    // Extract pattern (everything after projectId)
+    // Extract pattern (everything after scriptId)
     const pattern = parts.slice(1).join('/');
     const wildcardComplexity = getPatternComplexity(pattern);
     
@@ -193,7 +193,7 @@ export function parsePath(path: string): ParsedPath {
     }
     
     return {
-      projectId,
+      scriptId,
       pattern,
       isProject: false,
       isFile: false,
@@ -203,10 +203,10 @@ export function parsePath(path: string): ParsedPath {
     };
   }
 
-  // Just project ID = list files in project
+  // Just script ID = list files in project
   if (parts.length === 1) {
     return {
-      projectId,
+      scriptId,
       isProject: true,
       isFile: false,
       isDirectory: false,
@@ -244,7 +244,7 @@ export function parsePath(path: string): ParsedPath {
 
   if (isFile) {
     return {
-      projectId,
+      scriptId,
       filename,
       directory,
       isProject: false,
@@ -256,7 +256,7 @@ export function parsePath(path: string): ParsedPath {
   } else {
     // Treat as directory
     return {
-      projectId,
+      scriptId,
       directory: filename,
       isProject: false,
       isFile: false,
@@ -286,9 +286,9 @@ export function getBaseName(filename: string): string {
 /**
  * Join path components safely
  */
-export function joinPath(projectId: string, ...parts: string[]): string {
+export function joinPath(scriptId: string, ...parts: string[]): string {
   const filteredParts = parts.filter(part => part && part.length > 0);
-  return [projectId, ...filteredParts].join('/');
+  return [scriptId, ...filteredParts].join('/');
 }
 
 /**
@@ -332,27 +332,27 @@ export function sortFilesForExecution<T extends { name: string; order?: number }
 }
 
 /**
- * Hybrid project ID resolution for tools that support both scriptId parameter and path-embedded project IDs
+ * Hybrid script ID resolution for tools that support both scriptId parameter and path-embedded script IDs
  */
 export interface HybridPathResolution {
-  projectId: string;
-  cleanPath: string;  // Path without embedded project ID
-  wasEmbedded: boolean;  // True if project ID came from path, false if from parameter
+  scriptId: string;
+  cleanPath: string;  // Path without embedded script ID
+  wasEmbedded: boolean;  // True if script ID came from path, false if from parameter
 }
 
 /**
- * Resolve project ID from either scriptId parameter or path-embedded project ID
+ * Resolve script ID from either scriptId parameter or path-embedded script ID
  * 
  * @param scriptId - The scriptId parameter (can be empty string to force path extraction)
- * @param path - The path that may contain embedded project ID
+ * @param path - The path that may contain embedded script ID
  * @param operation - Operation name for error messages
- * @returns Resolved project ID and clean path
+ * @returns Resolved script ID and clean path
  * 
  * Resolution logic:
- * 1. If scriptId provided and path has no embedded project ID → use scriptId
- * 2. If scriptId provided and path has embedded project ID → use embedded (override)
- * 3. If scriptId empty and path has embedded project ID → use embedded
- * 4. If scriptId empty and path has no embedded project ID → throw error
+ * 1. If scriptId provided and path has no embedded script ID → use scriptId
+ * 2. If scriptId provided and path has embedded script ID → use embedded (override)
+ * 3. If scriptId empty and path has embedded script ID → use embedded
+ * 4. If scriptId empty and path has no embedded script ID → throw error
  */
 export function resolveHybridProjectId(
   scriptId: string | undefined, 
@@ -368,36 +368,36 @@ export function resolveHybridProjectId(
       throw new ValidationError('scriptId', scriptId, '44-character Google Apps Script project ID');
     }
     
-    if (parsedPath.projectId) {
-      // Case 2: scriptId provided but path has embedded project ID → use embedded (override)
+    if (parsedPath.scriptId) {
+      // Case 2: scriptId provided but path has embedded script ID → use embedded (override)
       return {
-        projectId: parsedPath.projectId,
+        scriptId: parsedPath.scriptId,
         cleanPath: parsedPath.filename || parsedPath.directory || parsedPath.pattern || '',
         wasEmbedded: true
       };
     } else {
-      // Case 1: scriptId provided and path has no embedded project ID → use scriptId
+      // Case 1: scriptId provided and path has no embedded script ID → use scriptId
       return {
-        projectId: scriptId,
+        scriptId: scriptId,
         cleanPath: path,
         wasEmbedded: false
       };
     }
   }
   
-  // Case 3: scriptId empty, check if path has embedded project ID
-  if (parsedPath.projectId) {
+  // Case 3: scriptId empty, check if path has embedded script ID
+  if (parsedPath.scriptId) {
     return {
-      projectId: parsedPath.projectId,
+      scriptId: parsedPath.scriptId,
       cleanPath: parsedPath.filename || parsedPath.directory || parsedPath.pattern || '',
       wasEmbedded: true
     };
   }
   
-  // Case 4: Both scriptId empty and no embedded project ID → error
+  // Case 4: Both scriptId empty and no embedded script ID → error
   throw new ValidationError(
-    'projectId', 
+    'scriptId', 
     'missing', 
-    `Either provide scriptId parameter or embed project ID in path (e.g., "projectId/filename") for ${operation}`
+    `Either provide scriptId parameter or embed script ID in path (e.g., "scriptId/filename") for ${operation}`
   );
 }
