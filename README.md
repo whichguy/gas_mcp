@@ -290,7 +290,7 @@ Update your Cursor configuration to include the config file:
 |------|-------------|----------------|
 | `gas_auth` | OAuth 2.0 authentication | `mode`, `openBrowser?` |
 
-### 📂 Smart Filesystem Operations (6 tools)
+### 📂 Smart Filesystem Operations (7 tools)
 > **Auto-sync**: Automatically handles local/remote synchronization
 
 | Tool | Description | Key Parameters |
@@ -298,6 +298,7 @@ Update your Cursor configuration to include the config file:
 | `gas_ls` | List projects/files **with wildcard support** | `path?` (supports `*` and `?` patterns), `detailed?`, `wildcardMode?` |
 | **`gas_cat`** | **✅ Smart reader** (local-first, remote fallback) | `path` |
 | **`gas_write`** | **✅ Auto-sync writer** (local + remote) | `path` (projectId/filename), `content` |
+| **`gas_grep`** | **✅ Content search** (server-side with patterns) | `pattern`, `path?` (wildcards/regex), `pathMode?`, `searchMode?` |
 | `gas_rm` | Delete files | `path` |
 | `gas_mv` | Move/rename files | `from`, `to` |
 | `gas_cp` | Copy files | `from`, `to` |
@@ -449,6 +450,27 @@ const aiFiles = await gas_ls({
 const testFiles = await gas_ls({ 
   path: "scriptId/test/*/*.test",     // All .test files in test subdirs
   detailed: true 
+});
+
+// Search file contents with patterns (ENHANCED!)
+const functionDefs = await gas_grep({
+  pattern: "function\\s+(\\w+)",      // Find function definitions
+  path: "scriptId/.*Controller.*",    // Regex: files containing "Controller"
+  pathMode: "regex",                  // Use regex for path filtering
+  searchMode: "regex",
+  contextLines: 2
+});
+const utilities = await gas_grep({
+  pattern: "require(",                // Find require calls
+  path: "scriptId/(utils|helpers)/.*", // Regex: utils OR helpers directories
+  pathMode: "regex",
+  searchMode: "literal"
+});
+const todos = await gas_grep({
+  pattern: "TODO:|FIXME:",            // Find TODO comments
+  path: "scriptId/*",                 // Wildcard: entire project
+  pathMode: "wildcard",
+  excludeFiles: ["*/test/*"]          // Exclude test files
 });
 
 // Get detailed project information

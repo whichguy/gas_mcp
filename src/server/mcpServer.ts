@@ -22,6 +22,7 @@ import {
   GASMoveTool, 
   GASCopyTool 
 } from '../tools/filesystem.js';
+import { GasGrepTool, GasRawGrepTool } from '../tools/grep.js';
 import { 
   GASMkdirTool, 
   GASInfoTool, 
@@ -249,26 +250,28 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    * 
-   * Each session gets its own instances of all 39 MCP tools, each configured
+   * Each session gets its own instances of all 47 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    * 
-   * ## Tool Categories Created (35 total tools):
+   * ## Tool Categories Created (47 total tools):
    * 
    * ### 🔐 Authentication & Session (1 tool)
    * - `gas_auth` - OAuth 2.0 flow management with desktop PKCE
    * 
-   * ### 📂 Filesystem Operations - RECOMMENDED (6 tools)
+   * ### 📂 Filesystem Operations - RECOMMENDED (7 tools)
    * - `gas_ls` - List projects and files  
    * - `gas_cat` - ✅ Smart reader (local-first with remote fallback)
    * - `gas_write` - ✅ Auto-sync writer (local + remote)
+   * - `gas_grep` - ✅ Content search with pattern matching (unwrapped user code)
    * - `gas_rm` - Delete files
    * - `gas_mv` - Move/rename files
    * - `gas_cp` - Copy files
    * 
-   * ### 🔧 Filesystem Operations - ADVANCED (3 tools)
+   * ### 🔧 Filesystem Operations - ADVANCED (4 tools)
    * - `gas_raw_cat` - ⚠️ Advanced: Read with explicit project ID paths
    * - `gas_raw_write` - ⚠️ Advanced: Write with explicit project ID paths
+   * - `gas_raw_grep` - ⚠️ Advanced: Search full content including CommonJS wrappers
    * - `gas_raw_copy` - ⚠️ Advanced: Remote-to-remote file copying with merge strategies
    * 
    * ### 🏗️ Project Management (4 tools)
@@ -343,6 +346,7 @@ export class MCPGasServer {
       new GASListTool(authManager),
       new GASCatTool(authManager),           // ✅ Smart reader (local-first)
       new GASWriteTool(authManager),         // ✅ Auto-sync writer
+      new GasGrepTool(authManager),          // ✅ Content search with pattern matching
       new GASRemoveTool(authManager),
       new GASMoveTool(authManager),
       new GASCopyTool(authManager),
@@ -350,6 +354,7 @@ export class MCPGasServer {
       // 🔧 Filesystem operations - ADVANCED raw tools (explicit project IDs)
       new GASRawCatTool(authManager),        // ⚠️ Advanced: Explicit project ID paths
       new GASRawWriteTool(authManager),      // ⚠️ Advanced: Explicit project ID paths
+      new GasRawGrepTool(authManager),       // ⚠️ Advanced: Search full content including CommonJS wrappers
       new GASRawCopyTool(authManager),       // ⚠️ Advanced: Remote-to-remote file copying
       
       // 🏗️ Project management
