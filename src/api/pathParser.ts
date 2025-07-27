@@ -354,7 +354,7 @@ export interface HybridPathResolution {
  * 3. If scriptId empty and path has embedded script ID → use embedded
  * 4. If scriptId empty and path has no embedded script ID → throw error
  */
-export function resolveHybridProjectId(
+export function resolveHybridScriptId(
   scriptId: string | undefined, 
   path: string, 
   operation: string = 'operation'

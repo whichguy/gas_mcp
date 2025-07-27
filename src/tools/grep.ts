@@ -67,13 +67,13 @@ export class GasGrepTool extends BaseTool {
         description: 'Project or file path with wildcard/regex support. Searches clean user code in matching files (same content processing as gas_cat). Examples: "projectId" (entire project), "projectId/utils/*" (wildcard), "projectId/.*Controller.*" (regex)',
         default: '',
         examples: [
-          'projectId',                      // Search entire project (user code only)
-          'projectId/ai_tools/*',          // Wildcard: ai_tools directory (user code only)  
-          'projectId/*Connector*',         // Wildcard: files containing Connector (user code only)
-          'projectId/.*Controller.*',      // Regex: files containing Controller (user code only)
-          'projectId/(utils|helpers)/.*',  // Regex: utils OR helpers directories (user code only)
-          'projectId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (user code only)
-          'projectId/test/*/*.test'        // Wildcard: test files in subdirectories (user code only)
+          'scriptId',                      // Search entire project (user code only)
+          'scriptId/ai_tools/*',          // Wildcard: ai_tools directory (user code only)  
+          'scriptId/*Connector*',         // Wildcard: files containing Connector (user code only)
+          'scriptId/.*Controller.*',      // Regex: files containing Controller (user code only)
+          'scriptId/(utils|helpers)/.*',  // Regex: utils OR helpers directories (user code only)
+          'scriptId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (user code only)
+          'scriptId/test/*/*.test'        // Wildcard: test files in subdirectories (user code only)
         ]
       },
       pathMode: {
@@ -87,8 +87,8 @@ export class GasGrepTool extends BaseTool {
         items: { type: 'string' },
         description: 'Specific file list to search (alternative to path parameter)',
         examples: [
-          ['projectId/utils/helpers', 'projectId/models/User'],
-          ['projectId/ai_tools/BaseConnector', 'projectId/ai_tools/ClaudeConnector']
+          ['scriptId/utils/helpers', 'scriptId/models/User'],
+          ['scriptId/ai_tools/BaseConnector', 'scriptId/ai_tools/ClaudeConnector']
         ]
       },
       searchMode: {
@@ -149,7 +149,7 @@ export class GasGrepTool extends BaseTool {
         description: 'Files to exclude from search (supports wildcards)',
         examples: [
           ['*/test/*', '*/CommonJS'],
-          ['projectId/dist/*', 'projectId/node_modules/*']
+          ['scriptId/dist/*', 'scriptId/node_modules/*']
         ]
       },
       includeFileTypes: {
@@ -236,7 +236,7 @@ export class GasGrepTool extends BaseTool {
     }
 
     // Execute search
-    const results = await this.grepEngine.searchFiles(files, searchOptions, this.extractProjectId(params));
+    const results = await this.grepEngine.searchFiles(files, searchOptions, this.extractScriptId(params));
 
     // Add metadata about content processing
     (results as any).contentType = 'user-code (CommonJS unwrapped)';
@@ -368,9 +368,9 @@ export class GasGrepTool extends BaseTool {
   }
 
   /**
-   * Extract project ID from parameters
+   * Extract script ID from parameters
    */
-  private extractProjectId(params: any): string | undefined {
+  private extractScriptId(params: any): string | undefined {
     if (params.files && params.files.length > 0) {
       const parsedPath = parsePath(params.files[0]);
       return parsedPath.scriptId || undefined;
@@ -592,7 +592,7 @@ export class GasRawGrepTool extends BaseTool {
     }
 
     // Execute search
-    const results = await this.grepEngine.searchFiles(files, searchOptions, this.extractProjectId(params));
+    const results = await this.grepEngine.searchFiles(files, searchOptions, this.extractScriptId(params));
 
     // Add metadata about content processing and data source
     (results as any).contentType = 'raw-content (includes CommonJS wrappers)';
@@ -696,9 +696,9 @@ export class GasRawGrepTool extends BaseTool {
   }
 
   /**
-   * Extract project ID from parameters
+   * Extract script ID from parameters
    */
-  private extractProjectId(params: any): string | undefined {
+  private extractScriptId(params: any): string | undefined {
     if (params.files && params.files.length > 0) {
       const parsedPath = parsePath(params.files[0]);
       return parsedPath.scriptId || undefined;
