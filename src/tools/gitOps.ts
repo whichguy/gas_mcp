@@ -65,7 +65,7 @@ export class GASGitCommitTool extends BaseTool {
     const workingDirectory = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     // Resolve project parameter to script ID first, then get project name
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDirectory);
+    const scriptId = await ProjectResolver.resolveScriptId(params.project, workingDirectory);
     const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDirectory) || 
                         `project-${scriptId.substring(0, 8)}`;
     
@@ -269,7 +269,7 @@ export class GASGitStatusTool extends BaseTool {
     const workingDirectory = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     
     // Resolve project parameter to script ID first, then get project name
-    const scriptId = await ProjectResolver.resolveProjectId(params.project, workingDirectory);
+    const scriptId = await ProjectResolver.resolveScriptId(params.project, workingDirectory);
     const projectName = await ProjectResolver.getProjectNameByScriptId(scriptId, workingDirectory) || 
                         `project-${scriptId.substring(0, 8)}`;
 

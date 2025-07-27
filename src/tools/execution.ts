@@ -299,7 +299,7 @@ export class GASRunTool extends BaseTool {
     let scriptId: string;
     
     try {
-      scriptId = await ProjectResolver.resolveProjectId(params.project, workingDir, accessToken);
+      scriptId = await ProjectResolver.resolveScriptId(params.project, workingDir, accessToken);
     } catch (error: any) {
       if (!params.project) {
         throw new ValidationError('project', 'undefined', 'project parameter or current project (use gas_project_set)');
