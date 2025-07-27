@@ -4,8 +4,80 @@ import { ValidationError, GASApiError, AuthenticationError } from '../errors/mcp
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { CodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
-import { ProjectResolver } from '../utils/projectResolver.js';
+import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
 import open from 'open';
+
+/**
+ * Simple token counting utility for MCP response size protection
+ * Estimates tokens using approximate character-to-token ratio
+ */
+function estimateTokenCount(text: string): number {
+  // Rough estimation: 1 token ≈ 4 characters (conservative)
+  // This accounts for JSON structure, whitespace, and encoding overhead
+  return Math.ceil(text.length / 3.5);
+}
+
+/**
+ * Protects MCP responses from exceeding token limits by truncating logger_output
+ * @param response The response object to protect
+ * @param maxTokens Maximum allowed tokens (default: 22000, leaving room for structure)
+ * @returns Protected response with truncated logger_output if needed
+ */
+function protectResponseSize(response: any, maxTokens: number = 22000): any {
+  // Convert response to JSON to get accurate size estimate
+  const responseJson = JSON.stringify(response);
+  const estimatedTokens = estimateTokenCount(responseJson);
+  
+  if (estimatedTokens <= maxTokens) {
+    // Response is within limits, return as-is
+    return response;
+  }
+  
+  console.error(`⚠️ [RESPONSE SIZE PROTECTION] Response size: ${estimatedTokens} tokens > ${maxTokens} limit - truncating logger_output`);
+  
+  // Calculate how much we need to reduce
+  const excessTokens = estimatedTokens - maxTokens;
+  const loggerOutput = response.logger_output || '';
+  
+  if (!loggerOutput) {
+    // No logger output to truncate, but response is still too large
+    console.error(`❌ [RESPONSE SIZE PROTECTION] Response too large but no logger_output to truncate!`);
+    return {
+      ...response,
+      result: '[TRUNCATED: Response too large for MCP protocol]',
+      logger_output: `⚠️ RESPONSE SIZE ERROR: Response (${estimatedTokens} tokens) exceeded MCP limit (${maxTokens}) but had no logger_output to truncate.`
+    };
+  }
+  
+  // Calculate target logger_output size (conservatively remove extra tokens)
+  const excessChars = Math.ceil(excessTokens * 4); // Conservative character removal
+  const targetLoggerSize = Math.max(0, loggerOutput.length - excessChars - 500); // Extra buffer
+  
+  if (targetLoggerSize <= 0) {
+    // Logger output needs to be completely removed
+    return {
+      ...response,
+      logger_output: `⚠️ LOGGER TRUNCATED: Full logger output (${loggerOutput.length} chars) removed due to MCP token limit. Original response: ${estimatedTokens} tokens > ${maxTokens} limit.`
+    };
+  }
+  
+  // Truncate logger output and add informative message
+  const truncatedLogger = loggerOutput.substring(0, targetLoggerSize);
+  const truncationMessage = `\n\n⚠️ LOGGER TRUNCATED: Output truncated from ${loggerOutput.length} to ${targetLoggerSize} chars (removed ${loggerOutput.length - targetLoggerSize} chars) due to MCP token limit. Original response: ${estimatedTokens} tokens > ${maxTokens} limit.`;
+  
+  const protectedResponse = {
+    ...response,
+    logger_output: truncatedLogger + truncationMessage
+  };
+  
+  // Verify the protected response is within limits
+  const protectedJson = JSON.stringify(protectedResponse);
+  const protectedTokens = estimateTokenCount(protectedJson);
+  
+  console.error(`✅ [RESPONSE SIZE PROTECTION] Protected response: ${protectedTokens} tokens (was ${estimatedTokens})`);
+  
+  return protectedResponse;
+}
 
 /**
  * Execute JavaScript in Google Apps Script with current project support (RECOMMENDED)
@@ -22,7 +94,7 @@ export class GASRunTool extends BaseTool {
     properties: {
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. UNLIMITED EXECUTION: Can execute (1) ANY JavaScript expressions/statements of any length, (2) ALL Google Apps Script built-in services and objects, (3) Function calls from files using require("ModuleName") pattern. ALL GAS SERVICES AVAILABLE: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and more. No wrapper functions needed. Logger output automatically captured.',
+        description: 'JavaScript statement to execute directly in Google Apps Script. COMPREHENSIVE EXECUTION CAPABILITIES: (1) Run arbitrary JavaScript expressions and statements of unlimited length, (2) Execute existing functions from your project files using require("ModuleName").functionName() pattern, (3) Access ALL Google Apps Script services (DriveApp, SpreadsheetApp, GmailApp, etc.), (4) All Logger.log() output is automatically captured and returned. COMMONJS INTEGRATION: Use require("Utils").myFunction() to call functions from other project files - the CommonJS system resolves all dependencies automatically.',
         minLength: 1,
         examples: [
           // Basic JavaScript and Math
@@ -70,17 +142,30 @@ export class GASRunTool extends BaseTool {
           'Session.getTemporaryActiveUserKey()',
           'Session.getScriptTimeZone()',
           
-          // Function calls from project files
-          'require("Calculator").add(5, 3)',
-          'require("MathLibrary").fibonacci(10)',
-          'require("Utils").processData([1,2,3,4,5])',
-          'const calc = require("Calculator"); calc.multiply(4, 6)',
+          // Execute functions from your project files via CommonJS require()
+          'require("Calculator").add(5, 3)',                    // Call add function from Calculator.js
+          'require("Utils").formatDate(new Date())',            // Call formatDate from Utils.js
+          'require("Database").getUserById(123)',               // Call getUserById from Database.js
+          'require("API").fetchWeatherData("New York")',        // Call fetchWeatherData from API.js
+          'require("MathLibrary").fibonacci(10)',               // Call fibonacci from MathLibrary.js
+          'const utils = require("Utils"); utils.processData([1,2,3,4,5])', // Store module reference
+          'const calc = require("Calculator"); calc.multiply(4, 6)',         // Chain multiple calls
+          
+          // Complex workflows combining project functions with GAS services
+          'const data = require("Utils").parseCSV("name,age\\nJohn,30"); SpreadsheetApp.create("Import").getActiveSheet().getRange(1,1,data.length,2).setValues(data)',
+          'const result = require("API").processPayment({amount: 100}); Logger.log("Payment result: " + JSON.stringify(result)); result.success',
           
           // Complex multi-line operations
           'const sheet = SpreadsheetApp.create("Data Analysis"); const data = [[1,2,3],[4,5,6]]; sheet.getActiveSheet().getRange(1,1,2,3).setValues(data); return sheet.getId()',
           
-          // Error handling and logging
-          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }'
+          // Logger.log() output is automatically captured and returned
+          'Logger.log("Starting calculation..."); const result = 2 + 2; Logger.log("Result: " + result); result',
+          'Logger.log("Calling project function..."); const data = require("Utils").getData(); Logger.log("Retrieved " + data.length + " items"); data',
+          'Logger.log("Testing API integration"); const weather = require("API").getWeather("London"); Logger.log("Temperature: " + weather.temp); weather',
+          
+          // Error handling with comprehensive logging
+          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }',
+          'try { const user = require("Database").getUser(999); Logger.log("User found: " + user.name); return user; } catch(e) { Logger.log("User lookup failed: " + e.message); return null; }'
         ]
       },
       project: {
@@ -135,10 +220,18 @@ export class GASRunTool extends BaseTool {
       whenToUse: 'Use for normal JavaScript execution. Automatically uses current project context.',
       workflow: 'Set project with gas_project_set, then execute: gas_run({js_statement: "Math.sqrt(16)"}) for inline code or gas_run({js_statement: "require(\\"Calculator\\").add(5, 3)"}) for functions from files.',
       alternatives: 'Use gas_raw_run only when you need explicit script ID control',
+      executionCapabilities: {
+        arbitraryCode: 'Execute any JavaScript expressions, calculations, data processing of unlimited complexity',
+        projectFunctions: 'CALL YOUR PROJECT FUNCTIONS: Use require("Utils").myFunction() to execute functions from any file in your project',
+        commonJsIntegration: 'FULL MODULE SYSTEM: All dependencies resolved automatically, access to require(), module, exports throughout execution',
+        gasServices: 'ALL Google Apps Script services: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, and 20+ other services',
+        loggerCapture: 'ALL Logger.log() output automatically captured and returned - use for debugging, progress tracking, result logging'
+      },
       executionPatterns: {
         inlineCode: 'Direct execution: Math.PI * 2, new Date(), Session.getActiveUser().getEmail()',
         builtinServices: 'Google Apps Script services: SpreadsheetApp.create(), DriveApp.getFiles()',
-        userFunctions: 'Functions from files: require("ModuleName").functionName(args)'
+        projectFunctions: 'Your project functions: require("Utils").formatDate(), require("Database").getUser(123)',
+        combinedWorkflows: 'Complex workflows: const data = require("API").getData(); SpreadsheetApp.create("Report").getActiveSheet().getRange(1,1,data.length,3).setValues(data)'
       }
     },
     responseSchema: {
@@ -707,7 +800,7 @@ export class GASRawRunTool extends BaseTool {
       },
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. UNLIMITED EXECUTION: Can execute (1) ANY JavaScript expressions/statements of any length, (2) ALL Google Apps Script built-in services and objects, (3) Function calls from files using require("ModuleName") pattern. ALL GAS SERVICES AVAILABLE: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and more. No wrapper functions needed. Logger output automatically captured.',
+        description: 'JavaScript statement to execute directly in Google Apps Script. COMPREHENSIVE EXECUTION CAPABILITIES: (1) Run arbitrary JavaScript expressions and statements of unlimited length, (2) Execute existing functions from your project files using require("ModuleName").functionName() pattern, (3) Access ALL Google Apps Script services (DriveApp, SpreadsheetApp, GmailApp, etc.), (4) All Logger.log() output is automatically captured and returned. COMMONJS INTEGRATION: Use require("Utils").myFunction() to call functions from other project files - the CommonJS system resolves all dependencies automatically.',
         minLength: 1,
         examples: [
           // Basic JavaScript and Math
@@ -755,26 +848,40 @@ export class GASRawRunTool extends BaseTool {
           'Session.getTemporaryActiveUserKey()',
           'Session.getScriptTimeZone()',
           
-          // Function calls from project files
-          'require("Calculator").add(5, 3)',
-          'require("MathLibrary").fibonacci(10)',
-          'require("Utils").processData([1,2,3,4,5])',
-          'const calc = require("Calculator"); calc.multiply(4, 6)',
+          // Execute functions from your project files via CommonJS require()
+          'require("Calculator").add(5, 3)',                    // Call add function from Calculator.js
+          'require("Utils").formatDate(new Date())',            // Call formatDate from Utils.js
+          'require("Database").getUserById(123)',               // Call getUserById from Database.js
+          'require("API").fetchWeatherData("New York")',        // Call fetchWeatherData from API.js
+          'require("MathLibrary").fibonacci(10)',               // Call fibonacci from MathLibrary.js
+          'const utils = require("Utils"); utils.processData([1,2,3,4,5])', // Store module reference
+          'const calc = require("Calculator"); calc.multiply(4, 6)',         // Chain multiple calls
+          
+          // Complex workflows combining project functions with GAS services
+          'const data = require("Utils").parseCSV("name,age\\nJohn,30"); SpreadsheetApp.create("Import").getActiveSheet().getRange(1,1,data.length,2).setValues(data)',
+          'const result = require("API").processPayment({amount: 100}); Logger.log("Payment result: " + JSON.stringify(result)); result.success',
           
           // Complex multi-line operations
           'const sheet = SpreadsheetApp.create("Data Analysis"); const data = [[1,2,3],[4,5,6]]; sheet.getActiveSheet().getRange(1,1,2,3).setValues(data); return sheet.getId()',
           
-          // Error handling and logging
-          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }'
+          // Logger.log() output is automatically captured and returned
+          'Logger.log("Starting calculation..."); const result = 2 + 2; Logger.log("Result: " + result); result',
+          'Logger.log("Calling project function..."); const data = require("Utils").getData(); Logger.log("Retrieved " + data.length + " items"); data',
+          'Logger.log("Testing API integration"); const weather = require("API").getWeather("London"); Logger.log("Temperature: " + weather.temp); weather',
+          
+          // Error handling with comprehensive logging
+          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }',
+          'try { const user = require("Database").getUser(999); Logger.log("User found: " + user.name); return user; } catch(e) { Logger.log("User lookup failed: " + e.message); return null; }'
         ],
         llmHints: {
           capability: 'UNLIMITED JavaScript ES6+ support plus ALL Google Apps Script services - no restrictions',
           expressions: 'Can execute any mathematical expressions, object operations, API calls of any complexity',
-          functions: 'Can call functions defined in project files using require("ModuleName").functionName()',
+          projectFunctions: 'EXECUTE YOUR PROJECT FUNCTIONS: Use require("ModuleName").functionName() to call any function from your project files - the CommonJS system handles all imports automatically',
+          commonJsIntegration: 'FULL COMMONJS SUPPORT: Call functions between modules, access require(), module, exports - all dependencies resolved automatically at runtime',
           services: 'FULL ACCESS: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and ALL other GAS services',
           return: 'Return values are automatically JSON-serialized for response',
           debugging: 'Use console.log() or Logger.log() for debugging output in execution logs',
-          logCapture: 'Logger output is automatically captured in response.logger_output field',
+          logCapture: 'ALL Logger.log() output is automatically captured in response.logger_output field - no manual retrieval needed',
           size: 'Up to 500,000 characters supported - write extremely complex multi-line operations freely',
           performance: 'Configurable timeouts up to 1 hour for long-running operations'
         }
@@ -1476,7 +1583,7 @@ export class GASRawRunTool extends BaseTool {
           // Extract logger output from retry result if it exists
           const retryLoggerOutput = (retryResult && typeof retryResult === 'object' && retryResult.logger_output) || '';
           
-          return {
+          return protectResponseSize({
             status: 'success',
             scriptId,
             js_statement,
@@ -1484,7 +1591,7 @@ export class GASRawRunTool extends BaseTool {
             logger_output: retryLoggerOutput,
             executedAt: new Date().toISOString(),
             cookieAuthUsed: true
-          };
+          });
           
         } catch (authError: any) {
           console.error(`⚠️ [COOKIE AUTH] Domain authorization failed: ${authError.message} - continuing without cookie auth`);
@@ -1638,14 +1745,14 @@ export class GASRawRunTool extends BaseTool {
       // Handle structured response format {type: "data"|"exception", payload: ...}
       if (result && typeof result === 'object' && result.type) {
         if (result.type === 'data') {
-          return {
+          return protectResponseSize({
             status: 'success',
             scriptId,
             js_statement,
             result: result.payload,
             logger_output: result.logger_output || '',
             executedAt: new Date().toISOString()
-          };
+          });
         } else if (result.type === 'exception') {
           const error = new Error(result.payload.error.message);
           error.name = result.payload.error.name || 'FunctionExecutionError';
@@ -1657,14 +1764,14 @@ export class GASRawRunTool extends BaseTool {
       const loggerOutput = (result && typeof result === 'object' && result.logger_output) || '';
       
       // Return simple success response with logger output
-      return {
+      return protectResponseSize({
         status: 'success',
         scriptId,
         js_statement,
         result: result && typeof result === 'object' && result.result !== undefined ? result.result : result,
         logger_output: loggerOutput,
         executedAt: new Date().toISOString()
-      };
+      });
     } catch (error: any) {
       const duration = Date.now() - startTime;
       

@@ -54,156 +54,135 @@
       const stack = e.stack;
       const lines = stack.split('\n');
       
-      Logger.log('🔍 DEBUG: Starting module name detection');
-      Logger.log('🔍 DEBUG: Full stack trace:', stack);
-      Logger.log('🔍 DEBUG: Stack lines:', lines);
+      // Reduced debug logging for better performance
+      Logger.log('🔍 Detecting module name...');
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        Logger.log(`🔍 DEBUG: Processing line ${i}: "${line}"`);
         
         if (!line || line.includes('__detectModuleName__') || line.includes('__defineModule__')) {
-          Logger.log(`🔍 DEBUG: Skipping line ${i} (empty or contains detection functions)`);
           continue;
         }
         
         // ENHANCED: Pattern for Google Apps Script virtual paths: "at path/filename:line:column"
         // This preserves the full directory structure (e.g., "ai_tools/BaseConnector")
         let match = line.match(/at\s+([^/\s:]+\/)?([^/\s:]+(?:\/[^/\s:]+)*):\d+:\d+/);
-        Logger.log(`🔍 DEBUG: Pattern Enhanced GAS "at [path/]filename:line:column" match:`, match);
         if (match) {
           // If we have a path prefix, combine it with the filename part
           const pathPrefix = match[1] ? match[1].replace(/\/$/, '') : ''; // Remove trailing slash
           const filePart = match[2];
           const fullPath = pathPrefix ? `${pathPrefix}/${filePart}` : filePart;
           
-          Logger.log(`🔍 DEBUG: Pattern Enhanced extracted full path: "${fullPath}"`);
           if (fullPath && 
               fullPath !== 'eval' && 
               fullPath !== 'anonymous' &&
               !fullPath.startsWith('__') &&
               fullPath !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern Enhanced SUCCESS - returning: "${fullPath}"`);
+            Logger.log(`✅ Module detected: "${fullPath}"`);
             return fullPath;
           }
         }
         
         // Alternative pattern: "at full/path/filename:line:column" (single capture group)
         match = line.match(/at\s+([^/\s:]+(?:\/[^/\s:]+)+):\d+:\d+/);
-        Logger.log(`🔍 DEBUG: Pattern Alternative "at full/path/filename:line:column" match:`, match);
         if (match) {
           const fullPath = match[1];
-          Logger.log(`🔍 DEBUG: Pattern Alternative extracted full path: "${fullPath}"`);
           if (fullPath && 
               fullPath !== 'eval' && 
               fullPath !== 'anonymous' &&
               !fullPath.startsWith('__') &&
               fullPath !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern Alternative SUCCESS - returning: "${fullPath}"`);
+            Logger.log(`✅ Module detected: "${fullPath}"`);
             return fullPath;
           }
         }
         
         // Try pattern: (FileName:line:column) - for simple files without directories
         match = line.match(/\(([^/:()]+):\d+:\d+\)/);
-        Logger.log(`🔍 DEBUG: Pattern 1 "(FileName:line:column)" match:`, match);
         if (match) {
           const fileName = match[1];
-          Logger.log(`🔍 DEBUG: Pattern 1 extracted fileName: "${fileName}"`);
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern 1 SUCCESS - returning: "${fileName}"`);
+            Logger.log(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
         
         // Try pattern: at functionName (FileName:line:column) - for simple files
         match = line.match(/at\s+[^(]*\(([^/:()]+):\d+:\d+\)/);
-        Logger.log(`🔍 DEBUG: Pattern 2 "at functionName (FileName:line:column)" match:`, match);
         if (match) {
           const fileName = match[1];
-          Logger.log(`🔍 DEBUG: Pattern 2 extracted fileName: "${fileName}"`);
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern 2 SUCCESS - returning: "${fileName}"`);
+            Logger.log(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
         
         // Try pattern: FileName.gs:line - for simple files
         match = line.match(/([^/\s]+)\.gs:\d+/);
-        Logger.log(`🔍 DEBUG: Pattern 3 "FileName.gs:line" match:`, match);
         if (match) {
           const fileName = match[1];
-          Logger.log(`🔍 DEBUG: Pattern 3 extracted fileName: "${fileName}"`);
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern 3 SUCCESS - returning: "${fileName}"`);
+            Logger.log(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
         
         // Try pattern: at FileName.functionName - for simple files
         match = line.match(/at\s+([^.\s]+)\./);
-        Logger.log(`🔍 DEBUG: Pattern 4 "at FileName.functionName" match:`, match);
         if (match) {
           const fileName = match[1];
-          Logger.log(`🔍 DEBUG: Pattern 4 extracted fileName: "${fileName}"`);
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern 4 SUCCESS - returning: "${fileName}"`);
+            Logger.log(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
         
         // Try pattern: at FileName:line:column (Google Apps Script format) - for simple files
         match = line.match(/at\s+([^/\s:]+):\d+:\d+/);
-        Logger.log(`🔍 DEBUG: Pattern 5 "at FileName:line:column" match:`, match);
         if (match) {
           const fileName = match[1];
-          Logger.log(`🔍 DEBUG: Pattern 5 extracted fileName: "${fileName}"`);
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern 5 SUCCESS - returning: "${fileName}"`);
+            Logger.log(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
         
         // Try pattern: FileName:line:column (without "at" prefix) - for simple files
         match = line.match(/^\s*([^/\s:()]+):\d+:\d+/);
-        Logger.log(`🔍 DEBUG: Pattern 6 "FileName:line:column" match:`, match);
         if (match) {
           const fileName = match[1];
-          Logger.log(`🔍 DEBUG: Pattern 6 extracted fileName: "${fileName}"`);
           if (fileName && 
               fileName !== 'eval' && 
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`🔍 DEBUG: Pattern 6 SUCCESS - returning: "${fileName}"`);
+            Logger.log(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
-        
-        Logger.log(`🔍 DEBUG: No patterns matched for line ${i}`);
       }
       
-      Logger.log('🔍 DEBUG: No module name found in any stack trace line');
+      Logger.log('⚠️ Module name detection failed');
       
       // If no filename found, throw an exception with detailed debug info
       const debugInfo = {

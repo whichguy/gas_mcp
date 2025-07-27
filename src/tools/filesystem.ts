@@ -15,14 +15,14 @@ import { wrapModuleContent, unwrapModuleContent, shouldWrapContent, getModuleNam
  */
 export class GASCatTool extends BaseTool {
   public name = 'gas_cat';
-  public description = '📖 RECOMMENDED: Smart file reader - uses local files when available, otherwise reads from remote';
+  public description = '📖 RECOMMENDED: Smart file reader with automatic CommonJS unwrapping - shows clean user code for editing while preserving access to require(), module, and exports when executed';
   
   public inputSchema = {
     type: 'object',
     properties: {
       path: {
         type: 'string',
-        description: 'File path (filename only if current project set, or full projectId/filename)',
+        description: 'File path (filename only if current project set, or full projectId/filename). For SERVER_JS files, CommonJS wrapper will be automatically removed to show clean user code for editing while preserving access to require(), module, and exports when executed.',
         pattern: '^([a-zA-Z0-9_-]{5,60}/[a-zA-Z0-9_.//-]+|[a-zA-Z0-9_.//-]+)$',
         minLength: 1,
         examples: [
@@ -49,7 +49,10 @@ export class GASCatTool extends BaseTool {
     llmGuidance: {
       whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
       workflow: 'Set project with gas_project_set, then just use filename: gas_cat({path: "utils.gs"})',
-      alternatives: 'Use gas_raw_cat only when you need explicit project ID control'
+      alternatives: 'Use gas_raw_cat only when you need explicit project ID control',
+      commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When reading files, the outer _main() wrapper is removed to show clean user code for editing. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
+      moduleAccess: 'Your code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
+      editingWorkflow: 'Files are unwrapped for editing convenience and will be automatically re-wrapped with CommonJS structure when saved via gas_write.'
     }
   };
 
@@ -243,6 +246,62 @@ export class GASCatTool extends BaseTool {
       console.error(`☁️ [GAS_CAT] Successfully read from remote file: ${filename}`);
     }
 
+    // 🔧 COMMONJS INTEGRATION: Unwrap CommonJS structure for user transparency
+    let finalContent = result.content;
+    let commonJsInfo: any = null;
+    
+    if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
+      const unwrapped = unwrapModuleContent(finalContent);
+      
+      if (unwrapped !== finalContent) {
+        finalContent = unwrapped;
+        
+        // Analyze the unwrapped content for CommonJS features
+        const { analyzeCommonJsUsage } = await import('../utils/moduleWrapper.js');
+        const featureAnalysis = analyzeCommonJsUsage(unwrapped);
+        
+        commonJsInfo = {
+          moduleUnwrapped: true,
+          originalLength: result.content.length,
+          unwrappedLength: finalContent.length,
+          commonJsFeatures: {
+            hasRequireFunction: true,  // Always available when executed
+            hasModuleObject: true,     // Always available when executed
+            hasExportsObject: true,    // Always available when executed
+            userRequireCalls: featureAnalysis.requireCalls,
+            userModuleExports: featureAnalysis.moduleExports,
+            userExportsUsage: featureAnalysis.exportsUsage
+          },
+          systemNote: 'When executed, this code has access to require(), module, and exports via the CommonJS system',
+          editingNote: 'CommonJS wrapper removed for editing convenience - will be re-applied automatically on gas_write'
+        };
+        
+        console.error(`📖 [GAS_CAT] Unwrapped CommonJS structure - showing inner code for editing`);
+        if (featureAnalysis.hasModuleDependencies) {
+          console.error(`🔗 [GAS_CAT] Code uses require() - dependencies will be resolved by CommonJS system when executed`);
+        }
+        if (featureAnalysis.moduleExports || featureAnalysis.exportsUsage.length > 0) {
+          console.error(`📤 [GAS_CAT] Code exports functionality - available to other modules via require()`);
+        }
+      } else {
+        console.error(`📖 [GAS_CAT] No CommonJS wrapper detected - showing content as-is`);
+        commonJsInfo = {
+          moduleUnwrapped: false,
+          reason: 'No CommonJS wrapper structure found in content'
+        };
+      }
+    } else {
+      console.error(`⏭️ [GAS_CAT] Skipping CommonJS processing for ${result.fileType || 'unknown'} file: ${filename}`);
+      commonJsInfo = {
+        moduleUnwrapped: false,
+        reason: `${result.fileType || 'unknown'} files don't use the CommonJS module system`
+      };
+    }
+
+    // Update result with processed content and CommonJS info
+    result.content = finalContent;
+    result.commonJsInfo = commonJsInfo;
+
     return result;
   }
 
@@ -313,7 +372,12 @@ export class GASWriteTool extends BaseTool {
       },
       content: {
         type: 'string',
-        description: 'File content to write. Content type automatically detected for proper file extension.'
+        description: 'Raw user JavaScript content. The CommonJS module system will automatically wrap your code in a _main() function, making the require() function, module object, and exports object available to all your code. Do NOT manually include _main() function or __defineModule__ calls - they are generated automatically by the CommonJS system (see CommonJS.js for implementation details).',
+        examples: [
+          'function calculateTax(amount) { return amount * 0.08; }\nreturn { calculateTax };',
+          'const utils = require("Utils");\nfunction process(data) { return utils.clean(data); }\nmodule.exports = { process };',
+          'const config = require("Config");\nexports.apiKey = config.getKey();'
+        ]
       },
       fileType: {
         type: 'string',
@@ -344,7 +408,11 @@ export class GASWriteTool extends BaseTool {
     llmGuidance: {
       whenToUse: 'Use for normal file writing with explicit project paths. Remote-first workflow ensures safety.',
       workflow: 'Use with explicit paths: gas_write({path: "projectId/filename", content: "..."}) - writes to remote first, then commits to git, then updates local file',
-      alternatives: 'Use gas_raw_write when you need single-destination writes or advanced file positioning'
+      alternatives: 'Use gas_raw_write when you need single-destination writes or advanced file positioning',
+      commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
+      moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
+      wrapperHandling: 'Any accidentally included _main() or __defineModule__ calls are automatically cleaned and replaced with proper CommonJS structure. Never manually add module wrappers.',
+      systemFiles: 'System files (CommonJS, __mcp_gas_run, appsscript) are never wrapped and provide the underlying infrastructure.'
     }
   };
 
@@ -382,7 +450,65 @@ export class GASWriteTool extends BaseTool {
     }
     
     const projectName = scriptId; // Use scriptId as project name
-    const content = params.content;
+    const originalContent = params.content;
+
+    // 🔧 COMMONJS INTEGRATION: Process content for CommonJS module system
+    let processedContent = originalContent;
+    let commonJsProcessing: any = {};
+    const fileType = params.fileType || this.determineFileType(filename, originalContent);
+    
+    if (shouldWrapContent(fileType, filename)) {
+      console.error(`📦 [GAS_WRITE] Integrating ${filename} with CommonJS module system...`);
+      
+      // Step 1: Analyze CommonJS feature usage in original content
+      const { analyzeCommonJsUsage, detectAndCleanContent } = await import('../utils/moduleWrapper.js');
+      const commonJsAnalysis = analyzeCommonJsUsage(originalContent);
+      
+      // Step 2: Clean accidentally included wrappers
+      const cleaned = detectAndCleanContent(originalContent, filename);
+      processedContent = cleaned.cleanedContent;
+      
+      if (cleaned.hadWrappers) {
+        console.error(`🧹 [GAS_WRITE] Removed redundant CommonJS wrappers - the CommonJS system handles this automatically`);
+      }
+      
+      // Step 3: Apply standard CommonJS wrapper (provides require, module, exports)
+      const moduleName = getModuleName(path);
+      processedContent = wrapModuleContent(processedContent, moduleName);
+      
+      console.error(`✅ [GAS_WRITE] Applied CommonJS wrapper - require(), module, and exports now available to your code`);
+      
+      commonJsProcessing = {
+        wrapperApplied: true,
+        cleanedWrappers: cleaned.hadWrappers,
+        warnings: cleaned.warnings,
+        commonJsFeatures: {
+          requireFunction: true, // Always available via CommonJS
+          moduleObject: true,    // Always available via CommonJS  
+          exportsObject: true,   // Always available via CommonJS
+          userRequireCalls: commonJsAnalysis.requireCalls,
+          userModuleExports: commonJsAnalysis.moduleExports,
+          userExportsUsage: commonJsAnalysis.exportsUsage
+        },
+        systemNote: 'require(), module, and exports are provided by the CommonJS module system (see CommonJS.js)'
+      };
+      
+      // Provide user guidance based on features detected
+      if (commonJsAnalysis.hasModuleDependencies) {
+        console.error(`🔗 [GAS_WRITE] Code uses require() calls - dependencies will be resolved by CommonJS system when executed`);
+      }
+      if (commonJsAnalysis.moduleExports || commonJsAnalysis.exportsUsage.length > 0) {
+        console.error(`📤 [GAS_WRITE] Code exports functionality - will be available to other modules via require()`);
+      }
+    } else {
+      console.error(`⏭️ [GAS_WRITE] Skipping CommonJS integration for ${fileType} file: ${filename}`);
+      commonJsProcessing = {
+        wrapperApplied: false,
+        reason: `${fileType} files don't use the CommonJS module system`
+      };
+    }
+
+    const content = processedContent; // Use processed content for all subsequent operations
 
     // 🎯 REMOTE-FIRST WORKFLOW: Step 1 - Ensure git repository
     console.error(`🎯 [GAS_WRITE] Starting remote-first workflow for: ${projectName}/${filename}`);
@@ -661,7 +787,7 @@ export class GASWriteTool extends BaseTool {
       projectId: scriptId,
       filename,
       size: content.length,
-      workflow: 'local-first-git',
+      workflow: 'remote-first-git',
       results,
       gitRepository: {
         initialized: gitStatus.gitInitialized,
@@ -680,7 +806,8 @@ export class GASWriteTool extends BaseTool {
         gitCommit: gitCommitResult?.committed || false,
         syncVerification: !!syncStatus
       },
-      summary: `Successfully ${gitCommitResult?.committed ? 'committed and ' : ''}${localOnly ? 'wrote locally' : remoteOnly ? 'pushed to remote' : 'synchronized local and remote'}`
+      commonJsProcessing,
+      summary: `Successfully ${gitCommitResult?.committed ? 'committed and ' : ''}${localOnly ? 'wrote locally' : remoteOnly ? 'pushed to remote' : 'synchronized local and remote'}${commonJsProcessing.wrapperApplied ? ' with CommonJS integration' : ''}`
     };
   }
 
