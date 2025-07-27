@@ -50,6 +50,11 @@ function myFunction() {
 
 # List project files
 gas_ls --path="[scriptId]" --detailed=true
+
+# List files with wildcard patterns (NEW!)
+gas_ls --path="[scriptId]/utils/*" --detailed=true     # All files in utils/
+gas_ls --path="[scriptId]/*Connector*" --detailed=true # All connector files
+gas_ls --path="[scriptId]/test/*/*.test" --detailed=true # All test files
 ```
 
 ### **3. Deploy and Execute**
@@ -86,7 +91,7 @@ gas_run --script-id="[scriptId]" --function-name="myFunction"
 
 ### **📁 Project Management**
 - `gas_project_create` - Create new projects
-- `gas_ls` - List projects and files
+- `gas_ls` - List projects and files with **wildcard support** (`*`, `?` patterns)
 - `gas_info` - Get project information
 
 ### **📝 File Operations**

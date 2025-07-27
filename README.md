@@ -295,7 +295,7 @@ Update your Cursor configuration to include the config file:
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
-| `gas_ls` | List projects/files | `path?`, `detailed?` |
+| `gas_ls` | List projects/files **with wildcard support** | `path?` (supports `*` and `?` patterns), `detailed?`, `wildcardMode?` |
 | **`gas_cat`** | **✅ Smart reader** (local-first, remote fallback) | `path` |
 | **`gas_write`** | **✅ Auto-sync writer** (local + remote) | `path` (projectId/filename), `content` |
 | `gas_rm` | Delete files | `path` |
@@ -441,6 +441,16 @@ const project = await gas_project_create({
 // List all accessible projects
 const projects = await gas_ls({ path: "" });
 
+// List files with wildcard patterns (NEW!)
+const aiFiles = await gas_ls({ 
+  path: "scriptId/ai_tools/*",        // All files in ai_tools/
+  detailed: true 
+});
+const testFiles = await gas_ls({ 
+  path: "scriptId/test/*/*.test",     // All .test files in test subdirs
+  detailed: true 
+});
+
 // Get detailed project information
 const info = await gas_info({ 
   projectId: project.scriptId,
@@ -565,7 +575,7 @@ const apiResult = await gas_run_api_exec({
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
 | `gas_project_create` | Create new GAS project | `title`, `parentId?` |
-| `gas_ls` | List projects and files | `path`, `detailed?`, `recursive?` |
+| `gas_ls` | List projects and files with **wildcard patterns** (`*`, `?`) | `path` (supports wildcards), `detailed?`, `recursive?`, `wildcardMode?` |
 | `gas_info` | Get project details | `projectId`, `includeContent?` |
 
 ### File Operation Tools

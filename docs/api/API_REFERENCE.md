@@ -169,16 +169,19 @@ This enables seamless `require()` functionality across your Google Apps Script m
 
 ### `gas_ls` - List Projects and Files
 
-List Google Apps Script projects and files with optional filtering and detailed information.
+List Google Apps Script projects and files with **wildcard pattern support** and detailed information.
 
 **Important Note**: Google Apps Script has no real folders or directories. What appears as `"models/User.gs"` is simply a filename with a forward slash prefix for logical organization. The `/` is just part of the filename.
+
+**🎯 Wildcard Support**: Use `*` (any characters) and `?` (single character) patterns for powerful file filtering across pseudo-directories.
 
 #### Input Schema
 ```typescript
 interface GasLsInput {
-  path?: string;
+  path?: string;                    // Now supports wildcard patterns!
   detailed?: boolean;
   recursive?: boolean;
+  wildcardMode?: 'filename' | 'fullpath' | 'auto';  // NEW: Pattern matching mode
   accessToken?: string;
 }
 ```
@@ -242,8 +245,106 @@ const files = await callTool('gas_ls', {
       "size": 512
     }
   ],
-  "totalFiles": 3
+  "totalFiles": 3,
+  "isWildcard": false,
+  "wildcardMode": "auto"
 }
+```
+
+**🌟 NEW: Wildcard Pattern Examples**
+
+**Find All Files in a Pseudo-Directory**
+```typescript
+const aiToolsFiles = await callTool('gas_ls', {
+  path: 'abc123def456.../ai_tools/*',
+  detailed: true
+});
+
+// Finds all files with "ai_tools/" prefix
+{
+  "type": "files",
+  "projectId": "abc123def456...",
+  "pattern": "ai_tools/*",
+  "isWildcard": true,
+  "wildcardMode": "auto",
+  "matchedFiles": 25,
+  "totalFiles": 137,
+  "items": [
+    { "name": "ai_tools/BaseConnector", "type": "SERVER_JS", "size": 60471 },
+    { "name": "ai_tools/ClaudeConnector", "type": "SERVER_JS", "size": 31501 },
+    // ... 23 more files
+  ]
+}
+```
+
+**Cross-Directory File Search**
+```typescript
+const connectorFiles = await callTool('gas_ls', {
+  path: 'abc123def456.../*Connector*',
+  detailed: true
+});
+
+// Finds all files containing "Connector" anywhere in the name
+{
+  "matchedFiles": 22,
+  "items": [
+    { "name": "ai_tools/BaseConnector", "type": "SERVER_JS" },
+    { "name": "ai_tools/ClaudeConnector", "type": "SERVER_JS" },
+    { "name": "gas-sync/GASBaseConnector", "type": "SERVER_JS" },
+    { "name": "test/mocks/MockConnector", "type": "SERVER_JS" },
+    // ... more connector files across directories
+  ]
+}
+```
+
+**Complex Multi-Level Pattern Matching**
+```typescript
+const testFiles = await callTool('gas_ls', {
+  path: 'abc123def456.../test/*/*.test',
+  detailed: true
+});
+
+// Finds all .test files in any subdirectory under test/
+{
+  "matchedFiles": 34,
+  "items": [
+    { "name": "test/async/core.test", "type": "SERVER_JS" },
+    { "name": "test/integration/ClaudeConnector.integration.test", "type": "SERVER_JS" },
+    { "name": "test/unit/LLMConversation.test", "type": "SERVER_JS" },
+    // ... 31 more test files
+  ]
+}
+```
+
+**Single Character Wildcard with `?`**
+```typescript
+const versionFiles = await callTool('gas_ls', {
+  path: 'abc123def456.../test/unit/LLMConversation?test',
+  detailed: true
+});
+
+// Finds files where ? matches exactly one character (like ".")
+{
+  "matchedFiles": 1,
+  "items": [
+    { "name": "test/unit/LLMConversation.test", "type": "SERVER_JS" }
+  ]
+}
+```
+
+**Wildcard Mode Control**
+```typescript
+// Match only filename portion (not full path)
+const files = await callTool('gas_ls', {
+  path: 'abc123def456.../*User*',
+  wildcardMode: 'filename'  // Only match basename
+});
+
+// Match full file path (default for patterns with /)
+const files = await callTool('gas_ls', {
+  path: 'abc123def456.../models/*',
+  wildcardMode: 'fullpath'  // Match complete path
+});
 ```
 
 ### `gas_cat` - Read File Contents
