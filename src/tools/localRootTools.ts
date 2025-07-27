@@ -210,7 +210,7 @@ export class GASLocalListProjectsTool extends BaseTool {
         if (mcpInfo) {
           const projectEntry: any = {
             name: mcpInfo.projectName || projectDir.name,
-            scriptId: mcpInfo.projectId,
+            scriptId: mcpInfo.scriptId,
             lastSync: mcpInfo.lastSync,
             created: mcpInfo.created
           };
