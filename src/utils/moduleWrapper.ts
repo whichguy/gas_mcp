@@ -308,7 +308,7 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
 
 /**
  * Extracts module name from file path, preserving directory structure
- * @param filePath - The file path (e.g., "projectId/utils/helpers" or "utils/helpers")
+ * @param filePath - The file path (e.g., "scriptId/utils/helpers" or "utils/helpers")
  * @returns The module name with preserved path structure (e.g., "utils/helpers")
  */
 export function getModuleName(filePath: string): string {
