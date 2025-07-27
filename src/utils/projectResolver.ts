@@ -152,29 +152,61 @@ export class ProjectResolver {
   }
 
   /**
-   * Get current project script ID from .gas-current.json
+   * Get current project script ID from unified configuration
    */
   static async getCurrentScriptId(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<string> {
     try {
-      const currentPath = path.join(workingDir, this.CURRENT_FILE);
-      const content = await fs.readFile(currentPath, 'utf-8');
-      const current: CurrentProject = JSON.parse(content);
-      return current.scriptId;
-    } catch (error) {
-      throw new ValidationError('current project', 'not set', 'valid current project (use gas_project_set first)');
+      const currentProject = await McpGasConfigManager.getCurrentProject();
+      if (!currentProject || !currentProject.scriptId) {
+        throw new ValidationError('current project', 'not set', 'valid current project (use gas_project_set first)');
+      }
+      return currentProject.scriptId;
+    } catch (error: any) {
+      // If unified config fails, fall back to legacy file-based approach
+      if (error instanceof ValidationError) {
+        throw error;
+      }
+      
+      console.error(`⚠️ [PROJECT_RESOLVER] Unified config failed, trying legacy approach: ${error.message}`);
+      try {
+        const currentPath = path.join(workingDir, this.CURRENT_FILE);
+        const content = await fs.readFile(currentPath, 'utf-8');
+        const current: CurrentProject = JSON.parse(content);
+        return current.scriptId;
+      } catch (legacyError) {
+        throw new ValidationError('current project', 'not set', 'valid current project (use gas_project_set first)');
+      }
     }
   }
 
   /**
-   * Get current project info from .gas-current.json
+   * Get current project info from unified configuration
    */
   static async getCurrentProject(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<CurrentProject> {
     try {
-      const currentPath = path.join(workingDir, this.CURRENT_FILE);
-      const content = await fs.readFile(currentPath, 'utf-8');
-      return JSON.parse(content);
-    } catch (error) {
-      throw new ValidationError('current project', 'not set', 'valid current project (use gas_project_set first)');
+      const currentProject = await McpGasConfigManager.getCurrentProject();
+      if (!currentProject || !currentProject.scriptId || !currentProject.projectName) {
+        throw new ValidationError('current project', 'not set', 'valid current project (use gas_project_set first)');
+      }
+      return {
+        projectName: currentProject.projectName,
+        scriptId: currentProject.scriptId,
+        lastSync: currentProject.lastSync || new Date().toISOString()
+      };
+    } catch (error: any) {
+      // If unified config fails, fall back to legacy file-based approach
+      if (error instanceof ValidationError) {
+        throw error;
+      }
+      
+      console.error(`⚠️ [PROJECT_RESOLVER] Unified config failed, trying legacy approach: ${error.message}`);
+      try {
+        const currentPath = path.join(workingDir, this.CURRENT_FILE);
+        const content = await fs.readFile(currentPath, 'utf-8');
+        return JSON.parse(content);
+      } catch (legacyError) {
+        throw new ValidationError('current project', 'not set', 'valid current project (use gas_project_set first)');
+      }
     }
   }
 
@@ -247,60 +279,133 @@ export class ProjectResolver {
   }
 
   /**
-   * Get project name by script ID
+   * Get project name by script ID from unified configuration
    */
   static async getProjectNameByScriptId(scriptId: string, workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<string | null> {
-    const config = await this.getProjectConfig(workingDir);
-    
-    for (const [name, project] of Object.entries(config.projects)) {
-      if (project.scriptId === scriptId) {
-        return name;
-      }
-    }
-
-    // Check environments
-    if (config.environments) {
-      for (const [env, project] of Object.entries(config.environments)) {
-        if (project?.scriptId === scriptId) {
-          return `${env} (environment)`;
+    try {
+      // Try unified configuration first
+      const config = await McpGasConfigManager.getConfig();
+      
+      // Check regular projects
+      if (config.projects) {
+        for (const [name, project] of Object.entries(config.projects)) {
+          if (project.scriptId === scriptId) {
+            return name;
+          }
         }
       }
-    }
 
-    return null;
+      // Check environments
+      if (config.environments) {
+        for (const [env, project] of Object.entries(config.environments)) {
+          if (project?.scriptId === scriptId) {
+            return `${env} (environment)`;
+          }
+        }
+      }
+
+      return null;
+    } catch (error: any) {
+      console.error(`⚠️ [PROJECT_RESOLVER] Unified config failed, trying legacy approach: ${error.message}`);
+      
+      // Fall back to legacy method
+      try {
+        const config = await this.getProjectConfig(workingDir);
+        
+        for (const [name, project] of Object.entries(config.projects)) {
+          if (project.scriptId === scriptId) {
+            return name;
+          }
+        }
+
+        // Check environments
+        if (config.environments) {
+          for (const [env, project] of Object.entries(config.environments)) {
+            if (project?.scriptId === scriptId) {
+              return `${env} (environment)`;
+            }
+          }
+        }
+
+        return null;
+      } catch (legacyError) {
+        return null; // Return null if both methods fail
+      }
+    }
   }
 
   /**
-   * List all configured projects
+   * List all configured projects from unified configuration
    */
   static async listProjects(workingDir: string = ProjectResolver.getSafeWorkingDir()): Promise<Array<{name: string; scriptId: string; description?: string; type: string}>> {
-    const config = await this.getProjectConfig(workingDir);
-    const results: Array<{name: string; scriptId: string; description?: string; type: string}> = [];
+    try {
+      // Try unified configuration first
+      const config = await McpGasConfigManager.getConfig();
+      const results: Array<{name: string; scriptId: string; description?: string; type: string}> = [];
 
-    // Add regular projects
-    for (const [name, project] of Object.entries(config.projects)) {
-      results.push({
-        name,
-        scriptId: project.scriptId,
-        description: project.description,
-        type: 'project'
-      });
-    }
-
-    // Add environments
-    if (config.environments) {
-      for (const [env, project] of Object.entries(config.environments)) {
-        if (project) {
+      // Add regular projects from unified config
+      if (config.projects) {
+        for (const [name, project] of Object.entries(config.projects)) {
           results.push({
-            name: env,
+            name,
             scriptId: project.scriptId,
-            description: project.name,
-            type: 'environment'
+            description: project.description,
+            type: 'project'
           });
         }
       }
-    }
 
-    return results;
+      // Add environments from unified config
+      if (config.environments) {
+        for (const [env, project] of Object.entries(config.environments)) {
+          if (project) {
+            results.push({
+              name: env,
+              scriptId: project.scriptId,
+              description: project.name,
+              type: 'environment'
+            });
+          }
+        }
+      }
+
+      return results;
+    } catch (error: any) {
+      console.error(`⚠️ [PROJECT_RESOLVER] Unified config failed, trying legacy approach: ${error.message}`);
+      
+      // Fall back to legacy method
+      try {
+        const config = await this.getProjectConfig(workingDir);
+        const results: Array<{name: string; scriptId: string; description?: string; type: string}> = [];
+
+        // Add regular projects
+        for (const [name, project] of Object.entries(config.projects)) {
+          results.push({
+            name,
+            scriptId: project.scriptId,
+            description: project.description,
+            type: 'project'
+          });
+        }
+
+        // Add environments
+        if (config.environments) {
+          for (const [env, project] of Object.entries(config.environments)) {
+            if (project) {
+              results.push({
+                name: env,
+                scriptId: project.scriptId,
+                description: project.name,
+                type: 'environment'
+              });
+            }
+          }
+        }
+
+        return results;
+      } catch (legacyError) {
+        return []; // Return empty array if both methods fail
+      }
+    }
   }
 } 

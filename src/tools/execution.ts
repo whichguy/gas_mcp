@@ -168,24 +168,16 @@ export class GASRunTool extends BaseTool {
           'try { const user = require("Database").getUser(999); Logger.log("User found: " + user.name); return user; } catch(e) { Logger.log("User lookup failed: " + e.message); return null; }'
         ]
       },
-      project: {
-        oneOf: [
-          {
-            type: 'string',
-            description: 'Local project name OR direct script ID (44 chars). If not provided, uses current project.'
-          },
-          {
-            type: 'object',
-            properties: {
-              dev: { type: 'boolean', description: 'Use development environment' },
-              staging: { type: 'boolean', description: 'Use staging environment' }, 
-              prod: { type: 'boolean', description: 'Use production environment' },
-              production: { type: 'boolean', description: 'Use production environment' }
-            },
-            description: 'Environment shortcut from local configuration'
-          }
-        ],
-        description: 'Project to execute in (defaults to current project if set)'
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID. Must be a valid 25-60 character Google Drive file ID for an Apps Script project.',
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60,
+        examples: [
+          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
+          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
+        ]
       },
       autoRedeploy: {
         type: 'boolean',
@@ -215,11 +207,11 @@ export class GASRunTool extends BaseTool {
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['js_statement'],
+    required: ['scriptId', 'js_statement'],
     llmGuidance: {
-      whenToUse: 'Use for normal JavaScript execution. Automatically uses current project context.',
-      workflow: 'Set project with gas_project_set, then execute: gas_run({js_statement: "Math.sqrt(16)"}) for inline code or gas_run({js_statement: "require(\\"Calculator\\").add(5, 3)"}) for functions from files.',
-      alternatives: 'Use gas_raw_run only when you need explicit script ID control',
+      whenToUse: 'Use for normal JavaScript execution with automatic deployment handling.',
+      workflow: 'Provide explicit script ID: gas_run({scriptId: "1arGk_0LU7E...", js_statement: "Math.sqrt(16)"}) for inline code or gas_run({scriptId: "1arGk_0LU7E...", js_statement: "require(\\"Calculator\\").add(5, 3)"}) for functions from files.',
+      alternatives: 'Use gas_raw_run for the same functionality - both tools now require explicit script IDs',
       executionCapabilities: {
         arbitraryCode: 'Execute any JavaScript expressions, calculations, data processing of unlimited complexity',
         projectFunctions: 'CALL YOUR PROJECT FUNCTIONS: Use require("Utils").myFunction() to execute functions from any file in your project',
@@ -292,20 +284,11 @@ export class GASRunTool extends BaseTool {
     const executionTimeout = Math.min(Math.max(params.executionTimeout || 780, 780), 3600); // 13m-1h range
     const responseTimeout = Math.min(Math.max(params.responseTimeout || 780, 780), 3600); // 13m-1h range
     
-    // Get auth token first for project resolution
+    // Get auth token
     const accessToken = await this.getAuthToken(params);
     
-    // Resolve script ID
-    let scriptId: string;
-    
-    try {
-      scriptId = await ProjectResolver.resolveScriptId(params.project, workingDir, accessToken);
-    } catch (error: any) {
-      if (!params.project) {
-        throw new ValidationError('project', 'undefined', 'project parameter or current project (use gas_project_set)');
-      }
-      throw error;
-    }
+    // Use script ID directly (no resolution needed)
+    const scriptId = params.scriptId;
     
     // Create a raw tool instance to execute the actual logic
     const rawTool = new GASRawRunTool(this.sessionAuthManager);
