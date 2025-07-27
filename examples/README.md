@@ -102,9 +102,9 @@ gas_run --script-id="[scriptId]" --function-name="myFunction"
 
 ### **📝 File Operations**
 - `gas_write` - Create/update files
-- `gas_cat` - Read file contents
-- `gas_grep` - **Search file contents** with pattern matching (clean user code)
-- `gas_raw_grep` - **Search file contents** including CommonJS wrappers (advanced)
+- `gas_cat` - Read file contents (clean user code, unwrapped)
+- `gas_grep` - **Search file contents** with pattern matching (same clean content as `gas_cat`)
+- `gas_raw_grep` - **Search file contents** including CommonJS wrappers (same full content as `gas_raw_cat`)
 - `gas_mv` - Move/rename files
 - `gas_cp` - Copy files
 - `gas_rm` - Delete files
@@ -126,6 +126,46 @@ gas_run --script-id="[scriptId]" --function-name="myFunction"
 - `gas_find_drive_script` - Find container scripts
 - `gas_bind_script` - Bind existing scripts
 - `gas_create_script` - Create container-bound scripts
+
+## **Content Processing: gas_grep vs gas_raw_grep**
+
+Understanding what content each search tool examines:
+
+### **gas_grep** (Clean User Code)
+- Searches the same content `gas_cat` shows
+- Your actual functions without system wrappers
+- Clean, readable code for development
+```javascript
+// What gas_grep searches:
+function calculateTax(amount) {
+  return amount * 0.08;
+}
+exports.calculateTax = calculateTax;
+```
+
+### **gas_raw_grep** (Complete File Content)  
+- Searches the same content `gas_raw_cat` shows
+- Includes CommonJS wrappers and system code
+- Full file infrastructure for debugging
+```javascript
+// What gas_raw_grep searches:
+function _main(
+  module = globalThis.__getCurrentModule(),
+  exports = module.exports,
+  require = globalThis.require
+) {
+  function calculateTax(amount) {
+    return amount * 0.08;
+  }
+  exports.calculateTax = calculateTax;
+}
+
+__defineModule__(_main);
+```
+
+**Choose the right tool:**
+- 🎯 Use `gas_grep` for normal development (finding your functions, require calls, etc.)
+- 🔧 Use `gas_raw_grep` for debugging CommonJS module system issues
 
 ## **Best Practices**
 

@@ -37,35 +37,39 @@ export class GasGrepTool extends BaseTool {
       editingWorkflow: 'Search results show unwrapped code for easy reading. The same unwrapped content is what gas_cat shows for editing.',
       moduleAccess: 'Your search will find require("ModuleName") calls, module.exports = {...} assignments, and exports.func = ... usage in clean user code without system wrapper noise.',
       whenToUse: 'Use for normal code searches. Automatically handles CommonJS unwrapping for cleaner results.',
-      workflow: 'Searches through the clean user code that developers actually write and edit'
+      workflow: 'Searches through the clean user code that developers actually write and edit',
+      contentComparison: 'gas_grep searches the same content that gas_cat shows (unwrapped user code), while gas_raw_grep searches the same content that gas_raw_cat shows (full file including CommonJS wrappers)'
     },
     properties: {
       pattern: {
         type: 'string',
-        description: 'Search pattern (supports regex and literal text). Examples: "function\\\\s+(\\\\w+)" (regex), "require(" (literal), "TODO:" (simple text)',
+        description: 'Search pattern (supports regex and literal text). Searches clean user code (same content as gas_cat shows). Examples: "function\\\\s+(\\\\w+)" finds user functions, "require(" finds user dependencies',
         minLength: 1,
         examples: [
-          'require\\\\(',                    // Find require calls
-          'function\\\\s+(\\\\w+)',          // Find function definitions  
-          'TODO:|FIXME:',                   // Find todo items
-          'console\\\\.log',                // Find console.log statements
-          'Logger\\\\.log',                 // Find Logger.log statements
-          'api[_-]?key',                    // Find potential API keys
-          '^\\\\s*function\\\\s+\\\\w+'     // Find function declarations
+          'require\\\\(',                    // Find user require calls (no wrapper noise)
+          'function\\\\s+(\\\\w+)',          // Find user function definitions (skips _main wrapper)
+          'exports\\.[a-zA-Z_$]',           // Find user exports assignments
+          'module\\.exports\\s*=',          // Find user module.exports
+          'TODO:|FIXME:',                   // Find user todo items
+          'console\\\\.log',                // Find user console.log statements
+          'Logger\\\\.log',                 // Find user Logger.log statements
+          'api[_-]?key',                    // Find potential API keys in user code
+          '^\\\\s*const\\\\s+\\\\w+',      // Find user const declarations
+          'class\\\\s+(\\\\w+)',           // Find user class definitions
         ]
       },
       path: {
         type: 'string',
-        description: 'Project or file path with wildcard/regex support. Examples: "projectId" (entire project), "projectId/utils/*" (wildcards), "projectId/.*Controller.*" (regex)',
+        description: 'Project or file path with wildcard/regex support. Searches clean user code in matching files (same content processing as gas_cat). Examples: "projectId" (entire project), "projectId/utils/*" (wildcard), "projectId/.*Controller.*" (regex)',
         default: '',
         examples: [
-          'projectId',                      // Search entire project
-          'projectId/ai_tools/*',          // Wildcard: ai_tools directory
-          'projectId/*Connector*',         // Wildcard: files containing Connector
-          'projectId/.*Controller.*',      // Regex: files containing Controller
-          'projectId/(utils|helpers)/.*',  // Regex: utils OR helpers directories
-          'projectId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec
-          'projectId/test/*/*.test'        // Wildcard: test files in subdirectories
+          'projectId',                      // Search entire project (user code only)
+          'projectId/ai_tools/*',          // Wildcard: ai_tools directory (user code only)  
+          'projectId/*Connector*',         // Wildcard: files containing Connector (user code only)
+          'projectId/.*Controller.*',      // Regex: files containing Controller (user code only)
+          'projectId/(utils|helpers)/.*',  // Regex: utils OR helpers directories (user code only)
+          'projectId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (user code only)
+          'projectId/test/*/*.test'        // Wildcard: test files in subdirectories (user code only)
         ]
       },
       pathMode: {
@@ -390,31 +394,33 @@ export class GasRawGrepTool extends BaseTool {
     properties: {
       pattern: {
         type: 'string',
-        description: 'Search pattern (supports regex and literal text). Examples: "function\\\\s+(\\\\w+)" (regex), "_main\\\\s*\\\\(" (find CommonJS wrappers), "__defineModule__" (system calls)',
+        description: 'Search pattern (supports regex and literal text). Searches complete file content (same content as gas_raw_cat shows) including CommonJS wrappers. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
         minLength: 1,
         examples: [
-          'require\\\\(',                    // Find require calls
-          'function\\\\s+(\\\\w+)',          // Find function definitions  
-          '_main\\\\s*\\\\(',                // Find CommonJS _main wrappers
-          '__defineModule__',               // Find module system calls
-          'globalThis\\.__getCurrentModule', // Find module system internals
-          'TODO:|FIXME:',                   // Find todo items
-          'console\\\\.log',                // Find console.log statements
-          'Logger\\\\.log',                 // Find Logger.log statements
+          'require\\\\(',                    // Find require calls (in user code + system context)
+          'function\\\\s+(\\\\w+)',          // Find ALL function definitions (user + _main wrappers)
+          '_main\\\\s*\\\\(',                // Find CommonJS _main wrappers (only in raw content)
+          '__defineModule__',               // Find module system calls (only in raw content)
+          'globalThis\\.__getCurrentModule', // Find module system internals (only in raw content)
+          'module\\s*=\\s*globalThis',      // Find CommonJS parameter setup (only in raw content)
+          'exports\\s*=\\s*module\\.exports', // Find CommonJS parameter setup (only in raw content)
+          'TODO:|FIXME:',                   // Find todo items (user code + any in wrappers)
+          'console\\\\.log',                // Find console.log statements (user + system)
+          'Logger\\\\.log',                 // Find Logger.log statements (user + system)
         ]
       },
       path: {
         type: 'string',
-        description: 'Project or file path with wildcard/regex support. Examples: "projectId" (entire project), "projectId/utils/*" (wildcards), "projectId/.*Controller.*" (regex)',
+        description: 'Project or file path with wildcard/regex support. Searches complete file content in matching files (same content processing as gas_raw_cat) including CommonJS wrappers and system code.',
         default: '',
         examples: [
-          'projectId',                      // Search entire project
-          'projectId/ai_tools/*',          // Wildcard: ai_tools directory
-          'projectId/*Connector*',         // Wildcard: files containing Connector
-          'projectId/.*Controller.*',      // Regex: files containing Controller
-          'projectId/(utils|helpers)/.*',  // Regex: utils OR helpers directories
-          'projectId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec
-          'projectId/test/*/*.test'        // Wildcard: test files in subdirectories
+          'projectId',                      // Search entire project (full file content including wrappers)
+          'projectId/ai_tools/*',          // Wildcard: ai_tools directory (full content including wrappers)
+          'projectId/*Connector*',         // Wildcard: files containing Connector (full content including wrappers)
+          'projectId/.*Controller.*',      // Regex: files containing Controller (full content including wrappers)
+          'projectId/(utils|helpers)/.*',  // Regex: utils OR helpers directories (full content including wrappers)
+          'projectId/.*\\.(test|spec)$',  // Regex: test files ending in .test or .spec (full content including wrappers)
+          'projectId/test/*/*.test'        // Wildcard: test files in subdirectories (full content including wrappers)
         ]
       },
       pathMode: {
