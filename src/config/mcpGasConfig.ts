@@ -290,23 +290,13 @@ export class McpGasConfigManager {
   }
 
   /**
-   * Get local root path
+   * Get local root path - now uses git sync pattern
+   * Each project lives in ~/gas-repos/project-{scriptId}/
    */
   static async getLocalRootPath(): Promise<string> {
-    const config = await McpGasConfigManager.getConfig();
-    return config.localRoot.rootPath;
-  }
-
-  /**
-   * Set local root path
-   */
-  static async setLocalRootPath(rootPath: string): Promise<void> {
-    await McpGasConfigManager.updateConfig({
-      localRoot: {
-        rootPath,
-        lastUpdated: new Date().toISOString()
-      }
-    });
+    // Always use the git sync pattern
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    return path.resolve(homeDir, 'gas-repos');
   }
 
   /**

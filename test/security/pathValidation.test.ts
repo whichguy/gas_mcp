@@ -1,13 +1,13 @@
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
-import { TestAssertionHelpers } from '../utils/testAssertions.js';
+import { TestAssertionHelpers } from '../helpers/assertions.js';
 
 describe('Path Validation Tests', () => {
   let client: any;
 
   before(async function() {
     this.timeout(10000);
-    const { createTestClient } = await import('../system/mcpClient.js');
+    const { createTestClient } = await import('../helpers/mcpClient.js');
     client = await createTestClient();
   });
 

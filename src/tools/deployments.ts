@@ -4,6 +4,67 @@ import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SCRIPT_ID_SCHEMA } from '../utils/schemaPatterns.js';
 import { SHIM_TEMPLATE } from '../config/shimTemplate.js';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/**
+ * Get the __mcp_gas_run.js template content
+ * @returns {string} The execution infrastructure template content
+ */
+function getExecutionTemplate(): string {
+  try {
+    // Get the directory of this file - when compiled, this will be in dist/src/tools/
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+    
+    // Determine if we're running from compiled code (dist/) or source code (src/)
+    let srcDir: string;
+    if (currentDir.includes('/dist/')) {
+      // Running from compiled code: dist/src/tools -> go up to project root, then to src
+      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
+      srcDir = path.join(projectRoot, 'src');
+    } else {
+      // Running from source code: src/tools -> go up to src
+      srcDir = path.join(currentDir, '..');
+    }
+    
+    const templatePath = path.join(srcDir, '__mcp_gas_run.js');
+    
+    return fs.readFileSync(templatePath, 'utf8');
+  } catch (error) {
+    console.error('Error reading __mcp_gas_run.js template:', error);
+    throw new Error(`Failed to read execution template: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Get the appsscript.json template content
+ * @returns {object} The manifest template object
+ */
+function getManifestTemplate(): any {
+  try {
+    // Get the directory of this file - when compiled, this will be in dist/src/tools/
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+    
+    // Determine if we're running from compiled code (dist/) or source code (src/)
+    let srcDir: string;
+    if (currentDir.includes('/dist/')) {
+      // Running from compiled code: dist/src/tools -> go up to project root, then to src
+      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
+      srcDir = path.join(projectRoot, 'src');
+    } else {
+      // Running from source code: src/tools -> go up to src
+      srcDir = path.join(currentDir, '..');
+    }
+    
+    const templatePath = path.join(srcDir, 'appsscript.json');
+    
+    const content = fs.readFileSync(templatePath, 'utf8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('Error reading appsscript.json template:', error);
+    throw new Error(`Failed to read manifest template: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -710,15 +771,10 @@ export class GASProjectCreateTool extends BaseTool {
           purpose: 'Include the main function or use case in the title'
         }
       },
-      localName: {
+      repository: {
         type: 'string',
-        description: 'Optional local project name to add to .gas-projects.json configuration. If not provided, uses title.',
-        minLength: 1
-      },
-      addToLocalConfig: {
-        type: 'boolean',
-        description: 'Add the new project to local configuration (.gas-projects.json) for easy reference',
-        default: true
+        description: 'Optional git repository URL. If not provided, creates local-only git repo.',
+        examples: ['https://github.com/owner/repo.git', 'local']
       },
       parentId: {
         type: 'string',
@@ -807,18 +863,34 @@ export class GASProjectCreateTool extends BaseTool {
       // Create the CommonJS.js file
       const shimResult = await this.create0ShimFile(project.scriptId, accessToken);
 
-      // Optionally add to local configuration
+      // Initialize git for the project (following git sync pattern)
+      let gitInitResult: any = { success: false };
+      try {
+        const { GasGitInitTool } = await import('./gitSync.js');
+        const gitInitTool = new GasGitInitTool(this.sessionAuthManager);
+        
+        gitInitResult = await gitInitTool.execute({
+          scriptId: project.scriptId,
+          repository: params.repository || 'local',
+          branch: 'main',
+          includeReadme: true,
+          accessToken
+        });
+        console.error(`✅ [GAS_PROJECT_CREATE] Git initialized for project`);
+      } catch (error: any) {
+        console.error(`⚠️ [GAS_PROJECT_CREATE] Failed to initialize git: ${error.message}`);
+        gitInitResult.error = error.message;
+      }
+      
+      // Add to local configuration
       let localConfigResult = false;
-      let localConfigError: string | undefined;
-      if (addToLocalConfig) {
-        try {
-          const { ProjectResolver } = await import('../utils/projectResolver.js');
-          await ProjectResolver.addProject(localName, project.scriptId, `Created: ${new Date().toLocaleDateString()}`, workingDir);
-          localConfigResult = true;
-        } catch (error: any) {
-          localConfigError = error.message;
-          console.error(`⚠️ [GAS_PROJECT_CREATE] Failed to add to local config: ${error.message}`);
-        }
+      const localName = params.localName || this.generateLocalName(title);
+      try {
+        const { ProjectResolver } = await import('../utils/projectResolver.js');
+        await ProjectResolver.addProject(localName, project.scriptId, `Created: ${new Date().toLocaleDateString()}`, workingDir);
+        localConfigResult = true;
+      } catch (error: any) {
+        console.error(`⚠️ [GAS_PROJECT_CREATE] Failed to add to local config: ${error.message}`);
       }
 
       const result: any = {
@@ -826,12 +898,15 @@ export class GASProjectCreateTool extends BaseTool {
         scriptId: project.scriptId,
         title: project.title,
         localName,
+        gitInitialized: gitInitResult.success,
+        gitSyncFolder: gitInitResult.syncFolder,
+        repository: gitInitResult.repository || params.repository || 'local',
         addedToLocalConfig: localConfigResult,
         createTime: project.createTime,
         updateTime: project.updateTime,
         parentId: project.parentId,
         shimCreated: shimResult.success,
-        instructions: `Project created with ${shimResult.success ? 'CommonJS module system' : 'basic setup'} and ${localConfigResult ? 'added to local config' : 'not added to local config'} as '${localName}'. Use gas_project_set({project: "${localName}"}) to start working.`
+        instructions: `Project created with CommonJS module system. Git sync initialized at: ${gitInitResult.syncFolder || '~/gas-repos/project-' + project.scriptId}. Files will be automatically synced between GAS and local git repository.`
       };
 
       // Add debug info if there were errors
@@ -839,8 +914,8 @@ export class GASProjectCreateTool extends BaseTool {
         result.shimError = shimResult.error;
         result.shimDebug = shimResult.debug;
       }
-      if (localConfigError) {
-        result.localConfigError = localConfigError;
+      if (gitInitResult.error) {
+        result.gitInitError = gitInitResult.error;
       }
 
       return result;
@@ -898,6 +973,317 @@ export class GASProjectCreateTool extends BaseTool {
       .replace(/-+/g, '-')          // Collapse multiple hyphens
       .replace(/^-|-$/g, '')        // Remove leading/trailing hyphens
       .substring(0, 30);            // Limit length
+  }
+}
+
+/**
+ * Initialize existing GAS projects with CommonJS and execution infrastructure
+ */
+export class GASProjectInitTool extends BaseTool {
+  public name = 'gas_project_init';
+  public description = 'Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with gas_project_create or are missing required infrastructure files.';
+  
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID to initialize/update',
+        pattern: '^[a-zA-Z0-9_-]{44}$',
+        minLength: 44,
+        maxLength: 44
+      },
+      includeCommonJS: {
+        type: 'boolean',
+        description: 'Install/update CommonJS module system (default: true)',
+        default: true
+      },
+      includeExecutionInfrastructure: {
+        type: 'boolean',
+        description: 'Install/update __mcp_gas_run execution infrastructure (default: true)',
+        default: true
+      },
+      updateManifest: {
+        type: 'boolean',
+        description: 'Update appsscript.json manifest with standard configuration (default: true)',
+        default: true
+      },
+      force: {
+        type: 'boolean',
+        description: 'Force overwrite existing files (default: false)',
+        default: false
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
+      }
+    },
+    required: ['scriptId'],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      whenToUse: [
+        'When gas_run fails with "__defineModule__ is not defined"',
+        'When working with projects not created via gas_project_create',
+        'When execution infrastructure is missing from existing projects',
+        'When require() or module.exports are not working in a project'
+      ],
+      prerequisites: [
+        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '2. Have valid scriptId from existing project (use gas_ls to find projects)'
+      ],
+      useCases: {
+        basicInit: 'gas_project_init({scriptId: "..."}) - Install all infrastructure',
+        commonJSOnly: 'gas_project_init({scriptId: "...", includeExecutionInfrastructure: false}) - Only CommonJS',
+        executionOnly: 'gas_project_init({scriptId: "...", includeCommonJS: false}) - Only execution infrastructure',
+        forceUpdate: 'gas_project_init({scriptId: "...", force: true}) - Overwrite existing files'
+      },
+      returnValue: {
+        status: 'Initialization result (success/partial/failed)',
+        scriptId: 'The project ID that was initialized',
+        filesInstalled: 'List of files that were installed/updated',
+        filesSkipped: 'List of files that were skipped (already exist)',
+        errors: 'Any errors encountered during initialization'
+      },
+      nextSteps: [
+        'Test with gas_run({scriptId: "...", js_statement: "Math.PI * 2"})',
+        'Create modules with proper __defineModule__(_main) pattern',
+        'Use require("ModuleName") to import modules'
+      ]
+    }
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const accessToken = await this.getAuthToken(params);
+    
+    const scriptId = this.validate.scriptId(params.scriptId, 'project initialization');
+    const includeCommonJS = params.includeCommonJS !== false; // Default to true
+    const includeExecutionInfrastructure = params.includeExecutionInfrastructure !== false; // Default to true
+    const updateManifest = params.updateManifest !== false; // Default to true
+    const force = params.force === true; // Default to false
+
+    console.error(`🔧 [GAS_PROJECT_INIT] Initializing project ${scriptId}`);
+    console.error(`   - includeCommonJS: ${includeCommonJS}`);
+    console.error(`   - includeExecutionInfrastructure: ${includeExecutionInfrastructure}`);
+    console.error(`   - updateManifest: ${updateManifest}`);
+    console.error(`   - force: ${force}`);
+
+    const result: any = {
+      status: 'success',
+      scriptId,
+      filesInstalled: [],
+      filesSkipped: [],
+      errors: []
+    };
+
+    try {
+      // Get existing project files to check what's already there
+      const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      const existingFileNames = new Set(existingFiles.map((f: any) => f.name));
+
+      console.error(`📋 [GAS_PROJECT_INIT] Found ${existingFiles.length} existing files: ${Array.from(existingFileNames).join(', ')}`);
+
+      // Install CommonJS module system
+      if (includeCommonJS) {
+        const commonJSResult = await this.installCommonJS(scriptId, existingFileNames, force, accessToken);
+        if (commonJSResult.success) {
+          result.filesInstalled.push(commonJSResult.fileName);
+        } else if (commonJSResult.skipped) {
+          result.filesSkipped.push(commonJSResult.fileName);
+        } else {
+          result.errors.push(commonJSResult.error);
+        }
+      }
+
+      // Install execution infrastructure
+      if (includeExecutionInfrastructure) {
+        const executionResult = await this.installExecutionInfrastructure(scriptId, existingFileNames, force, accessToken);
+        if (executionResult.success) {
+          result.filesInstalled.push(executionResult.fileName);
+        } else if (executionResult.skipped) {
+          result.filesSkipped.push(executionResult.fileName);
+        } else {
+          result.errors.push(executionResult.error);
+        }
+      }
+
+      // Update manifest
+      if (updateManifest) {
+        const manifestResult = await this.updateProjectManifest(scriptId, existingFileNames, force, accessToken);
+        if (manifestResult.success) {
+          result.filesInstalled.push(manifestResult.fileName);
+        } else if (manifestResult.skipped) {
+          result.filesSkipped.push(manifestResult.fileName);
+        } else {
+          result.errors.push(manifestResult.error);
+        }
+      }
+
+      // Determine overall status
+      if (result.errors.length > 0) {
+        result.status = result.filesInstalled.length > 0 ? 'partial' : 'failed';
+      }
+
+      result.message = this.generateStatusMessage(result);
+
+      console.error(`✅ [GAS_PROJECT_INIT] Initialization complete: ${result.message}`);
+      return result;
+
+    } catch (error: any) {
+      console.error(`❌ [GAS_PROJECT_INIT] Initialization failed: ${error.message}`);
+      throw new GASApiError(`Project initialization failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Install CommonJS module system
+   */
+  private async installCommonJS(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
+    const fileName = 'CommonJS';
+    
+    if (existingFiles.has(fileName) && !force) {
+      console.error(`⏭️ [GAS_PROJECT_INIT] Skipping CommonJS (already exists, use force=true to overwrite)`);
+      return { skipped: true, fileName };
+    }
+
+    try {
+      console.error(`🔧 [GAS_PROJECT_INIT] Installing CommonJS module system...`);
+      
+      const { GASRawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      
+      const writeParams = {
+        path: `${scriptId}/CommonJS`,
+        content: SHIM_TEMPLATE,
+        fileType: 'SERVER_JS' as const,
+        position: 0, // Execute first
+        accessToken
+      };
+      
+      await rawWriteTool.execute(writeParams);
+      
+      console.error(`✅ [GAS_PROJECT_INIT] CommonJS module system installed`);
+      return { success: true, fileName };
+    } catch (error: any) {
+      const errorMessage = `Failed to install CommonJS: ${error.message}`;
+      console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
+      return { error: errorMessage, fileName };
+    }
+  }
+
+  /**
+   * Install execution infrastructure (__mcp_gas_run.js)
+   */
+  private async installExecutionInfrastructure(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
+    const fileName = '__mcp_gas_run';
+    
+    if (existingFiles.has(fileName) && !force) {
+      console.error(`⏭️ [GAS_PROJECT_INIT] Skipping execution infrastructure (already exists, use force=true to overwrite)`);
+      return { skipped: true, fileName };
+    }
+
+    try {
+      console.error(`🔧 [GAS_PROJECT_INIT] Installing execution infrastructure...`);
+      
+      const executionTemplate = getExecutionTemplate();
+      
+      const { GASRawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      
+      const writeParams = {
+        path: `${scriptId}/__mcp_gas_run`,
+        content: executionTemplate,
+        fileType: 'SERVER_JS' as const,
+        position: 1, // Execute after CommonJS
+        accessToken
+      };
+      
+      await rawWriteTool.execute(writeParams);
+      
+      console.error(`✅ [GAS_PROJECT_INIT] Execution infrastructure installed`);
+      return { success: true, fileName };
+    } catch (error: any) {
+      const errorMessage = `Failed to install execution infrastructure: ${error.message}`;
+      console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
+      return { error: errorMessage, fileName };
+    }
+  }
+
+  /**
+   * Update project manifest (appsscript.json)
+   */
+  private async updateProjectManifest(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
+    const fileName = 'appsscript';
+    
+    if (existingFiles.has(fileName) && !force) {
+      console.error(`⏭️ [GAS_PROJECT_INIT] Skipping manifest update (already exists, use force=true to overwrite)`);
+      return { skipped: true, fileName };
+    }
+
+    try {
+      console.error(`🔧 [GAS_PROJECT_INIT] Updating project manifest...`);
+      
+      const manifestTemplate = getManifestTemplate();
+      
+      const { GASRawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      
+      const writeParams = {
+        path: `${scriptId}/appsscript`,
+        content: JSON.stringify(manifestTemplate, null, 2),
+        fileType: 'JSON' as const,
+        accessToken
+      };
+      
+      await rawWriteTool.execute(writeParams);
+      
+      console.error(`✅ [GAS_PROJECT_INIT] Project manifest updated`);
+      return { success: true, fileName };
+    } catch (error: any) {
+      const errorMessage = `Failed to update manifest: ${error.message}`;
+      console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
+      return { error: errorMessage, fileName };
+    }
+  }
+
+  /**
+   * Generate status message
+   */
+  private generateStatusMessage(result: any): string {
+    const installed = result.filesInstalled.length;
+    const skipped = result.filesSkipped.length;
+    const errors = result.errors.length;
+
+    let message = `Project initialization ${result.status}`;
+    
+    if (installed > 0) {
+      message += ` - installed ${installed} file(s): ${result.filesInstalled.join(', ')}`;
+    }
+    
+    if (skipped > 0) {
+      message += ` - skipped ${skipped} existing file(s): ${result.filesSkipped.join(', ')}`;
+    }
+    
+    if (errors > 0) {
+      message += ` - ${errors} error(s) occurred`;
+    }
+
+    if (result.status === 'success') {
+      message += '. Project is now ready for gas_run execution and CommonJS modules.';
+    } else if (result.status === 'partial') {
+      message += '. Some files were installed but errors occurred.';
+    } else {
+      message += '. Initialization failed.';
+    }
+
+    return message;
   }
 }
 

@@ -156,20 +156,52 @@
       "scriptId": "1xkxHL-1cgphZ-qnqcjJGGHVWMKd1waE4h8NaJxSSykwMEH1KsScG7mF_",
       "name": "ai_tools4_debug",
       "description": "Created: 7/26/2025"
+    },
+    "test-simple": {
+      "scriptId": "1X0QNIU47pvUxYybltG6szkTgKjmwRXKDELFtUoNXI8z_CbgdaoG091MV",
+      "name": "test-simple",
+      "description": "Created: 8/25/2025"
+    },
+    "test-complex": {
+      "scriptId": "1vklvZSsidPSdQc4e0Jv8KrDDw0fMPp8iABrMMxMxS4oj7IlpTenP9Nnf",
+      "name": "test-complex",
+      "description": "Created: 8/25/2025"
+    },
+    "test-edge": {
+      "scriptId": "1iMqaM5HOBebOfytsK1Lwd93ipuGI2lL0zWANdliM72qGc0PnZE8TxyeH",
+      "name": "test-edge",
+      "description": "Created: 8/25/2025"
+    },
+    "git-sync-test-new": {
+      "scriptId": "1zXfFuwFXf8pX84nU9Xsuc1CgpRMFWaQTxklpLtMPB4MxWFzmcWtRT6pu",
+      "name": "git-sync-test-new",
+      "description": "Created: 8/25/2025"
+    },
+    "clean-git-sync-test": {
+      "scriptId": "1bSrotWZ6C_rzuX7NExzFbMtA4DeKX-oyVNTPa0ujma0S43oL8EpQ8y32",
+      "name": "clean-git-sync-test",
+      "description": "Created: 8/25/2025"
+    },
+    "git-test-clean": {
+      "scriptId": "1d3SegHpHlTQ54U7ISofKGUI5JwOf8BOgkWO3xB0iQ-sy3xa8KC1qWn5v",
+      "name": "git-test-clean",
+      "description": "Created: 8/25/2025"
+    },
+    "test-git-sync": {
+      "scriptId": "1YXm37CJXsctik9f2QUTUyNsETrlSSWiiytZC49a7YGCUrYhlLV4JCl5h",
+      "name": "test-git-sync",
+      "description": "Created: 8/28/2025"
     }
-  },
-  "localRoot": {
-    "rootPath": "/tmp/gas-projects",
-    "lastUpdated": "2025-07-17T20:55:10.015Z"
   },
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-07-27T20:59:40.630Z"
+    "lastModified": "2025-08-28T12:59:33.740Z"
   },
+  "debug": true,
   "currentProject": {
-    "projectName": "ai_tools4",
+    "projectName": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
     "scriptId": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
-    "lastSync": "2025-07-27T20:59:40.630Z"
+    "lastSync": "2025-08-07T12:56:05.619Z"
   }
 }

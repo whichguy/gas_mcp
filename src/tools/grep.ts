@@ -20,6 +20,10 @@ import {
   matchesPathPattern,
   validatePathPattern 
 } from '../utils/grepEngine.js';
+import { 
+  translatePathForOperation,
+  gasNameToVirtual
+} from '../utils/virtualFileTranslation.js';
 
 /**
  * gas_grep - Search clean user code (unwrapped from CommonJS)
@@ -201,6 +205,9 @@ export class GasGrepTool extends BaseTool {
       throw new ValidationError('pattern', params.pattern, 'non-empty search pattern');
     }
 
+    // Apply virtual file translation for path if provided
+    const translatedPath = params.path ? translatePathForOperation(params.path, true) : params.path;
+
     // Build search options
     const searchOptions: GrepSearchOptions = {
       pattern: params.pattern,
@@ -219,8 +226,8 @@ export class GasGrepTool extends BaseTool {
     };
 
     // Validate path pattern if provided
-    if (params.path) {
-      const pathValidation = validatePathPattern(params.path, searchOptions.pathMode!);
+    if (translatedPath) {
+      const pathValidation = validatePathPattern(translatedPath, searchOptions.pathMode!);
       if (!pathValidation.valid) {
         throw new ValidationError('path', params.path, `valid path pattern: ${pathValidation.error}`);
       }
@@ -248,6 +255,18 @@ export class GasGrepTool extends BaseTool {
 
     // Execute search
     const results = await this.grepEngine.searchFiles(files, searchOptions, this.extractScriptId(params));
+
+    // Translate file names back to virtual names in results
+    if (results.matches && Array.isArray(results.matches)) {
+      results.matches.forEach((fileResult: any) => {
+        const virtualName = gasNameToVirtual(fileResult.fileName);
+        if (virtualName !== fileResult.fileName) {
+          fileResult.virtualName = virtualName;
+          fileResult.actualName = fileResult.fileName;
+          fileResult.fileName = virtualName;  // Show virtual name as primary
+        }
+      });
+    }
 
     // Add metadata about content processing
     (results as any).contentType = 'user-code (CommonJS unwrapped)';
@@ -302,13 +321,21 @@ export class GasGrepTool extends BaseTool {
    * Get target files for search (shared by gas_grep and gas_raw_grep patterns)
    */
   private async getTargetFiles(params: any, accessToken?: string): Promise<GASFile[]> {
-    // If specific files provided, get those
+    // If specific files provided, get those (apply translation to each file)
     if (params.files && Array.isArray(params.files) && params.files.length > 0) {
-      return await this.getSpecificFiles(params.files, accessToken);
+      const translatedFiles = params.files
+        .filter((f: any) => f && typeof f === 'string')
+        .map((f: string) => translatePathForOperation(f, true));
+      if (translatedFiles.length > 0) {
+        return await this.getSpecificFiles(translatedFiles, accessToken);
+      }
     }
 
-    // Use hybrid script ID resolution
-    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path || '');
+    // Apply virtual file translation for path
+    const translatedPath = params.path ? translatePathForOperation(params.path, true) : params.path;
+    
+    // Use hybrid script ID resolution with translated path
+    const hybridResolution = resolveHybridScriptId(params.scriptId, translatedPath || '');
     const scriptId = hybridResolution.scriptId;
     const searchPath = hybridResolution.cleanPath;
 

@@ -74,71 +74,53 @@ export interface EnhancedAppsscriptJson {
  * NO LONGER USES src/ subdirectories - files are stored directly in project directory
  */
 export class LocalFileManager {
-  // PRODUCTION-READY: Use persistent directory instead of volatile /tmp
-  private static readonly DEFAULT_ROOT = process.env.MCP_GAS_PROJECTS_ROOT || 
-    (process.platform === 'win32' 
-      ? path.join(process.env.USERPROFILE || 'C:\\Users\\Default', '.mcp-gas', 'projects')
-      : path.join(process.env.HOME || '/var/lib/mcp-gas', '.mcp-gas', 'projects'));
-
+  // Use git sync pattern: ~/gas-repos for all projects
   private static readonly IGNORE_FILES = ['.DS_Store', 'Thumbs.db', '.gitignore'];
   private static readonly SUPPORTED_EXTENSIONS = ['.gs', '.js', '.html', '.json'];
 
   /**
-   * Set the local root directory for all project folders
+   * Get the project directory following git sync pattern
+   * Each project lives in ~/gas-repos/project-{scriptId}/
    */
-  static async setLocalRoot(rootPath: string, workingDir?: string): Promise<void> {
-    const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    
-    // If rootPath is relative, resolve it relative to working directory
-    // If rootPath is absolute, use it as-is
-    const absoluteRoot = path.isAbsolute(rootPath) ? rootPath : path.resolve(actualWorkingDir, rootPath);
-    
-    // Ensure the directory exists
-    await fs.mkdir(absoluteRoot, { recursive: true });
-    
-    // Use unified configuration instead of separate file
-    console.error(`🔧 [LOCAL_FILE_MANAGER] Setting local root via unified config: ${absoluteRoot}`);
-    await McpGasConfigManager.setLocalRootPath(absoluteRoot);
+  static getGitSyncProjectPath(scriptId: string): string {
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    const gasReposPath = path.resolve(homeDir, 'gas-repos');
+    return path.join(gasReposPath, `project-${scriptId}`);
   }
 
   /**
-   * Get the local root directory configuration
+   * Get the local root directory - now always uses git sync pattern
    */
   static async getLocalRoot(workingDir?: string): Promise<string> {
-    try {
-      // Use unified configuration instead of separate file
-      const rootPath = await McpGasConfigManager.getLocalRootPath();
-      console.error(`🔧 [LOCAL_FILE_MANAGER] Got local root via unified config: ${rootPath}`);
-      return rootPath;
-    } catch (error) {
-      // Default to /tmp/gas-projects if no configuration exists
-      const actualWorkingDir = this.getWorkingDirectory(workingDir);
-      await this.setLocalRoot(this.DEFAULT_ROOT, actualWorkingDir);
-      return this.DEFAULT_ROOT;
-    }
+    // Always use git sync pattern: ~/gas-repos
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    const gasReposPath = path.resolve(homeDir, 'gas-repos');
+    
+    // Ensure the directory exists
+    await fs.mkdir(gasReposPath, { recursive: true });
+    
+    console.error(`🔧 [LOCAL_FILE_MANAGER] Using git sync root: ${gasReposPath}`);
+    return gasReposPath;
   }
 
   /**
    * Initialize default local root configuration at server startup
-   * This ensures the default "/tmp/gas-projects" directory is set up if no configuration exists
+   * This ensures the ~/gas-repos directory is set up
    */
   static async initializeDefaultRoot(workingDir?: string): Promise<string> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
     
-    try {
-      // Try to get existing configuration
-      return await this.getLocalRoot(actualWorkingDir);
-    } catch (error) {
-      // No configuration exists, initialize with default
-      console.error(`🗂️  Initializing default local root directory: ${this.DEFAULT_ROOT}`);
-      
-      // Create the directory and configuration
-      await fs.mkdir(this.DEFAULT_ROOT, { recursive: true });
-      await this.setLocalRoot(this.DEFAULT_ROOT, actualWorkingDir);
-      
-      console.error(`✅ Default local root initialized: ${this.DEFAULT_ROOT}`);
-      return this.DEFAULT_ROOT;
-    }
+    // Always use git sync pattern
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    const gasReposPath = path.resolve(homeDir, 'gas-repos');
+    
+    console.error(`🗂️  Initializing git sync root directory: ${gasReposPath}`);
+    
+    // Create the directory
+    await fs.mkdir(gasReposPath, { recursive: true });
+    
+    console.error(`✅ Git sync root initialized: ${gasReposPath}`);
+    return gasReposPath;
   }
 
   /**

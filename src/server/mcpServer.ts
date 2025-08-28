@@ -17,12 +17,13 @@ import {
   GASWriteTool,
   GASRawCatTool,
   GASRawWriteTool,
-  GASRawCopyTool,
+  GASRawCpTool,
   GASRemoveTool, 
   GASMoveTool, 
   GASCopyTool 
 } from '../tools/filesystem.js';
 import { GasGrepTool, GasRawGrepTool } from '../tools/grep.js';
+import { GasFindTool, GasRawFindTool } from '../tools/find.js';
 import { 
   GASMkdirTool, 
   GASInfoTool, 
@@ -37,6 +38,7 @@ import {
   GASDeployListTool,
   GASDeployGetDetailsTool,
   GASProjectCreateTool,
+  GASProjectInitTool,
   GASDeployDeleteTool,
   GASDeployUpdateTool
 } from '../tools/deployments.js';
@@ -71,13 +73,8 @@ import {
   GASProjectListTool
 } from '../tools/projectContext.js';
 
-// Import local root management tools
-import {
-  GASLocalSetRootTool,
-  GASLocalGetRootTool,
-  GASLocalListProjectsTool,
-  GASLocalShowStructureTool
-} from '../tools/localRootTools.js';
+// Local root tools removed - using git sync pattern instead
+// Projects now use ~/gas-repos/project-{scriptId} automatically
 
 // Import trigger management tools
 import {
@@ -86,11 +83,14 @@ import {
   GATriggerDeleteTool
 } from '../tools/triggers.js';
 
-// Import git operations tools
+// Import NEW git sync tools
 import {
-  GASGitCommitTool,
-  GASGitStatusTool
-} from '../tools/gitOps.js';
+  GasGitInitTool,
+  GasGitSyncTool,
+  GasGitStatusTool,
+  GasGitSetSyncFolderTool,
+  GasGitGetSyncFolderTool
+} from '../tools/gitSync.js';
 
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
@@ -347,6 +347,7 @@ export class MCPGasServer {
       new GASCatTool(authManager),           // ✅ Smart reader (local-first)
       new GASWriteTool(authManager),         // ✅ Auto-sync writer
       new GasGrepTool(authManager),          // ✅ Content search with pattern matching
+      new GasFindTool(authManager),          // ✅ Find files with virtual names
       new GASRemoveTool(authManager),
       new GASMoveTool(authManager),
       new GASCopyTool(authManager),
@@ -355,7 +356,8 @@ export class MCPGasServer {
       new GASRawCatTool(authManager),        // ⚠️ Advanced: Explicit project ID paths
       new GASRawWriteTool(authManager),      // ⚠️ Advanced: Explicit project ID paths
       new GasRawGrepTool(authManager),       // ⚠️ Advanced: Search full content (API-only, never local files)
-      new GASRawCopyTool(authManager),       // ⚠️ Advanced: Remote-to-remote file copying
+      new GasRawFindTool(authManager),       // ⚠️ Advanced: Find with actual GAS names
+      new GASRawCpTool(authManager),        // ⚠️ Advanced: Bulk copy without CommonJS processing
       
       // 🏗️ Project management
       new GASMkdirTool(authManager),
@@ -377,6 +379,7 @@ export class MCPGasServer {
       new GASDeployListTool(authManager),
       new GASDeployGetDetailsTool(authManager),
       new GASProjectCreateTool(authManager),
+      new GASProjectInitTool(authManager),
       new GASDeployDeleteTool(authManager),
       new GASDeployUpdateTool(authManager),
 
@@ -402,20 +405,20 @@ export class MCPGasServer {
       // 🎯 Project context - WORKFLOW tool (visible to MCP)
       new GASProjectSetTool(authManager),    // ✅ Main workflow: Set project & auto-pull
       
-      // 📁 Local root management - PROJECT STRUCTURE tools
-      new GASLocalSetRootTool(authManager),  // Set configurable local root directory
-      new GASLocalGetRootTool(authManager),  // Get current local root configuration
-      new GASLocalListProjectsTool(authManager), // List all local projects
-      new GASLocalShowStructureTool(authManager), // Show directory structure
+      // Local root management removed - all projects now use git sync pattern:
+      // ~/gas-repos/project-{scriptId}/ for consistent file management
       
       // ⏰ Trigger management - AUTOMATION tools
       new GATriggerListTool(authManager),    // List all installable triggers
       new GATriggerCreateTool(authManager),  // Create time-based and event-driven triggers
       new GATriggerDeleteTool(authManager),  // Delete triggers by ID or function name
       
-      // 🔧 Git operations - VERSION CONTROL tools
-      new GASGitCommitTool(authManager),     // Add and commit currently synced files
-      new GASGitStatusTool(authManager),     // Show git status of workspace
+      // 🔧 Git Sync - SAFE GIT INTEGRATION (5 tools replacing old 12 tools)
+      new GasGitInitTool(authManager),           // Initialize git association with .git.gs file
+      new GasGitSyncTool(authManager),           // Safe pull-merge-push synchronization
+      new GasGitStatusTool(authManager),         // Check git association and sync status  
+      new GasGitSetSyncFolderTool(authManager),  // Set/update sync folder location
+      new GasGitGetSyncFolderTool(authManager),  // Query sync folder location
       
       // NOTE: gas_project_get, gas_project_add, gas_project_list are HIDDEN from MCP
       // They're used internally by other tools but not exposed to users/LLMs

@@ -1,8 +1,8 @@
 import { expect } from 'chai';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import sinon from 'sinon';
-import { TokenBucketRateLimiter } from '../../src/api/rateLimiter.js';
-import { QuotaError } from '../../src/errors/mcpErrors.js';
+import { TokenBucketRateLimiter } from '../../../src/api/rateLimiter.js';
+import { QuotaError } from '../../../src/errors/mcpErrors.js';
 
 describe('TokenBucketRateLimiter', () => {
   let rateLimiter: TokenBucketRateLimiter;
@@ -213,7 +213,7 @@ describe('TokenBucketRateLimiter', () => {
 
   describe('global instance', () => {
     it('should export a global rate limiter instance', async () => {
-      const { rateLimiter: globalRateLimiter } = await import('../../src/api/rateLimiter.js');
+      const { rateLimiter: globalRateLimiter } = await import('../../../src/api/rateLimiter.js');
       
       expect(globalRateLimiter).to.be.instanceOf(TokenBucketRateLimiter);
       expect(globalRateLimiter.getTokenCount()).to.be.a('number');
