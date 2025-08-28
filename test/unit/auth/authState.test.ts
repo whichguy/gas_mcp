@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import sinon from 'sinon';
-import { AuthStateManager, TokenInfo, UserInfo, AuthSession } from '../../src/auth/authState.js';
+import { AuthStateManager, TokenInfo, UserInfo, AuthSession } from '../../../src/auth/authState.js';
 
 describe('AuthStateManager', () => {
   let authManager: AuthStateManager;

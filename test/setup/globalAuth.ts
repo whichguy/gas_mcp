@@ -1,5 +1,5 @@
-import { MCPTestClient, createTestClient, AuthTestHelper } from '../system/mcpClient.js';
-import { testResourceManager } from '../utils/testResourceManager.js';
+import { MCPTestClient, createTestClient, AuthTestHelper } from '../helpers/mcpClient.js';
+import { testResourceManager } from '../helpers/testResourceManager.js';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
@@ -36,7 +36,9 @@ export const mochaHooks = {
     try {
       globalAuthState.allocatedPort = testResourceManager.allocatePort();
       console.log(`🔌 Allocated OAuth port: ${globalAuthState.allocatedPort} (OAuth will still use 3000)`);
-      process.env.MCP_OAUTH_PORT = globalAuthState.allocatedPort.toString();
+      if (globalAuthState.allocatedPort) {
+        process.env.MCP_OAUTH_PORT = globalAuthState.allocatedPort.toString();
+      }
     } catch (error) {
       console.warn('⚠️  Could not allocate dedicated port, using default');
     }
@@ -63,7 +65,9 @@ export const mochaHooks = {
     globalAuthState.client = await createTestClient();
     }
     
-    globalAuthState.auth = new AuthTestHelper(globalAuthState.client);
+    if (globalAuthState.client) {
+      globalAuthState.auth = new AuthTestHelper(globalAuthState.client);
+    }
 
     // 4. Perform authentication based on environment
     if (process.env.GAS_MOCK_AUTH === 'true') {
@@ -71,6 +75,9 @@ export const mochaHooks = {
       globalAuthState.isAuthenticated = true;
     } else {
     console.log('🔐 Setting up REAL authentication for all tests...');
+    if (!globalAuthState.auth) {
+      throw new Error('Auth helper not initialized');
+    }
     const authStatus = await globalAuthState.auth.getAuthStatus();
 
     if (authStatus.authenticated && authStatus.tokenValid) {
@@ -81,16 +88,16 @@ export const mochaHooks = {
         console.log('⚠️ Please complete authentication in the browser that will open.');
         
           try {
-        const authResult = await globalAuthState.auth.startInteractiveAuthWithBrowser();
+        const authResult = await globalAuthState.auth!.startInteractiveAuthWithBrowser();
         console.log(`🔗 OAuth URL: ${authResult.authUrl}`);
         
-        const authCompleted = await globalAuthState.auth.waitForAuth(120000); // 2 minutes
+        const authCompleted = await globalAuthState.auth!.waitForAuth(120000); // 2 minutes
         
         if (!authCompleted) {
               throw new Error('Authentication timed out');
         }
         
-        const finalStatus = await globalAuthState.auth.getAuthStatus();
+        const finalStatus = await globalAuthState.auth!.getAuthStatus();
         if (!finalStatus.authenticated) {
                 throw new Error('Authentication was not successful after OAuth flow');
         }

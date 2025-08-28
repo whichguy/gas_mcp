@@ -8,7 +8,7 @@ import {
   GASApiError,
   OAuthError,
   FileOperationError
-} from '../../src/errors/mcpErrors.js';
+} from '../../../src/errors/mcpErrors.js';
 
 describe('MCP Gas Error Classes', () => {
   describe('MCPGasError', () => {

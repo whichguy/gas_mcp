@@ -1,0 +1,99 @@
+{
+  "version": "1.0",
+  "type": "mcp-gas-github-config",
+  "github": {
+    "repository": {
+      "owner": "jameswiese",
+      "repo": "my-gas-automation",
+      "branch": "main",
+      "url": "https://github.com/jameswiese/my-gas-automation.git"
+    },
+    "authentication": {
+      "method": "oauth",
+      "tokenRef": "github-oauth-token-123",
+      "scopes": ["repo", "workflow", "write:packages"],
+      "expiresAt": "2024-12-31T23:59:59Z"
+    }
+  },
+  "sync": {
+    "strategy": "bidirectional",
+    "autoSync": true,
+    "conflictResolution": "prompt",
+    "lastSync": "2024-01-15T14:30:45Z",
+    "lastSyncCommit": "a7f8e9d2c3b4a5c6d7e8f9a0b1c2d3e4f5a6b7c8",
+    "syncTriggers": {
+      "onWrite": true,
+      "onSchedule": "0 */6 * * *",
+      "onWebhook": true
+    }
+  },
+  "mapping": {
+    "srcDirectory": "src/",
+    "gasFileExtensions": [".gs", ".html", ".json"],
+    "githubPath": "./src/",
+    "preserveStructure": true,
+    "excludePatterns": ["*.test.js", "*.backup.*", "node_modules/**"],
+    "fileMapping": {
+      "src/CommonJS.js": "lib/gas-modules/CommonJS.js",
+      "src/appsscript.json": "config/appsscript.json",
+      "src/utils/": "utilities/"
+    },
+    "transformations": {
+      "addHeaders": true,
+      "headerTemplate": "// Auto-synced from Google Apps Script\n// Last sync: {{lastSync}}\n// Commit: {{lastCommit}}\n\n",
+      "removeCommonJSWrappers": true
+    }
+  },
+  "gasProject": {
+    "scriptId": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
+    "title": "My GAS Automation Project",
+    "description": "Automated workflows using Google Apps Script with GitHub integration",
+    "deploymentId": "AKfycbxH...",
+    "webAppUrl": "https://script.google.com/macros/s/.../exec"
+  },
+  "workflows": {
+    "pullRequests": {
+      "autoCreate": true,
+      "template": {
+        "title": "GAS Update: {{timestamp}}",
+        "body": "Automated sync from Google Apps Script\\n\\nChanges:\\n{{changeList}}",
+        "labels": ["gas-sync", "automated"],
+        "assignees": ["jameswiese"]
+      }
+    },
+    "branches": {
+      "developmentBranch": "gas-dev",
+      "productionBranch": "main",
+      "autoMerge": false
+    },
+    "notifications": {
+      "discord": "https://discord.com/api/webhooks/...",
+      "slack": "https://hooks.slack.com/services/...",
+      "email": "dev@example.com"
+    }
+  },
+  "metadata": {
+    "created": "2024-01-01T09:00:00Z",
+    "lastModified": "2024-01-15T14:30:45Z",
+    "mcpGasVersion": "1.2.0",
+    "configVersion": "1.0",
+    "totalSyncs": 47,
+    "lastSuccessfulSync": "2024-01-15T14:30:45Z",
+    "syncHistory": [
+      {
+        "timestamp": "2024-01-15T14:30:45Z",
+        "direction": "bidirectional",
+        "filesChanged": 3,
+        "status": "success",
+        "commit": "a7f8e9d2c3b4a5c6d7e8f9a0b1c2d3e4f5a6b7c8"
+      },
+      {
+        "timestamp": "2024-01-15T08:15:22Z",
+        "direction": "to-github",
+        "filesChanged": 1,
+        "status": "success", 
+        "commit": "b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7"
+      }
+    ]
+  }
+} 

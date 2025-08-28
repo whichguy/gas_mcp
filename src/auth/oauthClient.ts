@@ -285,7 +285,10 @@ export class GASAuthClient {
                         message: 'Authentication completed successfully',
                         authenticated: true,
                         tokenResponse: tokenResponse,
-                        authKey: this.currentAuthKey
+                        authKey: this.currentAuthKey,
+                        accessToken: tokenResponse.access_token,
+                        tokenExpiresAt: Date.now() + (tokenResponse.expires_in! * 1000),
+                        tokenExpiresIn: tokenResponse.expires_in
                     });
                     
                     // Wait for session setup to complete

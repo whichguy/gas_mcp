@@ -6,6 +6,14 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 import { wrapModuleContent, unwrapModuleContent, shouldWrapContent, getModuleName } from '../utils/moduleWrapper.js';
+import { 
+  virtualToGASName, 
+  gasNameToVirtual, 
+  translateFilesForDisplay, 
+  translatePathForOperation,
+  isVirtualDotfile,
+  isTranslatedVirtualFile 
+} from '../utils/virtualFileTranslation.js';
 
 /**
  * Read file contents with smart local/remote fallback (RECOMMENDED)
@@ -52,10 +60,12 @@ export class GASCatTool extends BaseTool {
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
       }
     },
     required: ['scriptId', 'path'],
+    additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
       workflow: 'Use with explicit scriptId: gas_cat({scriptId: "abc123...", path: "utils.gs"})',
@@ -63,7 +73,13 @@ export class GASCatTool extends BaseTool {
       pathRequirement: 'Provide scriptId parameter and simple filename in path, or embed scriptId in path and leave scriptId parameter empty.',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When reading files, the outer _main() wrapper is removed to show clean user code for editing. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
       moduleAccess: 'Your code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
-      editingWorkflow: 'Files are unwrapped for editing convenience and will be automatically re-wrapped with CommonJS structure when saved via gas_write.'
+      editingWorkflow: 'Files are unwrapped for editing convenience and will be automatically re-wrapped with CommonJS structure when saved via gas_write.',
+      examples: [
+        'Read a module file: gas_cat({scriptId: "1abc2def...", path: "Utils.gs"})',
+        'Read with embedded ID: gas_cat({scriptId: "", path: "1abc2def.../Calculator.gs"})',
+        'Read HTML template: gas_cat({scriptId: "1abc2def...", path: "sidebar.html"})',
+        'Read manifest: gas_cat({scriptId: "1abc2def...", path: "appsscript.json"})'
+      ]
     }
   };
 
@@ -79,8 +95,11 @@ export class GASCatTool extends BaseTool {
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const preferLocal = params.preferLocal !== false;
 
-    // Use hybrid script ID resolution
-    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path);
+    // Apply virtual file translation for user-provided path
+    const translatedPath = translatePathForOperation(params.path, true);
+    
+    // Use hybrid script ID resolution with translated path
+    const hybridResolution = resolveHybridScriptId(params.scriptId, translatedPath);
     const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
 
     // SECURITY: Validate path BEFORE authentication
@@ -408,10 +427,12 @@ export class GASWriteTool extends BaseTool {
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
       }
     },
     required: ['scriptId', 'path', 'content'],
+    additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Use for normal file writing with explicit scriptId parameter. Remote-first workflow ensures safety.',
       workflow: 'Use with explicit scriptId: gas_write({scriptId: "abc123...", path: "filename", content: "..."})',
@@ -419,7 +440,14 @@ export class GASWriteTool extends BaseTool {
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
       moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
       wrapperHandling: 'Any accidentally included _main() or __defineModule__ calls are automatically cleaned and replaced with proper CommonJS structure. Never manually add module wrappers.',
-      systemFiles: 'System files (CommonJS, __mcp_gas_run, appsscript) are never wrapped and provide the underlying infrastructure.'
+      systemFiles: 'System files (CommonJS, __mcp_gas_run, appsscript) are never wrapped and provide the underlying infrastructure.',
+      examples: [
+        'Write JS module: gas_write({scriptId: "1abc2def...", path: "utils", content: "function helper() {...}"})',
+        'Write with exports: gas_write({scriptId: "1abc2def...", path: "api/client", content: "module.exports = {...}"})',
+        'Write HTML: gas_write({scriptId: "1abc2def...", path: "sidebar", content: "<html>...", fileType: "HTML"})',
+        'Write config: gas_write({scriptId: "1abc2def...", path: "appsscript", content: "{...}", fileType: "JSON"})',
+        'Local only: gas_write({scriptId: "1abc2def...", path: "test", content: "...", localOnly: true})'
+      ]
     }
   };
 
@@ -440,8 +468,11 @@ export class GASWriteTool extends BaseTool {
       throw new ValidationError('localOnly/remoteOnly', 'both true', 'only one can be true');
     }
 
-    // Use hybrid script ID resolution
-    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path);
+    // Apply virtual file translation for user-provided path
+    const translatedPath = translatePathForOperation(params.path, true);
+    
+    // Use hybrid script ID resolution with translated path
+    const hybridResolution = resolveHybridScriptId(params.scriptId, translatedPath);
     const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
 
     // SECURITY: Validate path BEFORE authentication (like gas_raw_write)
@@ -897,8 +928,22 @@ export class GASListTool extends BaseTool {
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
       }
+    },
+    additionalProperties: false,
+    llmGuidance: {
+      whenToUse: 'Use to explore project structure and find files by pattern',
+      workflow: 'List all files: gas_ls({scriptId: "..."}), with wildcards: gas_ls({scriptId: "...", path: "*.test*"})',
+      examples: [
+        'List all projects: gas_ls({})',
+        'List project files: gas_ls({scriptId: "1abc2def..."})',
+        'List with pattern: gas_ls({scriptId: "1abc2def...", path: "*.gs"})',
+        'List subfolder: gas_ls({scriptId: "1abc2def...", path: "utils/*"})',
+        'List detailed: gas_ls({scriptId: "1abc2def...", detailed: true})'
+      ],
+      virtualFiles: 'Dotfiles like .gitignore appear with their virtual names, not GAS storage names'
     }
   };
 
@@ -977,45 +1022,54 @@ export class GASListTool extends BaseTool {
   ): Promise<any> {
     const files = await this.gasClient.getProjectContent(scriptId, accessToken);
     
+    // Apply virtual file translation to the files for display
+    const translatedFiles = translateFilesForDisplay(files, true);
+    
     // Enhanced filtering with wildcard support
     let filteredFiles: any[];
     
     if (isWildcardPattern(directory)) {
-      // Wildcard pattern matching
-      filteredFiles = files.filter((file: any) => {
+      // Wildcard pattern matching - use displayName if present, otherwise name
+      filteredFiles = translatedFiles.filter((file: any) => {
+        const fileName = file.displayName || file.name;
         switch (wildcardMode) {
           case 'filename':
-            const basename = getBaseName(file.name);
+            const basename = getBaseName(fileName);
             return matchesPattern(basename, getBaseName(directory));
           
           case 'fullpath':
-            return matchesPattern(file.name, directory);
+            return matchesPattern(fileName, directory);
           
           case 'auto':
           default:
             // Auto-detect: use fullpath if pattern contains '/', else filename
             return directory.includes('/') 
-              ? matchesPattern(file.name, directory)
-              : matchesPattern(getBaseName(file.name), directory);
+              ? matchesPattern(fileName, directory)
+              : matchesPattern(getBaseName(fileName), directory);
         }
       });
     } else {
       // Simple directory prefix matching (existing behavior)
       filteredFiles = directory 
-        ? files.filter((file: any) => matchesDirectory(file.name, directory))
-        : files;
+        ? translatedFiles.filter((file: any) => {
+            const fileName = file.displayName || file.name;
+            return matchesDirectory(fileName, directory);
+          })
+        : translatedFiles;
     }
 
     const items = filteredFiles.map((file: any, index: number) => ({
-      name: file.name,
+      name: file.displayName || file.name,  // Show virtual name if translated
       type: file.type || 'server_js',
+      virtualFile: file.virtualFile || false,  // Mark if it's a virtual file
       ...(detailed && {
         size: (file.source || '').length,
         position: index,
         // ✅ NEW: Return actual API timestamps instead of hardcoded null
         createTime: file.createTime || null,
         updateTime: file.updateTime || null,
-        lastModifyUser: file.lastModifyUser || null
+        lastModifyUser: file.lastModifyUser || null,
+        actualName: file.virtualFile ? file.name : undefined  // Show actual GAS name if virtual
       })
     }));
 
@@ -1561,7 +1615,7 @@ export class GASMoveTool extends BaseTool {
  */
 export class GASCopyTool extends BaseTool {
   public name = 'gas_cp';
-  public description = 'Copy a file in a Google Apps Script project (supports cross-project copies)';
+  public description = 'Copy file with CommonJS processing - unwraps source, rewraps destination (like gas_cat + gas_write)';
   
   public inputSchema = {
     type: 'object',
@@ -1596,10 +1650,24 @@ export class GASCopyTool extends BaseTool {
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
       }
     },
-    required: ['scriptId', 'from', 'to']
+    required: ['scriptId', 'from', 'to'],
+    additionalProperties: false,
+    llmGuidance: {
+      whenToUse: 'Use to copy files with proper CommonJS module handling',
+      workflow: 'Copy within project: gas_cp({scriptId: "...", from: "utils", to: "utils-backup"})',
+      commonJsProcessing: 'Unwraps source module wrapper, applies new wrapper for destination with correct module name',
+      examples: [
+        'Copy within project: gas_cp({scriptId: "1abc2def...", from: "utils", to: "utils-backup"})',
+        'Cross-project copy: gas_cp({scriptId: "1abc2def...", from: "utils", to: "1xyz9abc.../utils"})',
+        'Copy to subfolder: gas_cp({scriptId: "1abc2def...", from: "main", to: "archive/main-v1"})',
+        'Copy with rename: gas_cp({scriptId: "1abc2def...", from: "Calculator", to: "CalcBackup"})'
+      ],
+      vsRawCp: 'Use gas_raw_cp for bulk operations that need exact file preservation without CommonJS processing'
+    }
   };
 
   private gasClient: GASClient;
@@ -1613,9 +1681,13 @@ export class GASCopyTool extends BaseTool {
     // SECURITY: Validate parameters BEFORE authentication
     const accessToken = await this.getAuthToken(params);
     
+    // Apply virtual file translation for user-provided paths
+    const translatedFrom = translatePathForOperation(params.from, true);
+    const translatedTo = translatePathForOperation(params.to, true);
+    
     // Resolve script IDs using hybrid approach (supports cross-project copies)
-    const fromResolution = resolveHybridScriptId(params.scriptId, params.from, 'copy operation (from)');
-    const toResolution = resolveHybridScriptId(params.scriptId, params.to, 'copy operation (to)');
+    const fromResolution = resolveHybridScriptId(params.scriptId, translatedFrom, 'copy operation (from)');
+    const toResolution = resolveHybridScriptId(params.scriptId, translatedTo, 'copy operation (to)');
     
     const fromProjectId = fromResolution.scriptId;
     const toProjectId = toResolution.scriptId;
@@ -1635,13 +1707,34 @@ export class GASCopyTool extends BaseTool {
       throw new FileOperationError('copy', params.from, 'source file not found');
     }
 
-    // Create copy in destination
+    // COMMONJS PROCESSING: Unwrap source content (like gas_cat)
+    let processedContent = sourceFile.source || '';
+    const fileType = sourceFile.type || 'SERVER_JS';
+    
+    if (shouldWrapContent(fileType, fromFilename)) {
+      // Unwrap CommonJS from source (like gas_cat does)
+      const unwrapped = unwrapModuleContent(processedContent);
+      if (unwrapped !== processedContent) {
+        console.error(`📖 [GAS_CP] Unwrapped CommonJS from source: ${fromFilename}`);
+        processedContent = unwrapped;
+      }
+      
+      // Re-wrap for destination (like gas_write does)
+      const moduleName = getModuleName(toFilename);
+      processedContent = wrapModuleContent(processedContent, moduleName);
+      console.error(`✅ [GAS_CP] Re-wrapped CommonJS for destination: ${toFilename}`);
+    } else {
+      console.error(`⏭️ [GAS_CP] No CommonJS processing for ${fileType} file: ${fromFilename}`);
+    }
+
+    // Create copy in destination with processed content
     const updatedFiles = await this.gasClient.updateFile(
       toProjectId,
       toFilename,
-      sourceFile.source || '',
+      processedContent,
       undefined,
-      accessToken
+      accessToken,
+      fileType as 'SERVER_JS' | 'HTML' | 'JSON'
     );
 
     return {
@@ -1651,11 +1744,12 @@ export class GASCopyTool extends BaseTool {
       fromProjectId,
       toProjectId,
       isCrossProject: fromProjectId !== toProjectId,
-      size: (sourceFile.source || '').length,
+      commonJsProcessed: shouldWrapContent(fileType, fromFilename),
+      size: processedContent.length,
       totalFiles: updatedFiles.length,
       message: fromProjectId === toProjectId 
-        ? `Copied ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`
-        : `Copied ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
+        ? `Copied ${fromFilename} to ${toFilename} with CommonJS processing within project ${fromProjectId.substring(0, 8)}...`
+        : `Copied ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}... with CommonJS processing`
     };
   }
 }
@@ -1664,9 +1758,9 @@ export class GASCopyTool extends BaseTool {
  * Copy files from one remote project to another with merge capabilities
  * This is a remote-to-remote operation that doesn't touch local files
  */
-export class GASRawCopyTool extends BaseTool {
-  public name = 'gas_raw_copy';
-  public description = 'Copy files from source remote project to destination remote project with merge options';
+export class GASRawCpTool extends BaseTool {
+  public name = 'gas_raw_cp';
+  public description = 'Copy files exactly without CommonJS processing - bulk copy preserving all wrappers';
   
   public inputSchema = {
     type: 'object',
@@ -1708,10 +1802,29 @@ export class GASRawCopyTool extends BaseTool {
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
       }
     },
-    required: ['sourceScriptId', 'destinationScriptId']
+    required: ['sourceScriptId', 'destinationScriptId'],
+    additionalProperties: false,
+    llmGuidance: {
+      whenToUse: 'Use for bulk copying between projects without CommonJS processing',
+      workflow: 'Copy all files: gas_raw_cp({sourceScriptId: "...", destinationScriptId: "..."})',
+      preservesWrappers: 'Copies files exactly as they are, preserving all CommonJS wrappers and system code',
+      examples: [
+        'Copy all files: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc..."})',
+        'Copy specific files: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", includeFiles: ["Utils", "Config"]})',
+        'Exclude files: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", excludeFiles: ["Test", "Debug"]})',
+        'Overwrite mode: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", mergeStrategy: "overwrite-destination"})',
+        'Dry run: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", dryRun: true})'
+      ],
+      mergeStrategies: {
+        'preserve-destination': 'Keep existing files in destination (default)',
+        'overwrite-destination': 'Replace existing files with source versions',
+        'skip-conflicts': 'Only copy files that don\'t exist in destination'
+      }
+    }
   };
 
   private gasClient: GASClient;

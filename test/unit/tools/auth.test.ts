@@ -1,10 +1,10 @@
 import { expect } from 'chai';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { stub, restore } from 'sinon';
-import { GASAuthTool } from '../../src/tools/auth.js';
-import { AuthStateManager } from '../../src/auth/authState.js';
-import { OAuthError } from '../../src/errors/mcpErrors.js';
-import { SessionAuthManager } from '../../src/auth/sessionManager.js';
+import { GASAuthTool } from '../../../src/tools/auth.js';
+import { AuthStateManager } from '../../../src/auth/authState.js';
+import { OAuthError } from '../../../src/errors/mcpErrors.js';
+import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
 
 describe('GASAuthTool', () => {
   let authTool: GASAuthTool;

@@ -9,8 +9,8 @@ import {
   matchesDirectory,
   sortFilesForExecution,
   FILE_TYPE_MAP
-} from '../../src/api/pathParser.js';
-import { ValidationError } from '../../src/errors/mcpErrors.js';
+} from '../../../src/api/pathParser.js';
+import { ValidationError } from '../../../src/errors/mcpErrors.js';
 
 describe('Path Parser', () => {
   describe('getFileType', () => {
@@ -56,7 +56,7 @@ describe('Path Parser', () => {
   describe('parsePath', () => {
     it('should parse empty path as root directory', () => {
       const result = parsePath('');
-      expect(result.projectId).to.equal('');
+      expect(result.scriptId).to.equal('');
       expect(result.isProject).to.be.false;
       expect(result.isFile).to.be.false;
       expect(result.isDirectory).to.be.true;
@@ -64,7 +64,7 @@ describe('Path Parser', () => {
 
     it('should parse project ID only', () => {
       const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
-      expect(result.projectId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
       expect(result.isProject).to.be.true;
       expect(result.isFile).to.be.false;
       expect(result.isDirectory).to.be.false;
@@ -72,7 +72,7 @@ describe('Path Parser', () => {
 
     it('should parse file paths', () => {
       const result = parsePath('project123/Code.gs');
-      expect(result.projectId).to.equal('project123');
+      expect(result.scriptId).to.equal('project123');
       expect(result.filename).to.equal('Code.gs');
       expect(result.directory).to.be.undefined;
       expect(result.isProject).to.be.false;
@@ -82,7 +82,7 @@ describe('Path Parser', () => {
 
     it('should parse nested file paths', () => {
       const result = parsePath('project123/models/User.ts');
-      expect(result.projectId).to.equal('project123');
+      expect(result.scriptId).to.equal('project123');
       expect(result.filename).to.equal('models/User.ts');
       expect(result.directory).to.equal('models');
       expect(result.isFile).to.be.true;
@@ -90,7 +90,7 @@ describe('Path Parser', () => {
 
     it('should parse deeply nested file paths', () => {
       const result = parsePath('project123/src/models/User.gs');
-      expect(result.projectId).to.equal('project123');
+      expect(result.scriptId).to.equal('project123');
       expect(result.filename).to.equal('src/models/User.gs');
       expect(result.directory).to.equal('src/models');
       expect(result.isFile).to.be.true;
@@ -98,7 +98,7 @@ describe('Path Parser', () => {
 
     it('should parse directory paths', () => {
       const result = parsePath('project123/models');
-      expect(result.projectId).to.equal('project123');
+      expect(result.scriptId).to.equal('project123');
       expect(result.directory).to.equal('models');
       expect(result.isProject).to.be.false;
       expect(result.isFile).to.be.false;
@@ -107,7 +107,7 @@ describe('Path Parser', () => {
 
     it('should parse nested directory paths', () => {
       const result = parsePath('project123/src/models');
-      expect(result.projectId).to.equal('project123');
+      expect(result.scriptId).to.equal('project123');
       expect(result.directory).to.equal('src/models');
       expect(result.isDirectory).to.be.true;
     });
@@ -249,7 +249,7 @@ describe('Path Parser', () => {
       ];
 
       const sorted = sortFilesForExecution(files);
-      const sortedLibFiles = sorted.slice(0, 4).map(f => f.name);
+      const sortedLibFiles = sorted.slice(0, 4).map((f: any) => f.name);
       expect(sortedLibFiles).to.have.members(['lib/utils.gs', 'util/helpers.gs', 'common/constants.gs', 'shared/config.gs']);
     });
 

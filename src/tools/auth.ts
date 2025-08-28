@@ -219,6 +219,9 @@ export async function gas_auth({
   user?: any;
   tokenValid?: boolean;
   expiresIn?: number;
+  accessToken?: string;
+  tokenExpiresAt?: number;
+  tokenExpiresIn?: number;
 }> {
   // Use session manager if provided, otherwise fall back to global manager
   const authStateManager = sessionAuthManager || AuthStateManager.getInstance();
@@ -238,13 +241,20 @@ export async function gas_auth({
             : authStateManager.getAuthStatus();
           
           if (authStatus.authenticated) {
+            // Get current token for status response
+            const authSession = authStateManager instanceof SessionAuthManager
+              ? await authStateManager.getAuthSession()
+              : authStateManager.getAuthSession();
+            
             return {
               status: 'authenticated',
               message: `Authenticated as ${authStatus.user?.email}`,
               authenticated: true,
               user: authStatus.user,
               tokenValid: authStatus.tokenValid,
-              expiresIn: authStatus.expiresIn
+              expiresIn: authStatus.expiresIn,
+              accessToken: authSession?.tokens?.access_token,
+              tokenExpiresAt: authSession?.tokens?.expires_at
             };
           } else {
             return {
@@ -312,11 +322,21 @@ export async function gas_auth({
             : authStateManager.getUserInfo();
           console.error(`✅ Already authenticated as ${userInfo?.email}`);
           
+          // Get current token info for already authenticated case
+          const authSession = authStateManager instanceof SessionAuthManager
+            ? await authStateManager.getAuthSession()
+            : authStateManager.getAuthSession();
+          
           return {
             status: 'already_authenticated', 
             message: `Already authenticated as ${userInfo?.email}`,
             authenticated: true,
-            user: userInfo
+            user: userInfo,
+            accessToken: authSession?.tokens?.access_token,
+            tokenExpiresAt: authSession?.tokens?.expires_at,
+            tokenExpiresIn: authSession?.tokens?.expires_at 
+              ? Math.max(0, Math.floor((authSession.tokens.expires_at - Date.now()) / 1000))
+              : undefined
           };
         }
 
