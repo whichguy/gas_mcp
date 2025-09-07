@@ -10,6 +10,7 @@ import {
   detectSearchMode,
   estimatePatternComplexity 
 } from './patternValidator.js';
+import { CONTEXT_QUERY_MAPPINGS } from './schemaPatterns.js';
 
 export interface GrepMatch {
   lineNumber: number;
@@ -65,6 +66,29 @@ export interface GASFile {
   type: string;
   source?: string;
   size?: number;
+}
+
+/**
+ * Enhanced interfaces for context-aware searching
+ */
+export interface ContextSearchOptions extends Omit<GrepSearchOptions, 'pattern'> {
+  contextMode?: 'basic' | 'enhanced' | 'detailed';
+  tokenBudget?: number;
+  semanticExpansion?: boolean;
+}
+
+export interface RelevanceScore {
+  filename: number;    // 40% - filename relevance
+  density: number;     // 30% - match density
+  coverage: number;    // 20% - pattern coverage
+  characteristics: number; // 10% - code characteristics
+  total: number;
+}
+
+export interface ContextAwareFileResult extends GrepFileResult {
+  relevanceScore: RelevanceScore;
+  semanticMatches: string[];
+  tokenEstimate: number;
 }
 
 // Token estimation constants
@@ -176,6 +200,152 @@ export function validatePathPattern(pattern: string, mode: 'wildcard' | 'regex' 
   }
   
   return { valid: true };
+}
+
+/**
+ * Context query processor for semantic search expansion
+ */
+export class ContextQueryProcessor {
+  /**
+   * Expand query terms using semantic mappings
+   */
+  static expandQuery(query: string, enableExpansion = true): string[] {
+    if (!enableExpansion) return [query];
+    
+    const expandedTerms = new Set<string>();
+    expandedTerms.add(query);
+    
+    // Split query into words for individual expansion
+    const words = query.toLowerCase().split(/\s+/);
+    
+    for (const word of words) {
+      // Check direct mappings
+      for (const [category, synonyms] of Object.entries(CONTEXT_QUERY_MAPPINGS)) {
+        const synonymList = synonyms as readonly string[];
+        if (word === category || synonymList.includes(word)) {
+          // Add category and all synonyms
+          expandedTerms.add(category);
+          synonymList.forEach(synonym => expandedTerms.add(synonym));
+        }
+      }
+    }
+    
+    return Array.from(expandedTerms);
+  }
+  
+  /**
+   * Create search patterns from expanded query terms
+   */
+  static createSearchPatterns(expandedTerms: string[]): RegExp[] {
+    const patterns: RegExp[] = [];
+    
+    for (const term of expandedTerms) {
+      try {
+        // Create case-insensitive word boundary patterns
+        patterns.push(new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'));
+      } catch (error) {
+        // Skip invalid patterns
+        continue;
+      }
+    }
+    
+    return patterns;
+  }
+}
+
+/**
+ * Relevance scorer for context-aware results
+ */
+export class RelevanceScorer {
+  /**
+   * Calculate relevance score for a file
+   */
+  static calculateScore(
+    file: GASFile, 
+    matches: GrepMatch[], 
+    expandedTerms: string[]
+  ): RelevanceScore {
+    const filename = this.scoreFilename(file.name, expandedTerms);
+    const density = this.scoreDensity(file, matches);
+    const coverage = this.scoreCoverage(matches, expandedTerms);
+    const characteristics = this.scoreCharacteristics(file);
+    
+    // Weighted combination: filename 40%, density 30%, coverage 20%, characteristics 10%
+    const total = (filename * 0.4) + (density * 0.3) + (coverage * 0.2) + (characteristics * 0.1);
+    
+    return {
+      filename,
+      density,
+      coverage,
+      characteristics,
+      total: Math.round(total * 100) / 100
+    };
+  }
+  
+  private static scoreFilename(filename: string, expandedTerms: string[]): number {
+    let score = 0;
+    const lowerFilename = filename.toLowerCase();
+    
+    for (const term of expandedTerms) {
+      if (lowerFilename.includes(term.toLowerCase())) {
+        score += 1;
+      }
+    }
+    
+    // Normalize by number of terms (0-1 scale)
+    return Math.min(score / expandedTerms.length, 1);
+  }
+  
+  private static scoreDensity(file: GASFile, matches: GrepMatch[]): number {
+    if (!file.source || matches.length === 0) return 0;
+    
+    const lines = file.source.split('\n').length;
+    const matchedLines = new Set(matches.map(m => m.lineNumber)).size;
+    
+    // Density = matched lines / total lines (0-1 scale)
+    return Math.min(matchedLines / lines, 1);
+  }
+  
+  private static scoreCoverage(matches: GrepMatch[], expandedTerms: string[]): number {
+    if (matches.length === 0 || expandedTerms.length === 0) return 0;
+    
+    const matchedTerms = new Set<string>();
+    
+    for (const match of matches) {
+      for (const term of expandedTerms) {
+        if (match.line.toLowerCase().includes(term.toLowerCase())) {
+          matchedTerms.add(term);
+        }
+      }
+    }
+    
+    // Coverage = matched terms / total terms (0-1 scale)
+    return matchedTerms.size / expandedTerms.length;
+  }
+  
+  private static scoreCharacteristics(file: GASFile): number {
+    let score = 0;
+    
+    // Boost for test files
+    if (file.name.toLowerCase().includes('test') || 
+        file.name.toLowerCase().includes('spec')) {
+      score += 0.3;
+    }
+    
+    // Boost for config/utility files
+    if (file.name.toLowerCase().includes('config') ||
+        file.name.toLowerCase().includes('util') ||
+        file.name.toLowerCase().includes('helper')) {
+      score += 0.2;
+    }
+    
+    // Penalize very large files (likely generated)
+    if (file.source && file.source.length > 10000) {
+      score -= 0.2;
+    }
+    
+    return Math.max(0, Math.min(score, 1));
+  }
 }
 
 /**
@@ -470,5 +640,115 @@ export class GrepSearchEngine {
     }
     
     return output.trim();
+  }
+
+  /**
+   * Context-aware search with semantic expansion and relevance scoring
+   */
+  async searchWithContext(
+    files: GASFile[], 
+    query: string,
+    options: ContextSearchOptions = {},
+    scriptId?: string
+  ): Promise<{
+    results: ContextAwareFileResult[];
+    expandedTerms: string[];
+    totalTokens: number;
+    searchTime: number;
+  }> {
+    const startTime = Date.now();
+    
+    // Expand query using semantic mappings
+    const expandedTerms = ContextQueryProcessor.expandQuery(
+      query, 
+      options.semanticExpansion !== false
+    );
+    
+    // Create search patterns from expanded terms
+    const searchPatterns = ContextQueryProcessor.createSearchPatterns(expandedTerms);
+    
+    // Filter files based on options
+    const filteredFiles = this.filterFiles(files, options);
+    
+    // Process files with context awareness
+    const contextResults: ContextAwareFileResult[] = [];
+    let totalTokens = 0;
+    const tokenBudget = options.tokenBudget || 8000;
+    
+    // Limit files for performance
+    const maxFiles = options.maxFilesSearched || 100;
+    const filesToSearch = filteredFiles.slice(0, maxFiles);
+    
+    for (const file of filesToSearch) {
+      if (totalTokens >= tokenBudget) break;
+      
+      // Skip very large files
+      if (file.source && file.source.length > TOKEN_LIMITS.maxFileSize) {
+        continue;
+      }
+      
+      // Search with multiple patterns
+      const allMatches: GrepMatch[] = [];
+      const semanticMatches: string[] = [];
+      
+      for (let i = 0; i < searchPatterns.length; i++) {
+        const pattern = searchPatterns[i];
+        const term = expandedTerms[i];
+        
+        const fileResult = this.searchFile(file, pattern, {...options, pattern: term});
+        if (fileResult && fileResult.totalMatches > 0) {
+          allMatches.push(...fileResult.matches);
+          semanticMatches.push(term);
+        }
+      }
+      
+      if (allMatches.length > 0) {
+        // Remove duplicate matches (same line number)
+        const uniqueMatches = allMatches.filter((match, index, self) => 
+          index === self.findIndex(m => m.lineNumber === match.lineNumber)
+        );
+        
+        // Calculate relevance score
+        const relevanceScore = RelevanceScorer.calculateScore(file, uniqueMatches, expandedTerms);
+        
+        // Estimate tokens for this file result
+        const fileTokens = this.estimateTokens([{
+          fileName: file.name,
+          fileType: file.type,
+          totalMatches: uniqueMatches.length,
+          matches: uniqueMatches
+        }]);
+        
+        // Skip if this would exceed token budget
+        if (totalTokens + fileTokens > tokenBudget) {
+          continue;
+        }
+        
+        const contextResult: ContextAwareFileResult = {
+          fileName: file.name,
+          fileType: file.type,
+          totalMatches: uniqueMatches.length,
+          matches: uniqueMatches,
+          relevanceScore,
+          semanticMatches: [...new Set(semanticMatches)], // Remove duplicates
+          tokenEstimate: fileTokens
+        };
+        
+        contextResults.push(contextResult);
+        totalTokens += fileTokens;
+      }
+    }
+    
+    // Sort results by relevance score (descending)
+    contextResults.sort((a, b) => b.relevanceScore.total - a.relevanceScore.total);
+    
+    const searchTime = Date.now() - startTime;
+    
+    return {
+      results: contextResults,
+      expandedTerms,
+      totalTokens,
+      searchTime
+    };
   }
 } 
