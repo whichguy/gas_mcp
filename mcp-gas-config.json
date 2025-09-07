@@ -191,12 +191,26 @@
       "scriptId": "1YXm37CJXsctik9f2QUTUyNsETrlSSWiiytZC49a7YGCUrYhlLV4JCl5h",
       "name": "test-git-sync",
       "description": "Created: 8/28/2025"
+    },
+    "fibonacci-sidebar-test": {
+      "scriptId": "10Jfa2s9ilvmRGcZxpd9rEPNhNM-ZaxsK4jSRPphQRyGHwobnbO3k9mv2",
+      "name": "fibonacci-sidebar-test",
+      "description": "Created: 9/6/2025"
+    },
+    "test-script-for-binding": {
+      "scriptId": "1Gy36JIN_jVSYDJMB3JmGhxpnL9zQLeRMBJcilGxEntzpk2QqUlUOp_Te",
+      "name": "test-script-for-binding",
+      "description": "Created: 9/6/2025"
     }
+  },
+  "localRoot": {
+    "rootPath": "/Users/jameswiese/.mcp-gas/projects",
+    "lastUpdated": "2025-09-06T23:18:02.140Z"
   },
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-08-28T12:59:33.740Z"
+    "lastModified": "2025-09-07T00:02:35.731Z"
   },
   "debug": true,
   "currentProject": {

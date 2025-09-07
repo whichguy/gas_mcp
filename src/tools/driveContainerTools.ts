@@ -219,33 +219,13 @@ export class GASFindDriveScriptTool extends BaseTool {
     console.error(`   Content-Type: ${contentType}`);
 
     if (!response.ok) {
-      let errorText = '';
-      let errorHeaders: Record<string, string> = {};
-      try {
-        errorText = await response.text();
-        response.headers.forEach((value, key) => {
-          errorHeaders[key] = value;
-        });
-        console.error(`[GOOGLE DRIVE API ERROR] Search failed`);
-        console.error(`   Status: ${response.status} ${response.statusText}`);
-        console.error(`   Error body: ${errorText}`);
-        console.error(`   Error headers:`, errorHeaders);
-        console.error(`   Duration: ${duration}ms`);
-      } catch (bodyError) {
-        console.warn('Failed to read error response body:', bodyError);
-      }
-      
-      const error = new Error(`Drive API search failed: ${response.status} ${response.statusText} - ${errorText}`);
-      (error as any).statusCode = response.status;
-      (error as any).statusText = response.statusText;
-      (error as any).response = {
-        status: response.status,
-        statusText: response.statusText,
-        headers: errorHeaders,
-        url: response.url,
-        body: errorText
-      };
-      throw error;
+      throw GASErrorHandler.handleApiError(
+        new Error(`Drive API search failed: ${response.status} ${response.statusText}`),
+        {
+          operation: 'searching Drive files',
+          tool: 'driveContainerTools'
+        }
+      );
     }
 
     let result: any;
@@ -269,14 +249,18 @@ export class GASFindDriveScriptTool extends BaseTool {
   }
 
   /**
-   * Find Apps Script project associated with a container
+   * Find Apps Script project associated with a container using Drive API
    */
   private async findAssociatedScript(containerId: string, accessToken: string): Promise<string | null> {
     try {
-      // List all scripts and check for container bindings
-      const scriptsUrl = 'https://script.googleapis.com/v1/projects?pageSize=100';
+      // Use Drive API to find scripts with specific parent (container binding)
+      const driveUrl = 'https://www.googleapis.com/drive/v3/files';
+      const url = new URL(driveUrl);
+      url.searchParams.set('q', `mimeType='application/vnd.google-apps.script' and '${containerId}' in parents and trashed=false`);
+      url.searchParams.set('pageSize', '100');
+      url.searchParams.set('fields', 'files(id,name,parents)');
       
-      const scriptsResponse = await fetch(scriptsUrl, {
+      const scriptsResponse = await fetch(url.toString(), {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/json',
@@ -285,7 +269,7 @@ export class GASFindDriveScriptTool extends BaseTool {
       });
 
       if (!scriptsResponse.ok) {
-        console.error(`Unable to list scripts: ${scriptsResponse.status}`);
+        console.error(`Unable to list scripts via Drive API: ${scriptsResponse.status}`);
         return null;
       }
 
@@ -298,17 +282,14 @@ export class GASFindDriveScriptTool extends BaseTool {
         try {
           scriptsData = JSON.parse(text);
         } catch {
-          console.error(`Unexpected response format from Scripts API: ${contentType}`);
+          console.error(`Unexpected response format from Drive API: ${contentType}`);
           return null;
         }
       }
       
-      if (scriptsData.projects) {
-        for (const project of scriptsData.projects) {
-          if (project.parentId === containerId) {
-            return project.scriptId;
-          }
-        }
+      if (scriptsData.files && scriptsData.files.length > 0) {
+        // Return the first script associated with this container
+        return scriptsData.files[0].id;
       }
 
       return null;
@@ -327,7 +308,7 @@ export class GASFindDriveScriptTool extends BaseTool {
 export class GASBindScriptTool extends BaseTool {
   
   public name = 'gas_bind_script';
-  public description = 'Bind an existing Apps Script project to a Drive container. Returns scriptId for integration with gas_run and other MCP functions.';
+  public description = 'Attempt to bind an existing Apps Script project to a Drive container. Note: Google Apps Script API does not support binding existing standalone scripts to containers. Use gas_create_script instead to create container-bound scripts.';
   public inputSchema = {
     type: 'object',
     properties: {
@@ -398,17 +379,13 @@ export class GASBindScriptTool extends BaseTool {
         throw new Error(`Script "${scriptName}" not found`);
       }
 
-      // Bind the script to the container
-      await this.bindScriptToContainer(script.scriptId, container.fileId, accessToken);
-      
-      console.error(`Successfully bound script to container`);
+      // Note: Google Apps Script API doesn't support binding existing standalone scripts to containers
+      // Container-bound scripts must be created from within the container or via projects.create with parentId
+      console.error(`Cannot bind existing standalone script to container - not supported by Google Apps Script API`);
 
       return {
-        success: true,
-        scriptId: script.scriptId,
-        containerId: container.fileId,
-        containerName: container.fileName,
-        scriptUrl: `https://script.google.com/d/${script.scriptId}/edit`
+        success: false,
+        error: `Cannot bind existing standalone script "${scriptName}" to container "${containerName}". Google Apps Script API doesn't support converting standalone scripts to container-bound scripts. Use gas_create_script to create a new container-bound script instead.`
       };
 
     } catch (error) {
@@ -458,12 +435,17 @@ export class GASBindScriptTool extends BaseTool {
   }
 
   /**
-   * Find a script by name
+   * Find a script by name using Drive API (same approach as gas_ls)
    */
   private async findScript(scriptName: string, accessToken: string): Promise<{ scriptId: string; title: string } | null> {
-    const scriptsUrl = 'https://script.googleapis.com/v1/projects?pageSize=100';
+    // Use Drive API to list Apps Script projects (same approach as gas_ls)
+    const driveUrl = 'https://www.googleapis.com/drive/v3/files';
+    const url = new URL(driveUrl);
+    url.searchParams.set('q', `name='${scriptName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.script' and trashed=false`);
+    url.searchParams.set('pageSize', '100');
+    url.searchParams.set('fields', 'files(id,name,createdTime,modifiedTime,parents)');
     
-    const response = await fetch(scriptsUrl, {
+    const response = await fetch(url.toString(), {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Accept': 'application/json',
@@ -472,28 +454,13 @@ export class GASBindScriptTool extends BaseTool {
     });
 
     if (!response.ok) {
-      let errorText = '';
-      let errorHeaders: Record<string, string> = {};
-      try {
-        errorText = await response.text();
-        response.headers.forEach((value, key) => {
-          errorHeaders[key] = value;
-        });
-      } catch (bodyError) {
-        console.warn('Failed to read error response body:', bodyError);
-      }
-      
-      const error = new Error(`Failed to list scripts: ${response.status} ${response.statusText} - ${errorText}`);
-      (error as any).statusCode = response.status;
-      (error as any).statusText = response.statusText;
-      (error as any).response = {
-        status: response.status,
-        statusText: response.statusText,
-        headers: errorHeaders,
-        url: response.url,
-        body: errorText
-      };
-      throw error;
+      throw GASErrorHandler.handleApiError(
+        new Error(`Drive API list scripts failed: ${response.status} ${response.statusText}`),
+        {
+          operation: 'listing scripts via Drive API',
+          tool: 'gas_bind_script'
+        }
+      );
     }
 
     const contentType = response.headers.get('content-type') || 'Unknown';
@@ -505,22 +472,78 @@ export class GASBindScriptTool extends BaseTool {
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error(`Unexpected response format from Scripts API: ${contentType}`);
+        throw new Error(`Unexpected response format from Drive API: ${contentType}`);
       }
     }
     
-    if (data.projects) {
-      for (const project of data.projects) {
-        if (project.title === scriptName) {
-          return {
-            scriptId: project.scriptId,
-            title: project.title
-          };
-        }
-      }
+    if (data.files && data.files.length > 0) {
+      const file = data.files[0]; // Take the first match
+      return {
+        scriptId: file.id,
+        title: file.name
+      };
     }
 
     return null;
+  }
+
+  /**
+   * Search Google Drive for files matching the query
+   */
+  private async searchDriveFiles(query: string, accessToken: string): Promise<any> {
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime)&pageSize=100`;
+    
+    console.error(`[GOOGLE DRIVE API] Starting search request`);
+    console.error(`   Timestamp: ${new Date().toISOString()}`);
+    console.error(`   URL: ${url}`);
+    console.error(`   Query: ${query}`);
+    console.error(`   Auth: Token present (${accessToken.substring(0, 10)}...)`);
+    
+    const startTime = Date.now();
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const duration = Date.now() - startTime;
+    const contentType = response.headers.get('content-type') || 'Unknown';
+    console.error(`[GOOGLE DRIVE API] Search response received after ${duration}ms`);
+    console.error(`   Status: ${response.status} ${response.statusText}`);
+    console.error(`   URL: ${response.url}`);
+    console.error(`   Content-Type: ${contentType}`);
+
+    if (!response.ok) {
+      throw GASErrorHandler.handleApiError(
+        new Error(`Drive API search failed: ${response.status} ${response.statusText}`),
+        {
+          operation: 'searching Drive files',
+          tool: 'driveContainerTools'
+        }
+      );
+    }
+
+    let result: any;
+    if (contentType.includes('application/json')) {
+      result = await response.json();
+    } else {
+      const text = await response.text();
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new Error(`Unexpected response format from Drive API: ${contentType}`);
+      }
+    }
+    
+    console.error(`[GOOGLE DRIVE API SUCCESS] Search completed`);
+    console.error(`   Files found: ${(result as any).files?.length || 0}`);
+    console.error(`   Response size: ${JSON.stringify(result).length} characters`);
+    console.error(`   Total duration: ${duration}ms`);
+    
+    return result;
   }
 
   /**
@@ -703,6 +726,65 @@ export class GASCreateScriptTool extends BaseTool {
   }
 
   /**
+   * Search Google Drive for files matching the query
+   */
+  private async searchDriveFiles(query: string, accessToken: string): Promise<any> {
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime)&pageSize=100`;
+    
+    console.error(`[GOOGLE DRIVE API] Starting search request`);
+    console.error(`   Timestamp: ${new Date().toISOString()}`);
+    console.error(`   URL: ${url}`);
+    console.error(`   Query: ${query}`);
+    console.error(`   Auth: Token present (${accessToken.substring(0, 10)}...)`);
+    
+    const startTime = Date.now();
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const duration = Date.now() - startTime;
+    const contentType = response.headers.get('content-type') || 'Unknown';
+    console.error(`[GOOGLE DRIVE API] Search response received after ${duration}ms`);
+    console.error(`   Status: ${response.status} ${response.statusText}`);
+    console.error(`   URL: ${response.url}`);
+    console.error(`   Content-Type: ${contentType}`);
+
+    if (!response.ok) {
+      throw GASErrorHandler.handleApiError(
+        new Error(`Drive API search failed: ${response.status} ${response.statusText}`),
+        {
+          operation: 'searching Drive files',
+          tool: 'driveContainerTools'
+        }
+      );
+    }
+
+    let result: any;
+    if (contentType.includes('application/json')) {
+      result = await response.json();
+    } else {
+      const text = await response.text();
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new Error(`Unexpected response format from Drive API: ${contentType}`);
+      }
+    }
+    
+    console.error(`[GOOGLE DRIVE API SUCCESS] Search completed`);
+    console.error(`   Files found: ${(result as any).files?.length || 0}`);
+    console.error(`   Response size: ${JSON.stringify(result).length} characters`);
+    console.error(`   Total duration: ${duration}ms`);
+    
+    return result;
+  }
+
+  /**
    * Create a new Apps Script project
    */
   private async createScriptProject(
@@ -806,18 +888,16 @@ export class GASCreateScriptTool extends BaseTool {
     });
 
     if (!response.ok) {
-      let errorText = '';
-      let errorHeaders: Record<string, string> = {};
       try {
-        errorText = await response.text();
-        response.headers.forEach((value, key) => {
-          errorHeaders[key] = value;
-        });
-        console.warn(`Failed to add starter code: ${response.status} ${response.statusText} - ${errorText}`);
-        console.warn(`Error headers:`, errorHeaders);
-      } catch (bodyError) {
-        console.warn(`Failed to add starter code: ${response.status} ${response.statusText}`);
-        console.warn('Failed to read error response body:', bodyError);
+        GASErrorHandler.handleApiError(
+          new Error(`Failed to add starter code: ${response.status} ${response.statusText}`),
+          {
+            operation: 'adding starter code to new script',
+            tool: 'gas_create_script'
+          }
+        );
+      } catch (error: any) {
+        console.warn('Failed to add starter code (non-critical):', error.message);
       }
       // Don't throw error as project was created successfully
     }
