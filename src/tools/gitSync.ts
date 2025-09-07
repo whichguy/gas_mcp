@@ -768,7 +768,8 @@ export class GitSyncTool extends BaseTool {
           const result = transformHTMLToMarkdown(gasContent, gasFile.name);
           gasContent = result.content;
         } else if (gasFile.name.startsWith('_') || gasFile.name === '.gitignore' || gasFile.name === '.git') {
-          const result = transformFromGAS(gasContent, gasFile.name + '.gs');
+          // For dotfiles, don't add .gs extension as they're already stored with proper names
+          const result = transformFromGAS(gasContent, gasFile.name);
           gasContent = result.content;
         } else if (gasFile.type === 'SERVER_JS') {
           gasContent = unwrapCommonJSModule(gasContent);
@@ -882,8 +883,8 @@ export class GitSyncTool extends BaseTool {
         const result = transformHTMLToMarkdown(content, file.name);
         content = result.content;
       } else if (file.name.startsWith('_') || file.name === '.gitignore' || file.name === '.git') {
-        // Transform from GAS format back to original
-        const result = transformFromGAS(content, file.name + '.gs');
+        // Transform from GAS format back to original - dotfiles already have proper names
+        const result = transformFromGAS(content, file.name);
         content = result.content;
       } else if (file.type === 'SERVER_JS') {
         content = unwrapCommonJSModule(content);
@@ -923,7 +924,7 @@ export class GitSyncTool extends BaseTool {
         content = result.content;
       } else if (file.name.startsWith('_') || file.name === '.gitignore' || file.name === '.git') {
         // Transform from GAS format back to original
-        const result = transformFromGAS(content, file.name + '.gs');
+        const result = transformFromGAS(content, file.name);
         content = result.content;
       } else if (file.type === 'SERVER_JS') {
         content = unwrapCommonJSModule(content);
