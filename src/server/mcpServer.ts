@@ -26,6 +26,10 @@ import { GasGrepTool, GasRawGrepTool } from '../tools/grep.js';
 import { GasFindTool, GasRawFindTool } from '../tools/find.js';
 import { GasRipgrepTool, GasRawRipgrepTool } from '../tools/ripgrep.js';
 import { GasSedTool, GasRawSedTool } from '../tools/sed.js';
+import { GasContextTool } from '../tools/gas-context.js';
+import { GasSummaryTool } from '../tools/gas-summary.js';
+import { GasDepsTool } from '../tools/gas-deps.js';
+import { GasTreeTool } from '../tools/gas-tree.js';
 import { 
   GASMkdirTool, 
   GASInfoTool, 
@@ -358,6 +362,10 @@ export class MCPGasServer {
       new GasRipgrepTool(authManager),       // ⚡ High-performance search with ripgrep-inspired features
       new GasSedTool(authManager),           // 🔧 sed-style find/replace with CommonJS processing
       new GasFindTool(authManager),          // ✅ Find files with virtual names
+      new GasContextTool(authManager),       // 🧠 Intelligent context-aware search with semantic expansion
+      new GasSummaryTool(authManager),       // 📊 Content summarization with multiple analysis modes
+      new GasDepsTool(authManager),          // 🔗 Dependency analysis with circular detection and complexity metrics
+      new GasTreeTool(authManager),          // 🌳 Project structure visualization with hierarchical trees and statistics
       new GASRemoveTool(authManager),
       new GASMoveTool(authManager),
       new GASCopyTool(authManager),

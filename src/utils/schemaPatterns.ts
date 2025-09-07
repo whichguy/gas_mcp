@@ -26,6 +26,74 @@ export type ProcessType = typeof ProcessTypes[number];
 export const MetricsGranularities = ['WEEKLY', 'DAILY'] as const;
 export type MetricsGranularity = typeof MetricsGranularities[number];
 
+export const ContentModes = ['full', 'summary', 'signatures', 'exports', 'structure'] as const;
+export type ContentMode = typeof ContentModes[number];
+
+export const ContextModes = ['basic', 'enhanced', 'detailed'] as const;
+export type ContextMode = typeof ContextModes[number];
+
+/**
+ * Context query mappings for semantic search expansion
+ */
+export const CONTEXT_QUERY_MAPPINGS = {
+  'auth': ['authentication', 'login', 'token', 'oauth', 'credential', 'permission'],
+  'test': ['spec', 'unittest', 'integration', 'mock', 'assert', 'expect'],
+  'api': ['endpoint', 'request', 'response', 'http', 'rest', 'client'],
+  'config': ['setting', 'parameter', 'option', 'preference', 'environment'],
+  'error': ['exception', 'failure', 'bug', 'issue', 'problem', 'debug'],
+  'data': ['model', 'schema', 'database', 'storage', 'persistence'],
+  'ui': ['interface', 'component', 'view', 'template', 'frontend', 'display'],
+  'util': ['helper', 'tool', 'library', 'common', 'shared', 'utility']
+} as const;
+
+/**
+ * Standard content mode schema for context-aware tools
+ */
+export const CONTENT_MODE_SCHEMA = {
+  type: 'string',
+  enum: [...ContentModes],
+  description: 'Content processing mode. LLM RECOMMENDATION: Use "summary" for overview, "full" for complete content.',
+  default: 'summary',
+  llmHints: {
+    overview: 'Use "summary" for quick understanding and token efficiency',
+    complete: 'Use "full" when complete content analysis is needed',
+    api: 'Use "signatures" to focus on function/method signatures',
+    module: 'Use "exports" to see what a module provides',
+    architecture: 'Use "structure" for high-level code organization'
+  }
+} as const;
+
+/**
+ * Standard context mode schema for intelligent processing
+ */
+export const CONTEXT_MODE_SCHEMA = {
+  type: 'string',
+  enum: [...ContextModes],
+  description: 'Context analysis depth. LLM RECOMMENDATION: Use "enhanced" for balanced performance and insight.',
+  default: 'enhanced',
+  llmHints: {
+    fast: 'Use "basic" for simple queries and fast responses',
+    balanced: 'Use "enhanced" for optimal balance of performance and context',
+    comprehensive: 'Use "detailed" for complex queries requiring deep analysis'
+  }
+} as const;
+
+/**
+ * Standard token budget schema for optimization
+ */
+export const TOKEN_BUDGET_SCHEMA = {
+  type: 'number',
+  description: 'Maximum tokens for response content (default: 8000). LLM USE: Adjust based on context window size.',
+  minimum: 1000,
+  maximum: 50000,
+  default: 8000,
+  llmHints: {
+    efficient: 'Use 4000-8000 for most queries to maintain efficiency',
+    comprehensive: 'Use 12000-20000 for complex analysis requiring full context',
+    minimal: 'Use 1000-2000 for quick overviews and summaries'
+  }
+} as const;
+
 /**
  * Standard access token schema with LLM-friendly documentation
  */
@@ -238,7 +306,29 @@ export const COMMON_TOOL_SCHEMAS = {
     ...DEPLOYMENT_CONFIG_SCHEMA,
     ...additionalProperties,
     accessToken: ACCESS_TOKEN_SCHEMA
-  }, ['scriptId'])
+  }, ['scriptId']),
+
+  /**
+   * Standard schema for context-aware tools
+   */
+  contextOperation: (additionalProperties: Record<string, any> = {}) => createToolSchema({
+    scriptId: SCRIPT_ID_SCHEMA,
+    query: {
+      type: 'string',
+      description: 'Search query with semantic expansion. LLM USE: Use natural language to find related code.',
+      minLength: 1,
+      llmHints: {
+        semantic: 'Query is expanded using semantic mappings (e.g., "auth" finds authentication-related code)',
+        natural: 'Use natural language descriptions of what you\'re looking for',
+        specific: 'More specific queries yield better results'
+      }
+    },
+    contentMode: CONTENT_MODE_SCHEMA,
+    contextMode: CONTEXT_MODE_SCHEMA,
+    tokenBudget: TOKEN_BUDGET_SCHEMA,
+    ...additionalProperties,
+    accessToken: ACCESS_TOKEN_SCHEMA
+  }, ['scriptId', 'query'])
 };
 
 /**

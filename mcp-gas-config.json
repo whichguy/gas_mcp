@@ -201,6 +201,11 @@
       "scriptId": "1Gy36JIN_jVSYDJMB3JmGhxpnL9zQLeRMBJcilGxEntzpk2QqUlUOp_Te",
       "name": "test-script-for-binding",
       "description": "Created: 9/6/2025"
+    },
+    "riley-correspondassist-ai-emai": {
+      "scriptId": "1pUqwFycLp3JBTqMBFi5K84aD9XMVESXA5KdXzp5oqhXKDZcOjUZ-zhPV",
+      "name": "riley-correspondassist-ai-emai",
+      "description": "Created: 9/6/2025"
     }
   },
   "localRoot": {
@@ -210,12 +215,12 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-09-07T00:02:35.731Z"
+    "lastModified": "2025-09-07T02:12:34.677Z"
   },
   "debug": true,
   "currentProject": {
-    "projectName": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
-    "scriptId": "1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ",
-    "lastSync": "2025-08-07T12:56:05.619Z"
+    "projectName": "1pUqwFycLp3JBTqMBFi5K84aD9XMVESXA5KdXzp5oqhXKDZcOjUZ-zhPV",
+    "scriptId": "1pUqwFycLp3JBTqMBFi5K84aD9XMVESXA5KdXzp5oqhXKDZcOjUZ-zhPV",
+    "lastSync": "2025-09-07T02:12:34.677Z"
   }
 }
