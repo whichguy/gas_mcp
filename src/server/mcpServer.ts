@@ -362,7 +362,7 @@ export class MCPGasServer {
       new GasRipgrepTool(authManager),       // ⚡ High-performance search with ripgrep-inspired features
       new GasSedTool(authManager),           // 🔧 sed-style find/replace with CommonJS processing
       new GasFindTool(authManager),          // ✅ Find files with virtual names
-      new GasContextTool(authManager),       // 🧠 Intelligent context-aware search with semantic expansion
+      new GasContextTool(authManager),       // 🧠 Intelligent context-aware search (simplified version)
       new GasSummaryTool(authManager),       // 📊 Content summarization with multiple analysis modes
       new GasDepsTool(authManager),          // 🔗 Dependency analysis with circular detection and complexity metrics
       new GasTreeTool(authManager),          // 🌳 Project structure visualization with hierarchical trees and statistics

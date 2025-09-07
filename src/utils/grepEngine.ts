@@ -218,14 +218,24 @@ export class ContextQueryProcessor {
     // Split query into words for individual expansion
     const words = query.toLowerCase().split(/\s+/);
     
+    // Limit expansion to prevent memory issues
+    const maxExpansionTerms = 20;
+    
     for (const word of words) {
+      if (expandedTerms.size >= maxExpansionTerms) break;
+      
       // Check direct mappings
       for (const [category, synonyms] of Object.entries(CONTEXT_QUERY_MAPPINGS)) {
         const synonymList = synonyms as readonly string[];
         if (word === category || synonymList.includes(word)) {
-          // Add category and all synonyms
+          // Add category and limited synonyms
           expandedTerms.add(category);
-          synonymList.forEach(synonym => expandedTerms.add(synonym));
+          synonymList.slice(0, 3).forEach(synonym => {
+            if (expandedTerms.size < maxExpansionTerms) {
+              expandedTerms.add(synonym);
+            }
+          });
+          break; // Only match first category to avoid exponential expansion
         }
       }
     }
@@ -676,29 +686,49 @@ export class GrepSearchEngine {
     const tokenBudget = options.tokenBudget || 8000;
     
     // Limit files for performance
-    const maxFiles = options.maxFilesSearched || 100;
+    const maxFiles = Math.min(options.maxFilesSearched || 50, 50); // Cap at 50 files
     const filesToSearch = filteredFiles.slice(0, maxFiles);
+    
+    // Limit patterns to prevent excessive processing
+    const limitedPatterns = searchPatterns.slice(0, 20);
+    const limitedTerms = expandedTerms.slice(0, 20);
     
     for (const file of filesToSearch) {
       if (totalTokens >= tokenBudget) break;
+      if (contextResults.length >= (options.maxResults || 10)) break; // Early termination
       
       // Skip very large files
       if (file.source && file.source.length > TOKEN_LIMITS.maxFileSize) {
         continue;
       }
       
-      // Search with multiple patterns
+      // Search with multiple patterns (limited)
       const allMatches: GrepMatch[] = [];
       const semanticMatches: string[] = [];
       
-      for (let i = 0; i < searchPatterns.length; i++) {
-        const pattern = searchPatterns[i];
-        const term = expandedTerms[i];
+      for (let i = 0; i < limitedPatterns.length; i++) {
+        if (allMatches.length > 100) break; // Prevent excessive matches per file
         
-        const fileResult = this.searchFile(file, pattern, {...options, pattern: term});
-        if (fileResult && fileResult.totalMatches > 0) {
-          allMatches.push(...fileResult.matches);
-          semanticMatches.push(term);
+        const pattern = limitedPatterns[i];
+        const term = limitedTerms[i];
+        
+        const searchOptions: GrepSearchOptions = {
+          pattern: term,
+          contextLines: Math.min(options.contextLines || 2, 5), // Limit context
+          showLineNumbers: options.showLineNumbers,
+          showFileHeaders: options.showFileHeaders
+        };
+        
+        try {
+          const fileResult = this.searchFile(file, pattern, searchOptions);
+          if (fileResult && fileResult.totalMatches > 0) {
+            allMatches.push(...fileResult.matches);
+            semanticMatches.push(term);
+          }
+        } catch (error) {
+          // Skip problematic patterns and continue
+          console.warn(`Pattern search failed for term "${term}":`, error);
+          continue;
         }
       }
       
