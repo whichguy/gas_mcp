@@ -35,6 +35,11 @@ DEBUG=mcp:* npm test
 ```bash
 npm run lint                     # ESLint with auto-fix
 npm run bundle:analyze           # Analyze bundle size
+
+# Production testing and verification
+npm run test:production          # Production readiness report
+npm run test:all-verify          # Run all verification tests
+npm run validate-setup.sh        # Validate setup and configuration
 ```
 
 ## Architecture Overview
@@ -236,6 +241,8 @@ The MCP server provides 46 tools organized into logical categories:
 - Prefer named exports over default exports
 - Use type imports for types: `import type { TokenInfo } from './types.js'`
 - Files use kebab-case, classes/interfaces use PascalCase
+- Strict TypeScript configuration with ES2022 target
+- ESM modules with Node.js resolution
 
 ### Testing Approach
 - **Unit tests** (`test/unit/`) - Mock external dependencies, test individual modules
@@ -271,3 +278,39 @@ DEBUG=mcp:auth npm start        # Auth logs only
 DEBUG=mcp:execution npm start   # Execution logs
 DEBUG=mcp:sync npm start        # Sync operations
 ```
+
+## MCP GAS Server Integration
+
+This is an **MCP (Model Context Protocol) server** specifically designed to work with AI assistants like Claude. When integrated with an MCP client:
+
+### MCP Client Configuration
+
+**For Claude Desktop** (`~/.claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "mcp-gas": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+### Essential Configuration Files
+
+- **mcp-gas-config.json** - Central configuration with project definitions, OAuth settings, and sync paths
+- **oauth-config.json** - Google OAuth 2.0 credentials (download from Google Cloud Console)
+- **.auth/** directory - Session token storage with automatic refresh
+
+### Working with MCP Gas Server
+
+When Claude Code connects to this server, it gains access to 46 Google Apps Script tools. The server handles:
+- OAuth authentication flow with Google
+- File operations with automatic CommonJS module wrapping
+- Real-time code execution in Google's cloud infrastructure
+- Git integration with safe synchronization workflows
+- Project management and deployment automation
