@@ -5,8 +5,8 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 /**
  * Get details of a specific version of a script project
  */
-export class GASVersionGetTool extends BaseTool {
-  public name = 'gas_version_get';
+export class VersionGetTool extends BaseTool {
+  public name = 'version_get';
   public description = 'Get details of a specific version of a script project. LLM USE: Examine specific code versions and their metadata.';
   
   public inputSchema = {
@@ -25,10 +25,10 @@ export class GASVersionGetTool extends BaseTool {
       },
       versionNumber: {
         type: 'number',
-        description: 'Version number to retrieve. LLM USE: Get this from gas_version_list or gas_deploy_list responses.',
+        description: 'Version number to retrieve. LLM USE: Get this from version_list or gas_deploy_list responses.',
         minimum: 1,
         llmHints: {
-          obtaining: 'Use gas_version_list to see all available version numbers',
+          obtaining: 'Use version_list to see all available version numbers',
           sequential: 'Version numbers are sequential integers starting from 1',
           latest: 'Higher numbers represent more recent versions'
         }
@@ -49,17 +49,17 @@ export class GASVersionGetTool extends BaseTool {
       prerequisites: [
         '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
         '2. Have valid scriptId from gas_project_create or gas_ls',
-        '3. Version must exist (use gas_version_list to see available versions)'
+        '3. Version must exist (use version_list to see available versions)'
       ],
       useCases: {
-        codeReview: 'gas_version_get({scriptId: "...", versionNumber: 5}) - Review specific version code',
-        comparison: 'gas_version_get for multiple versions to compare changes',
-        deployment: 'gas_version_get to verify version before deployment'
+        codeReview: 'version_get({scriptId: "...", versionNumber: 5}) - Review specific version code',
+        comparison: 'version_get for multiple versions to compare changes',
+        deployment: 'version_get to verify version before deployment'
       },
       errorHandling: {
         'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
         'ScriptNotFound': 'Verify scriptId is correct and accessible',
-        'VersionNotFound': 'Version number may not exist, use gas_version_list to see available versions'
+        'VersionNotFound': 'Version number may not exist, use version_list to see available versions'
       },
       returnValue: {
         versionNumber: 'The version number requested',
@@ -94,8 +94,8 @@ export class GASVersionGetTool extends BaseTool {
 /**
  * List all versions of a script project
  */
-export class GASVersionListTool extends BaseTool {
-  public name = 'gas_version_list';
+export class VersionListTool extends BaseTool {
+  public name = 'version_list';
   public description = 'List all versions of a script project. LLM USE: See version history and select versions for deployment or comparison.';
   
   public inputSchema = {
@@ -127,7 +127,7 @@ export class GASVersionListTool extends BaseTool {
         type: 'string',
         description: 'Token for pagination (optional). LLM USE: Include token from previous response to get next page.',
         llmHints: {
-          workflow: 'Get this from previous gas_version_list response.nextPageToken',
+          workflow: 'Get this from previous version_list response.nextPageToken',
           iteration: 'Keep calling with pageToken until nextPageToken is null'
         }
       },
@@ -149,9 +149,9 @@ export class GASVersionListTool extends BaseTool {
         '2. Have valid scriptId from gas_project_create or gas_ls'
       ],
       useCases: {
-        history: 'gas_version_list({scriptId: "..."}) - See complete version history',
-        deployment: 'gas_version_list to select version for gas_deploy_create',
-        comparison: 'gas_version_list to identify versions for comparison'
+        history: 'version_list({scriptId: "..."}) - See complete version history',
+        deployment: 'version_list to select version for gas_deploy_create',
+        comparison: 'version_list to identify versions for comparison'
       },
       errorHandling: {
         'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
@@ -164,7 +164,7 @@ export class GASVersionListTool extends BaseTool {
         nextPageToken: 'Token for next page if more versions exist'
       },
       nextSteps: [
-        'Use gas_version_get to examine specific version details',
+        'Use version_get to examine specific version details',
         'Use gas_deploy_create with versionNumber to deploy specific version'
       ]
     }

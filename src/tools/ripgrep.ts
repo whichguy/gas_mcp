@@ -811,8 +811,8 @@ export class RipgrepSearchEngine extends GrepSearchEngine {
  * gas_ripgrep - High-performance search with ripgrep-inspired features (RECOMMENDED)
  * Searches clean user code with CommonJS unwrapping and virtual file names
  */
-export class GasRipgrepTool extends BaseTool {
-  public name = 'gas_ripgrep';
+export class RipgrepTool extends BaseTool {
+  public name = 'ripgrep';
   public description = '⚡ RECOMMENDED: High-performance search with ripgrep-inspired features including multiple patterns, smart case, context control, and replacement suggestions. Searches clean user code with filename prefix filtering (GAS has no real directories - uses filename prefixes like "utils/helper").';
   
   public inputSchema = {
@@ -1226,8 +1226,8 @@ export class GasRipgrepTool extends BaseTool {
  * gas_raw_ripgrep - High-performance search with ripgrep-inspired features (ADVANCED)
  * Searches complete file content including CommonJS wrappers and system code
  */
-export class GasRawRipgrepTool extends BaseTool {
-  public name = 'gas_raw_ripgrep';
+export class RawRipgrepTool extends BaseTool {
+  public name = 'raw_ripgrep';
   public description = '⚡ ADVANCED: High-performance search with ripgrep-inspired features on raw file content including CommonJS wrappers. Multiple patterns, advanced regex, and performance stats with filename prefix filtering for pseudo-directory organization.';
   
   public inputSchema = {

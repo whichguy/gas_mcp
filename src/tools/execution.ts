@@ -85,8 +85,8 @@ function protectResponseSize(response: any, maxTokens: number = 22000): any {
  * ✅ RECOMMENDED - Use for normal code execution
  * Automatically uses current project when set, otherwise requires explicit script ID
  */
-export class GASRunTool extends BaseTool {
-  public name = 'gas_run';
+export class RunTool extends BaseTool {
+  public name = 'run';
   public description = '🚀 RECOMMENDED: Execute JavaScript using current project context or explicit script ID';
   
   public inputSchema = {
@@ -291,7 +291,7 @@ export class GASRunTool extends BaseTool {
     const scriptId = params.scriptId;
     
     // Create a raw tool instance to execute the actual logic
-    const rawTool = new GASRawRunTool(this.sessionAuthManager);
+    const rawTool = new ExecTool(this.sessionAuthManager);
     
     return await rawTool.execute({
       scriptId,
@@ -431,8 +431,8 @@ async function ensureManifestEntryPoints(
  * - Must have script.scriptapp OAuth scope (or function-specific scopes)
  * - Cloud Platform project must match between calling app and script
  */
-export class GASRunApiExecTool extends BaseTool {
-  public name = 'gas_run_api_exec';
+export class ExecApiTool extends BaseTool {
+  public name = 'exec_api';
   public description = 'Execute a function in a Google Apps Script project via API executable. ⚠️ CRITICAL: Functions must be deployed as API executable before execution. Use gas_version_create → gas_deploy_create → gas_run_api_exec workflow for new/modified functions.';
   
   public inputSchema = {
@@ -762,8 +762,8 @@ export class GASRunApiExecTool extends BaseTool {
  * - Returns JSON responses that can be properly dehydrated/rehydrated
  * - Must have script.scriptapp OAuth scope
  */
-export class GASRawRunTool extends BaseTool {
-  public name = 'gas_raw_run';
+export class ExecTool extends BaseTool {
+  public name = 'exec';
   public description = '🔧 ADVANCED: Execute JavaScript with explicit script ID. Use gas_run for normal workflow.';
   
   public inputSchema = {

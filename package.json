@@ -1,5 +1,5 @@
 {
-  "name": "mcp-gas-server",
+  "name": "gas-server",
   "version": "1.0.0",
   "description": "Model Context Protocol server for Google Apps Script with direct code execution, filesystem access, and automatic deployment management",
   "main": "dist/src/index.js",
@@ -31,7 +31,7 @@
     "test:server": "node test/verification/verify-mcp-server.cjs",
     "test:all-verify": "node test/verification/run-all-tests.cjs",
     "test:production": "node test/verification/production-readiness-report.cjs",
-    "start": "npm run build && node dist/src/index.js --config ./mcp-gas-config.json",
+    "start": "npm run build && node dist/src/index.js --config ./gas-config.json",
     "dev": "npm run build:watch",
     "lint": "eslint src/**/*.ts --fix",
     "bundle:analyze": "npx esbuild-visualizer dist/src/index.js"
@@ -74,12 +74,12 @@
     "node": ">=18.0.0"
   },
   "mcpServers": {
-    "mcp-gas": {
+    "gas": {
       "command": "node",
       "args": [
         "dist/src/index.js",
         "--config",
-        "./mcp-gas-config.json"
+        "./gas-config.json"
       ],
       "env": {
         "NODE_ENV": "production"

@@ -104,7 +104,7 @@ const DEFAULT_CONFIG: McpGasConfig = {
  * Unified Configuration Manager
  */
 export class McpGasConfigManager {
-  private static readonly CONFIG_FILE = 'mcp-gas-config.json';
+  private static readonly CONFIG_FILE = 'gas-config.json';
   private static configCache: McpGasConfig | null = null;
   private static configPath: string | null = null;
 

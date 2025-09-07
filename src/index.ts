@@ -42,7 +42,7 @@ async function main() {
     await McpGasConfigManager.initializeFromFile(absoluteConfigPath);
   } else {
     console.error(`⚠️  No config file specified. Use --config <path> to specify configuration file.`);
-    console.error(`   Example: node dist/index.js --config ./mcp-gas-config.json`);
+    console.error(`   Example: node dist/index.js --config ./gas-config.json`);
     process.exit(1);
   }
   

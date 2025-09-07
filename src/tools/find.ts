@@ -1,8 +1,8 @@
 /**
- * gas_find and gas_raw_find - Find files matching patterns in GAS projects
+ * find and raw_find - Find files matching patterns in GAS projects
  * 
- * gas_find: Shows user-friendly virtual file names (e.g., .gitignore instead of .gitignore.gs)
- * gas_raw_find: Shows actual GAS file names (e.g., .gitignore.gs)
+ * find: Shows user-friendly virtual file names (e.g., .gitignore instead of .gitignore.gs)
+ * raw_find: Shows actual GAS file names (e.g., .gitignore.gs)
  * 
  * Mimics the shell find command for familiar file discovery patterns
  */
@@ -38,8 +38,8 @@ interface FindOptions {
  * gas_find - Find files with virtual name translation (RECOMMENDED)
  * Shows user-friendly names like .gitignore, .git instead of .gitignore.gs, .git.gs
  */
-export class GasFindTool extends BaseTool {
-  public name = 'gas_find';
+export class FindTool extends BaseTool {
+  public name = 'find';
   public description = '🔍 RECOMMENDED: Find files in GAS projects using shell-like find syntax with virtual file names';
   
   public inputSchema = {
@@ -311,8 +311,8 @@ export class GasFindTool extends BaseTool {
  * gas_raw_find - Find files showing actual GAS names (ADVANCED)
  * Shows actual GAS file names like .git.gs, .gitignore.gs
  */
-export class GasRawFindTool extends BaseTool {
-  public name = 'gas_raw_find';
+export class RawFindTool extends BaseTool {
+  public name = 'raw_find';
   public description = '🔧 ADVANCED: Find files in GAS projects showing actual GAS file names';
   
   public inputSchema = {

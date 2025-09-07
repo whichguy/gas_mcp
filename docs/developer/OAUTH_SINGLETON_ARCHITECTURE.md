@@ -314,7 +314,7 @@ npm start
 ```json
 {
   "mcpServers": {
-    "mcp-gas": {
+    "gas": {
       "command": "node",
       "args": ["/path/to/mcp_gas/dist/src/index.js"],
       "env": {

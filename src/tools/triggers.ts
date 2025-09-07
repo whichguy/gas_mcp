@@ -1,14 +1,14 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { BaseTool } from './base.js';
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
-import { GASRunTool } from './execution.js';
+import { RunTool } from './execution.js';
 
 /**
  * Trigger management tool for Google Apps Script projects
  * Provides comprehensive trigger operations via gas_run
  */
-export class GATriggerListTool extends BaseTool {
-  public name = 'gas_trigger_list';
+export class TriggerListTool extends BaseTool {
+  public name = 'trigger_list';
   public description = 'List all installable triggers for a Google Apps Script project';
   
   public inputSchema = {
@@ -68,7 +68,7 @@ export class GATriggerListTool extends BaseTool {
       `;
 
       // Execute using gas_run
-      const gasRunTool = new GASRunTool();
+      const gasRunTool = new RunTool(this.sessionAuthManager);
       const runResult = await gasRunTool.execute({
         scriptId,
         js_statement: jsStatement,
@@ -90,8 +90,8 @@ export class GATriggerListTool extends BaseTool {
   }
 }
 
-export class GATriggerCreateTool extends BaseTool {
-  public name = 'gas_trigger_create';
+export class TriggerCreateTool extends BaseTool {
+  public name = 'trigger_create';
   public description = 'Create a new installable trigger for a Google Apps Script project';
   
   public inputSchema = {
@@ -324,7 +324,7 @@ export class GATriggerCreateTool extends BaseTool {
       }
 
       // Execute using gas_run
-      const gasRunTool = new GASRunTool();
+      const gasRunTool = new RunTool(this.sessionAuthManager);
       const runResult = await gasRunTool.execute({
         scriptId,
         js_statement: jsStatement,
@@ -763,8 +763,8 @@ export class GATriggerCreateTool extends BaseTool {
   }
 }
 
-export class GATriggerDeleteTool extends BaseTool {
-  public name = 'gas_trigger_delete';
+export class TriggerDeleteTool extends BaseTool {
+  public name = 'trigger_delete';
   public description = 'Delete an installable trigger from a Google Apps Script project';
   
   public inputSchema = {
@@ -899,7 +899,7 @@ export class GATriggerDeleteTool extends BaseTool {
       }
 
       // Execute using gas_run
-      const gasRunTool = new GASRunTool();
+      const gasRunTool = new RunTool(this.sessionAuthManager);
       const runResult = await gasRunTool.execute({
         scriptId,
         js_statement: jsStatement,

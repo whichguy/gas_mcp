@@ -8,8 +8,8 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { AuthenticationError, ValidationError } from '../errors/mcpErrors.js';
 import { AUTH_MESSAGES } from '../constants/authMessages.js';
 
-export class GASProxySetupTool extends BaseTool {
-  public name = 'gas_proxy_setup';
+export class ProxySetupTool extends BaseTool {
+  public name = 'proxy_setup';
   public description = 'Set up Google Apps Script project for HTTP proxy functionality with doGet handler';
   
   public inputSchema = {

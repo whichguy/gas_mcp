@@ -10,73 +10,73 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 
 // Import all tools
-import { GASAuthTool } from '../tools/auth.js';
+import { AuthTool } from '../tools/auth.js';
 import { 
-  GASListTool, 
-  GASCatTool, 
-  GASWriteTool,
-  GASRawCatTool,
-  GASRawWriteTool,
-  GASRawCpTool,
-  GASRemoveTool, 
-  GASMoveTool, 
-  GASCopyTool 
+  LsTool, 
+  CatTool, 
+  WriteTool,
+  RawCatTool,
+  RawWriteTool,
+  RawCpTool,
+  RmTool, 
+  MvTool, 
+  CpTool 
 } from '../tools/filesystem.js';
-import { GasGrepTool, GasRawGrepTool } from '../tools/grep.js';
-import { GasFindTool, GasRawFindTool } from '../tools/find.js';
-import { GasRipgrepTool, GasRawRipgrepTool } from '../tools/ripgrep.js';
-import { GasSedTool, GasRawSedTool } from '../tools/sed.js';
-import { GasContextTool } from '../tools/gas-context.js';
-import { GasSummaryTool } from '../tools/gas-summary.js';
-import { GasDepsTool } from '../tools/gas-deps.js';
-import { GasTreeTool } from '../tools/gas-tree.js';
+import { GrepTool, RawGrepTool } from '../tools/grep.js';
+import { FindTool, RawFindTool } from '../tools/find.js';
+import { RipgrepTool, RawRipgrepTool } from '../tools/ripgrep.js';
+import { SedTool, RawSedTool } from '../tools/sed.js';
+import { ContextTool } from '../tools/gas-context.js';
+import { SummaryTool } from '../tools/gas-summary.js';
+import { DepsTool } from '../tools/gas-deps.js';
+import { TreeTool } from '../tools/gas-tree.js';
 import { 
-  GASMkdirTool, 
-  GASInfoTool, 
-  GASReorderTool,
-  GASProjectMetricsTool
+  MkdirTool, 
+  InfoTool, 
+  ReorderTool,
+  ProjectMetricsTool
 } from '../tools/project.js';
-import { GASRunTool, GASRawRunTool, GASRunApiExecTool } from '../tools/execution.js';
-import { GASProxySetupTool } from '../tools/proxySetup.js';
+import { RunTool, ExecTool, ExecApiTool } from '../tools/execution.js';
+import { ProxySetupTool } from '../tools/proxySetup.js';
 import {
-  GASDeployCreateTool,
-  GASVersionCreateTool,
-  GASDeployListTool,
-  GASDeployGetDetailsTool,
-  GASProjectCreateTool,
-  GASProjectInitTool,
-  GASDeployDeleteTool,
-  GASDeployUpdateTool
+  DeployCreateTool,
+  VersionCreateTool,
+  DeployListTool,
+  DeployGetDetailsTool,
+  ProjectCreateTool,
+  ProjectInitTool,
+  DeployDeleteTool,
+  DeployUpdateTool
 } from '../tools/deployments.js';
 
 import { 
-  GASFindDriveScriptTool,
-  GASBindScriptTool,
-  GASCreateScriptTool
+  FindDriveScriptTool,
+  BindScriptTool,
+  CreateScriptTool
 } from '../tools/driveContainerTools.js';
 
 import {
-  GASProcessListTool,
-  GASProcessListScriptTool
+  ProcessListTool,
+  ProcessListScriptTool
 } from '../tools/processes.js';
 
 import {
-  GASVersionGetTool,
-  GASVersionListTool
+  VersionGetTool,
+  VersionListTool
 } from '../tools/versions.js';
 
 // Import new local sync and project context tools
 import {
-  GASPullTool,
-  GASPushTool,
-  GASStatusTool
+  PullTool,
+  PushTool,
+  StatusTool
 } from '../tools/localSync.js';
 
 import {
-  GASProjectSetTool,
-  GASProjectGetTool,
-  GASProjectAddTool,
-  GASProjectListTool
+  ProjectSetTool,
+  ProjectGetTool,
+  ProjectAddTool,
+  ProjectListTool
 } from '../tools/projectContext.js';
 
 // Local root tools removed - using git sync pattern instead
@@ -84,18 +84,18 @@ import {
 
 // Import trigger management tools
 import {
-  GATriggerListTool,
-  GATriggerCreateTool,
-  GATriggerDeleteTool
+  TriggerListTool,
+  TriggerCreateTool,
+  TriggerDeleteTool
 } from '../tools/triggers.js';
 
 // Import NEW git sync tools
 import {
-  GasGitInitTool,
-  GasGitSyncTool,
-  GasGitStatusTool,
-  GasGitSetSyncFolderTool,
-  GasGitGetSyncFolderTool
+  GitInitTool,
+  GitSyncTool,
+  GitStatusTool,
+  GitSetSyncFolderTool,
+  GitGetSyncFolderTool
 } from '../tools/gitSync.js';
 
 // Import error handling
@@ -219,7 +219,7 @@ export class MCPGasServer {
   constructor() {
     this.server = new Server(
       {
-        name: 'mcp-gas-server',
+        name: 'gas-server',
         version: '1.0.0',
         capabilities: {
           tools: {}
@@ -352,96 +352,99 @@ export class MCPGasServer {
     
     const toolInstances = [
       // Authentication (with session-specific auth manager)
-      new GASAuthTool(authManager),
+      new AuthTool(authManager),
       
       // 📂 Filesystem operations - RECOMMENDED auto-sync tools
-      new GASListTool(authManager),
-      new GASCatTool(authManager),           // ✅ Smart reader (local-first)
-      new GASWriteTool(authManager),         // ✅ Auto-sync writer
-      new GasGrepTool(authManager),          // ✅ Content search with pattern matching
-      new GasRipgrepTool(authManager),       // ⚡ High-performance search with ripgrep-inspired features
-      new GasSedTool(authManager),           // 🔧 sed-style find/replace with CommonJS processing
-      new GasFindTool(authManager),          // ✅ Find files with virtual names
-      new GasContextTool(authManager),       // 🧠 Intelligent context-aware search (simplified version)
-      new GasSummaryTool(authManager),       // 📊 Content summarization with multiple analysis modes
-      new GasDepsTool(authManager),          // 🔗 Dependency analysis with circular detection and complexity metrics
-      new GasTreeTool(authManager),          // 🌳 Project structure visualization with hierarchical trees and statistics
-      new GASRemoveTool(authManager),
-      new GASMoveTool(authManager),
-      new GASCopyTool(authManager),
+      new LsTool(authManager),
+      new CatTool(authManager),           // Smart reader (local-first)
+      new WriteTool(authManager),         // Auto-sync writer
+      new GrepTool(authManager),          // Content search with pattern matching
+      new RipgrepTool(authManager),       // High-performance search with ripgrep-inspired features
+      new SedTool(authManager),           // sed-style find/replace with CommonJS processing
+      new FindTool(authManager),          // Find files with virtual names
+      new ContextTool(authManager),       // Intelligent context-aware search (simplified version)
+      new SummaryTool(authManager),       // Content summarization with multiple analysis modes
+      new DepsTool(authManager),          // Dependency analysis with circular detection and complexity metrics
+      new TreeTool(authManager),          // Project structure visualization with hierarchical trees and statistics
+      new RmTool(authManager),
+      new MvTool(authManager),
+      new CpTool(authManager),
       
       // 🔧 Filesystem operations - ADVANCED raw tools (explicit project IDs)
-      new GASRawCatTool(authManager),        // ⚠️ Advanced: Explicit project ID paths
-      new GASRawWriteTool(authManager),      // ⚠️ Advanced: Explicit project ID paths
-      new GasRawGrepTool(authManager),       // ⚠️ Advanced: Search full content (API-only, never local files)
-      new GasRawRipgrepTool(authManager),    // ⚠️ Advanced: High-performance search on raw content with ripgrep features
-      new GasRawSedTool(authManager),        // ⚠️ Advanced: sed-style find/replace on raw content including wrappers
-      new GasRawFindTool(authManager),       // ⚠️ Advanced: Find with actual GAS names
-      new GASRawCpTool(authManager),        // ⚠️ Advanced: Bulk copy without CommonJS processing
+      new RawCatTool(authManager),        // Advanced: Explicit project ID paths
+      new RawWriteTool(authManager),      // Advanced: Explicit project ID paths
+      new RawGrepTool(authManager),       // Advanced: Search full content (API-only, never local files)
+      new RawRipgrepTool(authManager),    // Advanced: High-performance search on raw content with ripgrep features
+      new RawSedTool(authManager),        // Advanced: sed-style find/replace on raw content including wrappers
+      new RawFindTool(authManager),       // Advanced: Find with actual GAS names
+      new RawCpTool(authManager),        // Advanced: Bulk copy without CommonJS processing
       
       // 🏗️ Project management
-      new GASMkdirTool(authManager),
-      new GASInfoTool(authManager),
-      new GASReorderTool(authManager),
-      new GASProjectMetricsTool(authManager),
+      new MkdirTool(authManager),
+      new InfoTool(authManager),
+      new ReorderTool(authManager),
+      new ProjectMetricsTool(authManager),
       
       // 🚀 Script execution - RECOMMENDED auto-sync tool
-      new GASRunTool(authManager),           // ✅ Uses current project context
+      new RunTool(authManager),           // ✅ Uses current project context
       
       // 🔧 Script execution - ADVANCED raw tool
-      new GASRawRunTool(authManager),        // ⚠️ Advanced: Explicit script ID
-      new GASRunApiExecTool(authManager),    // Alternative API-based execution
-      new GASProxySetupTool(authManager),
+      new ExecTool(authManager),        // ⚠️ Advanced: Explicit script ID
+      new ExecApiTool(authManager),    // Alternative API-based execution
+      new ProxySetupTool(authManager),
       
       // Deployment management (with session-specific auth manager)
-      new GASDeployCreateTool(authManager),
-      new GASVersionCreateTool(authManager),
-      new GASDeployListTool(authManager),
-      new GASDeployGetDetailsTool(authManager),
-      new GASProjectCreateTool(authManager),
-      new GASProjectInitTool(authManager),
-      new GASDeployDeleteTool(authManager),
-      new GASDeployUpdateTool(authManager),
+      new DeployCreateTool(authManager),
+      new VersionCreateTool(authManager),
+      new DeployListTool(authManager),
+      new DeployGetDetailsTool(authManager),
+      new ProjectCreateTool(authManager),
+      new ProjectInitTool(authManager),
+      new DeployDeleteTool(authManager),
+      new DeployUpdateTool(authManager),
 
       
       // Drive container and script discovery/management
-      new GASFindDriveScriptTool(authManager),
-      new GASBindScriptTool(authManager),
-      new GASCreateScriptTool(authManager),
+      new FindDriveScriptTool(authManager),
+      new BindScriptTool(authManager),
+      new CreateScriptTool(authManager),
       
       // Process management
-      new GASProcessListTool(authManager),
-      new GASProcessListScriptTool(authManager),
+      new ProcessListTool(authManager),
+      new ProcessListScriptTool(authManager),
       
       // Version management
-      new GASVersionGetTool(authManager),
-      new GASVersionListTool(authManager),
+      new VersionGetTool(authManager),
+      new VersionListTool(authManager),
       
       // 🔄 Local-Remote sync operations - EXPLICIT workflow tools
-      new GASPullTool(authManager),          // Explicit pull for multi-env
-      new GASPushTool(authManager),          // Explicit push for multi-env  
-      new GASStatusTool(authManager),        // Diagnostic comparison
+      new PullTool(authManager),          // Explicit pull for multi-env
+      new PushTool(authManager),          // Explicit push for multi-env  
+      new StatusTool(authManager),        // Diagnostic comparison
       
-      // 🎯 Project context - WORKFLOW tool (visible to MCP)
-      new GASProjectSetTool(authManager),    // ✅ Main workflow: Set project & auto-pull
+      // 🎯 Project context - WORKFLOW tools (visible to MCP)
+      new ProjectSetTool(authManager),    // ✅ Main workflow: Set project & auto-pull
+      new ProjectGetTool(authManager),    // Get current project information
+      new ProjectAddTool(authManager),    // Add project to configuration  
+      new ProjectListTool(authManager),   // List all configured projects
       
       // Local root management removed - all projects now use git sync pattern:
       // ~/gas-repos/project-{scriptId}/ for consistent file management
       
       // ⏰ Trigger management - AUTOMATION tools
-      new GATriggerListTool(authManager),    // List all installable triggers
-      new GATriggerCreateTool(authManager),  // Create time-based and event-driven triggers
-      new GATriggerDeleteTool(authManager),  // Delete triggers by ID or function name
+      new TriggerListTool(authManager),    // List all installable triggers
+      new TriggerCreateTool(authManager),  // Create time-based and event-driven triggers
+      new TriggerDeleteTool(authManager),  // Delete triggers by ID or function name
       
       // 🔧 Git Sync - SAFE GIT INTEGRATION (5 tools replacing old 12 tools)
-      new GasGitInitTool(authManager),           // Initialize git association with .git.gs file
-      new GasGitSyncTool(authManager),           // Safe pull-merge-push synchronization
-      new GasGitStatusTool(authManager),         // Check git association and sync status  
-      new GasGitSetSyncFolderTool(authManager),  // Set/update sync folder location
-      new GasGitGetSyncFolderTool(authManager),  // Query sync folder location
+      new GitInitTool(authManager),           // Initialize git association with .git.gs file
+      new GitSyncTool(authManager),           // Safe pull-merge-push synchronization
+      new GitStatusTool(authManager),         // Check git association and sync status  
+      new GitSetSyncFolderTool(authManager),  // Set/update sync folder location
+      new GitGetSyncFolderTool(authManager),  // Query sync folder location
       
-      // NOTE: gas_project_get, gas_project_add, gas_project_list are HIDDEN from MCP
-      // They're used internally by other tools but not exposed to users/LLMs
+      // NOTE: All project context tools are now VISIBLE to MCP users/LLMs
+      // This provides full project management capabilities
     ];
 
     toolInstances.forEach(tool => {

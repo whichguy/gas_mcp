@@ -4,7 +4,7 @@ The MCP Gas Server now uses a **single consolidated configuration file** instead
 
 ## Configuration File Location
 
-**Primary Configuration File:** `mcp-gas-config.json` (in the root directory where the Node server starts)
+**Primary Configuration File:** `gas-config.json` (in the root directory where the Node server starts)
 
 ## Migration from Legacy Configuration
 
@@ -17,7 +17,7 @@ The server automatically migrates from the legacy configuration files:
 - ❌ `.gas-local-root.json` - Local root directory
 
 ### New Unified Configuration
-- ✅ `mcp-gas-config.json` - **All settings consolidated**
+- ✅ `gas-config.json` - **All settings consolidated**
 
 ## Configuration Schema
 
@@ -62,7 +62,7 @@ The server automatically migrates from the legacy configuration files:
 
 When you start the server, it will automatically:
 
-1. **Check for existing unified config** - Use if `mcp-gas-config.json` exists
+1. **Check for existing unified config** - Use if `gas-config.json` exists
 2. **Migrate legacy configs** - Automatically consolidate legacy files if unified config doesn't exist
 3. **Create default config** - Initialize with defaults if no configuration exists
 4. **Preserve legacy files** - Original files are left intact after migration
@@ -160,7 +160,7 @@ gas_project_set my-project
 ```
 
 ### Manual Configuration Editing
-You can directly edit `mcp-gas-config.json`, but ensure:
+You can directly edit `gas-config.json`, but ensure:
 - **Valid JSON format**
 - **Required fields present** (oauth, projects, localRoot, server)
 - **Server restart** after manual edits (for config cache refresh)
@@ -170,23 +170,23 @@ You can directly edit `mcp-gas-config.json`, but ensure:
 ### Backup and Restore
 ```bash
 # Backup configuration
-cp mcp-gas-config.json mcp-gas-config-backup.json
+cp gas-config.json mcp-gas-config-backup.json
 
 # Restore configuration
-cp mcp-gas-config-backup.json mcp-gas-config.json
+cp mcp-gas-config-backup.json gas-config.json
 ```
 
 ### Reset to Defaults
 ```bash
 # Delete unified config to trigger default initialization
-rm mcp-gas-config.json
+rm gas-config.json
 # Restart server to recreate with defaults
 ```
 
 ### Sharing Configuration
 ```bash
 # Share configuration between team members
-cp mcp-gas-config.json team-shared-config.json
+cp gas-config.json team-shared-config.json
 # Edit team-shared-config.json to remove personal settings
 # Team members copy and customize as needed
 ```
@@ -194,7 +194,7 @@ cp mcp-gas-config.json team-shared-config.json
 ## Troubleshooting
 
 ### Configuration Issues
-- **Server won't start**: Check JSON syntax in `mcp-gas-config.json`
+- **Server won't start**: Check JSON syntax in `gas-config.json`
 - **Projects not found**: Verify `projects` section has correct script IDs
 - **OAuth errors**: Check `oauth.client_id` matches Google Cloud Console
 - **File path errors**: Ensure `localRoot.rootPath` exists and is writable

@@ -9,10 +9,10 @@ import { ContentSummarizer, SummaryOptions } from '../utils/contentSummarizer.js
 import { COMMON_TOOL_SCHEMAS, CONTENT_MODE_SCHEMA } from '../utils/schemaPatterns.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
 
-export class GasSummaryTool extends BaseTool {
+export class SummaryTool extends BaseTool {
   private gasClient: GASClient;
 
-  public name = 'gas_summary';
+  public name = 'summary';
   public description = 'Intelligent content summarization with multiple analysis modes. Efficiently summarizes code files using rule-based analysis for signatures, exports, structure, or full content with token optimization.';
 
   constructor(authManager?: any) {

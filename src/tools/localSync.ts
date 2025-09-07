@@ -33,8 +33,8 @@ function detectGASFileType(content: string, fileName: string): 'SERVER_JS' | 'HT
  * Pull files from remote project to local project-specific directory
  * Leverages existing gas_ls and gas_cat functions via GASClient
  */
-export class GASPullTool extends BaseTool {
-  public name = 'gas_pull';
+export class PullTool extends BaseTool {
+  public name = 'pull';
   public description = 'Pull files from remote Google Apps Script project to local project-specific directory';
   
   public inputSchema = {
@@ -150,8 +150,8 @@ export class GASPullTool extends BaseTool {
  * Push files from local project-specific directory to remote project
  * Leverages existing gas_write functionality with proper file type detection
  */
-export class GASPushTool extends BaseTool {
-  public name = 'gas_push';
+export class PushTool extends BaseTool {
+  public name = 'push';
   public description = 'Push local project-specific files to remote Google Apps Script project';
   
   public inputSchema = {
@@ -244,8 +244,8 @@ export class GASPushTool extends BaseTool {
     // ✅ REUSE EXISTING FUNCTIONALITY: Leverage gas_raw_write for each file
     // This approach reuses existing tested code paths instead of duplicating API logic
     const results = [];
-    const { GASRawWriteTool } = await import('./filesystem.js');
-    const gasRawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+    const { RawWriteTool } = await import('./filesystem.js');
+    const gasRawWriteTool = new RawWriteTool(this.sessionAuthManager);
     
     for (const file of localFiles) {
       try {
@@ -303,8 +303,8 @@ export class GASPushTool extends BaseTool {
  * Show status/diff between local project-specific files and remote files
  * Leverages existing gas_ls and gas_cat functions
  */
-export class GASStatusTool extends BaseTool {
-  public name = 'gas_status';
+export class StatusTool extends BaseTool {
+  public name = 'status';
   public description = 'Show status and differences between local project-specific files and remote files';
   
   public inputSchema = {

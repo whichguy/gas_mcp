@@ -1,8 +1,8 @@
 /**
- * gas_grep and gas_raw_grep - Search file contents with pattern matching
+ * grep and raw_grep - Search file contents with pattern matching
  * 
- * gas_grep: Search clean user code (unwrapped from CommonJS wrappers)
- * gas_raw_grep: Search raw file content (including CommonJS wrappers and system code)
+ * grep: Search clean user code (unwrapped from CommonJS wrappers)
+ * raw_grep: Search raw file content (including CommonJS wrappers and system code)
  * 
  * Server-side grep to minimize token usage while providing powerful search capabilities
  */
@@ -26,27 +26,27 @@ import {
 } from '../utils/virtualFileTranslation.js';
 
 /**
- * gas_grep - Search clean user code (unwrapped from CommonJS)
+ * grep - Search clean user code (unwrapped from CommonJS)
  * Shows search results from the actual code developers write and edit
  * 
- * Currently makes direct API calls like gas_raw_grep, but designed to potentially
- * support local file access in the future (following gas_cat vs gas_raw_cat pattern)
+ * Currently makes direct API calls like raw_grep, but designed to potentially
+ * support local file access in the future (following cat vs raw_cat pattern)
  */
-export class GasGrepTool extends BaseTool {
-  public name = 'gas_grep';
-  public description = '🔍 RECOMMENDED: Search clean user code with automatic CommonJS unwrapping - shows search results from the actual code developers write and edit. Currently API-only.';
+export class GrepTool extends BaseTool {
+  public name = 'grep';
+  public description = 'Search file contents in Google Apps Script project. Like Unix grep but works with GAS projects and automatically unwraps CommonJS modules to show clean user code for editing. Powerful pattern matching with context control.';
   
   public inputSchema = {
     type: 'object',
     llmGuidance: {
-      alternatives: 'Use gas_raw_grep when you need explicit project ID control or want to search system-generated content',
+      alternatives: 'Use raw_grep when you need explicit project ID control or want to search system-generated content',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When searching files, the outer _main() wrapper is removed to show clean user code searches. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
-      editingWorkflow: 'Search results show unwrapped code for easy reading. The same unwrapped content is what gas_cat shows for editing.',
+      editingWorkflow: 'Search results show unwrapped code for easy reading. The same unwrapped content is what cat shows for editing.',
       moduleAccess: 'Your search will find require("ModuleName") calls, module.exports = {...} assignments, and exports.func = ... usage in clean user code without system wrapper noise.',
       whenToUse: 'Use for normal code searches. Automatically handles CommonJS unwrapping for cleaner results.',
       workflow: 'Searches through the clean user code that developers actually write and edit',
-      contentComparison: 'gas_grep searches the same content that gas_cat shows (unwrapped user code), while gas_raw_grep searches the same content that gas_raw_cat shows (full file including CommonJS wrappers)',
-      currentBehavior: 'Currently makes direct API calls like gas_raw_grep, but may support local file access in the future'
+      contentComparison: 'grep searches the same content that cat shows (unwrapped user code), while raw_grep searches the same content that raw_cat shows (full file including CommonJS wrappers)',
+      currentBehavior: 'Currently makes direct API calls like raw_grep, but may support local file access in the future'
     },
     properties: {
       pattern: {
@@ -419,22 +419,22 @@ export class GasGrepTool extends BaseTool {
 }
 
 /**
- * gas_raw_grep - Search raw file content (including CommonJS wrappers)
+ * raw_grep - Search raw file content (including CommonJS wrappers)
  * 
  * ⚠️ ADVANCED TOOL - Always makes direct API calls, never uses local files
  * This tool requires explicit project IDs and makes direct API access only
- * Use gas_grep for normal development workflow with potential local file support
+ * Use grep for normal development workflow with potential local file support
  */
-export class GasRawGrepTool extends BaseTool {
-  public name = 'gas_raw_grep';
-  public description = '🔧 ADVANCED: Search file contents with explicit project ID control and full content including CommonJS wrappers. Always makes direct API calls.';
+export class RawGrepTool extends BaseTool {
+  public name = 'raw_grep';
+  public description = 'Search file contents with explicit project ID control and full content including CommonJS wrappers. Like Unix grep but operates on raw Google Apps Script file content. Always makes direct API calls.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       pattern: {
         type: 'string',
-        description: 'Search pattern (supports regex and literal text). Searches complete file content (same content as gas_raw_cat shows) including CommonJS wrappers via direct API calls only. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
+        description: 'Search pattern (supports regex and literal text). Searches complete file content (same content as raw_cat shows) including CommonJS wrappers via direct API calls only. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
         minLength: 1,
         examples: [
           'require\\\\(',                      // Find require calls in full content
@@ -462,7 +462,7 @@ export class GasRawGrepTool extends BaseTool {
       },
       path: {
         type: 'string',
-        description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Always retrieves content via direct API calls, never uses local cached files. Same content processing as gas_raw_cat.',
+        description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Always retrieves content via direct API calls, never uses local cached files. Same content processing as raw_cat.',
         default: '',
         examples: [
           '',                            // Search entire project (includes CommonJS wrappers)

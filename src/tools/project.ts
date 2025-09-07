@@ -8,8 +8,8 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
  * Create logical file organization in Google Apps Script project
  * Note: Google Apps Script has no real folders - this creates filename prefixes for organization
  */
-export class GASMkdirTool extends BaseTool {
-  public name = 'gas_mkdir';
+export class MkdirTool extends BaseTool {
+  public name = 'mkdir';
   public description = 'Create logical file organization in a Google Apps Script project using filename prefixes (no real folders exist in GAS)';
   
   public inputSchema = {
@@ -73,8 +73,8 @@ export class GASMkdirTool extends BaseTool {
 /**
  * Get project information and structure overview
  */
-export class GASInfoTool extends BaseTool {
-  public name = 'gas_info';
+export class InfoTool extends BaseTool {
+  public name = 'info';
   public description = 'Get detailed information about a Google Apps Script project';
   
   public inputSchema = {
@@ -173,8 +173,8 @@ export class GASInfoTool extends BaseTool {
 /**
  * Reorder files in a Google Apps Script project
  */
-export class GASReorderTool extends BaseTool {
-  public name = 'gas_reorder';
+export class ReorderTool extends BaseTool {
+  public name = 'reorder';
   public description = 'Change the execution order of files in a Google Apps Script project';
   
   public inputSchema = {
@@ -259,8 +259,8 @@ export class GASReorderTool extends BaseTool {
 /**
  * Get metrics data for scripts, such as number of executions and active users
  */
-export class GASProjectMetricsTool extends BaseTool {
-  public name = 'gas_project_metrics';
+export class ProjectMetricsTool extends BaseTool {
+  public name = 'project_metrics';
   public description = 'Get metrics data for scripts, such as number of executions and active users. LLM USE: Analyze script performance and usage patterns.';
   
   public inputSchema = {
@@ -322,9 +322,9 @@ export class GASProjectMetricsTool extends BaseTool {
         '3. Project must have had some execution history'
       ],
       useCases: {
-        performance: 'gas_project_metrics({scriptId: "...", metricsGranularity: "DAILY"}) - Detailed performance analysis',
-        trends: 'gas_project_metrics({scriptId: "...", metricsGranularity: "WEEKLY"}) - Long-term usage trends',
-        deployment: 'gas_project_metrics({scriptId: "...", metricsFilter: {deploymentId: "..."}}) - Specific deployment metrics'
+        performance: 'project_metrics({scriptId: "...", metricsGranularity: "DAILY"}) - Detailed performance analysis',
+        trends: 'project_metrics({scriptId: "...", metricsGranularity: "WEEKLY"}) - Long-term usage trends',
+        deployment: 'project_metrics({scriptId: "...", metricsFilter: {deploymentId: "..."}}) - Specific deployment metrics'
       },
       errorHandling: {
         'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',

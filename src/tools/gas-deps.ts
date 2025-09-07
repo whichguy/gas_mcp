@@ -262,10 +262,10 @@ export class GasDependencyAnalyzer {
   }
 }
 
-export class GasDepsTool extends BaseTool {
+export class DepsTool extends BaseTool {
   private gasClient: GASClient;
 
-  public name = 'gas_deps';
+  public name = 'deps';
   public description = 'Analyzes CommonJS module dependencies and relationships in Google Apps Script projects. Shows imports, exports, circular dependencies, and dependency graphs.';
 
   constructor(authManager?: any) {

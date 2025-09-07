@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![npm version](https://img.shields.io/npm/v/mcp-gas-server.svg)](https://www.npmjs.com/package/mcp-gas-server)
+[![npm version](https://img.shields.io/npm/v/gas-server.svg)](https://www.npmjs.com/package/gas-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue.svg)](https://www.typescriptlang.org/)
@@ -76,7 +76,7 @@ Edit Claude Desktop settings:
 ```json
 {
   "mcpServers": {
-    "mcp-gas": {
+    "gas": {
       "command": "node",
       "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
       "env": {
@@ -96,9 +96,9 @@ Add to Cursor MCP settings:
 ```json
 {
   "mcpServers": {
-    "mcp-gas": {
+    "gas": {
       "command": "node",
-      "args": ["./dist/src/index.js", "--config", "./mcp-gas-config.json"],
+      "args": ["./dist/src/index.js", "--config", "./gas-config.json"],
       "cwd": "/path/to/mcp_gas"
     }
   }
@@ -436,7 +436,7 @@ mcp_gas/
 - **Flat Function Architecture** - Each tool is a separate function following MCP best practices
 - **Smart vs Raw Tools** - Smart tools process CommonJS automatically, raw tools preserve exact content  
 - **Virtual File Translation** - Seamless handling of dotfiles (`.git` → `.git.gs` with period prefix)
-- **Project Context Management** - Automatic script ID resolution from `mcp-gas-config.json`
+- **Project Context Management** - Automatic script ID resolution from `gas-config.json`
 - **Three-Layer File Access** - Local cache → Remote GAS → Git mirror (~/gas-repos pattern)
 - **Session-Based Authentication** - OAuth 2.0 PKCE with secure token storage and auto-refresh
 - **CommonJS Module System** - Automatic wrapping/unwrapping for require(), module.exports pattern
