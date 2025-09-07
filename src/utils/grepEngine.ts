@@ -184,6 +184,48 @@ export function validatePathPattern(pattern: string, mode: 'wildcard' | 'regex' 
 export class GrepSearchEngine {
   
   /**
+   * Calculate pseudo-directory depth for GAS file system
+   */
+  protected calculatePseudoDepth(filename: string): number {
+    return (filename.match(/\//g) || []).length;
+  }
+
+  /**
+   * Filter files by pseudo-directory path pattern
+   */
+  protected filterByPseudoPath(
+    files: GASFile[], 
+    pathPattern: string, 
+    maxDepth?: number,
+    pathMode: 'wildcard' | 'regex' | 'auto' = 'auto'
+  ): GASFile[] {
+    if (!pathPattern) return files;
+    
+    return files.filter(file => {
+      // Check depth limit
+      if (maxDepth !== undefined && this.calculatePseudoDepth(file.name) > maxDepth) {
+        return false;
+      }
+      
+      // Match against path pattern
+      return matchesPathPattern(file.name, pathPattern, pathMode);
+    });
+  }
+
+  /**
+   * Detect if pattern has ripgrep-specific features
+   */
+  protected hasRipgrepFeatures(pattern: string): boolean {
+    return pattern.includes('(?') || // Non-capturing groups
+           pattern.includes('\\b') || // Word boundaries
+           pattern.includes('(?i)') || // Inline flags
+           pattern.includes('(?m)') || // Multiline mode
+           pattern.includes('(?s)') || // Dotall mode
+           pattern.includes('\\p{') || // Unicode categories
+           /\(\?\<\w+\>/.test(pattern); // Named groups
+  }
+
+  /**
    * Search across multiple files with pattern matching
    */
   async searchFiles(
@@ -265,7 +307,7 @@ export class GrepSearchEngine {
   /**
    * Filter files based on search options
    */
-  private filterFiles(files: GASFile[], options: GrepSearchOptions): GASFile[] {
+  protected filterFiles(files: GASFile[], options: GrepSearchOptions | { excludeFiles?: string[]; includeFileTypes?: string[]; }): GASFile[] {
     let filtered = [...files];
 
     // Filter by file types if specified

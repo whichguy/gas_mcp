@@ -24,6 +24,7 @@ import {
 } from '../tools/filesystem.js';
 import { GasGrepTool, GasRawGrepTool } from '../tools/grep.js';
 import { GasFindTool, GasRawFindTool } from '../tools/find.js';
+import { GasRipgrepTool, GasRawRipgrepTool } from '../tools/ripgrep.js';
 import { 
   GASMkdirTool, 
   GASInfoTool, 
@@ -347,6 +348,7 @@ export class MCPGasServer {
       new GASCatTool(authManager),           // ✅ Smart reader (local-first)
       new GASWriteTool(authManager),         // ✅ Auto-sync writer
       new GasGrepTool(authManager),          // ✅ Content search with pattern matching
+      new GasRipgrepTool(authManager),       // ⚡ High-performance search with ripgrep-inspired features
       new GasFindTool(authManager),          // ✅ Find files with virtual names
       new GASRemoveTool(authManager),
       new GASMoveTool(authManager),
@@ -356,6 +358,7 @@ export class MCPGasServer {
       new GASRawCatTool(authManager),        // ⚠️ Advanced: Explicit project ID paths
       new GASRawWriteTool(authManager),      // ⚠️ Advanced: Explicit project ID paths
       new GasRawGrepTool(authManager),       // ⚠️ Advanced: Search full content (API-only, never local files)
+      new GasRawRipgrepTool(authManager),    // ⚠️ Advanced: High-performance search on raw content with ripgrep features
       new GasRawFindTool(authManager),       // ⚠️ Advanced: Find with actual GAS names
       new GASRawCpTool(authManager),        // ⚠️ Advanced: Bulk copy without CommonJS processing
       
