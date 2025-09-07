@@ -25,6 +25,7 @@ import {
 import { GasGrepTool, GasRawGrepTool } from '../tools/grep.js';
 import { GasFindTool, GasRawFindTool } from '../tools/find.js';
 import { GasRipgrepTool, GasRawRipgrepTool } from '../tools/ripgrep.js';
+import { GasSedTool, GasRawSedTool } from '../tools/sed.js';
 import { 
   GASMkdirTool, 
   GASInfoTool, 
@@ -251,28 +252,34 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    * 
-   * Each session gets its own instances of all 47 MCP tools, each configured
+   * Each session gets its own instances of all 49 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    * 
-   * ## Tool Categories Created (47 total tools):
+   * ## Tool Categories Created (49 total tools):
    * 
    * ### 🔐 Authentication & Session (1 tool)
    * - `gas_auth` - OAuth 2.0 flow management with desktop PKCE
    * 
-   * ### 📂 Filesystem Operations - RECOMMENDED (7 tools)
+   * ### 📂 Filesystem Operations - RECOMMENDED (9 tools)
    * - `gas_ls` - List projects and files  
    * - `gas_cat` - ✅ Smart reader (local-first with remote fallback)
    * - `gas_write` - ✅ Auto-sync writer (local + remote)
    * - `gas_grep` - ✅ Content search with pattern matching (unwrapped user code)
+   * - `gas_ripgrep` - ⚡ High-performance search with ripgrep-inspired features including multi-pattern, context control, and advanced regex
+   * - `gas_sed` - 🔧 sed-style find/replace operations with regex capture groups ($1, $2) and multi-pattern support on clean user code
+   * - `gas_find` - ✅ Find files with shell-like patterns and virtual names
    * - `gas_rm` - Delete files
    * - `gas_mv` - Move/rename files
    * - `gas_cp` - Copy files
    * 
-   * ### 🔧 Filesystem Operations - ADVANCED (4 tools)
+   * ### 🔧 Filesystem Operations - ADVANCED (6 tools)
    * - `gas_raw_cat` - ⚠️ Advanced: Read with explicit project ID paths
    * - `gas_raw_write` - ⚠️ Advanced: Write with explicit project ID paths
    * - `gas_raw_grep` - ⚠️ Advanced: Search full content (API-only, never local files)
+   * - `gas_raw_ripgrep` - ⚠️ Advanced: High-performance search on raw content including CommonJS wrappers and system code
+   * - `gas_raw_sed` - ⚠️ Advanced: sed-style find/replace on raw content including wrappers for system-level modifications
+   * - `gas_raw_find` - ⚠️ Advanced: Find files with actual GAS names
    * - `gas_raw_copy` - ⚠️ Advanced: Remote-to-remote file copying with merge strategies
    * 
    * ### 🏗️ Project Management (4 tools)
@@ -349,6 +356,7 @@ export class MCPGasServer {
       new GASWriteTool(authManager),         // ✅ Auto-sync writer
       new GasGrepTool(authManager),          // ✅ Content search with pattern matching
       new GasRipgrepTool(authManager),       // ⚡ High-performance search with ripgrep-inspired features
+      new GasSedTool(authManager),           // 🔧 sed-style find/replace with CommonJS processing
       new GasFindTool(authManager),          // ✅ Find files with virtual names
       new GASRemoveTool(authManager),
       new GASMoveTool(authManager),
@@ -359,6 +367,7 @@ export class MCPGasServer {
       new GASRawWriteTool(authManager),      // ⚠️ Advanced: Explicit project ID paths
       new GasRawGrepTool(authManager),       // ⚠️ Advanced: Search full content (API-only, never local files)
       new GasRawRipgrepTool(authManager),    // ⚠️ Advanced: High-performance search on raw content with ripgrep features
+      new GasRawSedTool(authManager),        // ⚠️ Advanced: sed-style find/replace on raw content including wrappers
       new GasRawFindTool(authManager),       // ⚠️ Advanced: Find with actual GAS names
       new GASRawCpTool(authManager),        // ⚠️ Advanced: Bulk copy without CommonJS processing
       
