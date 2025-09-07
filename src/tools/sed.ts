@@ -19,9 +19,9 @@
 import { BaseTool } from './base.js';
 import type { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
-import { GasRipgrepTool, GasRawRipgrepTool } from './ripgrep.js';
-import { GASCatTool, GASRawCatTool } from './filesystem.js';
-import { GASWriteTool, GASRawWriteTool } from './filesystem.js';
+import { RipgrepTool, RawRipgrepTool } from './ripgrep.js';
+import { CatTool, RawCatTool } from './filesystem.js';
+import { WriteTool, RawWriteTool } from './filesystem.js';
 
 /**
  * Interface for sed operation results
@@ -75,8 +75,8 @@ interface ReplacementOperation {
  *   replacement: "debug.log"
  * })
  */
-export class GasSedTool extends BaseTool {
-  public name = 'gas_sed';
+export class SedTool extends BaseTool {
+  public name = 'sed';
   public description = '🔧 RECOMMENDED: sed-style find/replace operations with automatic CommonJS processing. Supports regex patterns with capture groups ($1, $2), multi-pattern operations, and file filtering. Processes clean user code (same content as gas_cat shows).';
 
   public inputSchema = {
@@ -171,15 +171,15 @@ export class GasSedTool extends BaseTool {
     additionalProperties: false
   };
 
-  private ripgrepTool: GasRipgrepTool;
-  private catTool: GASCatTool;
-  private writeTool: GASWriteTool;
+  private ripgrepTool: RipgrepTool;
+  private catTool: CatTool;
+  private writeTool: WriteTool;
 
   constructor(authManager: SessionAuthManager) {
     super(authManager);
-    this.ripgrepTool = new GasRipgrepTool(authManager);
-    this.catTool = new GASCatTool(authManager);
-    this.writeTool = new GASWriteTool(authManager);
+    this.ripgrepTool = new RipgrepTool(authManager);
+    this.catTool = new CatTool(authManager);
+    this.writeTool = new WriteTool(authManager);
   }
 
   async execute(params: any): Promise<SedResult> {
@@ -335,8 +335,8 @@ export class GasSedTool extends BaseTool {
  *   path: "*"
  * })
  */
-export class GasRawSedTool extends BaseTool {
-  public name = 'gas_raw_sed';
+export class RawSedTool extends BaseTool {
+  public name = 'raw_sed';
   public description = '🔧 ADVANCED: sed-style find/replace on raw file content including CommonJS wrappers and system code. Operates on complete file content (same as gas_raw_cat shows). Use for system-level modifications.';
 
   public inputSchema = {
@@ -428,15 +428,15 @@ export class GasRawSedTool extends BaseTool {
     additionalProperties: false
   };
 
-  private ripgrepTool: GasRawRipgrepTool;
-  private catTool: GASRawCatTool;
-  private writeTool: GASRawWriteTool;
+  private ripgrepTool: RawRipgrepTool;
+  private catTool: RawCatTool;
+  private writeTool: RawWriteTool;
 
   constructor(authManager: SessionAuthManager) {
     super(authManager);
-    this.ripgrepTool = new GasRawRipgrepTool(authManager);
-    this.catTool = new GASRawCatTool(authManager);
-    this.writeTool = new GASRawWriteTool(authManager);
+    this.ripgrepTool = new RawRipgrepTool(authManager);
+    this.catTool = new RawCatTool(authManager);
+    this.writeTool = new RawWriteTool(authManager);
   }
 
   async execute(params: any): Promise<SedResult> {

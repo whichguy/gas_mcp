@@ -832,7 +832,7 @@ export class LocalFileManager {
         // Check if we're in an MCP Gas workspace by looking for specific files
         if (require('fs').existsSync(packageJsonPath)) {
           const packageJson = JSON.parse(require('fs').readFileSync(packageJsonPath, 'utf-8'));
-          if (packageJson.name === 'mcp-gas-server' || 
+          if (packageJson.name === 'gas-server' || 
               require('fs').existsSync(gasProjectsPath) ||
               require('fs').existsSync(nodeModulesPath)) {
             console.error(`🔍 [LocalFileManager] Detected workspace at: ${currentDir}`);

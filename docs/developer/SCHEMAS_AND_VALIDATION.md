@@ -21,7 +21,7 @@ This guide provides comprehensive documentation of all JSON schemas, validation 
 
 ```json
 {
-  "name": "mcp-gas-server",
+  "name": "gas-server",
   "version": "1.0.0",
   "capabilities": {
     "tools": {}

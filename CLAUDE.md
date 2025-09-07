@@ -163,7 +163,7 @@ See `docs/GIT_SYNC_WORKFLOWS.md` for complete documentation.
 The server maintains project context for simplified operations:
 - **gas_project_set** - Set current project and auto-pull files
 - **gas_project_list** - List configured projects
-- Current project stored in `mcp-gas-config.json`
+- Current project stored in `gas-config.json`
 - Tools auto-resolve script IDs from current context
 
 ### Error Handling Hierarchy
@@ -181,7 +181,7 @@ All errors are transformed to MCP-compatible format with helpful messages.
 
 ## Configuration Files
 
-- **mcp-gas-config.json** - Unified configuration
+- **gas-config.json** - Unified configuration
   - OAuth settings
   - Project definitions
   - Environment mappings
@@ -289,7 +289,7 @@ This is an **MCP (Model Context Protocol) server** specifically designed to work
 ```json
 {
   "mcpServers": {
-    "mcp-gas": {
+    "gas": {
       "command": "node",
       "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
       "env": {
@@ -302,7 +302,7 @@ This is an **MCP (Model Context Protocol) server** specifically designed to work
 
 ### Essential Configuration Files
 
-- **mcp-gas-config.json** - Central configuration with project definitions, OAuth settings, and sync paths
+- **gas-config.json** - Central configuration with project definitions, OAuth settings, and sync paths
 - **oauth-config.json** - Google OAuth 2.0 credentials (download from Google Cloud Console)
 - **.auth/** directory - Session token storage with automatic refresh
 

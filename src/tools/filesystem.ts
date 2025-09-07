@@ -21,9 +21,9 @@ import {
  * ✅ RECOMMENDED - Use for normal development workflow
  * Automatically reads from local ./src/ if current project is set, otherwise reads from remote
  */
-export class GASCatTool extends BaseTool {
-  public name = 'gas_cat';
-  public description = '📖 RECOMMENDED: Smart file reader with automatic CommonJS unwrapping - shows clean user code for editing while preserving access to require(), module, and exports when executed';
+export class CatTool extends BaseTool {
+  public name = 'cat';
+  public description = 'Read file contents from Google Apps Script project. Automatically unwraps CommonJS modules to show clean user code for editing. Like Unix cat but works with GAS projects and handles module processing.';
   
   public inputSchema = {
     type: 'object',
@@ -68,17 +68,17 @@ export class GASCatTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
-      workflow: 'Use with explicit scriptId: gas_cat({scriptId: "abc123...", path: "utils.gs"})',
-      alternatives: 'Use gas_raw_cat only when you need explicit project ID control',
+      workflow: 'Use with explicit scriptId: cat({scriptId: "abc123...", path: "utils.gs"})',
+      alternatives: 'Use raw_cat only when you need explicit project ID control',
       pathRequirement: 'Provide scriptId parameter and simple filename in path, or embed scriptId in path and leave scriptId parameter empty.',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When reading files, the outer _main() wrapper is removed to show clean user code for editing. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
       moduleAccess: 'Your code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
-      editingWorkflow: 'Files are unwrapped for editing convenience and will be automatically re-wrapped with CommonJS structure when saved via gas_write.',
+      editingWorkflow: 'Files are unwrapped for editing convenience and will be automatically re-wrapped with CommonJS structure when saved via write.',
       examples: [
-        'Read a module file: gas_cat({scriptId: "1abc2def...", path: "Utils.gs"})',
-        'Read with embedded ID: gas_cat({scriptId: "", path: "1abc2def.../Calculator.gs"})',
-        'Read HTML template: gas_cat({scriptId: "1abc2def...", path: "sidebar.html"})',
-        'Read manifest: gas_cat({scriptId: "1abc2def...", path: "appsscript.json"})'
+        'Read a module file: cat({scriptId: "1abc2def...", path: "Utils.gs"})',
+        'Read with embedded ID: cat({scriptId: "", path: "1abc2def.../Calculator.gs"})',
+        'Read HTML template: cat({scriptId: "1abc2def...", path: "sidebar.html"})',
+        'Read manifest: cat({scriptId: "1abc2def...", path: "appsscript.json"})'
       ]
     }
   };
@@ -189,7 +189,7 @@ export class GASCatTool extends BaseTool {
         if (syncStatus.differences.contentDiffers.length > 0) {
           console.error(`   📝 Content differs: ${syncStatus.differences.contentDiffers.join(', ')}`);
         }
-        console.error(`💡 [GAS_CAT] Use gas_pull to sync local with remote, or gas_push to sync remote with local`);
+        console.error(`💡 [CAT] Use pull to sync local with remote, or push to sync remote with local`);
       }
     } catch (syncError: any) {
       console.error(`⚠️ [GAS_CAT] Sync verification failed: ${syncError.message}`);
@@ -289,7 +289,7 @@ export class GASCatTool extends BaseTool {
             userExportsUsage: featureAnalysis.exportsUsage
           },
           systemNote: 'When executed, this code has access to require(), module, and exports via the CommonJS system',
-          editingNote: 'CommonJS wrapper removed for editing convenience - will be re-applied automatically on gas_write'
+          editingNote: 'CommonJS wrapper removed for editing convenience - will be re-applied automatically on write'
         };
         
         console.error(`📖 [GAS_CAT] Unwrapped CommonJS structure - showing inner code for editing`);
@@ -367,9 +367,9 @@ export class GASCatTool extends BaseTool {
  * ✅ RECOMMENDED - Use for normal development workflow
  * Automatically writes to both local ./src/ and remote project when explicit project path provided
  */
-export class GASWriteTool extends BaseTool {
-  public name = 'gas_write';
-  public description = '✍️ RECOMMENDED: Smart file writer - remote-first workflow with auto-sync to local';
+export class WriteTool extends BaseTool {
+  public name = 'write';
+  public description = 'Write file contents to Google Apps Script project. Automatically wraps user code with CommonJS module system (require, module, exports). Remote-first with local sync for safety.';
   
   public inputSchema = {
     type: 'object',
@@ -435,18 +435,18 @@ export class GASWriteTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Use for normal file writing with explicit scriptId parameter. Remote-first workflow ensures safety.',
-      workflow: 'Use with explicit scriptId: gas_write({scriptId: "abc123...", path: "filename", content: "..."})',
-      alternatives: 'Use gas_raw_write when you need single-destination writes or advanced file positioning',
+      workflow: 'Use with explicit scriptId: write({scriptId: "abc123...", path: "filename", content: "..."})',
+      alternatives: 'Use raw_write when you need single-destination writes or advanced file positioning',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
       moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
       wrapperHandling: 'Any accidentally included _main() or __defineModule__ calls are automatically cleaned and replaced with proper CommonJS structure. Never manually add module wrappers.',
       systemFiles: 'System files (CommonJS, __mcp_gas_run, appsscript) are never wrapped and provide the underlying infrastructure.',
       examples: [
-        'Write JS module: gas_write({scriptId: "1abc2def...", path: "utils", content: "function helper() {...}"})',
-        'Write with exports: gas_write({scriptId: "1abc2def...", path: "api/client", content: "module.exports = {...}"})',
-        'Write HTML: gas_write({scriptId: "1abc2def...", path: "sidebar", content: "<html>...", fileType: "HTML"})',
-        'Write config: gas_write({scriptId: "1abc2def...", path: "appsscript", content: "{...}", fileType: "JSON"})',
-        'Local only: gas_write({scriptId: "1abc2def...", path: "test", content: "...", localOnly: true})'
+        'Write JS module: write({scriptId: "1abc2def...", path: "utils", content: "function helper() {...}"})',
+        'Write with exports: write({scriptId: "1abc2def...", path: "api/client", content: "module.exports = {...}"})',
+        'Write HTML: write({scriptId: "1abc2def...", path: "sidebar", content: "<html>...", fileType: "HTML"})',
+        'Write config: write({scriptId: "1abc2def...", path: "appsscript", content: "{...}", fileType: "JSON"})',
+        'Local only: write({scriptId: "1abc2def...", path: "test", content: "...", localOnly: true})'
       ]
     }
   };
@@ -629,7 +629,7 @@ export class GASWriteTool extends BaseTool {
           }
           
           if (shouldAutoSync.reason === 'Local changes detected - manual sync required') {
-            console.error(`💡 [GAS_WRITE] Recommendation: Review local changes and use gas_pull/gas_push to sync manually before writing`);
+            console.error(`💡 [WRITE] Recommendation: Review local changes and use pull/push to sync manually before writing`);
           }
         }
         
@@ -668,7 +668,7 @@ export class GASWriteTool extends BaseTool {
       try {
         console.error(`🚀 [GAS_WRITE] REMOTE-FIRST: Pushing to remote: ${scriptId}/${filename}`);
         
-        // Use gas_raw_write logic for remote push
+        // Use raw_write logic for remote push
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
         
         // Find existing file or determine file type
@@ -875,9 +875,9 @@ export class GASWriteTool extends BaseTool {
 /**
  * List files and directories in a Google Apps Script project
  */
-export class GASListTool extends BaseTool {
-  public name = 'gas_ls';
-  public description = 'List files and directories in a Google Apps Script project with wildcard pattern support. SPECIAL FILE: Always shows appsscript.json if present - this manifest file must exist in project root and contains essential project metadata.';
+export class LsTool extends BaseTool {
+  public name = 'ls';
+  public description = 'List files and directories in Google Apps Script project. Shows file types, sizes, and timestamps with wildcard pattern support. Like Unix ls but works with GAS flat file structure using filename prefixes.';
   
   public inputSchema = {
     type: 'object',
@@ -935,13 +935,13 @@ export class GASListTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Use to explore project structure and find files by pattern',
-      workflow: 'List all files: gas_ls({scriptId: "..."}), with wildcards: gas_ls({scriptId: "...", path: "*.test*"})',
+      workflow: 'List all files: ls({scriptId: "..."}), with wildcards: ls({scriptId: "...", path: "*.test*"})',
       examples: [
-        'List all projects: gas_ls({})',
-        'List project files: gas_ls({scriptId: "1abc2def..."})',
-        'List with pattern: gas_ls({scriptId: "1abc2def...", path: "*.gs"})',
-        'List subfolder: gas_ls({scriptId: "1abc2def...", path: "utils/*"})',
-        'List detailed: gas_ls({scriptId: "1abc2def...", detailed: true})'
+        'List all projects: ls({})',
+        'List project files: ls({scriptId: "1abc2def..."})',
+        'List with pattern: ls({scriptId: "1abc2def...", path: "*.gs"})',
+        'List subfolder: ls({scriptId: "1abc2def...", path: "utils/*"})',
+        'List detailed: ls({scriptId: "1abc2def...", detailed: true})'
       ],
       virtualFiles: 'Dotfiles like .gitignore appear with their virtual names, not GAS storage names'
     }
@@ -1091,12 +1091,12 @@ export class GASListTool extends BaseTool {
 /**
  * Read file contents from a Google Apps Script project (RAW/ADVANCED)
  * 
- * ⚠️  ADVANCED TOOL - Use gas_cat for normal development workflow
+ * ⚠️  ADVANCED TOOL - Use cat for normal development workflow
  * This tool requires explicit project IDs and paths for direct API access
  */
-export class GASRawCatTool extends BaseTool {
-  public name = 'gas_raw_cat';
-  public description = '🔧 ADVANCED: Read file contents with explicit project ID path. Use gas_cat for normal workflow.';
+export class RawCatTool extends BaseTool {
+  public name = 'raw_cat';
+  public description = 'Read raw file contents with full CommonJS wrappers and system code. Shows complete file including _main() function and module infrastructure. Use cat for clean user code.';
   
   public inputSchema = {
     type: 'object',
@@ -1153,24 +1153,24 @@ export class GASRawCatTool extends BaseTool {
 /**
  * Write content to a file in a Google Apps Script project (RAW/ADVANCED)
  * 
- * ⚠️  ADVANCED TOOL - Use gas_write for normal development workflow
+ * ⚠️  ADVANCED TOOL - Use write for normal development workflow
  * ⚠️  DANGER: This tool COMPLETELY OVERWRITES remote files without merging
  * 
  * ## CRITICAL WARNING
- * gas_raw_write CLOBBERS (completely replaces) the entire remote file content.
+ * raw_write CLOBBERS (completely replaces) the entire remote file content.
  * Any existing content in the remote file will be PERMANENTLY LOST.
  * 
  * ## RECOMMENDED ALTERNATIVE
- * Use gas_write instead - it provides intelligent merging of local and remote files,
+ * Use write instead - it provides intelligent merging of local and remote files,
  * preserving existing content while applying your changes safely.
  * 
- * ## When to Use gas_raw_write
+ * ## When to Use raw_write
  * Only use this tool when you explicitly intend to:
  * - Replace entire file contents completely
  * - Create new files from scratch
  * - Perform bulk operations where clobbering is intended
  * 
- * ## Safe Alternative: gas_write
+ * ## Safe Alternative: write
  * - ✅ Merges local and remote file content intelligently
  * - ✅ Preserves existing code while adding new content
  * - ✅ Safer for collaborative development
@@ -1178,9 +1178,9 @@ export class GASRawCatTool extends BaseTool {
  * 
  * This tool requires explicit project IDs and paths for direct API access
  */
-export class GASRawWriteTool extends BaseTool {
-  public name = 'gas_raw_write';
-  public description = '🔧 ADVANCED: Write files with explicit project ID path. ⚠️ DANGER: CLOBBERS remote files - use gas_write for safe merging. SPECIAL FILE: appsscript.json must always reside in project root (no subfolders allowed) and contains essential project metadata.';
+export class RawWriteTool extends BaseTool {
+  public name = 'raw_write';
+  public description = 'Write raw file contents with explicit project paths. DANGER: Completely overwrites files without CommonJS processing or merging. Use write for safe CommonJS-wrapped development.';
   
   public inputSchema = {
     type: 'object',
@@ -1202,7 +1202,7 @@ export class GASRawWriteTool extends BaseTool {
           extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON',
           organization: 'Use "/" in filename for logical organization (not real folders)',
           specialFiles: 'appsscript.json MUST be in root: scriptId/appsscript (never scriptId/subfolder/appsscript)',
-          warning: 'This tool OVERWRITES the entire file - use gas_write for safer merging',
+          warning: 'This tool OVERWRITES the entire file - use write for safer merging',
           autoDetection: 'File type detected from content: JavaScript, HTML, JSON'
         }
       },
@@ -1233,7 +1233,7 @@ export class GASRawWriteTool extends BaseTool {
           execution: 'Lower numbers execute first in Apps Script runtime',
           organization: 'Use for dependencies: utilities first (0), main code later (1,2,3)',
           optional: 'Omit to append at end of file list',
-          reordering: 'Use gas_reorder tool to change position later'
+          reordering: 'Use reorder tool to change position later'
         }
       },
       fileType: {
@@ -1252,7 +1252,7 @@ export class GASRawWriteTool extends BaseTool {
         description: 'Access token for stateless operation. LLM TYPICAL: Omit - tool uses session authentication.',
         pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
         llmHints: {
-          typical: 'Usually omitted - uses session auth from gas_auth',
+          typical: 'Usually omitted - uses session auth from auth',
           stateless: 'Only for token-based operations'
         }
       }
@@ -1261,25 +1261,25 @@ export class GASRawWriteTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
-        '2. Project exists: Have scriptId from gas_project_create or gas_ls',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
+        '2. Project exists: Have scriptId from project_create or ls',
         '3. ⚠️ VERIFY: You intend to COMPLETELY OVERWRITE the target file'
       ],
       dangerWarning: {
         behavior: 'This tool CLOBBERS (completely overwrites) remote files without merging',
         consequence: 'Any existing content in the target file will be PERMANENTLY LOST',
-        recommendation: 'Use gas_write instead for safe merging of local and remote content',
-        useCase: 'Only use gas_raw_write when you explicitly intend to replace entire file contents'
+        recommendation: 'Use write instead for safe merging of local and remote content',
+        useCase: 'Only use raw_write when you explicitly intend to replace entire file contents'
       },
       saferAlternative: {
-        tool: 'gas_write',
+        tool: 'write',
         benefits: [
           'Intelligent merging of local and remote file content',
           'Preserves existing code while adding new content',  
           'Safer for collaborative development',
           'Same path format but with merge protection'
         ],
-        when: 'Use gas_write for most file writing operations unless you specifically need to clobber files'
+        when: 'Use write for most file writing operations unless you specifically need to clobber files'
       },
       useCases: {
         newFile: 'Creating completely new files from scratch',
@@ -1295,16 +1295,16 @@ export class GASRawWriteTool extends BaseTool {
       },
       bestPractices: [
         '⚠️ CRITICAL: Only use when you intend to completely replace file contents',
-        'Consider gas_write for safer merging operations',
+        'Consider write for safer merging operations',
         'Use descriptive filenames that indicate purpose',
         'Organize related functions in same file',
         'Put utility functions in separate files at position 0',
         'Use logical "/" paths for organization: utils/helpers, models/User'
       ],
       afterWriting: [
-        'Use gas_run to execute functions from this file',
-        'Use gas_cat to verify file was written correctly',
-        'Use gas_ls to see file in project structure',
+        'Use run to execute functions from this file',
+        'Use cat to verify file was written correctly',
+        'Use ls to see file in project structure',
         '⚠️ Verify that file clobbering was intentional'
       ]
     }
@@ -1428,9 +1428,9 @@ export class GASRawWriteTool extends BaseTool {
 /**
  * Remove a file from a Google Apps Script project
  */
-export class GASRemoveTool extends BaseTool {
-  public name = 'gas_rm';
-  public description = 'Remove a file from a Google Apps Script project';
+export class RmTool extends BaseTool {
+  public name = 'rm';
+  public description = 'Remove files from Google Apps Script project. Like Unix rm but works with GAS flat file structure using filename patterns.';
   
   public inputSchema = {
     type: 'object',
@@ -1495,9 +1495,9 @@ export class GASRemoveTool extends BaseTool {
 /**
  * Move/rename a file in a Google Apps Script project
  */
-export class GASMoveTool extends BaseTool {
-  public name = 'gas_mv';
-  public description = 'Move or rename a file in a Google Apps Script project (supports cross-project moves)';
+export class MvTool extends BaseTool {
+  public name = 'mv';
+  public description = 'Move or rename files in Google Apps Script project. Supports cross-project moves and CommonJS module name updates. Like Unix mv but handles GAS module system.';
   
   public inputSchema = {
     type: 'object',
@@ -1613,9 +1613,9 @@ export class GASMoveTool extends BaseTool {
 /**
  * Copy a file in a Google Apps Script project
  */
-export class GASCopyTool extends BaseTool {
-  public name = 'gas_cp';
-  public description = 'Copy file with CommonJS processing - unwraps source, rewraps destination (like gas_cat + gas_write)';
+export class CpTool extends BaseTool {
+  public name = 'cp';
+  public description = 'Copy files in Google Apps Script project with CommonJS processing. Unwraps source module, rewraps for destination. Like Unix cp but handles module system.';
   
   public inputSchema = {
     type: 'object',
@@ -1658,15 +1658,15 @@ export class GASCopyTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Use to copy files with proper CommonJS module handling',
-      workflow: 'Copy within project: gas_cp({scriptId: "...", from: "utils", to: "utils-backup"})',
+      workflow: 'Copy within project: cp({scriptId: "...", from: "utils", to: "utils-backup"}),',
       commonJsProcessing: 'Unwraps source module wrapper, applies new wrapper for destination with correct module name',
       examples: [
-        'Copy within project: gas_cp({scriptId: "1abc2def...", from: "utils", to: "utils-backup"})',
-        'Cross-project copy: gas_cp({scriptId: "1abc2def...", from: "utils", to: "1xyz9abc.../utils"})',
-        'Copy to subfolder: gas_cp({scriptId: "1abc2def...", from: "main", to: "archive/main-v1"})',
-        'Copy with rename: gas_cp({scriptId: "1abc2def...", from: "Calculator", to: "CalcBackup"})'
+        'Copy within project: cp({scriptId: "1abc2def...", from: "utils", to: "utils-backup"})',
+        'Cross-project copy: cp({scriptId: "1abc2def...", from: "utils", to: "1xyz9abc.../utils"})',
+        'Copy to subfolder: cp({scriptId: "1abc2def...", from: "main", to: "archive/main-v1"})',
+        'Copy with rename: cp({scriptId: "1abc2def...", from: "Calculator", to: "CalcBackup"})'
       ],
-      vsRawCp: 'Use gas_raw_cp for bulk operations that need exact file preservation without CommonJS processing'
+      vsRawCp: 'Use raw_cp for bulk operations that need exact file preservation without CommonJS processing'
     }
   };
 
@@ -1707,19 +1707,19 @@ export class GASCopyTool extends BaseTool {
       throw new FileOperationError('copy', params.from, 'source file not found');
     }
 
-    // COMMONJS PROCESSING: Unwrap source content (like gas_cat)
+    // COMMONJS PROCESSING: Unwrap source content (like cat)
     let processedContent = sourceFile.source || '';
     const fileType = sourceFile.type || 'SERVER_JS';
     
     if (shouldWrapContent(fileType, fromFilename)) {
-      // Unwrap CommonJS from source (like gas_cat does)
+      // Unwrap CommonJS from source (like cat does)
       const unwrapped = unwrapModuleContent(processedContent);
       if (unwrapped !== processedContent) {
         console.error(`📖 [GAS_CP] Unwrapped CommonJS from source: ${fromFilename}`);
         processedContent = unwrapped;
       }
       
-      // Re-wrap for destination (like gas_write does)
+      // Re-wrap for destination (like write does)
       const moduleName = getModuleName(toFilename);
       processedContent = wrapModuleContent(processedContent, moduleName);
       console.error(`✅ [GAS_CP] Re-wrapped CommonJS for destination: ${toFilename}`);
@@ -1758,9 +1758,9 @@ export class GASCopyTool extends BaseTool {
  * Copy files from one remote project to another with merge capabilities
  * This is a remote-to-remote operation that doesn't touch local files
  */
-export class GASRawCpTool extends BaseTool {
-  public name = 'gas_raw_cp';
-  public description = 'Copy files exactly without CommonJS processing - bulk copy preserving all wrappers';
+export class RawCpTool extends BaseTool {
+  public name = 'raw_cp';
+  public description = 'Copy files exactly without CommonJS processing. Preserves all wrappers and system code. Use cp for development with module handling.';
   
   public inputSchema = {
     type: 'object',
@@ -1810,14 +1810,14 @@ export class GASRawCpTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Use for bulk copying between projects without CommonJS processing',
-      workflow: 'Copy all files: gas_raw_cp({sourceScriptId: "...", destinationScriptId: "..."})',
+      workflow: 'Copy all files: raw_cp({sourceScriptId: "...", destinationScriptId: "..."}),',
       preservesWrappers: 'Copies files exactly as they are, preserving all CommonJS wrappers and system code',
       examples: [
-        'Copy all files: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc..."})',
-        'Copy specific files: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", includeFiles: ["Utils", "Config"]})',
-        'Exclude files: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", excludeFiles: ["Test", "Debug"]})',
-        'Overwrite mode: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", mergeStrategy: "overwrite-destination"})',
-        'Dry run: gas_raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", dryRun: true})'
+        'Copy all files: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc..."})',
+        'Copy specific files: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", includeFiles: ["Utils", "Config"]})',
+        'Exclude files: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", excludeFiles: ["Test", "Debug"]})',
+        'Overwrite mode: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", mergeStrategy: "overwrite-destination"})',
+        'Dry run: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", dryRun: true})'
       ],
       mergeStrategies: {
         'preserve-destination': 'Keep existing files in destination (default)',

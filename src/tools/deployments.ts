@@ -175,8 +175,8 @@ async function ensureManifestEntryPoints(
 /**
  * Create a new deployment of a Google Apps Script project
  */
-export class GASDeployCreateTool extends BaseTool {
-  public name = 'gas_deploy_create';
+export class DeployCreateTool extends BaseTool {
+  public name = 'deploy_create';
   public description = 'Create a deployment of an Apps Script project (supports both API Executable and Web App deployments)';
   
   public inputSchema = {
@@ -346,8 +346,8 @@ export class GASDeployCreateTool extends BaseTool {
 /**
  * Create a version of a Google Apps Script project
  */
-export class GASVersionCreateTool extends BaseTool {
-  public name = 'gas_version_create';
+export class VersionCreateTool extends BaseTool {
+  public name = 'version_create';
   public description = 'Create a version of an Apps Script project (prerequisite for deployment)';
   
   public inputSchema = {
@@ -389,7 +389,7 @@ export class GASVersionCreateTool extends BaseTool {
          versionNumber: version.versionNumber,
          description: version.description,
          createTime: version.createTime,
-         instructions: 'Version created successfully. Use this version number for deployment with gas_deploy_create.'
+         instructions: 'Version created successfully. Use this version number for deployment with deploy_create.'
        };
     } catch (error: any) {
       if (error.status === 403) {
@@ -417,9 +417,9 @@ export class GASVersionCreateTool extends BaseTool {
 /**
  * List deployments of a Google Apps Script project
  */
-export class GASDeployListTool extends BaseTool {
-  public name = 'gas_deploy_list';
-  public description = 'List the deployments of an Apps Script project with comprehensive analysis, health assessment, and actionable recommendations. Note: For complete entry point details including web app URLs, use gas_deploy_get_details for individual deployments.';
+export class DeployListTool extends BaseTool {
+  public name = 'deploy_list';
+  public description = 'List the deployments of an Apps Script project with comprehensive analysis, health assessment, and actionable recommendations. Note: For complete entry point details including web app URLs, use deploy_get_details for individual deployments.';
   
   public inputSchema = {
     type: 'object',
@@ -690,8 +690,8 @@ export class GASDeployListTool extends BaseTool {
     const recommendations = [];
     
     if (analysis.webAppCount === 0 && analysis.apiExecutableCount === 0) {
-      recommendations.push('Create a deployment with gas_deploy_create to enable function execution');
-      recommendations.push(`Example: gas_deploy_create --scriptId=${scriptId} --entryPointType=WEB_APP`);
+      recommendations.push('Create a deployment with deploy_create to enable function execution');
+      recommendations.push(`Example: deploy_create --scriptId=${scriptId} --entryPointType=WEB_APP`);
     }
     
     if (analysis.headCount === 0 && analysis.versionedCount > 0) {
@@ -719,7 +719,7 @@ export class GASDeployListTool extends BaseTool {
    */
   private generateInstructions(analysis: any, totalCount: number): string {
     if (totalCount === 0) {
-      return 'No deployments found. Create your first deployment with gas_deploy_create to enable function execution.';
+      return 'No deployments found. Create your first deployment with deploy_create to enable function execution.';
     }
     
     const instructions = [];
@@ -747,8 +747,8 @@ export class GASDeployListTool extends BaseTool {
 /**
  * Create a new project
  */
-export class GASProjectCreateTool extends BaseTool {
-  public name = 'gas_project_create';
+export class ProjectCreateTool extends BaseTool {
+  public name = 'project_create';
   public description = 'Creates a new Google Apps Script project. LLM WORKFLOW: This is typically the FIRST step when building new automation or when you need a fresh project for code execution.';
   
   public inputSchema = {
@@ -806,7 +806,7 @@ export class GASProjectCreateTool extends BaseTool {
     llmWorkflowGuide: {
       typicalSequence: [
         '1. Authenticate: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
-        '2. Create project: gas_project_create({title: "My Project", localName: "my-project"})',
+        '2. Create project: project_create({title: "My Project", localName: "my-project"})',
         '3. Project automatically added to local config for easy reference',
         '4. Use gas_project_set({project: "my-project"}) to start working',
         '5. Add code: gas_write({path: "fileName", content: "..."}) - uses current project',
@@ -822,7 +822,7 @@ export class GASProjectCreateTool extends BaseTool {
         'Use gas_project_set({project: "localName"}) to set as current',
         'Use gas_write to add JavaScript code files',
         'Use gas_run to execute code in the project',
-        'Use gas_deploy_create for web app or API deployments'
+        'Use deploy_create for web app or API deployments'
       ],
       errorHandling: {
         'AuthenticationError': 'Run gas_auth to authenticate first',
@@ -866,8 +866,8 @@ export class GASProjectCreateTool extends BaseTool {
       // Initialize git for the project (following git sync pattern)
       let gitInitResult: any = { success: false };
       try {
-        const { GasGitInitTool } = await import('./gitSync.js');
-        const gitInitTool = new GasGitInitTool(this.sessionAuthManager);
+        const { GitInitTool } = await import('./gitSync.js');
+        const gitInitTool = new GitInitTool(this.sessionAuthManager);
         
         gitInitResult = await gitInitTool.execute({
           scriptId: project.scriptId,
@@ -925,7 +925,7 @@ export class GASProjectCreateTool extends BaseTool {
   }
 
   /**
-   * Create the CommonJS.js file in a new project using GASRawWriteTool
+   * Create the CommonJS.js file in a new project using RawWriteTool
    * @param scriptId - The script ID of the project
    * @param accessToken - Access token for API calls
    * @returns Promise with success status and any error details
@@ -939,11 +939,11 @@ export class GASProjectCreateTool extends BaseTool {
       
       console.error(`🔍 [GAS_PROJECT_CREATE] Debug shim creation:`, debugInfo);
       console.error(`   - shimContent length: ${SHIM_TEMPLATE.length} characters`);
-      console.error(`   - Using GASRawWriteTool to create file...`);
+      console.error(`   - Using RawWriteTool to create file...`);
       
-      // Use GASRawWriteTool to create the file (position 0 to execute first)
-      const { GASRawWriteTool } = await import('./filesystem.js');
-      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      // Use RawWriteTool to create the file (position 0 to execute first)
+      const { RawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
         path: `${scriptId}/CommonJS`,
@@ -955,7 +955,7 @@ export class GASProjectCreateTool extends BaseTool {
       
       const result = await rawWriteTool.execute(writeParams);
       
-      console.error(`✅ [GAS_PROJECT_CREATE] CommonJS module system added to project via GASRawWriteTool`);
+      console.error(`✅ [GAS_PROJECT_CREATE] CommonJS module system added to project via RawWriteTool`);
       return { success: true, debug: { ...debugInfo, writeResult: result } };
     } catch (error: any) {
               const errorMessage = `Failed to add CommonJS: ${error.message}`;
@@ -979,9 +979,9 @@ export class GASProjectCreateTool extends BaseTool {
 /**
  * Initialize existing GAS projects with CommonJS and execution infrastructure
  */
-export class GASProjectInitTool extends BaseTool {
-  public name = 'gas_project_init';
-  public description = 'Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with gas_project_create or are missing required infrastructure files.';
+export class ProjectInitTool extends BaseTool {
+  public name = 'project_init';
+  public description = 'Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with project_create or are missing required infrastructure files.';
   
   public inputSchema = {
     type: 'object',
@@ -1024,7 +1024,7 @@ export class GASProjectInitTool extends BaseTool {
     llmWorkflowGuide: {
       whenToUse: [
         'When gas_run fails with "__defineModule__ is not defined"',
-        'When working with projects not created via gas_project_create',
+        'When working with projects not created via project_create',
         'When execution infrastructure is missing from existing projects',
         'When require() or module.exports are not working in a project'
       ],
@@ -1033,10 +1033,10 @@ export class GASProjectInitTool extends BaseTool {
         '2. Have valid scriptId from existing project (use gas_ls to find projects)'
       ],
       useCases: {
-        basicInit: 'gas_project_init({scriptId: "..."}) - Install all infrastructure',
-        commonJSOnly: 'gas_project_init({scriptId: "...", includeExecutionInfrastructure: false}) - Only CommonJS',
-        executionOnly: 'gas_project_init({scriptId: "...", includeCommonJS: false}) - Only execution infrastructure',
-        forceUpdate: 'gas_project_init({scriptId: "...", force: true}) - Overwrite existing files'
+        basicInit: 'project_init({scriptId: "..."}) - Install all infrastructure',
+        commonJSOnly: 'project_init({scriptId: "...", includeExecutionInfrastructure: false}) - Only CommonJS',
+        executionOnly: 'project_init({scriptId: "...", includeCommonJS: false}) - Only execution infrastructure',
+        forceUpdate: 'project_init({scriptId: "...", force: true}) - Overwrite existing files'
       },
       returnValue: {
         status: 'Initialization result (success/partial/failed)',
@@ -1156,8 +1156,8 @@ export class GASProjectInitTool extends BaseTool {
     try {
       console.error(`🔧 [GAS_PROJECT_INIT] Installing CommonJS module system...`);
       
-      const { GASRawWriteTool } = await import('./filesystem.js');
-      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      const { RawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
         path: `${scriptId}/CommonJS`,
@@ -1194,8 +1194,8 @@ export class GASProjectInitTool extends BaseTool {
       
       const executionTemplate = getExecutionTemplate();
       
-      const { GASRawWriteTool } = await import('./filesystem.js');
-      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      const { RawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
         path: `${scriptId}/__mcp_gas_run`,
@@ -1232,8 +1232,8 @@ export class GASProjectInitTool extends BaseTool {
       
       const manifestTemplate = getManifestTemplate();
       
-      const { GASRawWriteTool } = await import('./filesystem.js');
-      const rawWriteTool = new GASRawWriteTool(this.sessionAuthManager);
+      const { RawWriteTool } = await import('./filesystem.js');
+      const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
         path: `${scriptId}/appsscript`,
@@ -1290,9 +1290,9 @@ export class GASProjectInitTool extends BaseTool {
 /**
  * Get detailed information about a specific deployment
  */
-export class GASDeployGetDetailsTool extends BaseTool {
-  public name = 'gas_deploy_get_details';
-  public description = 'Gets detailed information about a specific Google Apps Script deployment, including complete entry point configuration and web app URLs that may not be returned by gas_deploy_list.';
+export class DeployGetDetailsTool extends BaseTool {
+  public name = 'deploy_get_details';
+  public description = 'Gets detailed information about a specific Google Apps Script deployment, including complete entry point configuration and web app URLs that may not be returned by deploy_list.';
   
   public inputSchema = {
     type: 'object',
@@ -1518,8 +1518,8 @@ export class GASDeployGetDetailsTool extends BaseTool {
 /**
  * Delete a deployment of an Apps Script project
  */
-export class GASDeployDeleteTool extends BaseTool {
-  public name = 'gas_deploy_delete';
+export class DeployDeleteTool extends BaseTool {
+  public name = 'deploy_delete';
   public description = 'Delete a deployment of an Apps Script project';
   
   public inputSchema = {
@@ -1562,8 +1562,8 @@ export class GASDeployDeleteTool extends BaseTool {
 /**
  * Update a deployment of an Apps Script project
  */
-export class GASDeployUpdateTool extends BaseTool {
-  public name = 'gas_deploy_update';
+export class DeployUpdateTool extends BaseTool {
+  public name = 'deploy_update';
   public description = 'Update a deployment of an Apps Script project';
   
   public inputSchema = {

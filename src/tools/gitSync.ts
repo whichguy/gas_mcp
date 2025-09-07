@@ -39,8 +39,8 @@ const DEFAULT_SYNC_BASE = '~/gas-repos';
 /**
  * Initialize git association for a GAS project
  */
-export class GasGitInitTool extends BaseTool {
-  public name = 'gas_git_init';
+export class GitInitTool extends BaseTool {
+  public name = 'git_init';
   public description = 'Initialize git association for a GAS project by creating .git/config.gs configuration file in CommonJS format. Works alongside GitHub MCP server and standard git/gh commands for complete workflow integration.';
   
   public inputSchema = {
@@ -114,9 +114,9 @@ export class GasGitInitTool extends BaseTool {
       ],
       typicalSequence: [
         '1. Create repo: gh repo create owner/repo --public',
-        '2. Initialize: gas_git_init({scriptId, repository})',
+        '2. Initialize: git_init({scriptId, repository})',
         '3. Clone locally: cd ~/gas-repos && git clone <repository>',
-        '4. Sync files: gas_git_sync({scriptId})',
+        '4. Sync files: git_sync({scriptId})',
         '5. Work with standard git: git add, commit, push'
       ],
       interoperability: {
@@ -140,7 +140,7 @@ export class GasGitInitTool extends BaseTool {
         ]
       },
       nextSteps: [
-        'gas_git_sync - Synchronize files between GAS and local',
+        'git_sync - Synchronize files between GAS and local',
         'git clone <repository> ~/gas-repos/project - Clone locally',
         'gh repo view <repository> - Verify repo configuration'
       ]
@@ -218,7 +218,7 @@ export class GasGitInitTool extends BaseTool {
             `git -C "${expandedPath}" pull origin ${branch}`
           ] : [],
           gasCommands: [
-            `gas_git_sync({scriptId: '${scriptId}', projectPath: '${projectPath}'})`
+            `git_sync({scriptId: '${scriptId}', projectPath: '${projectPath}'})`
           ]
         }
       };
@@ -248,8 +248,8 @@ export class GasGitInitTool extends BaseTool {
 /**
  * Safe merge-based synchronization - ALWAYS pulls before pushing
  */
-export class GasGitSyncTool extends BaseTool {
-  public name = 'gas_git_sync';
+export class GitSyncTool extends BaseTool {
+  public name = 'git_sync';
   public description = 'Safe merge-based synchronization - ALWAYS pulls from GAS, merges locally, then pushes back. Critical bridge between GAS editing and git version control. Works with standard git workflow and GitHub MCP for complete development cycle.';
   
   public inputSchema = {
@@ -257,7 +257,7 @@ export class GasGitSyncTool extends BaseTool {
     properties: {
       scriptId: {
         type: 'string',
-        description: 'Google Apps Script project ID with .git/config.gs association (must run gas_git_init first)',
+        description: 'Google Apps Script project ID with .git/config.gs association (must run git_init first)',
         pattern: '^[a-zA-Z0-9_-]{25,60}$',
         examples: [
           '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
@@ -330,24 +330,24 @@ export class GasGitSyncTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        'Project must have .git/config.gs file (use gas_git_init first)',
+        'Project must have .git/config.gs file (use git_init first)',
         'Local git repo will be created automatically if needed',
         'Git must be installed on the system'
       ],
       typicalWorkflow: [
         '1. Edit in GAS editor or locally',
-        '2. Run gas_git_sync({scriptId}) to merge changes',
+        '2. Run git_sync({scriptId}) to merge changes',
         '3. Resolve any conflicts if they occur',
         '4. Commit: git add -A && git commit -m "Synced with GAS"',
         '5. Push to GitHub: git push origin main',
         '6. Create PR if needed: gh pr create'
       ],
       useCases: {
-        afterGasEdit: 'gas_git_sync({scriptId}) - Pull GAS changes to local',
-        beforeDeploy: 'gas_git_sync({scriptId, direction: "push-only"}) - Push local to GAS',
-        regularSync: 'gas_git_sync({scriptId}) - Full bidirectional sync',
-        pullOnly: 'gas_git_sync({scriptId, direction: "pull-only"}) - Update local only',
-        forceOverwrite: 'gas_git_sync({scriptId, forceOverwrite: true}) - ⚠️ DANGEROUS'
+        afterGasEdit: 'git_sync({scriptId}) - Pull GAS changes to local',
+        beforeDeploy: 'git_sync({scriptId, direction: "push-only"}) - Push local to GAS',
+        regularSync: 'git_sync({scriptId}) - Full bidirectional sync',
+        pullOnly: 'git_sync({scriptId, direction: "pull-only"}) - Update local only',
+        forceOverwrite: 'git_sync({scriptId, forceOverwrite: true}) - ⚠️ DANGEROUS'
       },
       interoperability: {
         beforeSync: [
@@ -377,7 +377,7 @@ export class GasGitSyncTool extends BaseTool {
       conflictResolution: [
         'Conflicts are saved in .git-gas/ folder',
         'Use git merge-tool or manually edit conflicts',
-        'Run gas_git_sync again after resolving',
+        'Run git_sync again after resolving',
         'Or use forceOverwrite: true to take one version (dangerous)'
       ]
     }
@@ -408,7 +408,7 @@ export class GasGitSyncTool extends BaseTool {
       // Otherwise, sync ALL repos in the project
       const projects = await gitProjectManager.listGitProjects(scriptId, accessToken);
       if (projects.length === 0) {
-        throw new ValidationError('git-link', scriptId, 'Project must have .git/config.gs file(s) - run gas_git_init first');
+        throw new ValidationError('git-link', scriptId, 'Project must have .git/config.gs file(s) - run git_init first');
       }
       
       console.error(`🔄 Found ${projects.length} git repositories in project`);
@@ -454,7 +454,7 @@ export class GasGitSyncTool extends BaseTool {
           primary: 'Review and resolve failures in individual repositories',
           commands: results
             .filter(r => !r.success)
-            .map(r => `gas_git_sync({scriptId: '${scriptId}', projectPath: '${r.projectPath === '(root)' ? '' : r.projectPath}'})`)
+            .map(r => `git_sync({scriptId: '${scriptId}', projectPath: '${r.projectPath === '(root)' ? '' : r.projectPath}'})`)
         } : undefined
       };
       
@@ -1162,7 +1162,7 @@ export class GasGitSyncTool extends BaseTool {
           '# Edit files to resolve conflict markers',
           `git -C "${syncFolder}" add .`,
           `git -C "${syncFolder}" commit -m "Resolved conflicts"`,
-          `gas_git_sync({scriptId: '...'})`
+          `git_sync({scriptId: '...'})`
         ]
       }
     };
@@ -1189,8 +1189,8 @@ export class GasGitSyncTool extends BaseTool {
 /**
  * Check git association and sync status
  */
-export class GasGitStatusTool extends BaseTool {
-  public name = 'gas_git_status';
+export class GitStatusTool extends BaseTool {
+  public name = 'git_status';
   public description = 'Check git association and sync status for a GAS project. Shows local repo state, remote tracking, and recommends next actions. Integrates with git status and GitHub MCP for complete repository visibility.';
   
   public inputSchema = {
@@ -1215,8 +1215,8 @@ export class GasGitStatusTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       typicalSequence: [
-        '1. gas_git_status({scriptId}) - Check if project is git-linked',
-        '2. If not linked: gas_git_init({scriptId, repository})',
+        '1. git_status({scriptId}) - Check if project is git-linked',
+        '2. If not linked: git_init({scriptId, repository})',
         '3. If linked: Review sync status and recommendations',
         '4. Follow recommended git/gh commands for next steps'
       ],
@@ -1261,7 +1261,7 @@ export class GasGitStatusTool extends BaseTool {
         'behind > 0': 'GitHub has commits not pulled locally - use: git pull',
         'modified > 0': 'Local changes need committing - use: git add && git commit',
         'untracked > 0': 'New files need adding - use: git add',
-        'clean = true': 'Everything synced and committed - ready for gas_git_sync'
+        'clean = true': 'Everything synced and committed - ready for git_sync'
       }
     }
   };
@@ -1278,11 +1278,11 @@ export class GasGitStatusTool extends BaseTool {
       if (projects.length === 0) {
         return {
           hasGitLink: false,
-          message: 'Project is not git-linked. Use gas_git_init to create association.',
+          message: 'Project is not git-linked. Use git_init to create association.',
           recommendedActions: {
             primary: 'Initialize git association',
             gasCommands: [
-              `gas_git_init({scriptId: '${scriptId}', repository: 'https://github.com/owner/repo.git'})`
+              `git_init({scriptId: '${scriptId}', repository: 'https://github.com/owner/repo.git'})`
             ]
           }
         };
@@ -1347,7 +1347,7 @@ export class GasGitStatusTool extends BaseTool {
             `git -C "${localRepo}" push origin ${gitStatus.branch}`
           ],
           gasCommands: [
-            `gas_git_sync({scriptId: '${scriptId}'})`
+            `git_sync({scriptId: '${scriptId}'})`
           ]
         };
       } else if (gitStatus.behind > 0) {
@@ -1357,7 +1357,7 @@ export class GasGitStatusTool extends BaseTool {
             `git -C "${localRepo}" pull origin ${gitStatus.branch}`
           ],
           gasCommands: [
-            `gas_git_sync({scriptId: '${scriptId}'})`
+            `git_sync({scriptId: '${scriptId}'})`
           ]
         };
       } else if (gitStatus.modified > 0) {
@@ -1413,8 +1413,8 @@ export class GasGitStatusTool extends BaseTool {
 /**
  * Set or update the local sync folder for a GAS project
  */
-export class GasGitSetSyncFolderTool extends BaseTool {
-  public name = 'gas_git_set_sync_folder';
+export class GitSetSyncFolderTool extends BaseTool {
+  public name = 'git_set_sync_folder';
   public description = 'Set or update the local sync folder for a GAS project. Allows relocating where git operations happen locally. Useful for organizing projects or moving to a different directory structure.';
   
   public inputSchema = {
@@ -1450,16 +1450,16 @@ export class GasGitSetSyncFolderTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       useCases: {
-        organize: 'gas_git_set_sync_folder({scriptId, localPath: "~/organized/project", moveExisting: true})',
-        rename: 'gas_git_set_sync_folder({scriptId, localPath: "./new-name", moveExisting: true})',
-        setup: 'gas_git_set_sync_folder({scriptId, localPath: "~/my-projects/gas"})',
-        relocate: 'gas_git_set_sync_folder({scriptId, localPath: "/new/disk/location", moveExisting: true})'
+        organize: 'git_set_sync_folder({scriptId, localPath: "~/organized/project", moveExisting: true})',
+        rename: 'git_set_sync_folder({scriptId, localPath: "./new-name", moveExisting: true})',
+        setup: 'git_set_sync_folder({scriptId, localPath: "~/my-projects/gas"})',
+        relocate: 'git_set_sync_folder({scriptId, localPath: "/new/disk/location", moveExisting: true})'
       },
       typicalWorkflow: [
-        '1. Check current location: gas_git_get_sync_folder({scriptId})',
-        '2. Set new location: gas_git_set_sync_folder({scriptId, localPath, moveExisting})',
+        '1. Check current location: git_get_sync_folder({scriptId})',
+        '2. Set new location: git_set_sync_folder({scriptId, localPath, moveExisting})',
         '3. Verify move: git -C <newPath> status',
-        '4. Sync if needed: gas_git_sync({scriptId})'
+        '4. Sync if needed: git_sync({scriptId})'
       ],
       interoperability: {
         beforeMove: [
@@ -1501,7 +1501,7 @@ export class GasGitSetSyncFolderTool extends BaseTool {
       const config = await gitProjectManager.getProjectConfig(scriptId, accessToken, '');
       
       if (!config) {
-        throw new ValidationError('git-link', scriptId, 'Project must have .git/config.gs file - run gas_git_init first');
+        throw new ValidationError('git-link', scriptId, 'Project must have .git/config.gs file - run git_init first');
       }
       
       // Get paths from config
@@ -1539,7 +1539,7 @@ export class GasGitSetSyncFolderTool extends BaseTool {
         recommendedActions: {
           primary: 'Sync to ensure everything is connected',
           gasCommands: [
-            `gas_git_sync({scriptId: '${scriptId}'})`
+            `git_sync({scriptId: '${scriptId}'})`
           ]
         }
       };
@@ -1570,8 +1570,8 @@ export class GasGitSetSyncFolderTool extends BaseTool {
 /**
  * Query the current sync folder for a GAS project
  */
-export class GasGitGetSyncFolderTool extends BaseTool {
-  public name = 'gas_git_get_sync_folder';
+export class GitGetSyncFolderTool extends BaseTool {
+  public name = 'git_get_sync_folder';
   public description = 'Query the current sync folder location for a GAS project. Shows where git commands should be run locally. Essential for understanding the local/remote/GAS file structure.';
   
   public inputSchema = {
@@ -1589,7 +1589,7 @@ export class GasGitGetSyncFolderTool extends BaseTool {
     llmWorkflowGuide: {
       purpose: 'Find where project is synced locally to run git commands',
       typicalUsage: [
-        '1. gas_git_get_sync_folder({scriptId}) - Find sync location',
+        '1. git_get_sync_folder({scriptId}) - Find sync location',
         '2. cd <syncFolder> - Navigate to the folder',
         '3. git status - Check repository state',
         '4. Standard git workflow: add, commit, push'
@@ -1627,9 +1627,9 @@ export class GasGitGetSyncFolderTool extends BaseTool {
         ]
       },
       troubleshooting: {
-        'exists: false': 'Folder doesn\'t exist - run gas_git_sync to create',
+        'exists: false': 'Folder doesn\'t exist - run git_sync to create',
         'isGitRepo: false': 'Not a git repo - clone or init needed',
-        'no syncFolder': 'Project not git-linked - run gas_git_init first'
+        'no syncFolder': 'Project not git-linked - run git_init first'
       }
     }
   };
@@ -1651,7 +1651,7 @@ export class GasGitGetSyncFolderTool extends BaseTool {
           recommendedActions: {
             primary: 'Initialize git association first',
             gasCommands: [
-              `gas_git_init({scriptId: '${scriptId}', repository: 'https://github.com/owner/repo.git'})`
+              `git_init({scriptId: '${scriptId}', repository: 'https://github.com/owner/repo.git'})`
             ]
           }
         };

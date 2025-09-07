@@ -5,8 +5,8 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 /**
  * List information about processes made by or on behalf of a user
  */
-export class GASProcessListTool extends BaseTool {
-  public name = 'gas_process_list';
+export class ProcessListTool extends BaseTool {
+  public name = 'process_list';
   public description = 'List information about processes made by or on behalf of a user, such as process type and current status. LLM USE: Monitor script execution history and performance.';
   
   public inputSchema = {
@@ -27,7 +27,7 @@ export class GASProcessListTool extends BaseTool {
         type: 'string',
         description: 'Token for pagination (optional). LLM USE: Include token from previous response to get next page of results.',
         llmHints: {
-          workflow: 'Get this from previous gas_process_list response.nextPageToken',
+          workflow: 'Get this from previous process_list response.nextPageToken',
           iteration: 'Keep calling with pageToken until nextPageToken is null'
         }
       },
@@ -111,9 +111,9 @@ export class GASProcessListTool extends BaseTool {
         '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed'
       ],
       useCases: {
-        monitoring: 'gas_process_list({pageSize: 50}) - Monitor all recent executions',
-        debugging: 'gas_process_list({userProcessFilter: {scriptId: "..."}}) - Debug specific script',
-        analysis: 'gas_process_list({userProcessFilter: {functionName: "myFunction"}}) - Analyze function performance'
+        monitoring: 'process_list({pageSize: 50}) - Monitor all recent executions',
+        debugging: 'process_list({userProcessFilter: {scriptId: "..."}}) - Debug specific script',
+        analysis: 'process_list({userProcessFilter: {functionName: "myFunction"}}) - Analyze function performance'
       },
       errorHandling: {
         'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
@@ -147,8 +147,8 @@ export class GASProcessListTool extends BaseTool {
 /**
  * List information about a script's executed processes
  */
-export class GASProcessListScriptTool extends BaseTool {
-  public name = 'gas_process_list_script';
+export class ProcessListScriptTool extends BaseTool {
+  public name = 'process_list_script';
   public description = 'List information about a script\'s executed processes, such as process type and current status. LLM USE: Debug and monitor specific script performance.';
   
   public inputSchema = {
@@ -179,7 +179,7 @@ export class GASProcessListScriptTool extends BaseTool {
         type: 'string',
         description: 'Token for pagination (optional). LLM USE: Include token from previous response to get next page.',
         llmHints: {
-          workflow: 'Get this from previous gas_process_list_script response.nextPageToken'
+          workflow: 'Get this from previous process_list_script response.nextPageToken'
         }
       },
       scriptProcessFilter: {
@@ -254,9 +254,9 @@ export class GASProcessListScriptTool extends BaseTool {
         '2. Have valid scriptId from gas_project_create or gas_ls'
       ],
       useCases: {
-        debugging: 'gas_process_list_script({scriptId: "...", scriptProcessFilter: {functionName: "myFunction"}}) - Debug specific function',
-        monitoring: 'gas_process_list_script({scriptId: "..."}) - Monitor all script executions',
-        performance: 'gas_process_list_script({scriptId: "...", scriptProcessFilter: {startTime: "2024-01-01T00:00:00Z"}}) - Performance analysis'
+        debugging: 'process_list_script({scriptId: "...", scriptProcessFilter: {functionName: "myFunction"}}) - Debug specific function',
+        monitoring: 'process_list_script({scriptId: "..."}) - Monitor all script executions',
+        performance: 'process_list_script({scriptId: "...", scriptProcessFilter: {startTime: "2024-01-01T00:00:00Z"}}) - Performance analysis'
       },
       errorHandling: {
         'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',

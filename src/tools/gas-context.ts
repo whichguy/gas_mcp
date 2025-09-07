@@ -8,10 +8,10 @@ import { GASClient } from '../api/gasClient.js';
 import { COMMON_TOOL_SCHEMAS } from '../utils/schemaPatterns.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
 
-export class GasContextTool extends BaseTool {
+export class ContextTool extends BaseTool {
   private gasClient: GASClient;
 
-  public name = 'gas_context';
+  public name = 'context';
   public description = 'Intelligent context-aware search with semantic expansion and relevance scoring. Finds related code using natural language queries with token-efficient results.';
 
   constructor(authManager?: any) {

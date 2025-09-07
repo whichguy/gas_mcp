@@ -9,8 +9,8 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
  * Set current project and cache files locally with enhanced sync capabilities
  * Leverages existing gas_info, gas_ls, and gas_cat functions with comprehensive auto-sync
  */
-export class GASProjectSetTool extends BaseTool {
-  public name = 'gas_project_set';
+export class ProjectSetTool extends BaseTool {
+  public name = 'project_set';
   public description = 'Set current project and cache files locally for editing';
   
   public inputSchema = {
@@ -384,8 +384,8 @@ export class GASProjectSetTool extends BaseTool {
  * Get current project information  
  * Leverages existing gas_info function
  */
-export class GASProjectGetTool extends BaseTool {
-  public name = 'gas_project_get';
+export class ProjectGetTool extends BaseTool {
+  public name = 'project_get';
   public description = 'Get current project information and status';
   
   public inputSchema = {
@@ -504,8 +504,8 @@ export class GASProjectGetTool extends BaseTool {
 /**
  * Add a project to the configuration
  */
-export class GASProjectAddTool extends BaseTool {
-  public name = 'gas_project_add';
+export class ProjectAddTool extends BaseTool {
+  public name = 'project_add';
   public description = 'Add a project to the local configuration';
   
   public inputSchema = {
@@ -566,8 +566,8 @@ export class GASProjectAddTool extends BaseTool {
 /**
  * List all configured projects
  */
-export class GASProjectListTool extends BaseTool {
-  public name = 'gas_project_list';
+export class ProjectListTool extends BaseTool {
+  public name = 'project_list';
   public description = 'List all configured projects';
   
   public inputSchema = {

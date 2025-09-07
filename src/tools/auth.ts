@@ -586,8 +586,8 @@ async function performSynchronizedAuthFlow(
 /**
  * Authentication tool for Google Apps Script OAuth
  */
-export class GASAuthTool extends BaseTool {
-  public name = 'gas_auth';
+export class AuthTool extends BaseTool {
+  public name = 'auth';
   public description = 'Authenticate with Google Apps Script API using OAuth 2.0 (desktop flow with PKCE)';
   public inputSchema = {
     type: 'object',

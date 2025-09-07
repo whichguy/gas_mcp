@@ -69,9 +69,9 @@ export interface CreateScriptResult {
 // TOOL 1: GAS_FIND_DRIVE_SCRIPT
 // ============================================================================
 
-export class GASFindDriveScriptTool extends BaseTool {
+export class FindDriveScriptTool extends BaseTool {
   
-  public name = 'gas_find_drive_script';
+  public name = 'find_drive_script';
   public description = 'Find Drive containers (Sheets, Docs, Forms, Sites) and check Apps Script association status. Returns scriptId for integration with gas_run and other MCP functions.';
   public inputSchema = {
     type: 'object',
@@ -305,10 +305,10 @@ export class GASFindDriveScriptTool extends BaseTool {
 // TOOL 2: GAS_BIND_SCRIPT
 // ============================================================================
 
-export class GASBindScriptTool extends BaseTool {
+export class BindScriptTool extends BaseTool {
   
-  public name = 'gas_bind_script';
-  public description = 'Attempt to bind an existing Apps Script project to a Drive container. Note: Google Apps Script API does not support binding existing standalone scripts to containers. Use gas_create_script instead to create container-bound scripts.';
+  public name = 'bind_script';
+  public description = 'Attempt to bind an existing Apps Script project to a Drive container. Note: Google Apps Script API does not support binding existing standalone scripts to containers. Use create_script instead to create container-bound scripts.';
   public inputSchema = {
     type: 'object',
     properties: {
@@ -385,7 +385,7 @@ export class GASBindScriptTool extends BaseTool {
 
       return {
         success: false,
-        error: `Cannot bind existing standalone script "${scriptName}" to container "${containerName}". Google Apps Script API doesn't support converting standalone scripts to container-bound scripts. Use gas_create_script to create a new container-bound script instead.`
+        error: `Cannot bind existing standalone script "${scriptName}" to container "${containerName}". Google Apps Script API doesn't support converting standalone scripts to container-bound scripts. Use create_script to create a new container-bound script instead.`
       };
 
     } catch (error) {
@@ -458,7 +458,7 @@ export class GASBindScriptTool extends BaseTool {
         new Error(`Drive API list scripts failed: ${response.status} ${response.statusText}`),
         {
           operation: 'listing scripts via Drive API',
-          tool: 'gas_bind_script'
+          tool: 'bind_script'
         }
       );
     }
@@ -598,9 +598,9 @@ export class GASBindScriptTool extends BaseTool {
 // TOOL 3: GAS_CREATE_SCRIPT
 // ============================================================================
 
-export class GASCreateScriptTool extends BaseTool {
+export class CreateScriptTool extends BaseTool {
   
-  public name = 'gas_create_script';
+  public name = 'create_script';
   public description = 'Create new Apps Script project and bind to a Drive container. Generates container-specific starter code. Returns scriptId for integration with gas_run and other MCP functions.';
   public inputSchema = {
     type: 'object',
@@ -893,7 +893,7 @@ export class GASCreateScriptTool extends BaseTool {
           new Error(`Failed to add starter code: ${response.status} ${response.statusText}`),
           {
             operation: 'adding starter code to new script',
-            tool: 'gas_create_script'
+            tool: 'create_script'
           }
         );
       } catch (error: any) {

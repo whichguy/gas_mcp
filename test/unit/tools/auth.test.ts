@@ -1,13 +1,13 @@
 import { expect } from 'chai';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { stub, restore } from 'sinon';
-import { GASAuthTool } from '../../../src/tools/auth.js';
+import { AuthTool } from '../../../src/tools/auth.js';
 import { AuthStateManager } from '../../../src/auth/authState.js';
 import { OAuthError } from '../../../src/errors/mcpErrors.js';
 import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
 
-describe('GASAuthTool', () => {
-  let authTool: GASAuthTool;
+describe('AuthTool', () => {
+  let authTool: AuthTool;
   let authManager: AuthStateManager;
   let sessionAuthManager: SessionAuthManager;
 
@@ -16,7 +16,7 @@ describe('GASAuthTool', () => {
     process.env.MCP_TEST_MODE = 'true';
     
     sessionAuthManager = new SessionAuthManager();
-    authTool = new GASAuthTool(sessionAuthManager);
+    authTool = new AuthTool(sessionAuthManager);
     authManager = AuthStateManager.getInstance();
     authManager.clearAuth();
   });
@@ -34,7 +34,7 @@ describe('GASAuthTool', () => {
     });
 
     it('should have correct input schema', () => {
-      const tool = new GASAuthTool();
+      const tool = new AuthTool();
       const schema = tool.inputSchema as any;
       
       expect(schema.type).to.equal('object');

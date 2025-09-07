@@ -337,10 +337,10 @@ export class GasTreeAnalyzer {
   }
 }
 
-export class GasTreeTool extends BaseTool {
+export class TreeTool extends BaseTool {
   private gasClient: GASClient;
 
-  public name = 'gas_tree';
+  public name = 'tree';
   public description = 'Project structure visualization with hierarchical tree views, dependency relationships, and file analysis. Provides ASCII tree, flat list, and statistics views with complexity metrics.';
 
   constructor(authManager?: any) {

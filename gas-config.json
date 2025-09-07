@@ -215,12 +215,12 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-09-07T02:12:34.677Z"
+    "lastModified": "2025-09-07T18:50:29.676Z"
   },
   "debug": true,
   "currentProject": {
-    "projectName": "1pUqwFycLp3JBTqMBFi5K84aD9XMVESXA5KdXzp5oqhXKDZcOjUZ-zhPV",
-    "scriptId": "1pUqwFycLp3JBTqMBFi5K84aD9XMVESXA5KdXzp5oqhXKDZcOjUZ-zhPV",
-    "lastSync": "2025-09-07T02:12:34.677Z"
+    "projectName": "fib",
+    "scriptId": "10Jfa2s9ilvmRGcZxpd9rEPNhNM-ZaxsK4jSRPphQRyGHwobnbO3k9mv2",
+    "lastSync": "2025-09-07T18:50:29.676Z"
   }
 }
