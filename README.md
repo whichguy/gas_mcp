@@ -41,6 +41,27 @@ MCP GAS Server is a Model Context Protocol (MCP) server that enables AI assistan
 
 ### Installation
 
+#### Automated Installation (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/whichguy/mcp_gas.git
+cd mcp_gas
+
+# Run the installation script
+./install.sh
+```
+
+The installation script will:
+- ✅ Check Node.js version (requires 18.0.0+)
+- 📦 Install npm dependencies
+- 🔨 Build the TypeScript project
+- 🔧 Configure MCP clients automatically (Claude Desktop, Claude Code, Cursor)
+- 🔐 Check for OAuth configuration
+- 💾 Create backups of modified configurations
+
+#### Manual Installation
+
 ```bash
 # Clone the repository
 git clone https://github.com/whichguy/mcp_gas.git
@@ -105,6 +126,42 @@ Add to Cursor MCP settings:
 }
 ```
 </details>
+
+<details>
+<summary><b>Claude Code Configuration</b></summary>
+
+Edit `~/.claude/settings.json` to add mcpServers:
+
+```json
+{
+  "mcpServers": {
+    "gas": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+  // ... other settings
+}
+```
+</details>
+
+### Uninstallation
+
+To remove the MCP GAS server from your system:
+
+```bash
+cd mcp_gas
+./uninstall.sh
+```
+
+The uninstall script will:
+- 🗑️ Remove MCP GAS from all client configurations
+- 💾 Create backups before removing configurations
+- 🧹 Optionally clean up build artifacts and dependencies
+- 📋 Preserve configuration files for potential reinstallation
 
 ### First Project Example
 
