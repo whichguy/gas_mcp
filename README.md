@@ -2,184 +2,388 @@
 
 <div align="center">
 
+![GitHub stars](https://img.shields.io/github/stars/whichguy/mcp_gas?style=social)
 [![npm version](https://img.shields.io/npm/v/gas-server.svg)](https://www.npmjs.com/package/gas-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue.svg)](https://www.typescriptlang.org/)
 [![MCP Protocol](https://img.shields.io/badge/MCP-1.0.0-orange.svg)](https://modelcontextprotocol.io/)
 
-**Bridge AI assistants with Google Apps Script through the Model Context Protocol**
+### 🤖 + 📝 = ⚡
 
-[Quick Start](#-quick-start) • [Features](#-features) • [Tools](#-tools) • [Examples](#-examples) • [Documentation](#-documentation)
+**Let AI assistants build and manage Google Apps Script projects for you**
+
+[🚀 Quick Start](#-quick-start) • [💡 Use Cases](#-use-cases) • [🛠️ Features](#-whats-included) • [📚 Docs](#-documentation)
 
 </div>
 
 ---
 
-## 🎯 What is MCP GAS Server?
+## 🎯 Why MCP GAS Server?
 
-MCP GAS Server is a Model Context Protocol (MCP) server that enables AI assistants like Claude to directly interact with Google Apps Script. It provides 46 specialized tools for creating, managing, and executing Google Apps Script projects without leaving your development environment.
+### The Problem
+Google Apps Script is powerful for automating Google Workspace, but developing GAS projects traditionally requires:
+- Switching between local development and the online editor
+- Manual copy-pasting of code
+- No proper module system or version control
+- Limited tooling for testing and deployment
 
-### ✨ Key Features
+### The Solution
+MCP GAS Server bridges AI assistants with Google Apps Script, enabling:
+- **AI-Driven Development**: Tell Claude/Cursor what to build, and it handles the implementation
+- **Local Development**: Write code locally with full IDE support
+- **Automatic Sync**: Bidirectional sync between local files and Google's cloud
+- **Modern JavaScript**: CommonJS modules, require(), and proper code organization
+- **Git Integration**: Version control for your GAS projects with safe merging
 
-- **🤖 AI-Native Development** - Purpose-built for AI assistants to manage GAS projects
-- **⚡ Instant Execution** - Run JavaScript code directly in Google's cloud
-- **🔄 Bidirectional Sync** - Automatic sync between local files and Google Apps Script
-- **🔀 Git Integration** - Safe Git synchronization with pull-merge-push workflow
-- **📦 Module System** - Built-in CommonJS support with `require()` for modular development
-- **🛡️ Type-Safe** - Full TypeScript implementation with comprehensive error handling
-- **🔒 Secure** - OAuth 2.0 PKCE flow with secure token storage
-- **🎯 Smart vs Raw Tools** - Smart tools handle CommonJS automatically, raw tools preserve exact content
+### Who Is This For?
+- **Developers** who want AI to handle Google Apps Script boilerplate
+- **Teams** automating Google Workspace workflows
+- **Non-programmers** who need custom Google Sheets functions or automation
+- **Anyone** tired of the limitations of Google's online script editor
+
+## 💡 Use Cases
+
+### What You Can Build
+- **📊 Custom Spreadsheet Functions**: Complex calculations, data processing, API integrations
+- **📧 Email Automation**: Process Gmail, send bulk emails, manage drafts
+- **📅 Calendar Management**: Schedule events, sync calendars, automate meeting creation
+- **🗂️ Drive Automation**: File organization, backup systems, document generation
+- **📝 Document Processing**: Generate reports, merge documents, extract data
+- **🔗 API Integrations**: Connect Google Workspace to external services
+- **🤖 Chatbots & Add-ons**: Build custom tools for Sheets, Docs, and Forms
+
+### Real Examples
+```javascript
+// Tell your AI: "Create a function that fetches stock prices and updates my spreadsheet"
+// AI will create, deploy, and test the entire solution
+
+// Tell your AI: "Build an expense tracker that categorizes Gmail receipts"
+// AI handles OAuth, Gmail API, and spreadsheet integration
+
+// Tell your AI: "Make a custom menu in Sheets for data analysis tools"
+// AI creates the UI, functions, and deploys everything
+```
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### ⚡ 30-Second Installation
 
-- **Node.js** 18.0.0+ ([Download](https://nodejs.org/))
-- **Google Account** with [Google Cloud Console](https://console.cloud.google.com/) access
-- **MCP-compatible client** ([Claude Desktop](https://claude.ai/download), [Cursor IDE](https://cursor.sh/), etc.)
-
-### Installation
-
-#### Automated Installation (Recommended)
+<div align="center">
 
 ```bash
-# Clone the repository
-git clone https://github.com/whichguy/mcp_gas.git
-cd mcp_gas
-
-# Run the installation script
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/whichguy/mcp_gas/main/install.sh | bash -s -- --auto
 ```
 
-The installation script will:
-- ✅ Check Node.js version (requires 18.0.0+)
-- 📦 Install npm dependencies
-- 🔨 Build the TypeScript project
-- 🔧 Configure MCP clients automatically (Claude Desktop, Claude Code, Cursor)
-- 🔐 Check for OAuth configuration
-- 💾 Create backups of modified configurations
-
-#### Manual Installation
+**— OR —**
 
 ```bash
-# Clone the repository
+git clone https://github.com/whichguy/mcp_gas.git && cd mcp_gas && ./install.sh
+```
+
+</div>
+
+### Prerequisites
+
+| Requirement | Why Needed | How to Get |
+|------------|------------|------------|
+| **Node.js 18+** | Runs the MCP server | [Download](https://nodejs.org/) |
+| **Google Account** | Access Google Apps Script | [Create free account](https://accounts.google.com/) |
+| **AI Assistant** | Sends commands to MCP server | [Claude](https://claude.ai/download), [Cursor](https://cursor.sh/), etc. |
+
+### 🎯 First Project in 2 Minutes
+
+<table>
+<tr>
+<td width="60px" align="center"><strong>1️⃣</strong></td>
+<td>
+
+**Install** (if not already done)
+```bash
+curl -fsSL https://raw.githubusercontent.com/whichguy/mcp_gas/main/install.sh | bash
+```
+
+</td>
+</tr>
+<tr>
+<td align="center"><strong>2️⃣</strong></td>
+<td>
+
+**Tell your AI assistant:**
+> "Create a Google Apps Script project that adds a custom menu to Google Sheets 
+> with options to highlight duplicate values and remove empty rows"
+
+</td>
+</tr>
+<tr>
+<td align="center"><strong>3️⃣</strong></td>
+<td>
+
+**AI handles everything:**
+- ✅ Creates the project
+- ✅ Writes the code  
+- ✅ Sets up the menu
+- ✅ Deploys to Google
+- ✅ Tests the functionality
+
+</td>
+</tr>
+</table>
+
+## ⚙️ Installation Details
+
+### Installation Script Features
+The installer (`install.sh`) provides:
+- ✅ **Idempotent operation** - Safe to run multiple times without duplicating entries
+- 🔍 **Auto-detection** of installed IDEs and editors
+- 🎯 **Supports 10+ IDEs**: Claude Desktop/Code, Cursor, VS Code, Zed, Windsurf, Neovim, Codex
+- 📦 **Automatic setup** - Dependencies, build, and configuration
+- 🔐 **OAuth checking** with helpful setup instructions
+- 💾 **Backup creation** before any modifications
+
+### Command-line Options
+```bash
+./install.sh --dry-run       # Preview changes without making them
+./install.sh --interactive   # Choose which IDEs to configure
+./install.sh --auto          # Non-interactive mode (for CI/CD)
+./install.sh --force         # Update existing configurations
+./install.sh --help          # Show detailed usage
+```
+
+### Manual Installation
+```bash
+# Clone and build manually
 git clone https://github.com/whichguy/mcp_gas.git
 cd mcp_gas
-
-# Install dependencies
 npm install
-
-# Build the server
 npm run build
 ```
 
-### Google Cloud Setup
+### Uninstallation
+```bash
+# Remove MCP GAS from all IDEs
+./uninstall.sh
 
-1. **Enable Google Apps Script API**
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+# With cleanup options:
+./uninstall.sh --cleanup-build      # Also remove dist/ and node_modules/
+./uninstall.sh --cleanup-backups    # Remove all backup files
+./uninstall.sh --dry-run           # Preview what would be removed
+```
+
+## 📋 Google Cloud Setup
+
+### One-Time Configuration
+
+1. **Enable Google Apps Script API**:
+   - Visit [Google Cloud Console](https://console.cloud.google.com/)
    - Create or select a project
-   - Enable "Google Apps Script API"
+   - Search for "Google Apps Script API" and enable it
 
-2. **Create OAuth 2.0 Credentials**
+2. **Create OAuth 2.0 Credentials**:
    - Navigate to APIs & Services → Credentials
-   - Create Credentials → OAuth client ID
+   - Click "Create Credentials" → "OAuth client ID"
    - Application type: **Desktop app**
    - Download JSON and save as `oauth-config.json` in project root
 
-### Connect to Your AI Assistant
+## 🖥️ Supported IDEs
+
+The MCP GAS Server works with any MCP-compatible client:
+
+| IDE/Editor | Platform Support | Configuration File | Notes |
+|------------|-----------------|-------------------|-------|
+| **Claude Desktop** | macOS, Windows | `claude_desktop_config.json` | Official Anthropic desktop app |
+| **Claude Code** | macOS, Linux | `~/.claude/settings.json` | Claude's code editor |
+| **Cursor IDE** | All platforms | `~/.cursor/mcp.json` | AI-powered IDE |
+| **VS Code** | All platforms | `mcp.json` in globalStorage | Microsoft's editor |
+| **VS Code Insiders** | All platforms | `mcp.json` in globalStorage | Preview version |
+| **VSCodium** | All platforms | `mcp.json` in globalStorage | Open-source VS Code |
+| **Zed Editor** | macOS, Linux | `~/.config/zed/settings.json` | Uses `context_servers` key |
+| **Windsurf IDE** | All platforms | `~/.codeium/windsurf/mcp_config.json` | Codeium's AI IDE |
+| **Neovim MCPHub** | All platforms | `~/.config/mcphub/servers.json` | Neovim plugin |
+| **Codex CLI** | All platforms | `~/.codex/config.toml` | Uses TOML format |
 
 <details>
-<summary><b>Claude Desktop Configuration</b></summary>
+<summary><b>Manual IDE Configuration Examples</b></summary>
 
-Edit Claude Desktop settings:
-
+### Claude Desktop
 ```json
 {
   "mcpServers": {
     "gas": {
       "command": "node",
       "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
-      "env": {
-        "NODE_ENV": "production"
-      }
+      "env": {"NODE_ENV": "production"}
     }
   }
 }
 ```
-</details>
 
-<details>
-<summary><b>Cursor IDE Configuration</b></summary>
-
-Add to Cursor MCP settings:
-
-```json
-{
-  "mcpServers": {
-    "gas": {
-      "command": "node",
-      "args": ["./dist/src/index.js", "--config", "./gas-config.json"],
-      "cwd": "/path/to/mcp_gas"
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>Claude Code Configuration</b></summary>
-
-Edit `~/.claude/settings.json` to add mcpServers:
-
+### VS Code
 ```json
 {
   "mcpServers": {
     "gas": {
       "command": "node",
       "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
-      "env": {
-        "NODE_ENV": "production"
+      "env": {"NODE_ENV": "production"}
+    }
+  }
+}
+```
+
+### Zed Editor (uses `context_servers`)
+```json
+{
+  "context_servers": {
+    "gas": {
+      "command": {
+        "path": "node",
+        "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"]
       }
     }
   }
-  // ... other settings
 }
 ```
-</details>
 
-### Uninstallation
+### Codex CLI (uses TOML)
+```toml
+[mcp_servers.gas]
+command = "node"
+args = ["/absolute/path/to/mcp_gas/dist/src/index.js"]
 
-To remove the MCP GAS server from your system:
-
-```bash
-cd mcp_gas
-./uninstall.sh
+[[mcp_servers.gas.env]]
+NODE_ENV = "production"
 ```
 
-The uninstall script will:
-- 🗑️ Remove MCP GAS from all client configurations
-- 💾 Create backups before removing configurations
-- 🧹 Optionally clean up build artifacts and dependencies
-- 📋 Preserve configuration files for potential reinstallation
+</details>
+
+## 📦 What's Included
+
+### 🛠️ 46 Specialized Tools
+
+<table>
+<tr>
+<td>
+
+**📁 File Management**
+- `ls` - List files
+- `cat` - Read files
+- `write` - Write files
+- `rm` - Delete files
+- `mv` - Move files
+- `cp` - Copy files
+- `mkdir` - Create folders
+
+</td>
+<td>
+
+**🔍 Search & Edit**
+- `grep` - Search text
+- `find` - Find files
+- `ripgrep` - Fast search
+- `sed` - Find & replace
+
+</td>
+<td>
+
+**⚡ Execution**
+- `run` - Run code
+- `exec` - Execute functions
+
+</td>
+</tr>
+<tr>
+<td>
+
+**🔀 Git Integration**
+- `git_init` - Initialize repo
+- `git_sync` - Sync changes
+- `git_status` - Check status
+
+</td>
+<td>
+
+**🚀 Deployment**
+- `deploy_create` - Deploy apps
+- `version_create` - Create versions
+
+</td>
+<td>
+
+**📋 Projects**
+- `project_create` - New project
+- `project_set` - Set current
+- `project_list` - List all
+
+</td>
+</tr>
+</table>
+
+### Smart vs Raw Tools
+- **Smart tools** (`cat`, `write`): Automatically handle CommonJS module wrapping
+- **Raw tools** (`raw_cat`, `raw_write`): Preserve exact file content
+- Choose based on whether you want automatic module management or full control
+
+## 🎓 When to Use MCP GAS Server
+
+### ✅ Perfect For
+- **Automation Projects**: Gmail, Calendar, Drive, Sheets automation
+- **Custom Functions**: Complex spreadsheet formulas and data processing
+- **API Integrations**: Connecting Google Workspace to external services
+- **Rapid Prototyping**: Quick proof-of-concepts and MVPs
+- **Learning GAS**: Let AI teach by example
+
+### ❌ Not Ideal For
+- **Large Applications**: Consider App Engine or Cloud Functions for complex apps
+- **Real-time Systems**: GAS has execution time limits (6 minutes)
+- **Heavy Computing**: Limited CPU/memory compared to dedicated servers
+- **Sensitive Data**: Evaluate security requirements carefully
+
+## 🛠️ Advanced Features
+
+### Git Workflow Integration
+```javascript
+// Initialize git for a GAS project
+mcp__gas__git_init({ scriptId: "...", repository: "https://github.com/..." })
+
+// Sync changes (always safe - pulls, merges, then pushes)
+mcp__gas__git_sync({ scriptId: "..." })
+
+// Standard git workflow works in sync folder
+cd ~/gas-repos/project-xxx
+git add . && git commit -m "Update" && git push
+```
+
+### Module System
+```javascript
+// Write modular code with CommonJS
+const utils = require('./utils');
+const api = require('./api/client');
+
+function processData() {
+  const data = api.fetchData();
+  return utils.transform(data);
+}
+
+module.exports = { processData };
+```
 
 ### First Project Example
-
 ```javascript
 // Tell your AI assistant:
 "Create a Google Apps Script project that calculates Fibonacci numbers"
 
 // The AI will execute:
 // 1. Authenticate
-await gas_auth({ mode: "start" });
+await mcp__gas__auth({ mode: "start" });
 
 // 2. Create project
-const project = await gas_project_create({ 
+const project = await mcp__gas__project_create({ 
   title: "Fibonacci Calculator" 
 });
 
 // 3. Add code
-await gas_write({
+await mcp__gas__write({
   scriptId: project.scriptId,
   path: "fibonacci",
   content: `
@@ -188,406 +392,149 @@ await gas_write({
       return fibonacci(n - 1) + fibonacci(n - 2);
     }
     
-    function getFibonacciSequence(length) {
-      return Array.from({length}, (_, i) => fibonacci(i));
+    function test() {
+      Logger.log(fibonacci(10)); // 55
     }
+    
+    module.exports = { fibonacci };
   `
 });
 
 // 4. Execute
-const result = await gas_run({
+const result = await mcp__gas__run({
   scriptId: project.scriptId,
-  js_statement: "getFibonacciSequence(10)"
+  js_statement: "require('fibonacci').fibonacci(10)"
 });
-// Result: [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+// Returns: 55
 ```
 
-## 🛠️ Tools Overview
+## 🔧 Troubleshooting
 
-The server provides 46 tools organized into logical categories:
+### Common Issues
 
-### 🔐 Authentication & Setup
-- `gas_auth` - OAuth 2.0 authentication with Google
+| Problem | Solution |
+|---------|----------|
+| "Not authenticated" | Run `mcp__gas__auth({ mode: "start" })` in your AI assistant |
+| "Script not found" | Check scriptId in gas-config.json |
+| "Module not found" | Ensure proper require() paths and file exists |
+| "Quota exceeded" | Wait or upgrade Google Cloud quotas |
+| "Permission denied" | Check OAuth scopes and project permissions |
 
-### 📝 Smart File Operations (CommonJS Processing)
-- `gas_write` - Write files with automatic CommonJS wrapper
-- `gas_cat` - Read files with local/remote fallback, unwraps CommonJS  
-- `gas_ls` - List files with wildcard patterns
-- `gas_rm`, `gas_mv`, `gas_cp` - File management with CommonJS handling
-- `gas_mkdir` - Create directories
+### Debug Mode
+```bash
+# Enable debug logging
+DEBUG=mcp:* npm start
 
-### 🔧 Raw File Operations (Exact Content)
-- `gas_raw_write` - Write files preserving exact content
-- `gas_raw_cat` - Read raw file content including wrappers
-- `gas_raw_ls` - Raw directory listings
-- `gas_raw_rm`, `gas_raw_mv`, `gas_raw_cp` - Raw file operations
-- `gas_raw_find` - Pattern-based file discovery
+# Test installation without changes
+./install.sh --dry-run
 
-### 🔍 Search Operations
-- `gas_grep` - Search content with regex patterns  
-- `gas_find` - Find files using shell-like syntax
-
-### 🚀 Code Execution
-- `gas_run` - Execute JavaScript in GAS environment
-- `gas_run_api_exec` - Execute deployed functions
-
-### 📦 Project Management
-- `gas_project_create` - Create new projects
-- `gas_project_set` - Set current project context
-- `gas_project_list` - List configured projects
-- `gas_info` - Get project details
-- `gas_project_metrics` - View execution metrics
-
-### 🔀 Git Integration (Safe Synchronization)
-- `gas_git_init` - Initialize git association with `.git.gs` marker
-- `gas_git_sync` - Safe pull-merge-push synchronization (always pulls first)
-- `gas_git_status` - Check git association and sync status
-- `gas_git_set_sync_folder` - Set local sync folder for git operations
-- `gas_git_get_sync_folder` - Query current sync folder location
-
-**Key Features**: Self-documenting `.git.gs` files, automatic README.md ↔ README.html transformation, dotfile handling with period prefix
-
-### 🌐 Deployment & Versioning
-- `gas_version_create` - Create project versions
-- `gas_deploy_create` - Deploy as web app or API
-- `gas_deploy_list` - List deployments
-- `gas_deploy_update` - Update deployments
-
-### 🔄 Local/Remote Synchronization  
-- `gas_pull` - Pull remote files to local with caching
-- `gas_push` - Push local files to remote
-- `gas_status` - Compare local vs remote state
-- `gas_sync` - Bidirectional synchronization
-
-## 📚 Examples
-
-### Basic Workflow: Smart vs Raw Tools
-
-**Smart Tools** (Recommended for development):
-```javascript
-// Write a module - CommonJS wrapper added automatically
-await gas_write({
-  scriptId: "your-script-id", 
-  path: "utils/math",
-  content: `
-    function add(a, b) { return a + b; }
-    function multiply(a, b) { return a * b; }
-    module.exports = { add, multiply };
-  `
-});
-
-// Read the same file - CommonJS wrapper removed automatically  
-const content = await gas_cat({
-  scriptId: "your-script-id",
-  path: "utils/math"
-});
-// Returns clean user code without wrapper functions
-
-// Copy with CommonJS processing
-await gas_cp({
-  scriptId: "your-script-id",
-  fromPath: "utils/math", 
-  toPath: "backup/math"  // Source unwrapped, destination re-wrapped
-});
+# Check configuration
+cat ~/.claude/claude_desktop_config.json | jq '.mcpServers.gas'
 ```
 
-**Raw Tools** (For exact content control):
-```javascript  
-// Write exact content - no processing
-await gas_raw_write({
-  scriptId: "your-script-id",
-  path: "legacy/old-script", 
-  content: `function _main() { console.log('exact content'); }`
-});
-
-// Read exact content - including all wrappers
-const rawContent = await gas_raw_cat({
-  scriptId: "your-script-id", 
-  path: "legacy/old-script"
-});
-// Returns exactly what's stored in GAS
-
-// Copy without any processing
-await gas_raw_cp({
-  scriptId: "your-script-id",
-  fromPath: "legacy/old-script",
-  toPath: "archive/old-script"  // Exact copy
-});
-```
-
-### Git Integration Workflow
-
-```javascript
-// 1. Initialize git association
-await gas_git_init({
-  scriptId: "your-script-id",
-  repository: "https://github.com/user/project.git",
-  branch: "main", 
-  localPath: "~/gas-repos/project-your-script-id"
-});
-
-// 2. Set sync folder for git commands
-await gas_git_set_sync_folder({
-  scriptId: "your-script-id",
-  syncFolder: "~/dev/my-gas-project" 
-});
-
-// 3. Safe synchronization (always pulls first, then merges)
-await gas_git_sync({
-  scriptId: "your-script-id"
-});
-
-// Check association and sync status
-const status = await gas_git_status({
-  scriptId: "your-script-id"
-});
-// Shows git association, sync folder, and file differences
-```
-
-### Spreadsheet Automation
-
-```javascript
-// Create project
-const project = await gas_project_create({
-  title: "Spreadsheet Processor"
-});
-
-// Add processing logic
-await gas_write({
-  scriptId: project.scriptId,
-  path: "processor",
-  content: `
-    function processData(spreadsheetId) {
-      const ss = SpreadsheetApp.openById(spreadsheetId);
-      const data = ss.getActiveSheet().getDataRange().getValues();
-      
-      // Transform data
-      const processed = data.map(row => 
-        row.map(cell => typeof cell === 'number' ? cell * 2 : cell)
-      );
-      
-      // Write results
-      const newSheet = ss.insertSheet('Processed');
-      newSheet.getRange(1, 1, processed.length, processed[0].length)
-        .setValues(processed);
-      
-      return { rowsProcessed: processed.length };
-    }
-  `
-});
-
-// Execute
-const result = await gas_run({
-  scriptId: project.scriptId,
-  js_statement: 'processData("your-sheet-id")'
-});
-```
-
-### Gmail Automation
-
-```javascript
-await gas_write({
-  scriptId: project.scriptId,
-  path: "email-automation",
-  content: `
-    function sendBulkEmails(recipients, subject, template) {
-      return recipients.map(recipient => {
-        try {
-          const body = template.replace('{{name}}', recipient.name);
-          GmailApp.sendEmail(recipient.email, subject, body);
-          return { email: recipient.email, status: 'sent' };
-        } catch (error) {
-          return { email: recipient.email, status: 'failed', error: error.message };
-        }
-      });
-    }
-  `
-});
-```
-
-### Project Context Management
-
-```javascript
-// Set a project as current context
-await gas_project_set({
-  scriptId: "your-script-id",
-  name: "MyProject",
-  description: "Main development project"
-});
-
-// Now tools can omit scriptId - it's resolved automatically
-await gas_write({
-  path: "main",  // scriptId auto-resolved from context
-  content: `console.log('Hello World');`
-});
-
-// List all configured projects
-const projects = await gas_project_list();
-// Shows current project and all configured ones
-
-// Get detailed project information
-const info = await gas_info();  // Uses current project context
-// Returns file count, size, last modified, etc.
-```
-
-### Virtual File Handling (Dotfiles)
-
-```javascript
-// Write a .gitignore file - automatically translated to .gitignore.gs
-await gas_write({
-  path: ".gitignore",
-  content: `
-    node_modules/
-    *.log
-    .env
-  `
-});
-
-// Read back - translation is transparent
-const gitignore = await gas_cat({ path: ".gitignore" });
-// Returns clean content, no .gs extension visible
-
-// List shows virtual names
-const files = await gas_ls({ path: "." });
-// Shows: [".gitignore", "main.js"] not [".gitignore.gs", "main.gs"]
-```
-
-### Advanced Search and Discovery
-
-```javascript
-// Find files with patterns
-const jsFiles = await gas_find({ name: "*.js" });
-const testFiles = await gas_find({ name: "*test*" });  
-const dotfiles = await gas_find({ name: ".git*" });
-
-// Search content with regex
-const todos = await gas_grep({ 
-  pattern: "TODO|FIXME", 
-  flags: "i"  // case insensitive
-});
-
-// Raw find for exact GAS names
-const rawGitFiles = await gas_raw_find({ name: ".git*" });
-// Finds actual .git.gs files in GAS storage
-```
-
-## 🏗️ Architecture
-
-### Project Structure
+## 📂 Project Structure
 
 ```
 mcp_gas/
-├── src/
-│   ├── server/          # MCP server implementation
-│   ├── tools/           # Tool implementations
-│   ├── auth/            # OAuth & session management
-│   ├── api/             # Google Apps Script API client
-│   └── utils/           # Utilities & helpers
-├── test/                # Test suites
-├── docs/                # Documentation
-└── examples/            # Example scripts
+├── src/                     # TypeScript source code
+│   ├── tools/              # All 46 MCP tools
+│   ├── auth/               # OAuth authentication
+│   ├── api/                # Google Apps Script API client
+│   └── server/             # MCP server implementation
+├── dist/                    # Compiled JavaScript (after build)
+├── test/                    # Test suites
+├── docs/                    # Documentation
+├── install.sh              # Automated installer
+├── uninstall.sh            # Clean uninstaller
+├── gas-config.json         # Project configuration
+└── oauth-config.json       # OAuth credentials (create this)
 ```
 
-### Key Architecture Principles
+## 🧪 Development
 
-- **Flat Function Architecture** - Each tool is a separate function following MCP best practices
-- **Smart vs Raw Tools** - Smart tools process CommonJS automatically, raw tools preserve exact content  
-- **Virtual File Translation** - Seamless handling of dotfiles (`.git` → `.git.gs` with period prefix)
-- **Project Context Management** - Automatic script ID resolution from `gas-config.json`
-- **Three-Layer File Access** - Local cache → Remote GAS → Git mirror (~/gas-repos pattern)
-- **Session-Based Authentication** - OAuth 2.0 PKCE with secure token storage and auto-refresh
-- **CommonJS Module System** - Automatic wrapping/unwrapping for require(), module.exports pattern
-
-## 🧪 Testing
-
+### Setup
 ```bash
-# Run tests
-npm test                    # Core system tests  
-npm run test:unit          # Unit tests for individual modules
-npm run test:integration   # Real GAS API tests (requires auth)
-npm run test:system        # System-level MCP protocol tests
-npm run test:security      # Security and validation tests
-npm run test:verification  # API schema and compliance verification
-npm run test:all           # Run unit + system tests
+# Clone and install
+git clone https://github.com/whichguy/mcp_gas.git
+cd mcp_gas
+npm install
 
-# Debug mode
-DEBUG=mcp:* npm test
+# Development mode with watch
+npm run dev
 
-# Single test file  
-npx mocha test/system/protocol/consolidated-core.test.ts --timeout 30000
+# Build for production
+npm run build
 ```
 
-## 🔧 Development
-
-### Building
-
+### Testing
 ```bash
-npm run build              # Production build
-npm run build:dev          # Development build
-npm run dev                # Watch mode
+npm test                    # Run all tests
+npm run test:unit          # Unit tests only
+npm run test:integration   # Integration tests (requires auth)
+npm run test:system        # System-level tests
+npm run test:security      # Security validation
 ```
 
-### Adding New Tools
+### Architecture
 
-1. Create tool class extending `BaseTool` in `src/tools/`
-2. Implement required properties: `name`, `description`, `inputSchema`  
-3. Implement `execute(params)` method with validation and error handling
-4. Register in `src/server/mcpServer.ts` tool array
-5. Add tests in appropriate `test/` subdirectory (unit/integration/system/security)
-6. Update documentation and examples
+The MCP GAS Server uses a layered architecture:
 
-### Debugging
+1. **MCP Protocol Layer**: Handles communication with AI assistants
+2. **Tool Layer**: 46 specialized tools for GAS operations
+3. **Authentication Layer**: OAuth 2.0 PKCE flow with token management
+4. **API Client Layer**: Google Apps Script API v1 client with rate limiting
+5. **File System Layer**: Local caching and synchronization
 
-```bash
-DEBUG=mcp:* npm start           # All logs
-DEBUG=mcp:auth npm start        # Auth only
-DEBUG=mcp:execution npm start   # Execution only
-```
+## 📚 Documentation
 
-## 📖 Documentation
-
-- [API Reference](docs/api/API_REFERENCE.md) - Complete tool documentation
-- [Developer Guide](docs/developer/) - Architecture and development
-- [Examples](examples/README.md) - Code examples and patterns
-- [CLAUDE.md](CLAUDE.md) - Claude Code specific instructions
-- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues
-
-## 🔒 Security
-
-- **OAuth 2.0 PKCE** - Enhanced security flow
-- **Secure Storage** - OS-level token protection
-- **Input Validation** - Comprehensive parameter validation
-- **Command Injection Prevention** - Safe Git operations
-- **Rate Limiting** - Respects API quotas
+- **[Tool Reference](docs/TOOLS.md)**: Detailed documentation for all 46 tools
+- **[Architecture Guide](docs/ARCHITECTURE.md)**: System design and internals
+- **[Git Integration](docs/GIT_SYNC_WORKFLOWS.md)**: Version control workflows
+- **[API Documentation](docs/API.md)**: TypeScript API reference
+- **[Examples](examples/)**: Sample projects and use cases
 
 ## 🤝 Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines.
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+- 🐛 [Report bugs](https://github.com/whichguy/mcp_gas/issues)
+- 💡 [Request features](https://github.com/whichguy/mcp_gas/issues)
+- 📖 [Improve documentation](https://github.com/whichguy/mcp_gas/pulls)
+- 🔧 [Submit pull requests](https://github.com/whichguy/mcp_gas/pulls)
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-- **Documentation**: [Full docs](docs/README.md)
-- **Issues**: [GitHub Issues](https://github.com/whichguy/mcp_gas/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/whichguy/mcp_gas/discussions)
+MIT - See [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 
-Built with:
+Built on:
 - [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
 - [Google Apps Script API](https://developers.google.com/apps-script/api)
-- [TypeScript](https://www.typescriptlang.org/)
-- [Node.js](https://nodejs.org/)
+- TypeScript, Node.js, and the amazing open-source community
 
 ---
 
 <div align="center">
 
-**Made with ❤️ by the MCP GAS Server team**
+### 🌟 Ready to supercharge your Google Apps Script development?
 
-[⭐ Star this repo](https://github.com/whichguy/mcp_gas) • [🐛 Report a bug](https://github.com/whichguy/mcp_gas/issues) • [💡 Request a feature](https://github.com/whichguy/mcp_gas/issues)
+<br>
+
+<a href="#-quick-start">
+  <img src="https://img.shields.io/badge/Get%20Started-00897B?style=for-the-badge&logo=google&logoColor=white" alt="Get Started">
+</a>
+&nbsp;&nbsp;
+<a href="https://github.com/whichguy/mcp_gas/issues">
+  <img src="https://img.shields.io/badge/Report%20Issue-DC382D?style=for-the-badge&logo=github&logoColor=white" alt="Report Issue">
+</a>
+&nbsp;&nbsp;
+<a href="https://github.com/whichguy/mcp_gas">
+  <img src="https://img.shields.io/badge/Star%20on%20GitHub-FFC107?style=for-the-badge&logo=github&logoColor=black" alt="Star on GitHub">
+</a>
+
+<br><br>
+
+Made with ❤️ by the MCP GAS community
 
 </div>
