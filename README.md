@@ -71,25 +71,30 @@ MCP GAS Server bridges AI assistants with Google Apps Script, enabling:
 
 <div align="center">
 
+#### 🎯 Fully Automated (Recommended)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/whichguy/mcp_gas/main/install.sh | bash -s -- --auto
 ```
+*This single command: downloads → installs dependencies → builds → configures all IDEs*
 
 **— OR —**
 
+#### 🔧 Manual Installation
 ```bash
 git clone https://github.com/whichguy/mcp_gas.git && cd mcp_gas && ./install.sh
 ```
+*Clone first, then run installer with more control*
 
 </div>
 
 ### Prerequisites
 
-| Requirement | Why Needed | How to Get |
-|------------|------------|------------|
-| **Node.js 18+** | Runs the MCP server | [Download](https://nodejs.org/) |
-| **Google Account** | Access Google Apps Script | [Create free account](https://accounts.google.com/) |
-| **AI Assistant** | Sends commands to MCP server | [Claude](https://claude.ai/download), [Cursor](https://cursor.sh/), etc. |
+| Requirement | Why Needed | How to Get | Auto-Checked? |
+|------------|------------|------------|---------------|
+| **Git** | Clones repository | [Download](https://git-scm.com/) | ✅ Yes |
+| **Node.js 18+** | Runs the MCP server | [Download](https://nodejs.org/) | ✅ Yes |
+| **Google Account** | Access Google Apps Script | [Create free](https://accounts.google.com/) | ❌ Manual |
+| **AI Assistant** | Sends commands to server | [Claude](https://claude.ai/download), [Cursor](https://cursor.sh/) | ✅ Detected |
 
 ### 🎯 First Project in 2 Minutes
 
@@ -132,14 +137,21 @@ curl -fsSL https://raw.githubusercontent.com/whichguy/mcp_gas/main/install.sh | 
 
 ## ⚙️ Installation Details
 
-### Installation Script Features
-The installer (`install.sh`) provides:
-- ✅ **Idempotent operation** - Safe to run multiple times without duplicating entries
-- 🔍 **Auto-detection** of installed IDEs and editors
-- 🎯 **Supports 10+ IDEs**: Claude Desktop/Code, Cursor, VS Code, Zed, Windsurf, Neovim, Codex
-- 📦 **Automatic setup** - Dependencies, build, and configuration
-- 🔐 **OAuth checking** with helpful setup instructions
-- 💾 **Backup creation** before any modifications
+### What the Installer Does
+
+The `install.sh` script handles everything automatically:
+
+1. **🔄 Downloads Repository** (if using curl)
+2. **📦 Installs Dependencies** (`npm install`)
+3. **🔨 Builds Project** (`npm run build`)
+4. **🔍 Detects Your IDEs** (checks for 10+ IDEs)
+5. **⚙️ Configures Each IDE** (updates MCP settings)
+6. **🔗 Links to `dist/src/index.js`** (production build)
+
+Features:
+- ✅ **Idempotent** - Safe to run multiple times
+- 💾 **Creates Backups** - Before any modifications
+- 🔐 **Checks OAuth** - Guides you through Google setup
 
 ### Command-line Options
 ```bash
@@ -150,14 +162,26 @@ The installer (`install.sh`) provides:
 ./install.sh --help          # Show detailed usage
 ```
 
-### Manual Installation
+### Manual Build (Advanced)
+
+If the installer fails or you need custom setup:
+
 ```bash
-# Clone and build manually
+# 1. Clone repository
 git clone https://github.com/whichguy/mcp_gas.git
 cd mcp_gas
+
+# 2. Install dependencies
 npm install
+
+# 3. Build the project
 npm run build
+
+# 4. Configure your IDE manually
+# Point to: /absolute/path/to/mcp_gas/dist/src/index.js
 ```
+
+**Note**: The server binary is at `dist/src/index.js` after building, not in the source directory.
 
 ### Uninstallation
 ```bash
