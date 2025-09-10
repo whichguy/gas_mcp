@@ -21,8 +21,17 @@ npm run test:unit                # Unit tests for individual modules
 npm run test:integration         # Real GAS API tests (requires auth, 5min timeout)
 npm run test:system              # System-level MCP protocol tests
 npm run test:security            # Security and validation tests
+npm run test:performance         # Performance tests (60s timeout)
 npm run test:verification        # API schema and compliance verification
 npm run test:all                 # Run unit + system tests
+
+# Specialized verification tests
+npm run test:git                 # Verify git sync operations
+npm run test:auth                # Verify authentication flow
+npm run test:files               # Verify file operations
+npm run test:project             # Verify project management
+npm run test:execution           # Verify code execution
+npm run test:server              # Verify MCP server functionality
 
 # Run single test file
 npx mocha test/system/protocol/consolidated-core.test.ts --timeout 30000
@@ -39,34 +48,40 @@ npm run bundle:analyze           # Analyze bundle size
 # Production testing and verification
 npm run test:production          # Production readiness report
 npm run test:all-verify          # Run all verification tests
-npm run validate-setup.sh        # Validate setup and configuration
 ```
 
 ## Architecture Overview
 
 This is a Model Context Protocol (MCP) server that bridges AI assistants with Google Apps Script (GAS). It provides 46 tools for creating, managing, and executing GAS projects through a unified interface.
 
+### Session Management
+The server uses in-memory session management (`SessionAuthManager`) for handling multiple concurrent MCP clients. Sessions are stored in a global `Map` and are lost on server restart, requiring re-authentication. This simplified approach removes filesystem dependencies and complex locking since MCP is half-duplex.
+
 ### Core Flow: MCP Client ↔ MCP Server ↔ Google Apps Script API
 
 1. **MCP Protocol Layer** (`src/server/mcpServer.ts`)
    - Handles MCP protocol communication via stdio
-   - Registers and dispatches tool calls
+   - Registers and dispatches tool calls (all 46 tools imported and registered)
    - Manages error responses and tool results
+   - Entry point: `src/index.ts` starts the server
 
 2. **Tool Layer** (`src/tools/`)
-   - Each tool extends `BaseTool` with standardized interface
+   - Each tool extends `BaseTool` (`src/tools/base.ts`) with standardized interface
    - Tools handle parameter validation, authentication, and execution
-   - Smart tools (gas_*) provide enhanced functionality with local caching
-   - Raw tools (gas_raw_*) provide direct API access
+   - Smart tools (mcp__gas__*) provide enhanced functionality with local caching
+   - Raw tools (mcp__gas__raw_*) provide direct API access
+   - Specialized tools: filesystem.ts, execution.ts, deployments.ts, gitSync.ts, etc.
 
 3. **Authentication Layer** (`src/auth/`)
-   - OAuth 2.0 PKCE flow implementation
-   - Session-based token management with automatic refresh
-   - Singleton fallback for backward compatibility
+   - OAuth 2.0 PKCE flow implementation (`oauthClient.ts`)
+   - Session-based token management with automatic refresh (`sessionManager.ts`)
+   - Auth state management (`authState.ts`)
+   - Token storage in memory (no filesystem persistence)
 
 4. **API Client Layer** (`src/api/gasClient.ts`)
    - Google Apps Script API v1 client
-   - Rate limiting and retry logic
+   - Rate limiting (`rateLimiter.ts`) and retry logic
+   - Path parsing utilities (`pathParser.ts`)
    - Error transformation for MCP
 
 ### Key Architectural Patterns
@@ -75,7 +90,7 @@ This is a Model Context Protocol (MCP) server that bridges AI assistants with Go
 Every tool follows this structure:
 ```typescript
 export class GasTool extends BaseTool {
-  public name = 'gas_tool_name';
+  public name = 'mcp__gas__tool_name';  // Note: MCP naming with mcp__gas__ prefix
   public description = 'User-facing description';
   public inputSchema = {
     type: 'object',
@@ -115,6 +130,7 @@ Dotfiles are automatically translated for GAS compatibility:
 - `.gitignore` → `.gitignore.gs` 
 - `.env` → `.env.gs`
 - Translation happens transparently in both directions using period prefix
+- Handled by `src/utils/fileTransformations.ts` (also does Markdown ↔ HTML conversion)
 
 #### Local/Remote Synchronization
 Three-layer file access pattern:
@@ -144,13 +160,13 @@ Safe Git synchronization with separation of concerns:
 #### Recommended Workflow
 ```typescript
 // 1. Initialize association
-gas_git_init({ scriptId: "...", repository: "https://github.com/..." })
+mcp__gas__git_init({ scriptId: "...", repository: "https://github.com/..." })
 
 // 2. Clone in sync folder (LLM uses standard git)
 // cd /sync/folder && git clone ...
 
 // 3. Sync files (safe merge)
-gas_git_sync({ scriptId: "..." })  // ALWAYS pull-merge-push
+mcp__gas__git_sync({ scriptId: "..." })  // ALWAYS pull-merge-push
 
 // 4. Commit and push (standard git)
 // git add -A && git commit -m "..." && git push
@@ -161,8 +177,9 @@ See `docs/GIT_SYNC_WORKFLOWS.md` for complete documentation.
 ### Project Context Management
 
 The server maintains project context for simplified operations:
-- **gas_project_set** - Set current project and auto-pull files
-- **gas_project_list** - List configured projects
+- **mcp__gas__project_set** - Set current project and auto-pull files
+- **mcp__gas__project_list** - List configured projects
+- **mcp__gas__project_create** - Create new projects with infrastructure setup
 - Current project stored in `gas-config.json`
 - Tools auto-resolve script IDs from current context
 
@@ -201,40 +218,42 @@ All errors are transformed to MCP-compatible format with helpful messages.
 The MCP server provides 46 tools organized into logical categories:
 
 #### Smart Tools (CommonJS Processing)
-- **gas_cat, gas_write, gas_cp** - Handle CommonJS wrapping/unwrapping automatically
-- **gas_ls, gas_rm, gas_mv, gas_mkdir** - Directory and file operations with smart path handling
-- **gas_run, gas_info, gas_reorder** - Execution and project management
-- **gas_version_create, gas_deploy_create** - Deployment and versioning
+- **mcp__gas__cat, mcp__gas__write, mcp__gas__cp** - Handle CommonJS wrapping/unwrapping automatically
+- **mcp__gas__ls, mcp__gas__rm, mcp__gas__mv, mcp__gas__mkdir** - Directory and file operations with smart path handling
+- **mcp__gas__run, mcp__gas__info, mcp__gas__reorder** - Execution and project management
+- **mcp__gas__version_create, mcp__gas__deploy_create** - Deployment and versioning
+- **mcp__gas__grep, mcp__gas__find, mcp__gas__ripgrep, mcp__gas__sed** - Search and text processing tools
 
 #### Raw Tools (Exact Content Preservation)
-- **gas_raw_cat, gas_raw_write, gas_raw_cp** - Preserve exact content including CommonJS wrappers
-- **gas_raw_ls, gas_raw_rm, gas_raw_mv** - Low-level file operations
-- **gas_raw_find** - Pattern-based file discovery
+- **mcp__gas__raw_cat, mcp__gas__raw_write, mcp__gas__raw_cp** - Preserve exact content including CommonJS wrappers
+- **mcp__gas__raw_ls, mcp__gas__raw_rm, mcp__gas__raw_mv** - Low-level file operations
+- **mcp__gas__raw_find, mcp__gas__raw_grep, mcp__gas__raw_ripgrep, mcp__gas__raw_sed** - Raw search and processing tools
 
 #### Git Integration Tools
-- **gas_git_init, gas_git_sync, gas_git_status** - Core Git synchronization
-- **gas_git_set_sync_folder, gas_git_get_sync_folder** - Local sync management
+- **mcp__gas__git_init, mcp__gas__git_sync, mcp__gas__git_status** - Core Git synchronization
+- **mcp__gas__git_set_sync_folder, mcp__gas__git_get_sync_folder** - Local sync management
 
 #### Project Management Tools
-- **gas_project_set, gas_project_list** - Project context management
-- **gas_auth** - OAuth authentication workflow
+- **mcp__gas__project_set, mcp__gas__project_list, mcp__gas__project_create** - Project context management
+- **mcp__gas__auth** - OAuth authentication workflow
 
 ### Key Design Principles
 - **Flat Function Architecture**: Each tool is a separate function following MCP best practices
 - **Smart vs Raw**: Smart tools process CommonJS, raw tools preserve exact content
-- **Consistent Naming**: gas_[action] for smart tools, gas_raw_[action] for raw tools
+- **Consistent Naming**: mcp__gas__[action] for smart tools, mcp__gas__raw_[action] for raw tools
 - **Period Prefix**: Dotfiles use actual periods (.gitignore.gs not _gitignore.gs)
 - **Unified Path Pattern**: All projects use ~/gas-repos/project-[scriptId]/ structure
 
 ## Development Workflow
 
 ### Adding a New Tool
-1. Create class in `src/tools/` extending `BaseTool`
-2. Implement required properties: `name`, `description`, `inputSchema`
+1. Create class in `src/tools/` extending `BaseTool` (located in `src/tools/base.ts`)
+2. Implement required properties: `name` (with `mcp__gas__` prefix), `description`, `inputSchema`
 3. Implement `execute(params)` method with validation and error handling
 4. Register in `src/server/mcpServer.ts` tool array
 5. Add tests in appropriate `test/` subdirectory (unit/integration/system/security)
 6. Update API documentation if needed
+
 
 ### TypeScript Conventions
 - Use `.js` extensions in imports (required for ES modules)
@@ -243,6 +262,7 @@ The MCP server provides 46 tools organized into logical categories:
 - Files use kebab-case, classes/interfaces use PascalCase
 - Strict TypeScript configuration with ES2022 target
 - ESM modules with Node.js resolution
+- Production builds use `tsconfig.production.json` (no source maps/declarations)
 
 ### Testing Approach
 - **Unit tests** (`test/unit/`) - Mock external dependencies, test individual modules
@@ -250,7 +270,10 @@ The MCP server provides 46 tools organized into logical categories:
 - **System tests** (`test/system/`) - MCP protocol compliance and server behavior
 - **Security tests** (`test/security/`) - Input validation and safety checks
 - **Verification tests** (`test/verification/`) - API schema compliance and tool validation
-- Use `sinon` for mocking, `chai` for assertions, organized in logical test hierarchy
+- **Performance tests** (`test/performance/`) - Performance benchmarks and optimization validation
+- Use `mocha` test runner with `chai` assertions
+- Test configuration in `.mocharc.json` with 15s default timeout
+- Global auth setup in `test/setup/globalAuth.ts`
 
 ## Security Considerations
 
