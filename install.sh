@@ -83,6 +83,33 @@ fi
 echo "================================"
 echo ""
 
+# Handle curl/piped installation
+if [[ "$AUTO" == true ]] && [[ ! -f "package.json" ]]; then
+    echo ""
+    echo "🔄 Auto-install mode detected - downloading MCP GAS Server..."
+    echo ""
+    
+    # Clone the repository if not already present
+    if [[ ! -d "mcp_gas" ]]; then
+        if ! command -v git &> /dev/null; then
+            print_error "Git is not installed. Please install git first."
+            exit 1
+        fi
+        
+        git clone https://github.com/whichguy/mcp_gas.git || {
+            print_error "Failed to clone repository"
+            exit 1
+        }
+        print_status "Repository cloned successfully"
+    fi
+    
+    # Change to the cloned directory
+    cd mcp_gas || {
+        print_error "Failed to enter mcp_gas directory"
+        exit 1
+    }
+fi
+
 # Find project root dynamically
 find_project_root() {
     local dir="$PWD"
@@ -99,6 +126,7 @@ find_project_root() {
 # Get project root
 if ! PROJECT_ROOT="$(find_project_root)"; then
     print_error "Not in mcp_gas project directory. Please run from within the project."
+    print_info "Try: git clone https://github.com/whichguy/mcp_gas.git && cd mcp_gas && ./install.sh"
     exit 1
 fi
 
