@@ -67,37 +67,45 @@ export interface RipgrepSearchOptions extends GrepSearchOptions {
   fixedStrings: boolean;          // Literal string search
   smartCase: boolean;             // Auto case detection
   multiline: boolean;             // Cross-line patterns
-  
+
   // Advanced matching
   wholeWord: boolean;             // Word boundaries
   invertMatch: boolean;           // Invert results
   onlyMatching: boolean;          // Match portions only
-  
+
   // Enhanced context control
   contextBefore?: number;         // Before context lines (-B)
   contextAfter?: number;          // After context lines (-A)
-  
+
   // Replace functionality
   replace?: string;               // Replacement pattern
-  
+
   // GAS file system options
   pseudoDepth?: number;           // Max "depth" by counting "/"
   path?: string;                  // Path pattern to search
-  
+
   // Output control
   context?: number;               // Context lines (same as contextAfter/Before)
   filesWithMatches?: boolean;     // Only return file names
   maxCount?: number;             // Max matches per file
-  
+
   // Performance options
   showStats: boolean;             // Show search statistics
   count?: boolean;                // Only show count of matches
+
+  // New features
+  ignoreCase?: boolean;           // Case-insensitive search (overrides smartCase)
+  sort?: 'none' | 'path' | 'modified';  // Result sorting
+  trim?: boolean;                 // Trim whitespace from result lines
 }
 
 // Normalized options with all defaults resolved
-export interface NormalizedRipgrepOptions extends Required<Omit<RipgrepSearchOptions, 'replace' | 'contextBefore' | 'contextAfter' | 'context' | 'pseudoDepth'>> {
+export interface NormalizedRipgrepOptions extends Required<Omit<RipgrepSearchOptions, 'replace' | 'contextBefore' | 'contextAfter' | 'context' | 'pseudoDepth' | 'ignoreCase' | 'sort' | 'trim'>> {
   // Optional fields that may remain undefined
   replace?: string;
+  ignoreCase?: boolean;
+  sort?: 'none' | 'path' | 'modified';
+  trim?: boolean;
   contextBefore: number;
   contextAfter: number;
   context: number;
@@ -983,7 +991,7 @@ export class RipgrepTool extends BaseTool {
       },
       includeFileTypes: {
         type: 'array',
-        items: { 
+        items: {
           type: 'string',
           enum: ['SERVER_JS', 'HTML', 'JSON']
         },
@@ -993,6 +1001,22 @@ export class RipgrepTool extends BaseTool {
           ['SERVER_JS', 'HTML'],           // JavaScript and HTML files
           ['JSON']                         // JSON files only
         ]
+      },
+      ignoreCase: {
+        type: 'boolean',
+        default: false,
+        description: 'Case-insensitive search (like ripgrep -i). Overrides smartCase when true.'
+      },
+      sort: {
+        type: 'string',
+        enum: ['none', 'path', 'modified'],
+        default: 'none',
+        description: 'Sort results: "path" (alphabetical by file path), "modified" (by modification time), "none" (API order)'
+      },
+      trim: {
+        type: 'boolean',
+        default: false,
+        description: 'Remove leading and trailing whitespace from result lines'
       },
       accessToken: {
         type: 'string',
@@ -1015,7 +1039,10 @@ export class RipgrepTool extends BaseTool {
         'API errors: {scriptId: "abc123...", patterns: ["error", "exception"], path: "api/*", context: 2}',
         'Root files only: {scriptId: "abc123...", pattern: "TODO", pseudoDepth: 0}',
         'Config files: {scriptId: "abc123...", pattern: "config", path: "*config*"}',
-        'Performance stats: {scriptId: "abc123...", pattern: "slow.*operation", showStats: true}'
+        'Performance stats: {scriptId: "abc123...", pattern: "slow.*operation", showStats: true}',
+        'Case-insensitive search: {scriptId: "abc123...", pattern: "todo", ignoreCase: true}',
+        'Sorted by path: {scriptId: "abc123...", pattern: "function", sort: "path"}',
+        'Trimmed output: {scriptId: "abc123...", pattern: "class.*\\\\{", trim: true}'
       ],
       
       fileSystemReality: 'Remember: GAS files are flat. "utils/helper.js" appears as filename "utils/helper" in the project, not as file "helper.js" in folder "utils".',
@@ -1056,6 +1083,9 @@ export class RipgrepTool extends BaseTool {
     // Apply virtual file translation for path if provided
     const translatedPath = params.path ? translatePathForOperation(params.path, true) : params.path;
 
+    // Handle ignoreCase: overrides smartCase and caseSensitive when true
+    const caseSensitive = params.ignoreCase ? false : (params.caseSensitive || false);
+
     // Build base ripgrep search options for normalization
     const baseOptions: RipgrepSearchOptions = {
       patterns: allPatterns,
@@ -1063,9 +1093,9 @@ export class RipgrepTool extends BaseTool {
       searchMode: params.fixedStrings ? 'literal' : 'auto',
       pathMode: 'auto',
       fixedStrings: params.fixedStrings || false,
-      smartCase: params.smartCase || false,
+      smartCase: params.ignoreCase ? false : (params.smartCase || false),  // ignoreCase overrides smartCase
       multiline: params.multiline || false,
-      caseSensitive: params.caseSensitive || false,
+      caseSensitive: caseSensitive,
       wholeWord: params.wholeWord || false,
       invertMatch: params.invertMatch || false,
       onlyMatching: params.onlyMatching || false,
@@ -1085,7 +1115,10 @@ export class RipgrepTool extends BaseTool {
       showStats: params.showStats || false,
       count: params.count || false,
       filesWithMatches: params.filesWithMatches || false,
-      maxCount: params.maxCount || 50
+      maxCount: params.maxCount || 50,
+      ignoreCase: params.ignoreCase,
+      sort: params.sort || 'none',
+      trim: params.trim || false
     };
 
     // Normalize all options with centralized defaults
@@ -1102,7 +1135,7 @@ export class RipgrepTool extends BaseTool {
     const compiledPatterns = this.ripgrepEngine.compileRipgrepPatterns(allPatterns, searchOptions);
 
     // Execute ripgrep search
-    const results = await this.ripgrepEngine.searchWithRipgrepPatterns(files, compiledPatterns, searchOptions, this.extractScriptId(params));
+    let results = await this.ripgrepEngine.searchWithRipgrepPatterns(files, compiledPatterns, searchOptions, this.extractScriptId(params));
 
     // Translate file names back to virtual names in results
     if (results.matches && Array.isArray(results.matches)) {
@@ -1116,10 +1149,20 @@ export class RipgrepTool extends BaseTool {
       });
     }
 
+    // Sort results if requested
+    if (params.sort && params.sort !== 'none' && results.matches && Array.isArray(results.matches)) {
+      results.matches = this.sortResults(results.matches, params.sort, files);
+    }
+
+    // Apply trim to result lines if requested
+    if (params.trim && results.matches && Array.isArray(results.matches)) {
+      results.matches = this.trimResultLines(results.matches);
+    }
+
     // Add metadata about content processing
     results.contentType = 'user-code';
     results.commonjsProcessed = true;
-    
+
     // Add formatted output
     results.formattedOutput = this.ripgrepEngine.formatRipgrepResults(results, searchOptions.compact);
 
@@ -1167,7 +1210,7 @@ export class RipgrepTool extends BaseTool {
   private async getTargetFiles(params: any, accessToken?: string): Promise<GASFile[]> {
     // Apply virtual file translation for path
     const translatedPath = params.path ? translatePathForOperation(params.path, true) : params.path;
-    
+
     // Use hybrid script ID resolution with translated path
     const hybridResolution = resolveHybridScriptId(params.scriptId, translatedPath || '');
     const scriptId = hybridResolution.scriptId;
@@ -1192,6 +1235,53 @@ export class RipgrepTool extends BaseTool {
    */
   private extractScriptId(params: any): string | undefined {
     return params.scriptId;
+  }
+
+  /**
+   * Sort search results by specified criteria
+   */
+  private sortResults(matches: any[], sortBy: 'path' | 'modified', files: GASFile[]): any[] {
+    return [...matches].sort((a, b) => {
+      if (sortBy === 'path') {
+        // Sort alphabetically by file name
+        return a.fileName.localeCompare(b.fileName);
+      } else if (sortBy === 'modified') {
+        // Sort by modification time (newest first)
+        // Note: GAS files don't have lastModified in standard API response
+        // This is a placeholder for future enhancement
+        const aFile = files.find(f => f.name === a.fileName);
+        const bFile = files.find(f => f.name === b.fileName);
+        const aTime = (aFile as any)?.lastModified || 0;
+        const bTime = (bFile as any)?.lastModified || 0;
+        return bTime - aTime;
+      }
+      return 0;
+    });
+  }
+
+  /**
+   * Trim leading and trailing whitespace from result lines
+   */
+  private trimResultLines(matches: any[]): any[] {
+    return matches.map(fileResult => {
+      if (fileResult.lines && Array.isArray(fileResult.lines)) {
+        return {
+          ...fileResult,
+          lines: fileResult.lines.map((line: any) => {
+            if (typeof line === 'string') {
+              return line.trim();
+            } else if (line && typeof line.content === 'string') {
+              return {
+                ...line,
+                content: line.content.trim()
+              };
+            }
+            return line;
+          })
+        };
+      }
+      return fileResult;
+    });
   }
 
   /**
@@ -1394,11 +1484,27 @@ export class RawRipgrepTool extends BaseTool {
       },
       includeFileTypes: {
         type: 'array',
-        items: { 
+        items: {
           type: 'string',
           enum: ['SERVER_JS', 'HTML', 'JSON']
         },
         description: 'Filter by file types for raw content search'
+      },
+      ignoreCase: {
+        type: 'boolean',
+        default: false,
+        description: 'Case-insensitive search (like ripgrep -i). Overrides smartCase when true.'
+      },
+      sort: {
+        type: 'string',
+        enum: ['none', 'path', 'modified'],
+        default: 'none',
+        description: 'Sort results: "path" (alphabetical by file path), "modified" (by modification time), "none" (API order)'
+      },
+      trim: {
+        type: 'boolean',
+        default: false,
+        description: 'Remove leading and trailing whitespace from result lines'
       },
       accessToken: {
         type: 'string',
@@ -1408,14 +1514,17 @@ export class RawRipgrepTool extends BaseTool {
     required: ['scriptId', 'pattern'],
     llmGuidance: {
       whenToUse: 'Use for system analysis, debugging CommonJS wrappers, or searching complete file content including system-generated code.',
-      
+
       contentDifference: 'gas_raw_ripgrep searches complete file content including CommonJS wrappers and system code, while gas_ripgrep searches only clean user code.',
-      
+
       examples: [
         'Find wrapper issues: {scriptId: "abc123...", patterns: ["_main", "__defineModule__"], showStats: true}',
         'System code analysis: {scriptId: "abc123...", pattern: "globalThis\\.__", multiline: true}',
         'Wrapper debugging: {scriptId: "abc123...", pattern: "module\\s*=", context: 3}',
-        'Full content search: {scriptId: "abc123...", pattern: "CommonJS", path: "*", maxFiles: 200}'
+        'Full content search: {scriptId: "abc123...", pattern: "CommonJS", path: "*", maxFiles: 200}',
+        'Case-insensitive wrapper search: {scriptId: "abc123...", pattern: "_main", ignoreCase: true}',
+        'Sorted system analysis: {scriptId: "abc123...", pattern: "require", sort: "path"}',
+        'Trimmed wrapper output: {scriptId: "abc123...", pattern: "function", trim: true}'
       ],
       
       dataSource: 'Always makes direct API calls to retrieve complete file content including all system wrappers and infrastructure code.',
@@ -1445,6 +1554,9 @@ export class RawRipgrepTool extends BaseTool {
       allPatterns.push(...params.patterns);
     }
 
+    // Handle ignoreCase: overrides smartCase and caseSensitive when true
+    const caseSensitive = params.ignoreCase ? false : (params.caseSensitive || false);
+
     // Build base ripgrep search options for normalization (no path translation for raw version)
     const baseOptions: RipgrepSearchOptions = {
       patterns: allPatterns,
@@ -1452,9 +1564,9 @@ export class RawRipgrepTool extends BaseTool {
       searchMode: params.fixedStrings ? 'literal' : 'auto',
       pathMode: 'auto',
       fixedStrings: params.fixedStrings || false,
-      smartCase: params.smartCase || false,
+      smartCase: params.ignoreCase ? false : (params.smartCase || false),  // ignoreCase overrides smartCase
       multiline: params.multiline || false,
-      caseSensitive: params.caseSensitive || false,
+      caseSensitive: caseSensitive,
       wholeWord: params.wholeWord || false,
       invertMatch: params.invertMatch || false,
       onlyMatching: params.onlyMatching || false,
@@ -1474,7 +1586,10 @@ export class RawRipgrepTool extends BaseTool {
       showStats: params.showStats || false,
       count: params.count || false,
       filesWithMatches: params.filesWithMatches || false,
-      maxCount: params.maxCount || 50
+      maxCount: params.maxCount || 50,
+      ignoreCase: params.ignoreCase,
+      sort: params.sort || 'none',
+      trim: params.trim || false
     };
 
     // Normalize all options with centralized defaults
@@ -1494,12 +1609,22 @@ export class RawRipgrepTool extends BaseTool {
     const compiledPatterns = this.ripgrepEngine.compileRipgrepPatterns(allPatterns, searchOptions);
 
     // Execute ripgrep search on raw content
-    const results = await this.ripgrepEngine.searchWithRipgrepPatterns(files, compiledPatterns, searchOptions, this.extractScriptId(params));
+    let results = await this.ripgrepEngine.searchWithRipgrepPatterns(files, compiledPatterns, searchOptions, this.extractScriptId(params));
+
+    // Sort results if requested
+    if (params.sort && params.sort !== 'none' && results.matches && Array.isArray(results.matches)) {
+      results.matches = this.sortResults(results.matches, params.sort, files);
+    }
+
+    // Apply trim to result lines if requested
+    if (params.trim && results.matches && Array.isArray(results.matches)) {
+      results.matches = this.trimResultLines(results.matches);
+    }
 
     // Add metadata about raw content processing and data source
     results.contentType = 'raw-content';
     results.commonjsProcessed = false;
-    
+
     // Add formatted output
     results.formattedOutput = this.ripgrepEngine.formatRipgrepResults(results, searchOptions.compact);
 
@@ -1535,6 +1660,53 @@ export class RawRipgrepTool extends BaseTool {
    */
   private extractScriptId(params: any): string | undefined {
     return params.scriptId;
+  }
+
+  /**
+   * Sort search results by specified criteria
+   */
+  private sortResults(matches: any[], sortBy: 'path' | 'modified', files: GASFile[]): any[] {
+    return [...matches].sort((a, b) => {
+      if (sortBy === 'path') {
+        // Sort alphabetically by file name
+        return a.fileName.localeCompare(b.fileName);
+      } else if (sortBy === 'modified') {
+        // Sort by modification time (newest first)
+        // Note: GAS files don't have lastModified in standard API response
+        // This is a placeholder for future enhancement
+        const aFile = files.find(f => f.name === a.fileName);
+        const bFile = files.find(f => f.name === b.fileName);
+        const aTime = (aFile as any)?.lastModified || 0;
+        const bTime = (bFile as any)?.lastModified || 0;
+        return bTime - aTime;
+      }
+      return 0;
+    });
+  }
+
+  /**
+   * Trim leading and trailing whitespace from result lines
+   */
+  private trimResultLines(matches: any[]): any[] {
+    return matches.map(fileResult => {
+      if (fileResult.lines && Array.isArray(fileResult.lines)) {
+        return {
+          ...fileResult,
+          lines: fileResult.lines.map((line: any) => {
+            if (typeof line === 'string') {
+              return line.trim();
+            } else if (line && typeof line.content === 'string') {
+              return {
+                ...line,
+                content: line.content.trim()
+              };
+            }
+            return line;
+          })
+        };
+      }
+      return fileResult;
+    });
   }
 
   /**

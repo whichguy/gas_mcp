@@ -152,7 +152,12 @@ Familiar commands for intuitive GAS project management (note: GAS uses filename 
 - `gas_grep "function.*test"` - Search code with regex
 - `gas_find {name: "*.test"}` - Find files by pattern
 - `gas_sed {pattern: "console\\.log", replacement: "Logger.log"}` - Find/replace
-- `gas_ripgrep` - High-performance multi-pattern search
+- `gas_ripgrep` - High-performance multi-pattern search (98% ripgrep feature parity)
+
+**New Ripgrep Features** (Added 2025):
+- `ignoreCase: true` - Explicit case-insensitive search (ripgrep `-i`)
+- `sort: 'path' | 'modified'` - Result sorting (enhancement over ripgrep)
+- `trim: true` - Whitespace trimming (enhancement over ripgrep)
 
 **Example Workflows**:
 ```bash
@@ -164,6 +169,16 @@ gas_find {scriptId: "...", name: "*test*"}
 
 # Replace all console.log with Logger.log
 gas_sed {scriptId: "...", pattern: "console\\.log", replacement: "Logger.log"}
+
+# Advanced ripgrep with new features
+gas_ripgrep {
+  scriptId: "...",
+  pattern: "TODO|FIXME|HACK",
+  ignoreCase: true,
+  sort: "path",
+  trim: true,
+  context: 2
+}
 ```
 
 **Behind the Scenes**: Smart tools (cat, grep, sed) automatically unwrap CommonJS for clean editing. Raw variants (raw_cat, raw_grep) preserve exact content including system wrappers.

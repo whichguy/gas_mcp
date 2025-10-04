@@ -457,11 +457,14 @@ mcp__gas__sed({
   replacement: "Logger.log"
 })
 
-// High-performance multi-pattern search
+// High-performance multi-pattern search with NEW features
 mcp__gas__ripgrep({
   scriptId: "...",
-  pattern: "TODO|FIXME",
-  smartCase: true
+  pattern: "TODO|FIXME|HACK",
+  ignoreCase: true,  // NEW: Explicit case-insensitive search
+  sort: "path",      // NEW: Alphabetical sorting
+  trim: true,        // NEW: Clean whitespace
+  context: 2         // Show 2 lines of context
 })
 ```
 
