@@ -17,7 +17,7 @@ npm run clean                    # Clean dist/ directory
 ### Testing
 ```bash
 npm test                         # Run core system tests (30s timeout)
-npm run test:unit                # Unit tests for individual modules  
+npm run test:unit                # Unit tests for individual modules
 npm run test:integration         # Real GAS API tests (requires auth, 5min timeout)
 npm run test:system              # System-level MCP protocol tests
 npm run test:security            # Security and validation tests
@@ -98,14 +98,14 @@ export class GasTool extends BaseTool {
     required: ['fieldName'],
     additionalProperties: false
   };
-  
+
   async execute(params: any): Promise<any> {
     // 1. Validate input parameters
     const validated = this.validate.scriptId(params.scriptId);
-    
+
     // 2. Get authentication token
     const accessToken = await this.getAuthToken(params);
-    
+
     // 3. Perform operation with error handling
     try {
       const result = await this.gasClient.operation(validated, accessToken);
@@ -127,7 +127,7 @@ The server automatically manages a CommonJS-like module system for GAS:
 #### Virtual File Translation
 Dotfiles are automatically translated for GAS compatibility:
 - `.git` → `.git.gs` (stored as CommonJS module)
-- `.gitignore` → `.gitignore.gs` 
+- `.gitignore` → `.gitignore.gs`
 - `.env` → `.env.gs`
 - Translation happens transparently in both directions using period prefix
 - Handled by `src/utils/fileTransformations.ts` (also does Markdown ↔ HTML conversion)
@@ -188,7 +188,7 @@ The server maintains project context for simplified operations:
 ```
 MCPGasError (base)
 ├── ValidationError     - Parameter validation failures
-├── AuthenticationError - OAuth/token issues  
+├── AuthenticationError - OAuth/token issues
 ├── FileOperationError  - File access problems
 ├── QuotaError         - API quota exceeded
 └── ApiError           - Google API errors
