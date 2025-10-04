@@ -31,9 +31,11 @@ Google Apps Script is powerful for automating Google Workspace, but developing G
 ### The Solution
 MCP GAS Server bridges AI assistants with Google Apps Script, enabling:
 - **AI-Driven Development**: Tell Claude/Cursor what to build, and it handles the implementation
+- **Full CommonJS Modules**: `require()`, `module.exports`, automatic dependency resolution - write GAS like Node.js
+- **Ad-hoc Execution**: Run any JavaScript expression instantly - no deployment, no wrapper functions needed
+- **Unix-inspired Interface**: Familiar commands (`cat`, `grep`, `ls`, `find`, `sed`) for intuitive GAS project management
 - **Local Development**: Write code locally with full IDE support
 - **Automatic Sync**: Bidirectional sync between local files and Google's cloud
-- **Modern JavaScript**: CommonJS modules, require(), and proper code organization
 - **Git Integration**: Version control for your GAS projects with safe merging
 
 ### Who Is This For?
@@ -430,6 +432,116 @@ const result = await mcp__gas__run({
   js_statement: "require('fibonacci').fibonacci(10)"
 });
 // Returns: 55
+```
+
+## 📚 Quick Command Reference
+
+### Filesystem Operations (Unix-inspired)
+```javascript
+// Read file contents (auto-unwraps CommonJS)
+mcp__gas__cat({ scriptId: "...", path: "utils/helper" })
+
+// List files matching pattern
+mcp__gas__ls({ scriptId: "...", path: "utils/*" })
+
+// Search code with regex
+mcp__gas__grep({ scriptId: "...", pattern: "function.*test", outputMode: "content" })
+
+// Find files by name pattern
+mcp__gas__find({ scriptId: "...", name: "*.test" })
+
+// Find/replace with regex
+mcp__gas__sed({
+  scriptId: "...",
+  pattern: "console\\.log",
+  replacement: "Logger.log"
+})
+
+// High-performance multi-pattern search
+mcp__gas__ripgrep({
+  scriptId: "...",
+  pattern: "TODO|FIXME",
+  smartCase: true
+})
+```
+
+### Ad-hoc Code Execution
+```javascript
+// Execute mathematical expressions
+mcp__gas__run({ scriptId: "...", js_statement: "Math.PI * 2" })
+
+// Call Google Apps Script services
+mcp__gas__run({
+  scriptId: "...",
+  js_statement: "DriveApp.getRootFolder().getName()"
+})
+
+// Execute project functions with CommonJS
+mcp__gas__run({
+  scriptId: "...",
+  js_statement: "require('Calculator').fibonacci(10)"
+})
+
+// Complex data operations
+mcp__gas__run({
+  scriptId: "...",
+  js_statement: `
+    const data = require('API').fetchData();
+    const sheet = SpreadsheetApp.create('Report');
+    sheet.getActiveSheet().getRange(1,1,data.length,3).setValues(data);
+    return sheet.getId();
+  `
+})
+```
+
+### CommonJS Module Development
+```javascript
+// Write module with automatic CommonJS wrapping
+mcp__gas__write({
+  scriptId: "...",
+  path: "Calculator",
+  content: `
+    function add(a, b) { return a + b; }
+    function multiply(a, b) { return a * b; }
+    module.exports = { add, multiply };
+  `
+})
+
+// Use require() in other modules - automatic dependency resolution
+mcp__gas__write({
+  scriptId: "...",
+  path: "Main",
+  content: `
+    const calc = require('Calculator');
+    const result = calc.add(5, calc.multiply(2, 3));
+    Logger.log(result);  // Logs: 11
+  `
+})
+
+// Read shows clean user code (CommonJS wrapper removed)
+mcp__gas__cat({ scriptId: "...", path: "Calculator" })
+// Returns user code without _main() wrapper
+```
+
+### Git Integration
+```javascript
+// Initialize git association with .git.gs marker
+mcp__gas__git_init({
+  scriptId: "...",
+  repository: "https://github.com/owner/repo.git"
+})
+
+// Safe pull-merge-push synchronization (ALWAYS pulls first)
+mcp__gas__git_sync({ scriptId: "..." })
+
+// Check git status and sync folder location
+mcp__gas__git_status({ scriptId: "..." })
+
+// Set local sync folder for git operations
+mcp__gas__git_set_sync_folder({
+  scriptId: "...",
+  localPath: "~/my-projects/gas-app"
+})
 ```
 
 ## 🔧 Troubleshooting
