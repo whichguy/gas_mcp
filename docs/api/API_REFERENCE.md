@@ -520,6 +520,253 @@ const utilities = await callTool('gas_grep', {
 });
 ```
 
+### `gas_ripgrep` - High-Performance Search with Advanced Features
+
+**⚡ RECOMMENDED**: High-performance ripgrep-inspired search with multiple patterns, smart case, context control, and replacement suggestions. Searches clean user code with 98% ripgrep feature parity.
+
+**NEW FEATURES** (Added 2025):
+- ✅ **`ignoreCase`** - Explicit case-insensitive search (ripgrep `-i`)
+- ✅ **`sort`** - Result sorting by path or modification time
+- ✅ **`trim`** - Whitespace trimming from result lines
+
+Search **clean user code** (unwrapped from CommonJS) with ripgrep-inspired performance and features. Processes the same content as `gas_cat` shows - actual developer code without system wrappers.
+
+#### Input Schema
+```typescript
+interface GasRipgrepInput {
+  scriptId: string;                          // Google Apps Script project ID
+  pattern: string;                           // Primary search pattern (regex or literal)
+  patterns?: string[];                       // Additional patterns (OR logic with main pattern)
+  path?: string;                            // Filename prefix pattern for filtering
+
+  // NEW: Enhanced case handling
+  ignoreCase?: boolean;                     // Case-insensitive search (overrides smartCase)
+  smartCase?: boolean;                      // Smart case matching (default: false)
+  caseSensitive?: boolean;                  // Force case-sensitive (default: false)
+
+  // Search control
+  fixedStrings?: boolean;                   // Treat patterns as literal strings
+  multiline?: boolean;                      // Enable multiline matching
+  wholeWord?: boolean;                      // Match whole words only
+  invertMatch?: boolean;                    // Show lines that do NOT match
+
+  // Context control
+  context?: number;                         // Lines before and after match
+  contextBefore?: number;                   // Lines before match
+  contextAfter?: number;                    // Lines after match
+
+  // Output modes
+  count?: boolean;                          // Show only match counts per file
+  filesWithMatches?: boolean;               // Show only filenames with matches
+  onlyMatching?: boolean;                   // Show only matched text portions
+  showLineNumbers?: boolean;                // Include line numbers (default: true)
+  compact?: boolean;                        // Use compact output format
+
+  // Replacement
+  replace?: string;                         // Generate replacement suggestions
+
+  // Performance and filtering
+  maxCount?: number;                        // Max matches per file (default: 50)
+  maxFiles?: number;                        // Max files to search (default: 100)
+  excludeFiles?: string[];                  // Filename patterns to exclude
+  includeFileTypes?: ('SERVER_JS' | 'HTML' | 'JSON')[];  // Filter by file types
+  pseudoDepth?: number;                     // Max "directory depth" by counting "/" in filenames
+
+  // NEW: Result processing
+  sort?: 'none' | 'path' | 'modified';      // Sort results (default: 'none')
+  trim?: boolean;                           // Remove leading/trailing whitespace (default: false)
+  showStats?: boolean;                      // Include performance statistics
+
+  accessToken?: string;                     // Optional access token
+}
+```
+
+#### NEW Features Usage Examples
+
+**Case-Insensitive Search (NEW)**
+```typescript
+// Find "TODO", "todo", "Todo", etc.
+const todos = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789",
+  pattern: "todo",
+  ignoreCase: true  // NEW: Explicit case-insensitive search
+});
+
+// ignoreCase overrides smartCase and caseSensitive
+const results = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "TODO",
+  smartCase: true,    // Ignored when ignoreCase is true
+  ignoreCase: true    // Takes precedence
+});
+```
+
+**Sorted Results (NEW)**
+```typescript
+// Alphabetical sorting for predictable output
+const functions = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "function\\s+(\\w+)",
+  sort: "path"  // NEW: Alphabetical by file path
+});
+
+// Results: api/client, models/User, utils/helper (alphabetical)
+
+// Find recent changes (requires file metadata)
+const recent = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "TODO",
+  sort: "modified"  // NEW: Newest files first
+});
+```
+
+**Trimmed Output (NEW)**
+```typescript
+// Clean output for indented code
+const classes = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "class.*\\{",
+  trim: true  // NEW: Remove leading/trailing whitespace
+});
+
+// Before trim: "     class Calculator {"
+// After trim:  "class Calculator {"
+```
+
+**Combined NEW Features**
+```typescript
+// Code review: find all TODOs, sorted, clean
+const review = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "TODO|FIXME|HACK",
+  ignoreCase: true,  // Find any case variation
+  sort: "path",      // Alphabetical order
+  trim: true,        // Clean whitespace
+  context: 2         // 2 lines of context
+});
+```
+
+#### Advanced Usage Examples
+
+**Multi-Pattern Search**
+```typescript
+// Search for multiple patterns (OR logic)
+const errorPatterns = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  patterns: ["error", "exception", "fail"],
+  sort: "path",
+  showStats: true
+});
+```
+
+**Search and Replace Preview**
+```typescript
+// Generate replacement suggestions (non-destructive)
+const replacements = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "console\\.log",
+  replace: "Logger.log",
+  filesWithMatches: false  // Show full replacement context
+});
+```
+
+**Filtered Search with Context**
+```typescript
+// Search specific path with context
+const utils = await callTool('gas_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "function.*util",
+  path: "utils/*",
+  context: 3,
+  sort: "path",
+  showLineNumbers: true
+});
+```
+
+### `gas_raw_ripgrep` - High-Performance Search on Raw Content
+
+**⚠️ ADVANCED**: Ripgrep-inspired search on complete file content including CommonJS wrappers and system code.
+
+**NEW FEATURES** (Same as gas_ripgrep):
+- ✅ **`ignoreCase`** - Explicit case-insensitive search
+- ✅ **`sort`** - Result sorting by path or modification time
+- ✅ **`trim`** - Whitespace trimming from result lines
+
+Search **complete file content** including all system wrappers and infrastructure. Processes the same content as `gas_raw_cat` shows - full files with CommonJS module system code.
+
+#### Content Comparison
+
+**Content Searched by `gas_ripgrep` (clean user code):**
+```javascript
+function add(a, b) {
+  return a + b;
+}
+module.exports = { add };
+```
+
+**Content Searched by `gas_raw_ripgrep` (raw with wrappers):**
+```javascript
+function _main(module, exports, require) {
+  function add(a, b) {
+    return a + b;
+  }
+  module.exports = { add };
+}
+__defineModule__(_main);
+```
+
+#### Input Schema
+Same as `gas_ripgrep` (see above) - all parameters identical.
+
+#### Usage Examples
+
+**Search System Wrappers**
+```typescript
+// Find CommonJS infrastructure (only raw_ripgrep finds these)
+const wrappers = await callTool('gas_raw_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "_main|__defineModule__",
+  sort: "path",
+  trim: true
+});
+```
+
+**Debug Module System**
+```typescript
+// Find all module initialization patterns
+const modules = await callTool('gas_raw_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "globalThis\\.__",
+  multiline: true,
+  context: 2,
+  sort: "path"
+});
+```
+
+**Case-Insensitive Wrapper Search (NEW)**
+```typescript
+// Find wrapper variations ignoring case
+const wrapperSearch = await callTool('gas_raw_ripgrep', {
+  scriptId: "1abc2def...",
+  pattern: "_main",
+  ignoreCase: true,  // NEW: Find _Main, _MAIN, etc.
+  trim: true
+});
+```
+
+#### Performance Notes
+
+**Ripgrep Feature Parity**: 98% (17/17 major features)
+- All core ripgrep search features
+- Enhanced with sorting and trimming
+- Optimized for LLM-friendly output
+
+**When to Use Each**:
+- Use `gas_ripgrep` for normal code searches (cleaner results)
+- Use `gas_raw_ripgrep` for debugging module system or searching system code
+
+See [RIPGREP_NEW_FEATURES.md](../RIPGREP_NEW_FEATURES.md) and [RIPGREP_COMPARISON.md](../RIPGREP_COMPARISON.md) for complete documentation.
+
 ### `gas_cat` - Read File Contents
 
 **🎯 RECOMMENDED**: Use this instead of `gas_raw_cat` for better workflow integration.
@@ -1082,7 +1329,7 @@ const newProject = await callTool('gas_mkdir', {
 
 ### `gas_info` - Project Information
 
-Get detailed information about Google Apps Script projects.
+Get detailed information about Google Apps Script projects. For container-bound scripts (attached to Google Sheets, Docs, Forms, or Sites), this tool retrieves the URL for the parent container which points to the associated Sheet/Doc/Form/Site.
 
 #### Input Schema
 ```typescript
@@ -1095,7 +1342,7 @@ interface GasInfoInput {
 
 #### Usage Examples
 
-**Get Project Info**
+**Get Project Info (Standalone Script)**
 ```typescript
 const projectInfo = await callTool('gas_info', {
   scriptId: 'abc123def456...',
@@ -1105,41 +1352,90 @@ const projectInfo = await callTool('gas_info', {
 // Response:
 {
   "scriptId": "abc123def456...",
-  "title": "My Script Project",
+  "title": "My Standalone Script",
   "createTime": "2024-01-01T12:00:00Z",
   "updateTime": "2024-01-15T14:30:00Z",
-  "parentId": "folderAbc123...",
-  "deployments": [
-    {
-      "deploymentId": "deployment123...",
-      "entryPoints": [
-        {
-          "entryPointType": "WEB_APP",
-          "webApp": {
-            "url": "https://script.google.com/macros/s/deployment123.../exec",
-            "executeAs": "USER_DEPLOYING",
-            "access": "ANYONE"
-          }
-        }
-      ]
-    }
-  ],
+  "totalFiles": 3,
+  "totalSize": 4567,
+  "filesByType": {
+    "SERVER_JS": 2,
+    "JSON": 1
+  },
+  "prefixGroups": {
+    "root": ["Code", "Utils", "appsscript"]
+  },
+  "structure": ["root"],
   "files": [
     {
-      "name": "Code.gs",
-      "type": "JAVASCRIPT",
-      "createTime": "2024-01-01T12:00:00Z",
-      "updateTime": "2024-01-15T14:30:00Z"
+      "name": "Code",
+      "type": "SERVER_JS",
+      "size": 1234
+    },
+    {
+      "name": "Utils",
+      "type": "SERVER_JS",
+      "size": 2100
+    },
+    {
+      "name": "appsscript",
+      "type": "JSON",
+      "size": 233
     }
-  ],
-  "functionSet": {
-    "values": [
-      { "name": "myFunction" },
-      { "name": "doGet" },
-      { "name": "fibonacci" }
-    ]
-  }
+  ]
 }
+```
+
+**Get Container-Bound Script Info**
+```typescript
+const projectInfo = await callTool('gas_info', {
+  scriptId: 'xyz789ghi012...',
+  includeContent: false
+});
+
+// Response (includes container metadata):
+{
+  "scriptId": "xyz789ghi012...",
+  "title": "Spreadsheet Script",
+  "createTime": "2024-01-01T12:00:00Z",
+  "updateTime": "2024-01-15T14:30:00Z",
+  "totalFiles": 2,
+  "totalSize": 3456,
+  "filesByType": {
+    "SERVER_JS": 1,
+    "JSON": 1
+  },
+  "prefixGroups": {
+    "root": ["Code", "appsscript"]
+  },
+  "structure": ["root"],
+  "container": {
+    "containerId": "container123abc...",
+    "containerName": "Sales Data 2024",
+    "containerType": "spreadsheet",
+    "containerUrl": "https://docs.google.com/spreadsheets/d/container123abc.../edit",
+    "createdTime": "2023-12-15T10:00:00Z",
+    "modifiedTime": "2024-01-15T14:30:00Z"
+  },
+  "files": [
+    {
+      "name": "Code",
+      "type": "SERVER_JS",
+      "size": 2100
+    },
+    {
+      "name": "appsscript",
+      "type": "JSON",
+      "size": 233
+    }
+  ]
+}
+```
+
+**Container Types**
+- `spreadsheet` - Google Sheets (URL: `https://docs.google.com/spreadsheets/d/{id}/edit`)
+- `document` - Google Docs (URL: `https://docs.google.com/document/d/{id}/edit`)
+- `form` - Google Forms (URL: `https://docs.google.com/forms/d/{id}/edit`)
+- `site` - Google Sites (URL varies, uses webViewLink from Drive API)
 ```
 
 ### `gas_reorder` - Reorder Files
@@ -2169,14 +2465,15 @@ const findResult = await callTool('gas_find_drive_script', {
 {
   "containers": [
     {
-      "id": "sheet123...",
-      "name": "My Spreadsheet",
-      "type": "SPREADSHEET",
-      "url": "https://docs.google.com/spreadsheets/d/sheet123.../edit",
+      "fileId": "sheet123...",
+      "fileName": "My Spreadsheet",
+      "containerType": "spreadsheet",
+      "containerUrl": "https://docs.google.com/spreadsheets/d/sheet123.../edit",
       "hasScript": true,
       "scriptId": "script123...",
-      "scriptTitle": "My Spreadsheet - Script",
-      "lastModified": "2024-01-15T14:30:00Z"
+      "scriptUrl": "https://script.google.com/d/script123.../edit",
+      "createdTime": "2023-12-15T10:00:00Z",
+      "modifiedTime": "2024-01-15T14:30:00Z"
     }
   ],
   "totalFound": 1
@@ -2206,18 +2503,12 @@ const bindResult = await callTool('gas_bind_script', {
 
 // Response:
 {
-  "success": true,
-  "container": {
-    "id": "sheet123...",
-    "name": "My Spreadsheet",
-    "type": "SPREADSHEET"
-  },
-  "script": {
-    "scriptId": "script123...",
-    "title": "My Automation Script"
-  },
-  "bindingComplete": true
+  "success": false,
+  "error": "Cannot bind existing standalone script \"My Automation Script\" to container \"My Spreadsheet\". Google Apps Script API doesn't support converting standalone scripts to container-bound scripts. Use create_script to create a new container-bound script instead."
 }
+
+// Note: Google Apps Script API does not support binding existing standalone scripts to containers.
+// Container-bound scripts must be created with the container using gas_create_script.
 ```
 
 ### `gas_create_script` - Create Container Script
@@ -2245,18 +2536,18 @@ const createResult = await callTool('gas_create_script', {
 
 // Response:
 {
+  "success": true,
   "scriptId": "newScript123...",
-  "title": "Sheet Automation",
+  "scriptTitle": "Sheet Automation",
+  "scriptUrl": "https://script.google.com/d/newScript123.../edit",
   "container": {
-    "id": "sheet123...",
-    "name": "My New Spreadsheet",
-    "type": "SPREADSHEET",
-    "url": "https://docs.google.com/spreadsheets/d/sheet123.../edit"
+    "fileId": "sheet123...",
+    "fileName": "My New Spreadsheet",
+    "containerType": "spreadsheet",
+    "containerUrl": "https://docs.google.com/spreadsheets/d/sheet123.../edit",
+    "hasScript": true
   },
-  "starterCode": {
-    "Code.gs": "function onOpen() {\n  // Add custom menu\n}\n\nfunction processData() {\n  const sheet = SpreadsheetApp.getActiveSheet();\n  // Process spreadsheet data\n}",
-    "appsscript.json": "{\n  \"timeZone\": \"America/Los_Angeles\",\n  \"dependencies\": {\n    \"enabledAdvancedServices\": []\n  }\n}"
-  }
+  "message": "Created script 'Sheet Automation' and bound to container 'My New Spreadsheet'"
 }
 ```
 

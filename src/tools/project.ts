@@ -75,8 +75,8 @@ export class MkdirTool extends BaseTool {
  */
 export class InfoTool extends BaseTool {
   public name = 'info';
-  public description = 'Get detailed information about a Google Apps Script project';
-  
+  public description = 'Get detailed information about a Google Apps Script project. For container-bound scripts (attached to Google Sheets, Docs, Forms, or Sites), this tool retrieves the URL for the parent container which points to the associated Sheet/Doc/Form/Site.';
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -109,13 +109,16 @@ export class InfoTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    
+
     const scriptId = this.validate.scriptId(params.scriptId, 'project operation');
     const includeContent = this.validate.boolean(params.includeContent || false, 'includeContent', 'project operation');
 
-    // Get project metadata and files
+    // Get project metadata (includes parentId if container-bound)
+    const projectMetadata = await this.gasClient.getProject(scriptId, accessToken);
+
+    // Get project files
     const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-    
+
     // Analyze project structure
     const filesByType = files.reduce((acc: any, file: any) => {
       const type = file.type || 'unknown';
@@ -125,7 +128,7 @@ export class InfoTool extends BaseTool {
     }, {});
 
     // Calculate total size
-    const totalSize = files.reduce((sum: number, file: any) => 
+    const totalSize = files.reduce((sum: number, file: any) =>
       sum + (file.source?.length || 0), 0);
 
     // Group files by logical prefix (no real folders exist in GAS)
@@ -144,12 +147,28 @@ export class InfoTool extends BaseTool {
 
     const result: any = {
       scriptId,
+      title: projectMetadata.title,
+      createTime: projectMetadata.createTime,
+      updateTime: projectMetadata.updateTime,
       totalFiles: files.length,
       totalSize,
       filesByType,
       prefixGroups,
       structure: Object.keys(prefixGroups).sort()
     };
+
+    // If this is a container-bound script, fetch container metadata
+    if (projectMetadata.parentId) {
+      try {
+        const containerInfo = await this.fetchContainerInfo(projectMetadata.parentId, accessToken);
+        if (containerInfo) {
+          result.container = containerInfo;
+        }
+      } catch (error) {
+        console.error('Failed to fetch container info:', error);
+        // Continue without container info rather than failing
+      }
+    }
 
     if (includeContent) {
       result.files = files.map((file: any) => ({
@@ -167,6 +186,41 @@ export class InfoTool extends BaseTool {
     }
 
     return result;
+  }
+
+  /**
+   * Fetch container information from Google Drive API
+   */
+  private async fetchContainerInfo(containerId: string, accessToken: string): Promise<any> {
+    const url = `https://www.googleapis.com/drive/v3/files/${containerId}?fields=id,name,mimeType,webViewLink,createdTime,modifiedTime`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch container info: ${response.status} ${response.statusText}`);
+    }
+
+    const container = await response.json();
+
+    const containerType = container.mimeType?.includes('spreadsheet') ? 'spreadsheet' :
+                         container.mimeType?.includes('document') ? 'document' :
+                         container.mimeType?.includes('form') ? 'form' :
+                         container.mimeType?.includes('site') ? 'site' : 'unknown';
+
+    return {
+      containerId: container.id,
+      containerName: container.name,
+      containerType,
+      containerUrl: container.webViewLink || `https://drive.google.com/file/d/${container.id}/view`,
+      createdTime: container.createdTime,
+      modifiedTime: container.modifiedTime
+    };
   }
 }
 

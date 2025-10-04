@@ -32,6 +32,7 @@ export interface ContainerMatch {
   fileId: string;
   fileName: string;
   containerType: 'spreadsheet' | 'document' | 'form' | 'site';
+  containerUrl: string;
   hasScript: boolean;
   scriptId?: string;
   scriptUrl?: string;
@@ -138,11 +139,12 @@ export class FindDriveScriptTool extends BaseTool {
         // Process each match
         for (const file of searchResult.files || []) {
           const scriptId = await this.findAssociatedScript(file.id!, accessToken);
-          
+
           const match: ContainerMatch = {
             fileId: file.id!,
             fileName: file.name!,
             containerType: containerType.type,
+            containerUrl: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
             hasScript: scriptId !== null,
             scriptId: scriptId || undefined,
             scriptUrl: scriptId ? `https://script.google.com/d/${scriptId}/edit` : undefined,
@@ -193,16 +195,16 @@ export class FindDriveScriptTool extends BaseTool {
    * Search Google Drive for files matching the query
    */
   private async searchDriveFiles(query: string, accessToken: string): Promise<any> {
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime)&pageSize=100`;
-    
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,webViewLink,createdTime,modifiedTime)&pageSize=100`;
+
     console.error(`[GOOGLE DRIVE API] Starting search request`);
     console.error(`   Timestamp: ${new Date().toISOString()}`);
     console.error(`   URL: ${url}`);
     console.error(`   Query: ${query}`);
     console.error(`   Auth: Token present (${accessToken.substring(0, 10)}...)`);
-    
+
     const startTime = Date.now();
-    
+
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -239,12 +241,12 @@ export class FindDriveScriptTool extends BaseTool {
         throw new Error(`Unexpected response format from Drive API: ${contentType}`);
       }
     }
-    
+
     console.error(`[GOOGLE DRIVE API SUCCESS] Search completed`);
     console.error(`   Files found: ${(result as any).files?.length || 0}`);
     console.error(`   Response size: ${JSON.stringify(result).length} characters`);
     console.error(`   Total duration: ${duration}ms`);
-    
+
     return result;
   }
 
@@ -421,11 +423,12 @@ export class BindScriptTool extends BaseTool {
         const containerType = mimeType.includes('spreadsheet') ? 'spreadsheet' :
                              mimeType.includes('document') ? 'document' :
                              mimeType.includes('form') ? 'form' : 'site';
-        
+
         return {
           fileId: file.id!,
           fileName: file.name!,
           containerType: containerType as any,
+          containerUrl: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
           hasScript: false // Will be updated after binding
         };
       }
@@ -444,7 +447,7 @@ export class BindScriptTool extends BaseTool {
     url.searchParams.set('q', `name='${scriptName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.script' and trashed=false`);
     url.searchParams.set('pageSize', '100');
     url.searchParams.set('fields', 'files(id,name,createdTime,modifiedTime,parents)');
-    
+
     const response = await fetch(url.toString(), {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -475,7 +478,7 @@ export class BindScriptTool extends BaseTool {
         throw new Error(`Unexpected response format from Drive API: ${contentType}`);
       }
     }
-    
+
     if (data.files && data.files.length > 0) {
       const file = data.files[0]; // Take the first match
       return {
@@ -491,7 +494,7 @@ export class BindScriptTool extends BaseTool {
    * Search Google Drive for files matching the query
    */
   private async searchDriveFiles(query: string, accessToken: string): Promise<any> {
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime)&pageSize=100`;
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,webViewLink,createdTime,modifiedTime)&pageSize=100`;
     
     console.error(`[GOOGLE DRIVE API] Starting search request`);
     console.error(`   Timestamp: ${new Date().toISOString()}`);
@@ -712,11 +715,12 @@ export class CreateScriptTool extends BaseTool {
       
       if (searchResult.files && searchResult.files.length > 0) {
         const file = searchResult.files[0];
-        
+
         return {
           fileId: file.id!,
           fileName: file.name!,
           containerType: containerType.type,
+          containerUrl: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
           hasScript: false
         };
       }
@@ -729,14 +733,14 @@ export class CreateScriptTool extends BaseTool {
    * Search Google Drive for files matching the query
    */
   private async searchDriveFiles(query: string, accessToken: string): Promise<any> {
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime)&pageSize=100`;
-    
+    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,webViewLink,createdTime,modifiedTime)&pageSize=100`;
+
     console.error(`[GOOGLE DRIVE API] Starting search request`);
     console.error(`   Timestamp: ${new Date().toISOString()}`);
     console.error(`   URL: ${url}`);
     console.error(`   Query: ${query}`);
     console.error(`   Auth: Token present (${accessToken.substring(0, 10)}...)`);
-    
+
     const startTime = Date.now();
     
     const response = await fetch(url, {
