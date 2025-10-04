@@ -1,7 +1,7 @@
 {
   "name": "gas-server",
   "version": "1.0.0",
-  "description": "Model Context Protocol server for Google Apps Script with direct code execution, filesystem access, and automatic deployment management",
+  "description": "MCP server for Google Apps Script: CommonJS module system, ad-hoc code execution, Unix-inspired commands (cat, grep, ls), and AI-assisted development",
   "main": "dist/src/index.js",
   "type": "module",
   "scripts": {

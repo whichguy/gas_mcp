@@ -84,6 +84,92 @@ The server uses in-memory session management (`SessionAuthManager`) for handling
    - Path parsing utilities (`pathParser.ts`)
    - Error transformation for MCP
 
+### Core Capabilities
+
+This MCP server provides three breakthrough capabilities for Google Apps Script development:
+
+#### 1. Full CommonJS Module System
+
+Write GAS code exactly like Node.js with automatic module system support:
+
+**What You Get**:
+- `require('ModuleName')` - Import other modules with automatic dependency resolution
+- `module.exports = {...}` - Export functionality from your modules
+- `exports.func = ...` - Shorthand export syntax
+- Automatic wrapping/unwrapping - Write clean code, system handles module infrastructure
+
+**Example Usage**:
+```javascript
+// In Calculator.js - write clean user code
+function add(a, b) { return a + b; }
+function multiply(a, b) { return a * b; }
+module.exports = { add, multiply };
+
+// In Main.js - use require() naturally
+const calc = require('Calculator');
+const result = calc.add(5, calc.multiply(2, 3));  // Returns 11
+```
+
+**Behind the Scenes**: Tools like `gas_cat` show clean user code without wrappers. `gas_write` automatically wraps your code in `_main()` functions. `CommonJS.js` provides runtime module loading and caching.
+
+#### 2. Ad-hoc Code Execution
+
+Run any JavaScript expression instantly without deployment or wrapper functions:
+
+**What You Can Execute**:
+- Mathematical expressions: `Math.PI * 2`
+- Google Apps Script services: `DriveApp.getRootFolder().getName()`
+- Your project functions: `require("Utils").processData([1,2,3])`
+- Complex workflows: Multi-line operations with full GAS API access
+- Logger output automatically captured and returned
+
+**Example Usage**:
+```javascript
+// Execute one-liners instantly
+gas_run({scriptId: "...", js_statement: "new Date().toISOString()"})
+
+// Call your project functions
+gas_run({scriptId: "...", js_statement: "require('Calculator').fibonacci(10)"})
+
+// Complex data operations
+gas_run({scriptId: "...", js_statement: `
+  const data = require('API').fetchData();
+  const sheet = SpreadsheetApp.create('Report');
+  sheet.getActiveSheet().getRange(1,1,data.length,3).setValues(data);
+  return sheet.getId();
+`})
+```
+
+**Behind the Scenes**: The `gas_run` tool uses `__mcp_gas_run.js` execution infrastructure and deployment management to run code in Google's cloud environment without manual deployment steps.
+
+#### 3. Unix-inspired Command Interface
+
+Familiar commands for intuitive GAS project management (note: GAS uses filename prefixes, not real directories):
+
+**Core Commands**:
+- `gas_cat utils/helper` - Read file contents (unwraps CommonJS for editing)
+- `gas_ls utils/*` - List files matching pattern
+- `gas_grep "function.*test"` - Search code with regex
+- `gas_find {name: "*.test"}` - Find files by pattern
+- `gas_sed {pattern: "console\\.log", replacement: "Logger.log"}` - Find/replace
+- `gas_ripgrep` - High-performance multi-pattern search
+
+**Example Workflows**:
+```bash
+# Find all TODO comments
+gas_grep {scriptId: "...", pattern: "TODO:|FIXME:"}
+
+# List all test files
+gas_find {scriptId: "...", name: "*test*"}
+
+# Replace all console.log with Logger.log
+gas_sed {scriptId: "...", pattern: "console\\.log", replacement: "Logger.log"}
+```
+
+**Behind the Scenes**: Smart tools (cat, grep, sed) automatically unwrap CommonJS for clean editing. Raw variants (raw_cat, raw_grep) preserve exact content including system wrappers.
+
+---
+
 ### Key Architectural Patterns
 
 #### Tool Implementation Pattern
