@@ -260,8 +260,18 @@ export async function gas_auth({
             return {
               status: 'not_authenticated',
               message: 'Not currently authenticated',
-              authenticated: false
-            };
+              authenticated: false,
+              instructions: 'Use gas_auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
+              nextSteps: [
+                'Run: gas_auth({"mode": "start"})',
+                'Complete OAuth flow in browser',
+                'Retry your original request'
+              ],
+              example: {
+                command: 'gas_auth',
+                parameters: { mode: 'start' }
+              }
+            } as any;
           }
         } catch (statusError: any) {
           // CRITICAL: Never throw auth errors from status mode to prevent auto-auth trigger
@@ -269,8 +279,18 @@ export async function gas_auth({
           return {
             status: 'not_authenticated',
             message: 'Not currently authenticated (status check failed)',
-            authenticated: false
-          };
+            authenticated: false,
+            instructions: 'Use gas_auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
+            nextSteps: [
+              'Run: gas_auth({"mode": "start"})',
+              'Complete OAuth flow in browser',
+              'Retry your original request'
+            ],
+            example: {
+              command: 'gas_auth',
+              parameters: { mode: 'start' }
+            }
+          } as any;
         }
 
       case 'logout':

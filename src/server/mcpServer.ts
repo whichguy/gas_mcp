@@ -685,7 +685,7 @@ export class MCPGasServer {
     
     // Clear ALL cached session tokens on startup (user requested)
     console.error('Clearing all cached session tokens on startup...');
-    const clearedSessions = SessionAuthManager.clearAllSessions();
+    const clearedSessions = await SessionAuthManager.clearAllSessions();
     console.error(`Cleared ${clearedSessions} cached session token(s)`);
     
     // Clear all in-memory sessions including browser launch flags
@@ -710,9 +710,9 @@ export class MCPGasServer {
     console.error('Use gas_auth(mode="start") to authenticate with Google Apps Script');
     console.error('Authentication: Tools will return clear instructions when auth is needed');
     console.error('Direct execution: gas_run can execute ANY statement without wrapper functions');
-    
+
     // Clean up expired sessions on startup
-    this.cleanupExpiredSessions();
+    await this.cleanupExpiredSessions();
   }
 
   /**
@@ -731,7 +731,7 @@ export class MCPGasServer {
   /**
    * Clean up expired sessions
    */
-  private cleanupExpiredSessions(): void {
+  private async cleanupExpiredSessions(): Promise<void> {
     const now = Date.now();
     const sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours
     let cleaned = 0;
@@ -748,7 +748,7 @@ export class MCPGasServer {
     }
     
     // Also clean up file-based sessions
-    const filesCleaned = SessionAuthManager.cleanupExpiredSessions();
+    const filesCleaned = await SessionAuthManager.cleanupExpiredSessions();
     if (filesCleaned > 0) {
       console.error(`Cleaned up ${filesCleaned} expired session files`);
     }
@@ -789,7 +789,7 @@ export class MCPGasServer {
     return {
       activeSessions: this.sessions.size,
       sessions: activeSessions,
-      fileSessions: SessionAuthManager.listActiveSessions().length,
+      fileSessions: (await SessionAuthManager.listActiveSessions()).length,
       uptime: process.uptime(),
       memory: process.memoryUsage()
     };
