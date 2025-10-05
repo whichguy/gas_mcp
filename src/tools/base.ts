@@ -8,6 +8,7 @@ import { GASErrorHandler, ErrorContext } from '../utils/errorHandler.js';
 import { MCPValidator } from '../utils/validation.js';
 import { AuthConfig } from '../auth/oauthClient.js';
 import { rateLimiter } from '../api/rateLimiter.js';
+import { loadOAuthConfigFromJson } from './authConfig.js';
 
 /**
  * Base class for all MCP Gas tools with comprehensive authentication and validation support
@@ -163,7 +164,6 @@ export abstract class BaseTool implements Tool {
     
     // Use simplified OAuth configuration from JSON file only
     try {
-      const { loadOAuthConfigFromJson } = require('./auth.js');
       const fullConfig = loadOAuthConfigFromJson();
       this.authClient = new GASAuthClient(fullConfig);
     } catch (error) {

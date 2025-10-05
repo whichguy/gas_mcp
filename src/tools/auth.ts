@@ -9,6 +9,13 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASAuthClient, AuthConfig } from '../auth/oauthClient.js';
 import { OAuthError } from '../errors/mcpErrors.js';
 import { GASClient } from '../api/gasClient.js';
+import { loadOAuthConfigFromJson } from './authConfig.js';
+import {
+  signalAuthCompletion,
+  signalAuthError,
+  authCompletionResolvers,
+  resolverStates
+} from '../auth/authSignals.js';
 
 // OAuth scopes for Google Apps Script API
 const REQUIRED_SCOPES = [
@@ -33,35 +40,9 @@ let cachedOAuthConfig: AuthConfig | null = null;
 const activeAuthFlows = new Map<string, Promise<any>>();
 const authFlowMutex = new Map<string, Promise<void>>();
 
-// RACE CONDITION FIX: Resolver state tracking to prevent duplicate signals
-const authCompletionResolvers = new Map<string, {
-  resolve: (value: any) => void;
-  reject: (error: any) => void;
-  timeout: NodeJS.Timeout;
-}>();
-const resolverStates = new Map<string, 'pending' | 'resolved' | 'rejected'>();
+// Note: authCompletionResolvers and resolverStates now imported from '../auth/authSignals.js'
 
-/**
- * Load OAuth configuration from unified config
- */
-export function loadOAuthConfigFromJson(): AuthConfig {
-  console.error('🔧 Loading OAuth configuration from unified config...');
-  
-  // This will be updated to async when the calling code is refactored
-  // For now, we'll use hardcoded config to maintain compatibility
-  const authConfig: AuthConfig = {
-    client_id: '428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com',
-    type: 'uwp',
-    redirect_uris: ['http://127.0.0.1/*', 'http://localhost/*'],
-    scopes: REQUIRED_SCOPES
-  };
-
-  console.error('✅ OAuth configuration loaded (unified config transition in progress)');
-  console.error(`🔑 Client ID: ${authConfig.client_id.substring(0, 30)}...`);
-  console.error(`🏷️  Type: ${authConfig.type?.toUpperCase()} (PKCE-enabled)`);
-
-  return authConfig;
-}
+// Note: loadOAuthConfigFromJson is now imported from './authConfig.js' to avoid circular dependency
 
 /**
  * Get OAuth configuration (cached)
@@ -73,57 +54,9 @@ function getOAuthConfig(): AuthConfig {
   return cachedOAuthConfig;
 }
 
-/**
- * Signal authentication completion with state protection
- * RACE CONDITION FIX: Prevents duplicate completion signals
- */
-export function signalAuthCompletion(authKey: string, result: any): void {
-  // ATOMIC STATE CHECK - prevent duplicate signals
-  const currentState = resolverStates.get(authKey);
-  if (currentState && currentState !== 'pending') {
-    console.error(`⚠️ Ignoring duplicate completion for ${authKey} (state: ${currentState})`);
-    return;
-  }
-  
-  const resolver = authCompletionResolvers.get(authKey);
-  if (resolver) {
-    console.error(`🎯 Signaling auth completion for ${authKey}:`, result.status);
-    
-    // ATOMIC STATE TRANSITION
-    resolverStates.set(authKey, 'resolved');
-    clearTimeout(resolver.timeout);
-    authCompletionResolvers.delete(authKey);
-    resolverStates.delete(authKey); // Cleanup state tracking
-    
-    resolver.resolve(result);
-  }
-}
-
-/**
- * Signal authentication error with state protection
- * RACE CONDITION FIX: Prevents duplicate error signals
- */
-export function signalAuthError(authKey: string, error: any): void {
-  // ATOMIC STATE CHECK - prevent duplicate signals
-  const currentState = resolverStates.get(authKey);
-  if (currentState && currentState !== 'pending') {
-    console.error(`⚠️ Ignoring duplicate error for ${authKey} (state: ${currentState})`);
-    return;
-  }
-  
-  const resolver = authCompletionResolvers.get(authKey);
-  if (resolver) {
-    console.error(`❌ Signaling auth error for ${authKey}:`, error.message);
-    
-    // ATOMIC STATE TRANSITION
-    resolverStates.set(authKey, 'rejected');
-    clearTimeout(resolver.timeout);
-    authCompletionResolvers.delete(authKey);
-    resolverStates.delete(authKey); // Cleanup state tracking
-    
-    resolver.reject(error);
-  }
-}
+// Note: signalAuthCompletion and signalAuthError are now imported from '../auth/authSignals.js'
+// They are re-exported here for backward compatibility
+export { signalAuthCompletion, signalAuthError };
 
 /**
  * Atomic auth flow execution with mutex protection

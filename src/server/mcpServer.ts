@@ -98,6 +98,9 @@ import {
   GitGetSyncFolderTool
 } from '../tools/gitSync.js';
 
+// Import Google Sheets SQL tool
+import { SheetSqlTool } from '../tools/sheets/sheetsSql.js';
+
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
 
@@ -439,10 +442,13 @@ export class MCPGasServer {
       // 🔧 Git Sync - SAFE GIT INTEGRATION (5 tools replacing old 12 tools)
       new GitInitTool(authManager),           // Initialize git association with .git.gs file
       new GitSyncTool(authManager),           // Safe pull-merge-push synchronization
-      new GitStatusTool(authManager),         // Check git association and sync status  
+      new GitStatusTool(authManager),         // Check git association and sync status
       new GitSetSyncFolderTool(authManager),  // Set/update sync folder location
       new GitGetSyncFolderTool(authManager),  // Query sync folder location
-      
+
+      // 📊 Google Sheets SQL - SQL-STYLE OPERATIONS on Google Sheets
+      new SheetSqlTool(authManager),          // Execute SELECT/INSERT/UPDATE/DELETE on Google Sheets with SQL syntax
+
       // NOTE: All project context tools are now VISIBLE to MCP users/LLMs
       // This provides full project management capabilities
     ];
