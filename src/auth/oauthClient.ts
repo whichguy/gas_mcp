@@ -8,7 +8,7 @@ import { OAuthError } from '../errors/mcpErrors.js';
 import { PKCEGenerator, PKCEChallenge } from './pkce.js';
 
 // Import the signaling functions from auth.ts
-import { signalAuthCompletion, signalAuthError } from '../tools/auth.js';
+import { signalAuthCompletion, signalAuthError } from './authSignals.js';
 
 /**
  * Google Apps Script OAuth Client for UWP Applications

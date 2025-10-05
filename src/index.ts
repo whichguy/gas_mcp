@@ -46,10 +46,14 @@ async function main() {
     process.exit(1);
   }
   
-  // FORCE CLEAR ALL CACHED TOKENS ON STARTUP
-  console.error('🗑️  Clearing all cached authentication tokens (forced restart behavior)...');
-  const clearedCount = SessionAuthManager.clearAllSessions();
-  console.error(`✅ Cleared ${clearedCount} cached session(s) - fresh authentication required`);
+  // FORCE CLEAR ALL CACHED TOKENS ON STARTUP (skip in test mode)
+  if (process.env.MCP_TEST_MODE !== 'true') {
+    console.error('🗑️  Clearing all cached authentication tokens (forced restart behavior)...');
+    const clearedCount = SessionAuthManager.clearAllSessions();
+    console.error(`✅ Cleared ${clearedCount} cached session(s) - fresh authentication required`);
+  } else {
+    console.error('🧪 Test mode: preserving cached authentication tokens');
+  }
   
   const server = new MCPGasServer();
 

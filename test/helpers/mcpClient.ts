@@ -38,10 +38,10 @@ export class MCPTestClient {
     env.MCP_TEST_MODE = 'true';
     env.NODE_ENV = 'test';
 
-    // Create transport that launches the server
+    // Create transport that launches the server with config file
     this.transport = new StdioClientTransport({
       command: 'node',
-      args: ['dist/src/index.js'],
+      args: ['dist/src/index.js', '--config', 'gas-config.json'],
       env
     });
 

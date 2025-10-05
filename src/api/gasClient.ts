@@ -4,6 +4,7 @@ import { rateLimiter } from './rateLimiter.js';
 import { GASApiError } from '../errors/mcpErrors.js';
 import { getFileType, sortFilesForExecution } from './pathParser.js';
 import { AuthConfig } from '../auth/oauthClient.js';
+import { loadOAuthConfigFromJson } from '../tools/authConfig.js';
 
 /**
  * Google Apps Script project information
@@ -241,7 +242,6 @@ export class GASClient {
   constructor() {
     // Use simplified OAuth configuration from JSON file only
     try {
-      const { loadOAuthConfigFromJson } = require('../tools/auth.js');
       const config = loadOAuthConfigFromJson();
       this.authClient = new GASAuthClient(config);
     } catch (error) {
@@ -476,8 +476,6 @@ export class GASClient {
       
       // Use Google OAuth2 client to refresh the token
       const { OAuth2Client } = await import('google-auth-library');
-      const { loadOAuthConfigFromJson } = await import('../tools/auth.js');
-      
       const config = loadOAuthConfigFromJson();
       const oauth2Client = new OAuth2Client({
         clientId: config.client_id,
@@ -654,8 +652,6 @@ export class GASClient {
       
       // Revoke tokens using Google OAuth2 API
       const { OAuth2Client } = await import('google-auth-library');
-      const { loadOAuthConfigFromJson } = await import('../tools/auth.js');
-      
       const config = loadOAuthConfigFromJson();
       const oauth2Client = new OAuth2Client({
         clientId: config.client_id,
