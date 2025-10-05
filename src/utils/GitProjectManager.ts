@@ -94,13 +94,13 @@ export class GitProjectManager {
    * Get git config for a specific project
    */
   async getProjectConfig(
-    scriptId: string, 
+    scriptId: string,
     accessToken: string,
     projectPath: string = ''
   ): Promise<GitConfigData | null> {
-    const configPath = projectPath 
-      ? `${projectPath}/.git/config.gs`
-      : '.git/config.gs';
+    const configPath = projectPath
+      ? `${projectPath}/.git/config`
+      : '.git/config';
     
     try {
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
@@ -135,11 +135,13 @@ export class GitProjectManager {
       throw new Error(`Invalid git file path: ${fullPath} - must be inside .git/ folder`);
     }
     
-    const gasPath = fullPath.endsWith('.gs') ? fullPath : fullPath + '.gs';
-    
-    // Double-check validation
-    if (!GitFormatTranslator.isGitConfigFile(gasPath)) {
-      throw new Error(`Path validation failed: ${gasPath} is not a valid git config file`);
+    // GAS API automatically adds .gs extension for SERVER_JS files, so don't append it manually
+    const gasPath = fullPath;
+
+    // Validate the path structure (will check with .gs appended since that's what GAS creates)
+    const expectedGasPath = fullPath.endsWith('.gs') ? fullPath : fullPath + '.gs';
+    if (!GitFormatTranslator.isGitConfigFile(expectedGasPath)) {
+      throw new Error(`Path validation failed: ${expectedGasPath} is not a valid git config file`);
     }
     
     const gasContent = GitFormatTranslator.toGAS(content, gasPath);
@@ -248,8 +250,8 @@ export class GitProjectManager {
     projectPath: string
   ): Promise<string[]> {
     const excludePath = projectPath
-      ? `${projectPath}/.git/info/exclude.gs`
-      : '.git/info/exclude.gs';
+      ? `${projectPath}/.git/info/exclude`
+      : '.git/info/exclude';
     
     try {
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
@@ -315,8 +317,8 @@ export class GitProjectManager {
     projectPath: string = ''
   ): Promise<boolean> {
     const configPath = projectPath
-      ? `${projectPath}/.git/config.gs`
-      : '.git/config.gs';
+      ? `${projectPath}/.git/config`
+      : '.git/config';
     
     try {
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
