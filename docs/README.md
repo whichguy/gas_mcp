@@ -28,6 +28,12 @@ Security guidelines and best practices for the MCP server.
 ### ⚙️ Configuration
 - **[UNIFIED_CONFIGURATION.md](UNIFIED_CONFIGURATION.md)** - Configuration management system and settings
 
+### 🔄 Git Integration (`git/`)
+Version control integration workflows and patterns for Google Apps Script.
+
+- **[GIT_WORKFLOWS.md](git/GIT_WORKFLOWS.md)** - Complete Git sync workflows, tool reference, and best practices
+- **[archive/](git/archive/)** - Historical development, testing docs, and proposals
+
 ## 🎯 Quick Navigation
 
 ### For Users
