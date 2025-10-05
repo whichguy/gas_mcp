@@ -1224,9 +1224,10 @@ export class ExecTool extends BaseTool {
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
       // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
+      // ADD MCP_RUN PARAMETER: Signal to __mcp_gas_run handler via URI-based routing
       const separator = executionUrl.includes('?') ? '&' : '?';
       const encodedJsStatement = encodeURIComponent(js_statement);
-      const finalUrl = `${executionUrl}${separator}func=${encodedJsStatement}`;
+      const finalUrl = `${executionUrl}${separator}_mcp_run=true&func=${encodedJsStatement}`;
       
       // Enhanced request headers
       const requestHeaders = {
@@ -1394,9 +1395,10 @@ export class ExecTool extends BaseTool {
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
       // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
+      // ADD MCP_RUN PARAMETER: Signal to __mcp_gas_run handler via URI-based routing
       const separator = executionUrl.includes('?') ? '&' : '?';
       const encodedJsStatement = encodeURIComponent(js_statement);
-      const finalUrl = `${executionUrl}${separator}func=${encodedJsStatement}`;
+      const finalUrl = `${executionUrl}${separator}_mcp_run=true&func=${encodedJsStatement}`;
       
       // Enhanced request headers
       const requestHeaders = {

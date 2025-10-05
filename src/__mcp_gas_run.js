@@ -1,51 +1,102 @@
 /**
  * MCP Gas Run System - Dynamic JavaScript Execution for Google Apps Script
- * 
+ *
  * SECURITY: Designed for HEAD deployments, allows redirect handling (/dev → /exec)
  * USAGE: Send JavaScript code via GET params or POST body for execution
- * VERSION: 1.3.3 - Enhanced automatic logger output capture
- * 
+ * VERSION: 1.4.0 - Module pattern with __events__ registration
+ *
  * Examples:
  * GET:  ?func=Math.max(10,20,30)
  * POST: {"func": "new Date().getTime()"}
  * POST: const x = 5; const y = 10; x * y;
  */
 
-/**
- * GET endpoint - executes JavaScript from URL parameters
- */
-function doGet(e) {
-  try {
-    validateDevMode();
-    const js_statement = extractGetParams(e.parameter);
-    if (!js_statement) {
-      throw new Error('No JavaScript code provided. Use ?func=yourCode');
-    }
-    return __gas_run(js_statement);
-  } catch (error) {
-    // Capture logger output even on setup errors
-    const loggerOutput = Logger.getLog();
-    return errorResponse(error, 'doGet', 'unknown', loggerOutput);
-  }
-}
+function _main(module, exports, require) {
+  ///////// BEGIN USER CODE /////////
 
-/**
- * POST endpoint - executes JavaScript from POST body
- */
-function doPost(e) {
-  try {
-    validateDevMode();
-    const js_statement = extractPostData(e.postData?.contents);
-    if (!js_statement) {
-      throw new Error('No JavaScript code provided. Send JSON {"func": "code"} or raw JavaScript');
+  /**
+   * GET endpoint - executes JavaScript from URL parameters
+   *
+   * CONVENTION: Returns null if this is not a gas_run request,
+   * allowing other doGet handlers to check the request.
+   *
+   * Routes on URI path: /__mcp_gas_run or parameter: _mcp_run=true
+   */
+  function doGetHandler(e) {
+    // Check if this is a gas_run request using URI or parameter
+    const isGasRunRequest = (e.parameter && e.parameter._mcp_run === 'true') ||
+                           (e.pathInfo && e.pathInfo === '/__mcp_gas_run');
+
+    if (!isGasRunRequest) {
+      return null; // Not a gas_run request, let other handlers check
     }
-    return __gas_run(js_statement);
-  } catch (error) {
-    // Capture logger output even on setup errors
-    const loggerOutput = Logger.getLog();
-    return errorResponse(error, 'doPost', 'unknown', loggerOutput);
+
+    // Verify we have the required func parameter
+    if (!e.parameter || !e.parameter.func) {
+      return jsonResponse({
+        error: true,
+        message: 'Missing func parameter for gas_run',
+        usage: 'Append ?_mcp_run=true&func=<javascript> to URL',
+        accessed_url: ScriptApp.getService().getUrl()
+      });
+    }
+
+    // This is a gas_run request, process it
+    try {
+      validateDevMode();
+      const js_statement = extractGetParams(e.parameter);
+      if (!js_statement) {
+        throw new Error('No JavaScript code provided. Use ?_mcp_run=true&func=yourCode');
+      }
+      return __gas_run(js_statement);
+    } catch (error) {
+      // Capture logger output even on setup errors
+      const loggerOutput = Logger.getLog();
+      return errorResponse(error, 'doGet', 'unknown', loggerOutput);
+    }
   }
-}
+
+  /**
+   * POST endpoint - executes JavaScript from POST body
+   *
+   * CONVENTION: Returns null if this is not a gas_run request,
+   * allowing other doPost handlers to check the request.
+   *
+   * Routes on URI path: /__mcp_gas_run or parameter: _mcp_run=true
+   */
+  function doPostHandler(e) {
+    // Check if this is a gas_run request using URI or parameter
+    const isGasRunRequest = (e.parameter && e.parameter._mcp_run === 'true') ||
+                           (e.pathInfo && e.pathInfo === '/__mcp_gas_run');
+
+    if (!isGasRunRequest) {
+      return null; // Not a gas_run request, let other handlers check
+    }
+
+    // Verify we have POST data
+    if (!e.postData || !e.postData.contents) {
+      return jsonResponse({
+        error: true,
+        message: 'Missing POST data for gas_run',
+        usage: 'Send POST request with ?_mcp_run=true and JSON {"func": "code"} or raw JavaScript',
+        accessed_url: ScriptApp.getService().getUrl()
+      });
+    }
+
+    // This is a gas_run request, process it
+    try {
+      validateDevMode();
+      const js_statement = extractPostData(e.postData.contents);
+      if (!js_statement) {
+        throw new Error('No JavaScript code provided. Send JSON {"func": "code"} or raw JavaScript');
+      }
+      return __gas_run(js_statement);
+    } catch (error) {
+      // Capture logger output even on setup errors
+      const loggerOutput = Logger.getLog();
+      return errorResponse(error, 'doPost', 'unknown', loggerOutput);
+    }
+  }
 
 /**
  * Security check - validates execution context
@@ -198,9 +249,9 @@ function jsonResponse(data) {
  */
 function errorResponse(error, context, code = 'unknown', loggerOutput = '') {
   console.error(`Error in ${context}:`, error.toString());
-  
+
   const currentUrl = ScriptApp.getService().getUrl();
-  
+
   return jsonResponse({
     error: true,
     context: context,
@@ -215,3 +266,20 @@ function errorResponse(error, context, code = 'unknown', loggerOutput = '') {
     }
   });
 }
+
+  // Export handlers
+  module.exports = {
+    doGetHandler,
+    doPostHandler
+  };
+
+  // Register with event system
+  module.exports.__events__ = {
+    doGet: 'doGetHandler',
+    doPost: 'doPostHandler'
+  };
+
+  ///////// END USER CODE /////////
+}
+
+__defineModule__(_main);

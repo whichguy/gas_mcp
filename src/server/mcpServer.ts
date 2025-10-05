@@ -107,29 +107,6 @@ import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpError
 // Import unified configuration
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 
-/**
- * Client session context for MCP Gas Server
- * 
- * Each MCP client (like Cursor/Claude Desktop) gets an isolated session with:
- * - Separate authentication state (OAuth tokens, user info)
- * - Independent tool instances with session-specific auth managers
- * - Session lifecycle tracking (creation time, last usage)
- * - File-based persistence for token storage
- * 
- * @interface ClientSession
- */
-interface ClientSession {
-  /** Unique session identifier (UUID) for this client */
-  sessionId: string;
-  /** Session-specific authentication manager with isolated token storage */
-  authManager: SessionAuthManager;
-  /** Map of tool instances configured for this session */
-  tools: Map<string, any>;
-  /** Timestamp when this session was created */
-  createdAt: number;
-  /** Timestamp when this session was last used (for cleanup) */
-  lastUsed: number;
-}
 
 /**
  * Main MCP server for Google Apps Script integration
@@ -203,15 +180,6 @@ interface ClientSession {
 export class MCPGasServer {
   /** Core MCP server instance from the SDK */
   private server: Server;
-  
-  /** 
-   * Map of active client sessions 
-   * Key: sessionId (UUID), Value: ClientSession with isolated state
-   */
-  private sessions: Map<string, ClientSession> = new Map();
-  
-  /** Currently active session ID for request context */
-  private currentSessionId: string | null = null;
 
   /**
    * Initialize MCP Gas Server with session isolation support
@@ -463,107 +431,44 @@ export class MCPGasServer {
 
 
   /**
-   * Get existing session or create new session with isolation
-   * 
-   * This method implements the core session management logic:
-   * - Reuses existing sessions when possible
-   * - Creates new sessions with UUID generation
-   * - Tracks session lifecycle and usage
-   * - Maintains session persistence across server restarts
-   * 
-   * ## Session Lifecycle:
-   * 1. **Session Lookup**: Check if session exists in memory
-   * 2. **AuthManager Creation**: Create or reuse session-specific auth manager
-   * 3. **Tool Instantiation**: Create session-specific tool instances
-   * 4. **Persistence**: Session data persisted in `.auth/` directory
-   * 5. **Tracking**: Update usage timestamps for cleanup
-   * 
-   * ## Session Reuse Logic:
-   * - Sessions are identified by UUID
-   * - Auth manager handles file-based token persistence
-   * - Session tokens survive server restarts
-   * - 24-hour session timeout with automatic cleanup
-   * 
-   * @param sessionId - Optional explicit session ID, otherwise generates new UUID
-   * @returns ClientSession with isolated auth and tool instances
-   * 
-   * @example
-   * ```typescript
-   * // Create new session
-   * const session = this.getOrCreateSession();
-   * 
-   * // Reuse existing session
-   * const session = this.getOrCreateSession('existing-uuid');
-   * ```
-   */
-  private getOrCreateSession(sessionId?: string): ClientSession {
-    // Use provided session ID or current session
-    const id = sessionId || this.currentSessionId || undefined;
-    
-    let session = this.sessions.get(id || '');
-    
-    if (!session) {
-      console.error(`Creating new client session...`);
-      
-      // Let SessionAuthManager handle session ID generation and reuse logic
-      const authManager = new SessionAuthManager(id);
-      const actualSessionId = authManager.getSessionId();
-      
-      const tools = this.createSessionTools(authManager);
-      
-      session = {
-        sessionId: actualSessionId,
-        authManager,
-        tools,
-        createdAt: Date.now(),
-        lastUsed: Date.now()
-      };
-      
-      this.sessions.set(actualSessionId, session);
-      console.error(`Session created/reused: ${actualSessionId}`);
-    } else {
-      session.lastUsed = Date.now();
-    }
-    
-    this.currentSessionId = session.sessionId;
-    return session;
-  }
-
-  /**
    * Setup MCP protocol handlers
    */
   private setupHandlers(): void {
     // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      // Create a temporary session to get tool schemas
-      const session = this.getOrCreateSession();
-      
-      const tools = Array.from(session.tools.values()).map(tool => ({
+      // Create tools with temporary auth manager just to get schemas
+      const authManager = new SessionAuthManager();
+      const tools = this.createSessionTools(authManager);
+
+      const toolSchemas = Array.from(tools.values()).map(tool => ({
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema
       }));
 
-      return { tools };
+      return { tools: toolSchemas };
     });
 
     // Execute tool calls
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
+      // Create fresh SessionAuthManager for this request
+      // It will auto-discover existing sessions from filesystem
+      const authManager = new SessionAuthManager();
+      let sessionId: string;
+
       try {
-        // Extract session ID from arguments if provided
-        const sessionId = typeof args?.sessionId === 'string' ? args.sessionId : undefined;
-        
-        // Get or create session for this request
-        const session = this.getOrCreateSession(sessionId);
-        
-        const tool = session.tools.get(name);
+
+        // Create tools for this request
+        const tools = this.createSessionTools(authManager);
+
+        const tool = tools.get(name);
         if (!tool) {
           throw new Error(`Unknown tool: ${name}`);
         }
 
-        console.error(`[Session ${session.sessionId}] Executing tool: ${name}`);
+        console.error(`Executing tool: ${name}`);
 
         // Remove sessionId from args before passing to tool
         const toolArgs = { ...args };
@@ -571,20 +476,16 @@ export class MCPGasServer {
 
         const result = await tool.execute(toolArgs || {});
 
+        // Get session ID AFTER execution (when discovery has happened)
+        sessionId = authManager.getSessionId();
+
         // Include session ID in response for client tracking
         const responseWithSession = {
           ...result,
-          sessionId: session.sessionId
+          sessionId: sessionId
         };
 
-        // Reset browser launch flag if this was a successful gas_auth completion
-        if (name === 'gas_auth' && result?.authenticated === true) {
-          const authFlowKey = `browser_launched_${session.sessionId}`;
-          delete (session as any)[authFlowKey];
-          console.error(`[Session ${session.sessionId}] Authentication completed - reset browser launch flag`);
-        }
-
-        console.error(`[Session ${session.sessionId}] Tool ${name} completed successfully`);
+        console.error(`[Session ${sessionId}] Tool ${name} completed successfully`);
 
         // SCHEMA FIX: Check if tool already returned proper MCP format
         // Some tools (like gas_auth) return { content: [...], isError: false }
@@ -593,7 +494,7 @@ export class MCPGasServer {
           // Tool already returned proper MCP format, just add sessionId
           return {
             ...result,
-            sessionId: session.sessionId
+            sessionId: sessionId
           };
         } else {
           // Tool returned plain object, wrap it in MCP format
@@ -607,8 +508,10 @@ export class MCPGasServer {
           };
         }
       } catch (error: any) {
-        const sessionId = this.currentSessionId || 'unknown';
-        console.error(`[Session ${sessionId}] Tool ${name} failed:`, error);
+        console.error(`Tool ${name} failed:`, error);
+
+        // Get session ID for error reporting (may be temporary if tool failed before discovery)
+        sessionId = authManager.getSessionId();
 
         // Handle authentication errors by returning clear instructions instead of auto-auth
         if (error instanceof AuthenticationError || error instanceof OAuthError) {
@@ -694,10 +597,6 @@ export class MCPGasServer {
     const clearedSessions = await SessionAuthManager.clearAllSessions();
     console.error(`Cleared ${clearedSessions} cached session token(s)`);
     
-    // Clear all in-memory sessions including browser launch flags
-    this.sessions.clear();
-    console.error('Cleared all in-memory sessions and browser launch flags');
-    
     // Initialize default local root directory if not configured
     try {
       const localRoot = await LocalFileManager.initializeDefaultRoot();
@@ -717,8 +616,11 @@ export class MCPGasServer {
     console.error('Authentication: Tools will return clear instructions when auth is needed');
     console.error('Direct execution: gas_run can execute ANY statement without wrapper functions');
 
-    // Clean up expired sessions on startup
-    await this.cleanupExpiredSessions();
+    // Clean up expired filesystem sessions on startup
+    const filesCleaned = await SessionAuthManager.cleanupExpiredSessions();
+    if (filesCleaned > 0) {
+      console.error(`🧹 Cleaned up ${filesCleaned} expired session files from filesystem`);
+    }
   }
 
   /**
@@ -726,76 +628,20 @@ export class MCPGasServer {
    */
   async stop(): Promise<void> {
     console.error('Stopping MCP Gas Server...');
-    
-    // Clean up all sessions
-    this.sessions.clear();
-    
     await this.server.close();
     console.error('MCP Gas Server stopped');
-  }
-
-  /**
-   * Clean up expired sessions
-   */
-  private async cleanupExpiredSessions(): Promise<void> {
-    const now = Date.now();
-    const sessionTimeout = 24 * 60 * 60 * 1000; // 24 hours
-    let cleaned = 0;
-    
-    for (const [sessionId, session] of this.sessions.entries()) {
-      if (now - session.lastUsed > sessionTimeout) {
-        this.sessions.delete(sessionId);
-        cleaned++;
-      }
-    }
-    
-    if (cleaned > 0) {
-      console.error(`Cleaned up ${cleaned} expired sessions`);
-    }
-    
-    // Also clean up file-based sessions
-    const filesCleaned = await SessionAuthManager.cleanupExpiredSessions();
-    if (filesCleaned > 0) {
-      console.error(`Cleaned up ${filesCleaned} expired session files`);
-    }
   }
 
   /**
    * Get server statistics
    */
   async getStats(): Promise<any> {
-    const activeSessions = await Promise.all(
-      Array.from(this.sessions.values()).map(async (session) => {
-        const authManager = session.authManager;
-        let isAuthenticated: boolean;
-        let userInfo: any;
-
-        if ('isAuthenticated' in authManager && typeof authManager.isAuthenticated === 'function') {
-          // Handle async SessionAuthManager
-          const authResult = authManager.isAuthenticated();
-          isAuthenticated = authResult instanceof Promise ? await authResult : authResult;
-          
-          const userResult = authManager.getUserInfo();
-          userInfo = userResult instanceof Promise ? await userResult : userResult;
-        } else {
-          // Handle sync AuthStateManager
-          isAuthenticated = false;
-          userInfo = null;
-        }
-
-        return {
-          sessionId: session.sessionId,
-          authenticated: isAuthenticated,
-          lastUsed: session.lastUsed,
-          user: userInfo?.email
-        };
-      })
-    );
+    const fileStats = await SessionAuthManager.getMemoryStats();
 
     return {
-      activeSessions: this.sessions.size,
-      sessions: activeSessions,
-      fileSessions: (await SessionAuthManager.listActiveSessions()).length,
+      filesystemSessions: fileStats.totalSessions,
+      activeSessions: fileStats.activeSessions,
+      expiredSessions: fileStats.expiredSessions,
       uptime: process.uptime(),
       memory: process.memoryUsage()
     };

@@ -170,19 +170,22 @@ class TokenCacheHelpers {
  */
 export class SessionAuthManager {
   private sessionId: string;
+  private sessionIdConfirmed: boolean = false;
 
   constructor(sessionId?: string) {
     console.error(`🔧 SessionAuthManager (FILESYSTEM) constructor called with sessionId: ${sessionId || 'undefined'}`);
 
-    // Session ID - will be assigned during init or from parameter
-    this.sessionId = sessionId || randomUUID();
-
-    // If no session ID provided, try to reuse existing valid session
-    if (!sessionId) {
-      console.error(`🔍 No session ID provided, will check for existing sessions on first use...`);
-      // Note: findExistingValidSession is async, will be called by first auth operation
-    } else {
+    if (sessionId) {
+      // Explicit session ID provided - use it directly
+      this.sessionId = sessionId;
+      this.sessionIdConfirmed = true;
       console.error(`🔒 Using specified session: ${this.sessionId}`);
+    } else {
+      // No session ID - generate temporary UUID, will check for existing sessions on first use
+      this.sessionId = randomUUID();
+      this.sessionIdConfirmed = false;
+      console.error(`🔍 No session ID provided, temporary ID assigned: ${this.sessionId}`);
+      console.error(`   Will auto-discover existing sessions from filesystem on first use...`);
     }
   }
 
@@ -341,10 +344,33 @@ export class SessionAuthManager {
   }
 
   /**
+   * Ensure session ID is confirmed by checking filesystem for existing sessions
+   * This implements lazy session discovery for cross-process credential sharing
+   */
+  private async ensureSessionIdConfirmed(): Promise<void> {
+    if (this.sessionIdConfirmed) return;
+
+    console.error(`🔍 Lazy session discovery: checking filesystem for existing sessions...`);
+    const existingSessionId = await this.findExistingValidSession();
+
+    if (existingSessionId) {
+      console.error(`✅ Found existing session: ${existingSessionId}`);
+      this.sessionId = existingSessionId;
+    } else {
+      console.error(`ℹ️  No existing session found, using new session: ${this.sessionId}`);
+    }
+
+    this.sessionIdConfirmed = true;
+  }
+
+  /**
    * Get current authentication session from filesystem
    * Updates lastUsed timestamp
    */
   async getAuthSession(): Promise<AuthSession | null> {
+    // Ensure we've checked for existing sessions before accessing
+    await this.ensureSessionIdConfirmed();
+
     const authSession = await this.findSessionById(this.sessionId);
 
     if (authSession) {
@@ -382,6 +408,9 @@ export class SessionAuthManager {
    * Reads from filesystem and validates token expiry
    */
   async isAuthenticated(): Promise<boolean> {
+    // Ensure we've checked for existing sessions before accessing
+    await this.ensureSessionIdConfirmed();
+
     const authSession = await this.findSessionById(this.sessionId);
     if (!authSession) return false;
 
@@ -433,6 +462,9 @@ export class SessionAuthManager {
    * Auto-refreshes if expired but refresh_token exists
    */
   async isTokenValid(): Promise<boolean> {
+    // Ensure we've checked for existing sessions before accessing
+    await this.ensureSessionIdConfirmed();
+
     const authSession = await this.findSessionById(this.sessionId);
     if (!authSession) return false;
 
@@ -463,6 +495,9 @@ export class SessionAuthManager {
    * Auto-refreshes if expired but refresh_token exists
    */
   async getValidToken(): Promise<string | null> {
+    // Ensure we've checked for existing sessions before accessing
+    await this.ensureSessionIdConfirmed();
+
     const authSession = await this.findSessionById(this.sessionId);
     if (!authSession) return null;
 
