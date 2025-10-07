@@ -112,6 +112,70 @@ const result = calc.add(5, calc.multiply(2, 3));  // Returns 11
 
 **Behind the Scenes**: Tools like `gas_cat` show clean user code without wrappers. `gas_write` automatically wraps your code in `_main()` functions. `CommonJS.js` provides runtime module loading and caching.
 
+**Module Loading Control**: The `gas_write` tool supports optional `moduleOptions` parameter to control when modules load in the CommonJS system:
+
+```javascript
+// Eager loading (loadNow=true) - Module executes at script startup
+// Use for: Web app handlers (doGet/doPost), triggers (onOpen/onEdit/onInstall)
+gas_write({
+  scriptId: "...",
+  path: "WebApp",
+  content: "function doGet(e) { return HtmlService.createHtmlOutput('Hello'); }",
+  moduleOptions: { loadNow: true }  // Module._main() executes immediately at startup
+})
+
+// Lazy loading (loadNow=false) - Module executes on first require()
+// Use for: Utility modules that are only needed via require() calls
+gas_write({
+  scriptId: "...",
+  path: "Utils",
+  content: "function formatDate(date) { return Utilities.formatDate(date, 'GMT', 'yyyy-MM-dd'); }",
+  moduleOptions: { loadNow: false }  // Module._main() executes on first require("Utils")
+})
+
+// Preservation mode (omit moduleOptions) - RECOMMENDED for updates
+// Reads existing file and preserves current loadNow setting
+gas_write({
+  scriptId: "...",
+  path: "existing",
+  content: "// Updated code"
+  // No moduleOptions = preserves existing loadNow setting from remote file
+})
+
+// Default for new files (omit moduleOptions)
+// Creates lazy-loading module (equivalent to loadNow=false/null)
+gas_write({
+  scriptId: "...",
+  path: "Helper",
+  content: "function helper() {...}"
+  // No moduleOptions = default lazy loading (null) for new files
+})
+```
+
+**CommonJS Loading Behavior**:
+- `loadNow: true` = **Eager loading** - `module._main()` executes at script startup (similar to Webpack's "eager" mode)
+- `loadNow: false` or `null` = **Lazy loading** - `module._main()` executes on first `require()` call
+- Omitting `moduleOptions` = **Preservation mode** - Reads existing file setting (~200-500ms overhead) or uses default (lazy) for new files
+
+**When to use `loadNow: true`** (Eager Loading):
+- **Web app handlers**: `doGet()`, `doPost()` - Must be available when HTTP requests arrive
+- **Trigger functions**: `onOpen()`, `onEdit()`, `onInstall()` - Called automatically by Google Apps Script
+- **Event registrations**: Modules that export `__events__` object - Need immediate registration
+- **Global functions**: Any functions that need to be callable immediately without `require()`
+
+**When to use `loadNow: false`** (Explicit Lazy Loading):
+- **Utility libraries**: Helper functions and formatters
+- **Required modules**: Code only loaded via `require()` calls
+- **Internal logic**: Business logic modules used by other modules
+- **Performance optimization**: Large modules that are rarely used
+
+**When to omit `moduleOptions`** (RECOMMENDED):
+- **Updating existing files**: Preserves the current `loadNow` setting automatically
+- **New utility files**: Uses default lazy loading behavior
+- **Bulk operations**: Explicitly set `loadNow` to skip preservation API call overhead
+
+**Performance Note**: Omitting `moduleOptions` requires an API call (~200-500ms) to read the existing file. For bulk operations on multiple files, provide explicit `loadNow` values to skip this lookup.
+
 #### 2. Ad-hoc Code Execution
 
 Run any JavaScript expression instantly without deployment or wrapper functions:

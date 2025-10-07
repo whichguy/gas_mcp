@@ -1184,12 +1184,12 @@ export class RipgrepTool extends BaseTool {
     
     for (const file of rawFiles) {
       let processedContent = file.source || '';
-      
+
       // Only unwrap SERVER_JS files that should have wrappers
       if (file.type === 'SERVER_JS' && shouldWrapContent(file.type, file.name)) {
-        const unwrapped = unwrapModuleContent(processedContent);
-        if (unwrapped !== processedContent) {
-          processedContent = unwrapped;
+        const { unwrappedContent } = unwrapModuleContent(processedContent);
+        if (unwrappedContent !== processedContent) {
+          processedContent = unwrappedContent;
           console.error(`📖 [GAS_RIPGREP] Unwrapped CommonJS structure from ${file.name} for clean code search`);
         }
       }
