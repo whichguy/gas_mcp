@@ -206,6 +206,21 @@
       "scriptId": "1pUqwFycLp3JBTqMBFi5K84aD9XMVESXA5KdXzp5oqhXKDZcOjUZ-zhPV",
       "name": "riley-correspondassist-ai-emai",
       "description": "Created: 9/6/2025"
+    },
+    "fibonacci-calculator": {
+      "scriptId": "1Pr3yqgDAe0wS9CPKbcVlTg7GHy-rwU0yj8s_2SS2FxJ9na0uLCSJ9-fk",
+      "name": "fibonacci-calculator",
+      "description": "Created: 10/5/2025"
+    },
+    "ask-claude-sheets": {
+      "scriptId": "1mpnLu8wAEhblyUvSz1Iem7HgGgPLF2fbeXZHxKMYDS1HBqsjQDsg0wO8",
+      "name": "ask-claude-sheets",
+      "description": "Created: 10/5/2025"
+    },
+    "event-handler-system-test": {
+      "scriptId": "1DDdrCrgbW0bRu3lKtsjo4MqCCrcrTyr36JiW--Qmy9dwjbdL7zmFpWDN",
+      "name": "event-handler-system-test",
+      "description": "Created: 10/5/2025"
     }
   },
   "localRoot": {
@@ -215,7 +230,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-09-07T18:50:29.676Z"
+    "lastModified": "2025-10-05T21:49:46.443Z"
   },
   "debug": true,
   "currentProject": {
