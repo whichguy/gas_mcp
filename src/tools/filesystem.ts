@@ -6,14 +6,21 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 import { wrapModuleContent, unwrapModuleContent, shouldWrapContent, getModuleName } from '../utils/moduleWrapper.js';
-import { 
-  virtualToGASName, 
-  gasNameToVirtual, 
-  translateFilesForDisplay, 
+import {
+  virtualToGASName,
+  gasNameToVirtual,
+  translateFilesForDisplay,
   translatePathForOperation,
   isVirtualDotfile,
-  isTranslatedVirtualFile 
+  isTranslatedVirtualFile
 } from '../utils/virtualFileTranslation.js';
+import {
+  setFileMtimeToRemote,
+  isFileInSync,
+  checkSyncOrThrow
+} from '../utils/fileHelpers.js';
+import { join, dirname } from 'path';
+import { writeFile, unlink, mkdir } from 'fs/promises';
 
 /**
  * Read file contents with smart local/remote fallback (RECOMMENDED)
@@ -196,11 +203,53 @@ export class CatTool extends BaseTool {
       // Continue with operation even if sync check fails
     }
 
+    // ✅ NEW: mtime-based sync check before reading
+    const remoteFile = remoteFiles.find((file: any) => file.name === filename);
+
+    if (!remoteFile) {
+      // Edge case: remote file deleted but local might exist
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const fullFilename = filename + fileExtension;
+      const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+      const localFilePath = join(projectPath, fullFilename);
+
+      try {
+        await unlink(localFilePath);
+        console.error(`🗑️ [GAS_CAT] Removed stale local file (deleted on remote): ${filename}`);
+      } catch (unlinkError) {
+        // File doesn't exist locally either, that's fine
+      }
+
+      throw new ValidationError('filename', filename, 'existing file in the project');
+    }
+
+    // Check if local file needs sync
+    if (preferLocal && remoteFile.updateTime) {
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const fullFilename = filename + fileExtension;
+      const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+      const localFilePath = join(projectPath, fullFilename);
+
+      const inSync = await isFileInSync(localFilePath, remoteFile.updateTime);
+
+      if (!inSync) {
+        // Auto-sync: pull from remote and cache with proper mtime
+        console.error(`🔄 [GAS_CAT] Local file out of sync, auto-syncing from remote: ${filename}`);
+
+        const content = remoteFile.source || remoteFile.content || '';
+        await mkdir(dirname(localFilePath), { recursive: true });
+        await writeFile(localFilePath, content, 'utf-8');
+        await setFileMtimeToRemote(localFilePath, remoteFile.updateTime);
+
+        console.error(`✅ [GAS_CAT] Synced from remote with mtime: ${remoteFile.updateTime}`);
+      }
+    }
+
     let result: any;
     let source: 'local' | 'remote' = 'remote';
 
-        if (preferLocal) {
-      // Try to read from local first
+    if (preferLocal) {
+      // Try to read from local first (now guaranteed to be in sync)
       try {
         const localContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
         if (localContent) {
@@ -233,12 +282,7 @@ export class CatTool extends BaseTool {
 
     // Read from remote if local failed or not preferred
     if (!result || source !== 'local') {
-      const remoteFile = remoteFiles.find((file: any) => file.name === filename);
-      
-      if (!remoteFile) {
-        throw new ValidationError('filename', filename, 'existing file in the project');
-      }
-
+      // remoteFile already found above
       result = {
         path: fullPath,
         scriptId: scriptId,
@@ -663,8 +707,28 @@ export class WriteTool extends BaseTool {
 
     // 🚀 REMOTE-FIRST WORKFLOW: Step 4 - Push to remote FIRST
     let results: any = {};
-    
+
     if (!localOnly) {
+      // ✅ NEW: mtime-based write-protection check
+      try {
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+        const fullFilename = filename + fileExtension;
+        const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+        const localFilePath = join(projectPath, fullFilename);
+
+        // Get remote metadata for mtime check
+        const remoteFilesWithMeta = await this.gasClient.getProjectMetadata(scriptId, accessToken);
+        await checkSyncOrThrow(localFilePath, filename, remoteFilesWithMeta);
+        console.error(`✅ [GAS_WRITE] File in sync - proceeding with write`);
+      } catch (syncError: any) {
+        // Only throw if it's an actual sync conflict, not "file doesn't exist"
+        if (syncError.message && syncError.message.includes('out of sync')) {
+          throw syncError;
+        }
+        // File doesn't exist locally or remotely - that's fine for write
+        console.error(`ℹ️  No existing local file to check sync: ${filename}`);
+      }
+
       try {
         console.error(`🚀 [GAS_WRITE] REMOTE-FIRST: Pushing to remote: ${scriptId}/${filename}`);
         
@@ -696,15 +760,19 @@ export class WriteTool extends BaseTool {
         
         // Push to remote
         const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
-        
+
         console.error(`✅ [GAS_WRITE] Remote push successful - proceeding with local operations`);
-        
+
+        // Extract updateTime directly from write response (avoids race condition)
+        const updatedFile = remoteResult.find((f: any) => f.name === filename);
+
         results.remoteFile = {
           scriptId,
           filename,
           type: fileType,
           size: content.length,
-          updated: true
+          updated: true,
+          updateTime: updatedFile?.updateTime
         };
         
       } catch (remoteError: any) {
@@ -769,13 +837,14 @@ export class WriteTool extends BaseTool {
         const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
         const path = await import('path');
         const filePath = path.join(projectPath, fullFilename);
-        
+
+        await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
-        
+
         gitCommitResult = await LocalFileManager.autoCommitChanges(
-          projectName, 
-          [filename], 
-          commitMessage, 
+          projectName,
+          [filename],
+          commitMessage,
           workingDir
         );
         
@@ -804,11 +873,22 @@ export class WriteTool extends BaseTool {
         const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
         const path = await import('path');
         const filePath = path.join(projectPath, fullFilename);
-        
+
+        await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
-        
+
+        // Set mtime to match remote updateTime (write-through cache)
+        if (results.remoteFile?.updateTime) {
+          try {
+            await setFileMtimeToRemote(filePath, results.remoteFile.updateTime);
+            console.error(`✅ [GAS_WRITE] Set local mtime to remote: ${results.remoteFile.updateTime}`);
+          } catch (mtimeError) {
+            console.error(`⚠️ [GAS_WRITE] Failed to set mtime: ${mtimeError}`);
+          }
+        }
+
         console.error(`✅ [GAS_WRITE] Local file finalized: ${filePath}`);
-        
+
         results.localFile = {
           path: filePath,
           size: content.length,
@@ -1139,13 +1219,35 @@ export class RawCatTool extends BaseTool {
       throw new FileOperationError('read', path, 'file not found');
     }
 
+    // ✅ NEW: Optionally sync to local cache with remote mtime (read-through cache)
+    try {
+      const { LocalFileManager } = await import('../utils/localFileManager.js');
+      const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+
+      if (localRoot && file.updateTime && parsedPath.filename) {
+        // Write to local cache
+        const fileExtension = LocalFileManager.getFileExtensionFromName(parsedPath.filename);
+        const localPath = join(localRoot, parsedPath.filename + fileExtension);
+        await mkdir(dirname(localPath), { recursive: true });
+        await writeFile(localPath, file.source || '', 'utf-8');
+
+        // Set local mtime to match remote updateTime
+        await setFileMtimeToRemote(localPath, file.updateTime);
+        console.error(`✅ Synced to local cache with mtime: ${file.updateTime}`);
+      }
+    } catch (syncError) {
+      // Don't fail the operation if local sync fails
+      console.error(`⚠️  Local sync failed (non-fatal): ${syncError}`);
+    }
+
     return {
       path,
       scriptId: parsedPath.scriptId,
       filename: parsedPath.filename,
       type: file.type,
       content: file.source || '',
-      size: (file.source || '').length
+      size: (file.source || '').length,
+      updateTime: file.updateTime
     };
   }
 }
@@ -1402,8 +1504,30 @@ export class RawWriteTool extends BaseTool {
     // After validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
+    // ✅ NEW: Write-protection - check sync before writing
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+
+    if (localRoot) {
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const localPath = join(localRoot, filename + fileExtension);
+
+      try {
+        // Get remote metadata to check sync
+        const remoteFiles = await this.gasClient.getProjectMetadata(parsedPath.scriptId, accessToken);
+        await checkSyncOrThrow(localPath, filename, remoteFiles);
+      } catch (syncError: any) {
+        // Only throw if it's an actual sync conflict, not "file doesn't exist"
+        if (syncError.message && syncError.message.includes('out of sync')) {
+          throw syncError;
+        }
+        // File doesn't exist locally or remotely - that's fine for raw_write
+        console.error(`ℹ️  No existing local file to check sync: ${filename}`);
+      }
+    }
+
     console.error(`📝 Writing file: ${filename} with type: ${gasFileType}`);
-    
+
     const updatedFiles = await this.gasClient.updateFile(
       parsedPath.scriptId,
       filename,
@@ -1412,6 +1536,30 @@ export class RawWriteTool extends BaseTool {
       accessToken,
       gasFileType
     );
+
+    // ✅ NEW: Sync to local cache with remote mtime (write-through cache)
+    try {
+      const { LocalFileManager } = await import('../utils/localFileManager.js');
+      const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+
+      if (localRoot) {
+        // Write to local cache
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+        const localPath = join(localRoot, filename + fileExtension);
+        await mkdir(dirname(localPath), { recursive: true });
+        await writeFile(localPath, content, 'utf-8');
+
+        // Find remote updateTime and set local mtime to match
+        const remoteFile = updatedFiles.find((f: any) => f.name === filename);
+        if (remoteFile?.updateTime) {
+          await setFileMtimeToRemote(localPath, remoteFile.updateTime);
+          console.error(`✅ Synced to local cache with mtime: ${remoteFile.updateTime}`);
+        }
+      }
+    } catch (syncError) {
+      // Don't fail the operation if local sync fails - remote write succeeded
+      console.error(`⚠️  Local sync failed (non-fatal): ${syncError}`);
+    }
 
     return {
       status: 'success',
@@ -1481,6 +1629,29 @@ export class RmTool extends BaseTool {
     const accessToken = await this.getAuthToken(params);
 
     const updatedFiles = await this.gasClient.deleteFile(parsedPath.scriptId, parsedPath.filename!, accessToken);
+
+    // Remove from local cache if it exists (write-through cache)
+    try {
+      const { LocalFileManager } = await import('../utils/localFileManager.js');
+      const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+
+      if (localRoot && parsedPath.filename) {
+        const fileExtension = LocalFileManager.getFileExtensionFromName(parsedPath.filename);
+        const localPath = join(localRoot, parsedPath.filename + fileExtension);
+
+        try {
+          await unlink(localPath);
+          console.error(`✅ [GAS_RM] Removed from local cache: ${parsedPath.filename}`);
+        } catch (unlinkError: any) {
+          // File doesn't exist locally, that's fine
+          if (unlinkError.code !== 'ENOENT') {
+            console.error(`⚠️  [GAS_RM] Failed to remove local cache (non-fatal): ${unlinkError.message}`);
+          }
+        }
+      }
+    } catch (cacheError) {
+      console.error(`⚠️  [GAS_RM] Local cache cleanup failed (non-fatal): ${cacheError}`);
+    }
 
     return {
       status: 'deleted',

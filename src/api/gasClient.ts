@@ -776,7 +776,7 @@ export class GASClient {
       const response = await this.scriptApi.projects.getContent({
         scriptId
       });
-      
+
       const files: GASFile[] = (response.data.files || []).map((file: any) => ({
         name: file.name,
         type: file.type,
@@ -792,6 +792,34 @@ export class GASClient {
       }));
 
       // Sort files by execution order
+      return sortFilesForExecution(files);
+    }, accessToken);
+  }
+
+  /**
+   * Get project metadata only (no source code content)
+   * ~100x faster than getProjectContent for sync verification
+   */
+  async getProjectMetadata(scriptId: string, accessToken?: string): Promise<GASFile[]> {
+    return this.makeApiCall(async () => {
+      const response = await this.scriptApi.projects.getContent({
+        scriptId,
+        // Exclude 'source' field for efficiency - only get metadata
+        fields: 'files(name,type,createTime,updateTime,lastModifyUser)'
+      });
+
+      const files: GASFile[] = (response.data.files || []).map((file: any) => ({
+        name: file.name,
+        type: file.type,
+        // No source field - metadata only
+        createTime: file.createTime,
+        updateTime: file.updateTime,
+        lastModifyUser: file.lastModifyUser ? {
+          name: file.lastModifyUser.name,
+          email: file.lastModifyUser.email
+        } : undefined
+      }));
+
       return sortFilesForExecution(files);
     }, accessToken);
   }
