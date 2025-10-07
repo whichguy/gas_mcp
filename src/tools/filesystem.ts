@@ -19,6 +19,10 @@ import {
   isFileInSync,
   checkSyncOrThrow
 } from '../utils/fileHelpers.js';
+import {
+  writeLocalAndValidateWithHooks,
+  revertGitCommit
+} from '../utils/hookIntegration.js';
 import { join, dirname } from 'path';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 
@@ -309,16 +313,16 @@ export class CatTool extends BaseTool {
     // 🔧 COMMONJS INTEGRATION: Unwrap CommonJS structure for user transparency
     let finalContent = result.content;
     let commonJsInfo: any = null;
-    
+
     if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
-      const unwrapped = unwrapModuleContent(finalContent);
-      
-      if (unwrapped !== finalContent) {
-        finalContent = unwrapped;
-        
+      const { unwrappedContent } = unwrapModuleContent(finalContent);
+
+      if (unwrappedContent !== finalContent) {
+        finalContent = unwrappedContent;
+
         // Analyze the unwrapped content for CommonJS features
         const { analyzeCommonJsUsage } = await import('../utils/moduleWrapper.js');
-        const featureAnalysis = analyzeCommonJsUsage(unwrapped);
+        const featureAnalysis = analyzeCommonJsUsage(unwrappedContent);
         
         commonJsInfo = {
           moduleUnwrapped: true,
@@ -413,7 +417,7 @@ export class CatTool extends BaseTool {
  */
 export class WriteTool extends BaseTool {
   public name = 'write';
-  public description = 'Write file contents to Google Apps Script project. Automatically wraps user code with CommonJS module system (require, module, exports). Remote-first with local sync for safety.';
+  public description = 'Write file contents to Google Apps Script project. Automatically wraps user code with CommonJS module system (require, module, exports). Opportunistically uses git hook validation when available (atomic with full rollback), otherwise falls back to remote-first workflow.';
   
   public inputSchema = {
     type: 'object',
@@ -473,14 +477,36 @@ export class WriteTool extends BaseTool {
         type: 'string',
         description: 'Access token for stateless operation (optional)',
         pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
+      },
+      moduleOptions: {
+        type: 'object',
+        description: 'Optional CommonJS module loading configuration. Controls how/when module is loaded. If not specified, preserved from existing file or uses default for new files (~200-500ms overhead for preservation). For bulk operations or large projects, provide explicit options to skip preservation.',
+        properties: {
+          loadNow: {
+            type: 'boolean',
+            description: 'Load module immediately at startup (true), defer until first require() (false/undefined). When rewriting existing files, previous loadNow value is preserved unless explicitly overridden. For new files, undefined uses default lazy loading (executes on first require).',
+            examples: [true, false],
+            llmHints: {
+              whenTrue: 'Set loadNow=true for: (1) Web app handlers: doGet(), doPost() - must be available at HTTP request time, (2) Trigger functions: onOpen(), onEdit(), onInstall() - called by GAS automatically, (3) Global functions: any function that needs to be callable immediately without require(), (4) Event registrations: modules that export __events__ object',
+              whenFalse: 'Set loadNow=false for utility libraries and helper modules that are only loaded via require() calls',
+              whenOmit: 'RECOMMENDED: Omit moduleOptions entirely to preserve existing setting when rewriting files. For new files, omitting creates default behavior (no loadNow, equivalent to lazy loading)',
+              preservation: 'When moduleOptions parameter is omitted/undefined, system reads existing remote file and preserves current loadNow setting (~200-500ms API call overhead). For new files, uses default (null = lazy load on first require)',
+              commonJsContext: 'In CommonJS, loadNow=true means module._main() executes at script startup, loadNow=false/null means it executes on first require() call',
+              performance: 'For bulk operations on multiple files, provide explicit loadNow value to skip preservation API lookup'
+            }
+          }
+        },
+        additionalProperties: true,
+        nullable: true
       }
     },
     required: ['scriptId', 'path', 'content'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use for normal file writing with explicit scriptId parameter. Remote-first workflow ensures safety.',
-      workflow: 'Use with explicit scriptId: write({scriptId: "abc123...", path: "filename", content: "..."})',
+      whenToUse: 'Use for normal file writing with explicit scriptId parameter. Automatically uses atomic hook validation when git is available, otherwise falls back to remote-first workflow.',
+      workflow: 'Use with explicit scriptId: write({scriptId: "abc123...", path: "filename", content: "..."}). Git hook validation is automatic - no flags needed.',
       alternatives: 'Use raw_write when you need single-destination writes or advanced file positioning',
+      gitIntegration: 'When git repository exists: (1) Writes locally and runs git commit with hooks, (2) If hooks pass, syncs to remote, (3) If remote fails, reverts git commit. Without git: writes to remote first, then syncs locally.',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
       moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
       wrapperHandling: 'Any accidentally included _main() or __defineModule__ calls are automatically cleaned and replaced with proper CommonJS structure. Never manually add module wrappers.',
@@ -490,7 +516,11 @@ export class WriteTool extends BaseTool {
         'Write with exports: write({scriptId: "1abc2def...", path: "api/client", content: "module.exports = {...}"})',
         'Write HTML: write({scriptId: "1abc2def...", path: "sidebar", content: "<html>...", fileType: "HTML"})',
         'Write config: write({scriptId: "1abc2def...", path: "appsscript", content: "{...}", fileType: "JSON"})',
-        'Local only: write({scriptId: "1abc2def...", path: "test", content: "...", localOnly: true})'
+        'Local only: write({scriptId: "1abc2def...", path: "test", content: "...", localOnly: true})',
+        'Web app handler: write({scriptId: "1abc2def...", path: "WebApp", content: "function doGet(e) { return HtmlService.createHtmlOutput(\'Hello\'); }", moduleOptions: {loadNow: true}})',
+        'Trigger function: write({scriptId: "1abc2def...", path: "Triggers", content: "function onOpen() { SpreadsheetApp.getUi().createMenu(\'Menu\').addToUi(); }", moduleOptions: {loadNow: true}})',
+        'Utility module: write({scriptId: "1abc2def...", path: "Utils", content: "function formatDate(date) { return Utilities.formatDate(date, \'GMT\', \'yyyy-MM-dd\'); }", moduleOptions: {loadNow: false}})',
+        'Preserve existing: write({scriptId: "1abc2def...", path: "existing", content: "..."}) // Omit moduleOptions to preserve current loadNow setting'
       ]
     }
   };
@@ -541,27 +571,100 @@ export class WriteTool extends BaseTool {
     // 🔧 COMMONJS INTEGRATION: Process content for CommonJS module system
     let processedContent = originalContent;
     let commonJsProcessing: any = {};
+    let preservationDebug: any = null; // Track preservation attempts
     const fileType = params.fileType || this.determineFileType(filename, originalContent);
     
     if (shouldWrapContent(fileType, filename)) {
       console.error(`📦 [GAS_WRITE] Integrating ${filename} with CommonJS module system...`);
-      
+
       // Step 1: Analyze CommonJS feature usage in original content
       const { analyzeCommonJsUsage, detectAndCleanContent } = await import('../utils/moduleWrapper.js');
       const commonJsAnalysis = analyzeCommonJsUsage(originalContent);
-      
+
       // Step 2: Clean accidentally included wrappers
       const cleaned = detectAndCleanContent(originalContent, filename);
       processedContent = cleaned.cleanedContent;
-      
+
       if (cleaned.hadWrappers) {
         console.error(`🧹 [GAS_WRITE] Removed redundant CommonJS wrappers - the CommonJS system handles this automatically`);
       }
-      
-      // Step 3: Apply standard CommonJS wrapper (provides require, module, exports)
+
+      // Step 3: Determine moduleOptions (explicit value or inherit from existing file)
+      let resolvedOptions: any = undefined;
+
+      console.error(`🔍 [GAS_WRITE DEBUG] params.moduleOptions type: ${typeof params.moduleOptions}, value: ${JSON.stringify(params.moduleOptions)}`);
+      console.error(`🔍 [GAS_WRITE DEBUG] has loadNow property: ${params.moduleOptions && typeof params.moduleOptions === 'object' && 'loadNow' in params.moduleOptions}`);
+
+      // Check if user provided explicit loadNow value (not null/undefined/omitted)
+      // Per user requirement: "null or undefined for options should inherit the current setting"
+      // Three cases:
+      // 1. moduleOptions omitted/undefined → preserve
+      // 2. moduleOptions is null or {} → preserve
+      // 3. moduleOptions is { loadNow: true/false } → use explicit value
+      const hasExplicitLoadNow = params.moduleOptions &&
+                                 typeof params.moduleOptions === 'object' &&
+                                 'loadNow' in params.moduleOptions &&
+                                 typeof params.moduleOptions.loadNow === 'boolean';
+
+      if (hasExplicitLoadNow) {
+        // User provided explicit loadNow value - use as-is
+        resolvedOptions = { loadNow: params.moduleOptions.loadNow };
+        console.error(`🔧 [GAS_WRITE] User specified loadNow=${params.moduleOptions.loadNow}`);
+      } else {
+        // User didn't specify - inherit from existing file
+        try {
+          const accessToken = await this.getAuthToken(params);
+          const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+          const existingFile = existingFiles.find((f: any) => f.name === filename);
+
+          if (existingFile && existingFile.source) {
+            // Extract existing options from current file
+            console.error(`🔍 [GAS_WRITE DEBUG] Found existing file, source length: ${existingFile.source.length}`);
+            console.error(`🔍 [GAS_WRITE DEBUG] Source preview: ${existingFile.source.substring(0, 200)}...`);
+
+            const { unwrapModuleContent, extractDefineModuleOptionsWithDebug } = await import('../utils/moduleWrapper.js');
+
+            // DEBUG: Get detailed extraction debug info
+            const extractionDebug = extractDefineModuleOptionsWithDebug(existingFile.source);
+            console.error(`🔍 [GAS_WRITE DEBUG] Extraction debug: ${JSON.stringify(extractionDebug)}`);
+
+            const { existingOptions } = unwrapModuleContent(existingFile.source);
+
+            console.error(`🔍 [GAS_WRITE DEBUG] Extracted existingOptions: ${JSON.stringify(existingOptions)}`);
+
+            if (existingOptions) {
+              resolvedOptions = existingOptions;
+              console.error(`🔄 [GAS_WRITE] Inherited existing loadNow=${existingOptions.loadNow} from file`);
+            } else {
+              resolvedOptions = null;
+              console.error(`🔄 [GAS_WRITE] Existing file has no options - using default`);
+            }
+
+            // DEBUG: Track preservation attempt with detailed extraction info
+            preservationDebug = {
+              foundExistingFile: !!existingFile,
+              existingSourceLength: existingFile?.source?.length,
+              extractedOptions: existingOptions,
+              extractionDebug: extractionDebug,
+              sourceTail: existingFile.source.slice(-100),
+              willPreserve: !!existingOptions
+            };
+          } else {
+            // New file - use default (null)
+            resolvedOptions = null;
+            console.error(`📝 [GAS_WRITE] New file - using default __defineModule__(_main)`);
+          }
+        } catch (error: any) {
+          // Error reading file - use default
+          console.error(`⚠️ [GAS_WRITE] Could not read existing file: ${error?.message || String(error)}`);
+          resolvedOptions = null;
+        }
+      }
+
+      // Step 4: Apply standard CommonJS wrapper with resolved options
       const moduleName = getModuleName(path);
-      processedContent = wrapModuleContent(processedContent, moduleName);
-      
+      processedContent = wrapModuleContent(processedContent, moduleName, resolvedOptions);
+
       console.error(`✅ [GAS_WRITE] Applied CommonJS wrapper - require(), module, and exports now available to your code`);
       
       commonJsProcessing = {
@@ -570,13 +673,21 @@ export class WriteTool extends BaseTool {
         warnings: cleaned.warnings,
         commonJsFeatures: {
           requireFunction: true, // Always available via CommonJS
-          moduleObject: true,    // Always available via CommonJS  
+          moduleObject: true,    // Always available via CommonJS
           exportsObject: true,   // Always available via CommonJS
           userRequireCalls: commonJsAnalysis.requireCalls,
           userModuleExports: commonJsAnalysis.moduleExports,
           userExportsUsage: commonJsAnalysis.exportsUsage
         },
-        systemNote: 'require(), module, and exports are provided by the CommonJS module system (see CommonJS.js)'
+        systemNote: 'require(), module, and exports are provided by the CommonJS module system (see CommonJS.js)',
+        // DEBUG: Preservation info
+        moduleOptionsDebug: {
+          paramsModuleOptions: params.moduleOptions,
+          paramsModuleOptionsType: typeof params.moduleOptions,
+          hasExplicitLoadNow,
+          resolvedOptions,
+          preservationDebug
+        }
       };
       
       // Provide user guidance based on features detected
@@ -596,9 +707,28 @@ export class WriteTool extends BaseTool {
 
     const content = processedContent; // Use processed content for all subsequent operations
 
-    // 🎯 REMOTE-FIRST WORKFLOW: Step 1 - Ensure git repository
-    console.error(`🎯 [GAS_WRITE] Starting remote-first workflow for: ${projectName}/${filename}`);
+    // 🔀 OPPORTUNISTIC GIT DETECTION: Auto-detect git availability and choose workflow
+    console.error(`🔍 [GAS_WRITE] Detecting git repository for: ${projectName}/${filename}`);
     const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
+
+    if (gitStatus.gitInitialized && !remoteOnly) {
+      // Git available → use atomic hook validation workflow
+      console.error(`🔒 [GAS_WRITE] Git detected - using atomic hook validation workflow`);
+      return await this.executeWithHookValidation(
+        params,
+        scriptId,
+        filename,
+        content,
+        projectName,
+        workingDir,
+        localOnly,
+        remoteOnly,
+        commonJsProcessing
+      );
+    }
+
+    // No git or remoteOnly → use legacy remote-first workflow
+    console.error(`🎯 [GAS_WRITE] ${remoteOnly ? 'remoteOnly mode' : 'No git repository'} - using remote-first workflow for: ${projectName}/${filename}`);
     
     if (gitStatus.isNewRepo) {
       console.error(`🔧 [GAS_WRITE] Initialized new git repository: ${gitStatus.repoPath}`);
@@ -930,6 +1060,181 @@ export class WriteTool extends BaseTool {
       },
       commonJsProcessing,
       summary: `Successfully ${gitCommitResult?.committed ? 'committed and ' : ''}${localOnly ? 'wrote locally' : remoteOnly ? 'pushed to remote' : 'synchronized local and remote'}${commonJsProcessing.wrapperApplied ? ' with CommonJS integration' : ''}`
+    };
+  }
+
+  /**
+   * Execute write with atomic hook validation workflow
+   * PHASE 1: Write local, run hooks, read post-hook content
+   * PHASE 2: Push to remote
+   * PHASE 3: If remote fails, revert git commit
+   */
+  private async executeWithHookValidation(
+    params: any,
+    scriptId: string,
+    filename: string,
+    content: string,
+    projectName: string,
+    workingDir: string,
+    localOnly: boolean,
+    remoteOnly: boolean,
+    commonJsProcessing: any
+  ): Promise<any> {
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+
+    // Step 1: Ensure git repository exists
+    console.error(`🔧 [HOOK_VALIDATION] Ensuring git repository for: ${projectName}`);
+    const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
+
+    if (!gitStatus.gitInitialized) {
+      throw new Error('Git repository required for hook validation workflow');
+    }
+
+    if (gitStatus.isNewRepo) {
+      console.error(`✅ [HOOK_VALIDATION] Initialized new git repository: ${gitStatus.repoPath}`);
+    } else {
+      console.error(`✅ [HOOK_VALIDATION] Using existing git repository: ${gitStatus.repoPath}`);
+    }
+
+    // Step 2: Prepare local file path
+    const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+    const fullFilename = filename + fileExtension;
+    const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+    const filePath = join(projectPath, fullFilename);
+
+    // PHASE 1: Local validation with hooks
+    console.error(`📝 [HOOK_VALIDATION] PHASE 1: Writing local and validating with hooks...`);
+    const hookResult = await writeLocalAndValidateWithHooks(
+      content,
+      filePath,
+      filename,
+      projectName,
+      workingDir
+    );
+
+    if (!hookResult.success) {
+      // Hooks failed - local already reverted
+      console.error(`❌ [HOOK_VALIDATION] PHASE 1 FAILED: ${hookResult.error}`);
+      throw new Error(`Git hooks validation failed: ${hookResult.error}`);
+    }
+
+    console.error(`✅ [HOOK_VALIDATION] PHASE 1 SUCCESS: Hooks passed${hookResult.hookModified ? ' (content modified by hooks)' : ''}`);
+
+    if (hookResult.hookModified) {
+      console.error(`🔧 [HOOK_VALIDATION] Content modified by hooks (${content.length} → ${hookResult.contentAfterHooks!.length} bytes)`);
+    }
+
+    // Use post-hook content for remote sync
+    const finalContent = hookResult.contentAfterHooks || content;
+
+    // PHASE 2: Remote synchronization (if not local-only)
+    let results: any = {
+      hookValidation: {
+        success: true,
+        hookModified: hookResult.hookModified,
+        commitHash: hookResult.commitHash
+      }
+    };
+
+    if (!localOnly) {
+      console.error(`🚀 [HOOK_VALIDATION] PHASE 2: Pushing to remote...`);
+
+      try {
+        const accessToken = await this.getAuthToken(params);
+
+        // Get current files and prepare update
+        const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        const existingFile = currentFiles.find((f: any) => f.name === filename);
+        const fileType = existingFile?.type || this.determineFileType(filename, finalContent);
+
+        const newFile = {
+          name: filename,
+          type: fileType as any,
+          source: finalContent
+        };
+
+        const updatedFiles = existingFile
+          ? currentFiles.map((f: any) => f.name === filename ? newFile : f)
+          : [...currentFiles, newFile];
+
+        // Push to remote
+        const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
+        const updatedFile = remoteResult.find((f: any) => f.name === filename);
+
+        console.error(`✅ [HOOK_VALIDATION] PHASE 2 SUCCESS: Remote write successful`);
+
+        // Set mtime to match remote (write-through cache)
+        if (updatedFile?.updateTime) {
+          try {
+            await setFileMtimeToRemote(filePath, updatedFile.updateTime);
+            console.error(`✅ [HOOK_VALIDATION] Set local mtime to remote: ${updatedFile.updateTime}`);
+          } catch (mtimeError) {
+            console.error(`⚠️  [HOOK_VALIDATION] Failed to set mtime (non-fatal): ${mtimeError}`);
+          }
+        }
+
+        results.remoteFile = {
+          scriptId,
+          filename,
+          type: fileType,
+          size: finalContent.length,
+          updated: true,
+          updateTime: updatedFile?.updateTime
+        };
+
+      } catch (remoteError: any) {
+        // PHASE 3: Remote failed - revert git commit
+        console.error(`❌ [HOOK_VALIDATION] PHASE 2 FAILED: ${remoteError.message}`);
+        console.error(`🔄 [HOOK_VALIDATION] PHASE 3: Reverting git commit due to remote failure...`);
+
+        const revertResult = await revertGitCommit(
+          projectPath,
+          hookResult.commitHash!,
+          filename
+        );
+
+        if (revertResult.success) {
+          console.error(`✅ [HOOK_VALIDATION] PHASE 3 SUCCESS: Git commit reverted`);
+          throw new Error(`Remote write failed after local validation - all changes reverted: ${remoteError.message}`);
+        } else {
+          console.error(`❌ [HOOK_VALIDATION] PHASE 3 FAILED: Could not revert commit - manual intervention required`);
+          throw new Error(
+            `CRITICAL: Remote write failed AND commit revert failed.\n\n` +
+            `Manual recovery required:\n` +
+            `1. Navigate to: ${projectPath}\n` +
+            `2. Check git status: git status\n` +
+            `3. If conflicts exist: git revert --abort\n` +
+            `4. To undo commit: git reset --hard HEAD~1 (WARNING: loses commit ${hookResult.commitHash})\n\n` +
+            `Original error: ${remoteError.message}\n` +
+            `Revert error: ${revertResult.error || 'unknown'}`
+          );
+        }
+      }
+    }
+
+    // Return comprehensive results
+    return {
+      path: `${scriptId}/${filename}`,
+      scriptId,
+      filename,
+      size: finalContent.length,
+      workflow: 'atomic-hook-validation',
+      results,
+      gitRepository: {
+        initialized: true,
+        path: gitStatus.repoPath,
+        commitHash: hookResult.commitHash,
+        hookModified: hookResult.hookModified
+      },
+      syncStatus: null, // Not applicable in atomic workflow (git provides version control)
+      operations: {
+        localWrite: true,
+        remoteWrite: !localOnly,
+        hookValidation: true,
+        gitCommit: true
+      },
+      commonJsProcessing,
+      summary: `Successfully validated with hooks${hookResult.hookModified ? ' (content modified)' : ''} and ${localOnly ? 'wrote locally' : 'synchronized to remote'}${commonJsProcessing.wrapperApplied ? ' with CommonJS integration' : ''}`
     };
   }
 
@@ -1881,18 +2186,18 @@ export class CpTool extends BaseTool {
     // COMMONJS PROCESSING: Unwrap source content (like cat)
     let processedContent = sourceFile.source || '';
     const fileType = sourceFile.type || 'SERVER_JS';
-    
+
     if (shouldWrapContent(fileType, fromFilename)) {
       // Unwrap CommonJS from source (like cat does)
-      const unwrapped = unwrapModuleContent(processedContent);
-      if (unwrapped !== processedContent) {
+      const { unwrappedContent } = unwrapModuleContent(processedContent);
+      if (unwrappedContent !== processedContent) {
         console.error(`📖 [GAS_CP] Unwrapped CommonJS from source: ${fromFilename}`);
-        processedContent = unwrapped;
+        processedContent = unwrappedContent;
       }
-      
-      // Re-wrap for destination (like write does)
+
+      // Re-wrap for destination without options (user can set options manually with write)
       const moduleName = getModuleName(toFilename);
-      processedContent = wrapModuleContent(processedContent, moduleName);
+      processedContent = wrapModuleContent(processedContent, moduleName, undefined);
       console.error(`✅ [GAS_CP] Re-wrapped CommonJS for destination: ${toFilename}`);
     } else {
       console.error(`⏭️ [GAS_CP] No CommonJS processing for ${fileType} file: ${fromFilename}`);

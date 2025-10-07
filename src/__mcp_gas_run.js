@@ -282,4 +282,4 @@ function errorResponse(error, context, code = 'unknown', loggerOutput = '') {
   ///////// END USER CODE /////////
 }
 
-__defineModule__(_main);
+__defineModule__(_main, null, { loadNow: true });

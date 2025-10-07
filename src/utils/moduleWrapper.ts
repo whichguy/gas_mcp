@@ -42,6 +42,27 @@ interface CommonJsAnalysis {
 }
 
 /**
+ * Module options that can be passed to __defineModule__
+ */
+interface ModuleOptions {
+  loadNow?: boolean;
+}
+
+/**
+ * Debug information from extraction attempt
+ */
+export interface ExtractionDebug {
+  contentLength: number;
+  contentTail: string;
+  regexMatched: boolean;
+  matchedText?: string;
+  optionsString?: string;
+  parseError?: string;
+  validationFailed?: string;
+  result: ModuleOptions | null;
+}
+
+/**
  * Content cleaning result with CommonJS integration details
  */
 interface CleaningResult {
@@ -64,7 +85,7 @@ export function analyzeCommonJsUsage(content: string): CommonJsAnalysis {
   const requireCalls = content.match(commonJsPatterns.requireCalls) || [];
   const moduleExports = commonJsPatterns.moduleExports.test(content);
   const exportsUsage = content.match(commonJsPatterns.exportsUsage) || [];
-  
+
   return {
     requireCalls: requireCalls.map(call => call.trim()),
     moduleExports,
@@ -72,6 +93,129 @@ export function analyzeCommonJsUsage(content: string): CommonJsAnalysis {
     hasModuleDependencies: requireCalls.length > 0,
     note: 'These CommonJS features work because the CommonJS system provides require(), module, and exports automatically'
   };
+}
+
+/**
+ * Extracts moduleOptions from existing __defineModule__ call with detailed debug info
+ * Used to preserve loadNow setting when rewriting files
+ *
+ * @param wrappedContent - Full wrapped content with __defineModule__ call
+ * @returns Debug information about extraction attempt
+ */
+export function extractDefineModuleOptionsWithDebug(wrappedContent: string): ExtractionDebug {
+  const debug: ExtractionDebug = {
+    contentLength: wrappedContent.length,
+    contentTail: wrappedContent.slice(-150),
+    regexMatched: false,
+    result: null
+  };
+
+  try {
+    // Match: __defineModule__(_main, null, { ... })
+    const regex = /__defineModule__\s*\(\s*_main\s*(?:,\s*(?:null|'[^']*'|"[^"]*"))?\s*,\s*(\{[^}]*\})\s*\)/;
+    const match = wrappedContent.match(regex);
+
+    debug.regexMatched = !!match;
+
+    if (match) {
+      debug.matchedText = match[0];
+      debug.optionsString = match[1];
+
+      try {
+        // Convert JavaScript object literal to valid JSON
+        // Replace unquoted keys with quoted keys: loadNow -> "loadNow"
+        const jsonString = match[1].replace(/(\w+):/g, '"$1":');
+        const options = JSON.parse(jsonString);
+
+        if (typeof options !== 'object' || options === null) {
+          debug.validationFailed = `Parsed value is not an object: ${typeof options}`;
+          return debug;
+        }
+
+        const result: ModuleOptions = {};
+        if ('loadNow' in options && typeof options.loadNow === 'boolean') {
+          result.loadNow = options.loadNow;
+        }
+
+        debug.result = Object.keys(result).length > 0 ? result : null;
+        if (!debug.result) {
+          debug.validationFailed = 'No valid loadNow boolean found in options';
+        }
+      } catch (parseError) {
+        debug.parseError = parseError instanceof Error ? parseError.message : String(parseError);
+      }
+    }
+
+    return debug;
+  } catch (error) {
+    debug.parseError = `Unexpected error: ${error instanceof Error ? error.message : String(error)}`;
+    return debug;
+  }
+}
+
+/**
+ * Extracts moduleOptions from existing __defineModule__ call
+ * Used to preserve loadNow setting when rewriting files
+ *
+ * @param wrappedContent - Full wrapped content with __defineModule__ call
+ * @returns Extracted options or null if none/unparseable
+ */
+export function extractDefineModuleOptions(wrappedContent: string): ModuleOptions | null {
+  try {
+    console.error(`🔬 [extractDefineModuleOptions] Starting extraction, content length: ${wrappedContent.length}`);
+    console.error(`🔬 [extractDefineModuleOptions] Content tail (last 150 chars): ${wrappedContent.slice(-150)}`);
+
+    // Match: __defineModule__(_main, null, { ... })
+    const regex = /__defineModule__\s*\(\s*_main\s*(?:,\s*(?:null|'[^']*'|"[^"]*"))?\s*,\s*(\{[^}]*\})\s*\)/;
+    const match = wrappedContent.match(regex);
+
+    console.error(`🔬 [extractDefineModuleOptions] Regex match result: ${match ? 'MATCHED' : 'NO MATCH'}`);
+    if (match) {
+      console.error(`🔬 [extractDefineModuleOptions] Match[0] (full): ${match[0]}`);
+      console.error(`🔬 [extractDefineModuleOptions] Match[1] (options): ${match[1]}`);
+    }
+
+    if (!match) {
+      console.error(`🔬 [extractDefineModuleOptions] No match found - returning null`);
+      return null; // No options found
+    }
+
+    const optionsString = match[1];
+    console.error(`🔬 [extractDefineModuleOptions] About to parse: ${optionsString}`);
+
+    // Convert JavaScript object literal to valid JSON
+    // Replace unquoted keys with quoted keys: loadNow -> "loadNow"
+    const jsonString = optionsString.replace(/(\w+):/g, '"$1":');
+    console.error(`🔬 [extractDefineModuleOptions] Converted to JSON: ${jsonString}`);
+
+    // Try to parse as JSON
+    const options = JSON.parse(jsonString);
+    console.error(`🔬 [extractDefineModuleOptions] JSON.parse succeeded: ${JSON.stringify(options)}`);
+
+    // Validate structure
+    if (typeof options !== 'object' || options === null) {
+      console.error(`🔬 [extractDefineModuleOptions] Invalid type or null - returning null`);
+      return null;
+    }
+
+    // Extract loadNow if present
+    const result: ModuleOptions = {};
+    if ('loadNow' in options && typeof options.loadNow === 'boolean') {
+      result.loadNow = options.loadNow;
+      console.error(`🔬 [extractDefineModuleOptions] Extracted loadNow=${result.loadNow}`);
+    } else {
+      console.error(`🔬 [extractDefineModuleOptions] No valid loadNow found in options`);
+    }
+
+    const finalResult = Object.keys(result).length > 0 ? result : null;
+    console.error(`🔬 [extractDefineModuleOptions] Final result: ${JSON.stringify(finalResult)}`);
+    return finalResult;
+
+  } catch (error) {
+    console.error(`🔬 [extractDefineModuleOptions] ERROR caught: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`🔬 [extractDefineModuleOptions] Error stack: ${error instanceof Error ? error.stack : 'N/A'}`);
+    return null;
+  }
 }
 
 /**
@@ -103,11 +247,11 @@ export function detectAndCleanContent(content: string, filename: string): Cleani
   // Check for complete _main function wrapper
   if (commonJsPatterns.mainFunction.test(trimmedContent)) {
     console.error(`🧹 [COMMONJS] Detected existing _main() function in ${filename} - removing redundant wrapper`);
-    
+
     // Try to unwrap using existing function
-    const unwrapped = unwrapModuleContent(trimmedContent);
-    if (unwrapped !== trimmedContent) {
-      cleanedContent = unwrapped;
+    const { unwrappedContent } = unwrapModuleContent(trimmedContent);
+    if (unwrappedContent !== trimmedContent) {
+      cleanedContent = unwrappedContent;
       hadWrappers = true;
       warnings.push('Removed duplicate _main() function - CommonJS provides this automatically with require(), module, exports access');
     } else {
@@ -157,12 +301,32 @@ export function detectAndCleanContent(content: string, filename: string): Cleani
  * Provides automatic access to require(), module, and exports via CommonJS system
  * @param content - The user's JavaScript code (should be pre-cleaned)
  * @param moduleName - The name of the module (derived from filename) - used for documentation only
- * @returns Wrapped content with _main() function and __defineModule__(_main) call (no explicit name)
+ * @param options - Optional module loading options (e.g., loadNow)
+ * @returns Wrapped content with _main() function and appropriate __defineModule__ call
  */
-export function wrapModuleContent(content: string, moduleName: string): string {
+export function wrapModuleContent(
+  content: string,
+  moduleName: string,
+  options?: ModuleOptions | null
+): string {
     // Trim any leading/trailing whitespace
     const trimmedContent = content.trim();
-    
+
+    // Determine __defineModule__ call format based on options
+    let defineCall: string;
+
+    if (options === null || (options && Object.keys(options).length === 0)) {
+      // Explicit null or empty object → no options
+      defineCall = '__defineModule__(_main);';
+    } else if (options?.loadNow === true) {
+      defineCall = '__defineModule__(_main, null, { loadNow: true });';
+    } else if (options?.loadNow === false) {
+      defineCall = '__defineModule__(_main, null, { loadNow: false });';
+    } else {
+      // Undefined or no loadNow → default (no options)
+      defineCall = '__defineModule__(_main);';
+    }
+
     // If content is empty, create minimal module function
     if (!trimmedContent) {
         return `function _main(
@@ -173,25 +337,25 @@ export function wrapModuleContent(content: string, moduleName: string): string {
     // Empty module - CommonJS provides require(), module, exports automatically
 }
 
-__defineModule__(_main);`;
+${defineCall}`;
     }
-    
+
     // Check if content already has _main function (should not happen after cleaning)
     const hasMainFunction = /_main\s*\(/.test(trimmedContent);
-    
+
     if (hasMainFunction) {
         console.error(`⚠️ [COMMONJS] Warning: _main function still present after cleaning - applying minimal processing`);
         // Content already has _main function, just ensure it has __defineModule__ call
         if (!trimmedContent.includes('__defineModule__')) {
-            return `${trimmedContent}\n\n__defineModule__(_main);`;
+            return `${trimmedContent}\n\n${defineCall}`;
         }
-        // If it already has __defineModule__ with explicit name, remove the name parameter
-        if (trimmedContent.includes('__defineModule__(_main,')) {
-            return trimmedContent.replace(/__defineModule__\(_main,\s*'[^']*'\)/, '__defineModule__(_main)');
-        }
-        return trimmedContent;
+        // Replace any existing __defineModule__ call with the new one
+        return trimmedContent.replace(
+          /__defineModule__\([^)]*\);?/,
+          defineCall
+        );
     }
-    
+
     // Wrap content with _main function that provides CommonJS integration
     return `function _main(
   module = globalThis.__getCurrentModule(),
@@ -201,21 +365,26 @@ __defineModule__(_main);`;
 ${trimmedContent.split('\n').map(line => line ? `  ${line}` : '').join('\n')}
 }
 
-__defineModule__(_main);`;
+${defineCall}`;
 }
 
 /**
- * Unwraps module content, extracting only the inner code from _main() function
+ * Unwraps module content, extracting the inner code and existing options
  * @param content - The wrapped module content
- * @returns The inner user code without module wrapper
+ * @returns Object with unwrapped content and any existing options
  */
-export function unwrapModuleContent(content: string): string {
+export function unwrapModuleContent(content: string): {
+  unwrappedContent: string;
+  existingOptions: ModuleOptions | null;
+} {
+    // First extract options before unwrapping
+    const existingOptions = extractDefineModuleOptions(content);
     const lines = content.split('\n');
-    
+
     // Find the _main function start
     let mainStartIndex = -1;
     let mainEndIndex = -1;
-    
+
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (line.startsWith('function _main')) {
@@ -223,12 +392,15 @@ export function unwrapModuleContent(content: string): string {
             break;
         }
     }
-    
+
     if (mainStartIndex === -1) {
         // No _main function found, return original content
-        return content;
+        return {
+          unwrappedContent: content,
+          existingOptions
+        };
     }
-    
+
     // Find the opening brace of the _main function
     let openBraceIndex = -1;
     for (let i = mainStartIndex; i < lines.length; i++) {
@@ -238,19 +410,22 @@ export function unwrapModuleContent(content: string): string {
             break;
         }
     }
-    
+
     if (openBraceIndex === -1) {
         // Couldn't find opening brace, return original content
-        return content;
+        return {
+          unwrappedContent: content,
+          existingOptions
+        };
     }
-    
+
     // Find the matching closing brace for the _main function
     let braceCount = 0;
     let foundOpenBrace = false;
-    
+
     for (let i = openBraceIndex; i < lines.length; i++) {
         const line = lines[i];
-        
+
         for (let j = 0; j < line.length; j++) {
             if (line[j] === '{') {
                 braceCount++;
@@ -263,18 +438,21 @@ export function unwrapModuleContent(content: string): string {
                 }
             }
         }
-        
+
         if (mainEndIndex !== -1) break;
     }
-    
+
     if (mainEndIndex === -1) {
         // Couldn't find closing brace, return original content
-        return content;
+        return {
+          unwrappedContent: content,
+          existingOptions
+        };
     }
-    
+
     // Extract the inner content (skip the function declaration lines and closing brace line)
     const innerLines = lines.slice(openBraceIndex + 1, mainEndIndex);
-    
+
     // Remove the 2-space indentation that was added during wrapping
     const unindentedLines = innerLines.map(line => {
         if (line.startsWith('  ')) {
@@ -282,9 +460,14 @@ export function unwrapModuleContent(content: string): string {
         }
         return line;
     });
-    
+
     // Join and trim
-    return unindentedLines.join('\n').trim();
+    const unwrappedContent = unindentedLines.join('\n').trim();
+
+    return {
+      unwrappedContent,
+      existingOptions
+    };
 }
 
 /**
