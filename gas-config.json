@@ -221,6 +221,11 @@
       "scriptId": "1DDdrCrgbW0bRu3lKtsjo4MqCCrcrTyr36JiW--Qmy9dwjbdL7zmFpWDN",
       "name": "event-handler-system-test",
       "description": "Created: 10/5/2025"
+    },
+    "module-options-preservation-te": {
+      "scriptId": "1w7nTXOLmgSGAaujQnLIm4P-wASgYiwHzmRlrJnNF3fKLuzFW8fBNLxdn",
+      "name": "module-options-preservation-te",
+      "description": "Created: 10/7/2025"
     }
   },
   "localRoot": {
@@ -230,7 +235,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-05T21:49:46.443Z"
+    "lastModified": "2025-10-07T18:34:28.680Z"
   },
   "debug": true,
   "currentProject": {
