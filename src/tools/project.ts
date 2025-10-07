@@ -288,12 +288,31 @@ export class ReorderTool extends BaseTool {
     // Create new file order
     const reorderedFiles = [...files];
     const currentIndex = reorderedFiles.findIndex((f: any) => f.name === fileName);
-    
+
     // Remove file from current position
     const [movedFile] = reorderedFiles.splice(currentIndex, 1);
-    
+
     // Insert at new position
     reorderedFiles.splice(newPosition, 0, movedFile);
+
+    // Enforce critical file ordering:
+    // Position 0: CommonJS (always first)
+    // Position 1: __mcp_gas_run (always second, right after CommonJS)
+    const commonJsIndex = reorderedFiles.findIndex((f: any) => f.name === 'CommonJS');
+    const mcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === '__mcp_gas_run');
+
+    // Move CommonJS to position 0 if not already there
+    if (commonJsIndex !== -1 && commonJsIndex !== 0) {
+      const [commonJsFile] = reorderedFiles.splice(commonJsIndex, 1);
+      reorderedFiles.unshift(commonJsFile);
+    }
+
+    // Move __mcp_gas_run to position 1 if not already there (right after CommonJS)
+    const updatedMcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === '__mcp_gas_run');
+    if (updatedMcpRunIndex !== -1 && updatedMcpRunIndex !== 1) {
+      const [mcpRunFile] = reorderedFiles.splice(updatedMcpRunIndex, 1);
+      reorderedFiles.splice(1, 0, mcpRunFile);
+    }
 
     // Update the project with new file order
     await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
@@ -305,7 +324,7 @@ export class ReorderTool extends BaseTool {
       oldPosition: currentIndex,
       newPosition,
       totalFiles: files.length,
-      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}`
+      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. CommonJS enforced at position 0, __mcp_gas_run at position 1.`
     };
   }
 }
