@@ -631,14 +631,18 @@
 
   /**
    * Registers a module with the system
-   * Supports __global__ and __events__ properties for special processing
    * @param {Function} moduleFactory - The _main function that creates the module
    * @param {string} [explicitName] - RESERVED for CommonJS system module only
+   * @param {Object} [options] - Optional configuration
+   * @param {boolean} [options.loadNow=false] - If true, immediately execute module via require()
    */
-  function __defineModule__(moduleFactory, explicitName) {
+  function __defineModule__(moduleFactory, explicitName, options) {
+    // Parse options parameter
+    const opts = typeof options === 'object' && options !== null ? options : {};
+
     // CRITICAL: explicitName is RESERVED for the CommonJS system module only
     // All user modules MUST use auto-detection
-    Logger.log(`📝 __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}`);
+    Logger.log(`📝 __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${opts.loadNow || false}`);
 
     const moduleName = explicitName || __detectModuleName__();
 
@@ -653,82 +657,26 @@
     moduleFactories[moduleName] = moduleFactory;
     Logger.log(`   Factory stored for: ${moduleName}`);
 
-    // NEW: Check if module wants to expose globals or events immediately
-    // Execute factory to inspect for __global__ and __events__ properties
-    try {
-      Logger.log(`   Executing factory to check for __global__ and __events__...`);
-
-      const tempModule = { exports: {} };
-      const previousModule = globalThis.__currentModule;
-      globalThis.__currentModule = tempModule;
-
-      // Execute the factory
-      const result = moduleFactory(tempModule, tempModule.exports, require);
-
-      // If factory returns something, use it as exports
-      if (result !== undefined) {
-        Logger.log(`   Factory returned value, using as exports`);
-        tempModule.exports = result;
+    // If loadNow=true, immediately execute module via require()
+    if (opts.loadNow) {
+      Logger.log(`⚡ Load-now enabled for ${moduleName}, executing immediately...`);
+      try {
+        require(moduleName);
+        Logger.log(`✅ Module ${moduleName} loaded immediately via require()`);
+        return; // Module is now cached and processed by require()
+      } catch (error) {
+        Logger.log(`❌ Error loading module ${moduleName} immediately: ${error.message}`);
+        throw error; // Re-throw to prevent silent failures
       }
-
-      // Restore previous module
-      globalThis.__currentModule = previousModule;
-
-      Logger.log(`   Factory executed, checking for special properties...`);
-
-      // Check for __global__ property
-      if (tempModule.exports.__global__ && Array.isArray(tempModule.exports.__global__)) {
-        Logger.log(`🌍 Module ${moduleName} declares global exports`);
-
-        // Expose each function to global namespace
-        tempModule.exports.__global__.forEach(funcName => {
-          if (typeof tempModule.exports[funcName] === 'function') {
-            globalThis[funcName] = tempModule.exports[funcName];
-            Logger.log(`  ✅ Exposed ${funcName} to global namespace`);
-          } else {
-            Logger.log(`  ⚠️ Warning: ${funcName} is not a function, skipping global export`);
-          }
-        });
-
-        // Cache this module since we already executed it
-        modules[moduleName] = tempModule;
-        Logger.log(`  💾 Cached module ${moduleName} (already executed for global exports)`);
-      }
-
-      // Check for __events__ property
-      if (tempModule.exports.__events__ && typeof tempModule.exports.__events__ === 'object') {
-        Logger.log(`📅 Module ${moduleName} declares event handlers`);
-
-        // Validate event handlers exist
-        Object.keys(tempModule.exports.__events__).forEach(eventName => {
-          const handlerName = tempModule.exports.__events__[eventName];
-          const handlerFunction = tempModule.exports[handlerName];
-
-          if (typeof handlerFunction === 'function') {
-            Logger.log(`  ✅ Event handler ${eventName} → ${handlerName}`);
-          } else {
-            Logger.log(`  ⚠️ Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
-          }
-        });
-
-        // Cache this module since we already executed it
-        if (!modules[moduleName]) {
-          modules[moduleName] = tempModule;
-          Logger.log(`  💾 Cached module ${moduleName} (already executed for event handlers)`);
-        }
-      }
-
-    } catch (error) {
-      // Don't fail module registration - it can still be required later
-      Logger.log(`⚠️ Error during global export/event handler check for ${moduleName}: ${error.message}`);
-      Logger.log(`   Module will still be available via require()`);
     }
 
+    // Module registered without execution - will execute on first require()
     Logger.log(`📦 Module registered: ${moduleName}`);
   }
 
   /**
    * Loads a module on demand
+   * NOTE: This is where __global__ and __events__ properties are processed
    * @param {string} moduleName - The name or path of the module to load
    * @returns {Object} The module exports
    */
@@ -791,6 +739,36 @@
       // Restore previous module
       globalThis.__currentModule = previousModule;
       Logger.log(`✅ Module loaded: ${found}`);
+
+      // Process __global__ exports if present (key-value map)
+      if (module.exports.__global__ && typeof module.exports.__global__ === 'object' && !Array.isArray(module.exports.__global__)) {
+        Logger.log(`🌍 Module ${found} declares global exports`);
+
+        // Expose each key-value pair to global namespace
+        Object.keys(module.exports.__global__).forEach(key => {
+          const value = module.exports.__global__[key];
+          globalThis[key] = value;
+          Logger.log(`  ✅ Exposed ${key} to global namespace (${typeof value})`);
+        });
+      }
+
+      // Process __events__ if present
+      if (module.exports.__events__ && typeof module.exports.__events__ === 'object') {
+        Logger.log(`📅 Module ${found} declares event handlers`);
+
+        // Validate event handlers exist
+        Object.keys(module.exports.__events__).forEach(eventName => {
+          const handlerName = module.exports.__events__[eventName];
+          const handlerFunction = module.exports[handlerName];
+
+          if (typeof handlerFunction === 'function') {
+            Logger.log(`  ✅ Event handler ${eventName} → ${handlerName}`);
+          } else {
+            Logger.log(`  ⚠️ Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
+          }
+        });
+      }
+
       return module.exports;
     } finally {
       // Remove from loading set
