@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authorization Successful - <?= projectName ?></title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-tertiary: #2d2d30;
+      --text-primary: #d4d4d4;
+      --text-secondary: #858585;
+      --accent-success: #4ec9b0;
+      --accent-warning: #ce9178;
+      --accent-error: #f48771;
+      --border: #3e3e42;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    .layout-grid {
+      display: grid;
+      grid-template-rows: 40px 1fr 30px;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .top-bar {
+      background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .project-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      color: white;
+      font-weight: 500;
+    }
+
+    .auto-close-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .timer-display {
+      color: white;
+      font-size: 14px;
+      font-weight: 500;
+      min-width: 120px;
+      text-align: right;
+    }
+
+    .main-content {
+      display: grid;
+      grid-template-columns: 300px 1fr 350px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 10px 15px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+
+    .module-tree {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .module-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s;
+    }
+
+    .module-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .module-item.active {
+      background: #094771;
+    }
+
+    .console-panel {
+      border-right: none;
+    }
+
+    .console-tabs {
+      display: flex;
+      gap: 2px;
+      padding: 10px 15px 0;
+      background: var(--bg-secondary);
+    }
+
+    .console-tab {
+      padding: 6px 16px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 4px 4px 0 0;
+      font-size: 13px;
+      transition: all 0.15s;
+    }
+
+    .console-tab.active {
+      background: var(--bg-primary);
+      color: var(--accent-success);
+    }
+
+    .console-output {
+      flex: 1;
+      background: var(--bg-primary);
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      padding: 15px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .console-input-area {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 10px 15px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .console-input {
+      flex: 1;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      color: var(--text-primary);
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+    }
+
+    .console-input:focus {
+      outline: none;
+      border-color: var(--accent-success);
+    }
+
+    .output-line {
+      margin-bottom: 8px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .output-prompt {
+      color: var(--accent-success);
+      font-weight: 600;
+    }
+
+    .output-result {
+      color: var(--accent-warning);
+    }
+
+    .output-error {
+      color: var(--accent-error);
+    }
+
+    .context-section {
+      margin-bottom: 20px;
+    }
+
+    .context-section h6 {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      letter-spacing: 0.5px;
+    }
+
+    .context-item {
+      padding: 8px 12px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      margin-bottom: 6px;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .context-label {
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .context-value {
+      font-family: 'Consolas', 'Monaco', monospace;
+      color: var(--accent-success);
+      font-size: 12px;
+    }
+
+    .quick-action-btn {
+      width: 100%;
+      padding: 10px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.15s;
+      margin-bottom: 8px;
+    }
+
+    .quick-action-btn:hover {
+      background: var(--bg-primary);
+      border-color: var(--accent-success);
+    }
+
+    .status-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 15px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-custom {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout-grid">
+    <!-- Top Bar -->
+    <div class="top-bar">
+      <div class="project-info">
+        <i class="bi bi-check-circle-fill"></i>
+        <span>Authorization Successful</span>
+        <span style="opacity: 0.8;">•</span>
+        <span style="font-weight: 400;"><?= projectName ?></span>
+      </div>
+      <div class="auto-close-controls">
+        <span class="timer-display" id="timerDisplay">Auto-close in 10s</span>
+        <button class="btn btn-sm btn-outline-light" id="cancelBtn">
+          <i class="bi bi-x-circle"></i> Cancel
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Left Panel: Module Explorer -->
+      <div class="panel">
+        <div class="panel-header">
+          <span><i class="bi bi-folder2-open"></i> Modules</span>
+          <span class="badge-custom bg-success"><?= moduleCount ?></span>
+        </div>
+        <div class="panel-content">
+          <ul class="module-tree" id="moduleTree">
+            <?
+              for (let i = 0; i < moduleList.length; i++) {
+                const mod = moduleList[i];
+            ?>
+            <li class="module-item" data-module="<?= mod.name ?>">
+              <i class="bi bi-file-code"></i>
+              <span><?= mod.name ?></span>
+              <? if (mod.loadNow) { ?>
+                <i class="bi bi-lightning-fill text-warning" title="Load on startup"></i>
+              <? } ?>
+            </li>
+            <? } ?>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Center Panel: Console -->
+      <div class="panel console-panel">
+        <div class="console-tabs">
+          <button class="console-tab active" data-tab="console">Console</button>
+          <button class="console-tab" data-tab="history">History</button>
+          <button class="console-tab" data-tab="help">Help</button>
+        </div>
+        <div class="console-output" id="consoleOutput">
+          <div class="output-line">
+            <span class="output-prompt">&gt;</span>
+            <span>Welcome to <?= projectName ?> REPL Console</span>
+          </div>
+          <div class="output-line">
+            <span class="output-prompt">&gt;</span>
+            <span>Type 'help' for available commands</span>
+          </div>
+          <div class="output-line">
+            <span class="output-prompt">&gt;</span>
+            <span>Deployment: <span class="output-result"><?= deploymentUrl ?></span></span>
+          </div>
+        </div>
+        <div class="console-input-area">
+          <input
+            type="text"
+            class="console-input"
+            id="consoleInput"
+            placeholder="Enter command or JavaScript (use arrow keys for history)..."
+            autofocus
+          />
+          <button class="btn btn-success btn-sm" id="executeBtn">
+            <i class="bi bi-play-fill"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Right Panel: Context -->
+      <div class="panel">
+        <div class="panel-header">
+          <span><i class="bi bi-info-circle"></i> Context</span>
+        </div>
+        <div class="panel-content">
+          <div class="context-section">
+            <h6>Environment</h6>
+            <div class="context-item">
+              <span class="context-label">User</span>
+              <span class="context-value"><?= userEmail ?></span>
+            </div>
+            <div class="context-item">
+              <span class="context-label">Timezone</span>
+              <span class="context-value"><?= timezone ?></span>
+            </div>
+            <div class="context-item">
+              <span class="context-label">Script ID</span>
+              <span class="context-value"><?= scriptId.substring(0, 12) ?>...</span>
+            </div>
+          </div>
+
+          <div class="context-section">
+            <h6>Quick Actions</h6>
+            <button class="quick-action-btn" onclick="runQuickTest()">
+              <i class="bi bi-lightning"></i> Run Quick Test
+            </button>
+            <button class="quick-action-btn" onclick="listModules()">
+              <i class="bi bi-list-ul"></i> List All Modules
+            </button>
+            <button class="quick-action-btn" onclick="openScriptEditor()">
+              <i class="bi bi-code-slash"></i> Open Script Editor
+            </button>
+            <button class="quick-action-btn" onclick="copyScriptId()">
+              <i class="bi bi-clipboard"></i> Copy Script ID
+            </button>
+          </div>
+
+          <div class="context-section">
+            <h6>Available APIs</h6>
+            <div class="context-item">
+              <span>SpreadsheetApp</span>
+              <i class="bi bi-check-circle text-success"></i>
+            </div>
+            <div class="context-item">
+              <span>DriveApp</span>
+              <i class="bi bi-check-circle text-success"></i>
+            </div>
+            <div class="context-item">
+              <span>GmailApp</span>
+              <i class="bi bi-check-circle text-success"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="status-item">
+        <i class="bi bi-circle-fill text-success" style="font-size: 8px;"></i>
+        <span>Connected to HEAD deployment</span>
+      </div>
+      <div class="status-item">
+        <span id="statusMessage">Ready</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const moduleData = <?!= moduleListJson || '[]' ?>;
+    const deploymentUrl = "<?= deploymentUrl ?>";
+    const scriptId = "<?= scriptId ?>";
+
+    // Auto-close timer
+    let timeLeft = 10;
+    let timerInterval = null;
+    let autoCloseCancelled = false;
+
+    function startTimer() {
+      timerInterval = setInterval(() => {
+        if (autoCloseCancelled) {
+          clearInterval(timerInterval);
+          return;
+        }
+
+        timeLeft--;
+        document.getElementById('timerDisplay').textContent =
+          timeLeft > 0 ? `Auto-close in ${timeLeft}s` : 'Closing...';
+
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          window.close();
+        }
+      }, 1000);
+    }
+
+    document.getElementById('cancelBtn').addEventListener('click', () => {
+      autoCloseCancelled = true;
+      document.getElementById('timerDisplay').textContent = 'Auto-close cancelled';
+      document.getElementById('cancelBtn').style.display = 'none';
+    });
+
+    // Command history
+    const commandHistory = [];
+    let historyIndex = -1;
+
+    // Console input handling
+    const consoleInput = document.getElementById('consoleInput');
+    const consoleOutput = document.getElementById('consoleOutput');
+
+    consoleInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        executeCommand();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (historyIndex < commandHistory.length - 1) {
+          historyIndex++;
+          consoleInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (historyIndex > 0) {
+          historyIndex--;
+          consoleInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
+        } else {
+          historyIndex = -1;
+          consoleInput.value = '';
+        }
+      }
+    });
+
+    function executeCommand() {
+      const input = consoleInput.value.trim();
+      if (!input) return;
+
+      commandHistory.push(input);
+      historyIndex = -1;
+
+      appendOutput(`> ${input}`, 'output-prompt');
+
+      // Built-in commands
+      if (input === 'help') {
+        showHelp();
+      } else if (input === 'list') {
+        listModulesCmd();
+      } else if (input === 'clear') {
+        consoleOutput.innerHTML = '';
+      } else {
+        // Execute via deployment
+        executeRemote(input);
+      }
+
+      consoleInput.value = '';
+    }
+
+    document.getElementById('executeBtn').addEventListener('click', executeCommand);
+
+    function appendOutput(text, className = '') {
+      const line = document.createElement('div');
+      line.className = `output-line ${className}`;
+      line.textContent = text;
+      consoleOutput.appendChild(line);
+      consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+
+    function showHelp() {
+      appendOutput('Available commands:', 'output-result');
+      appendOutput('  help     - Show this help', '');
+      appendOutput('  list     - List all modules', '');
+      appendOutput('  clear    - Clear console', '');
+      appendOutput('  js:> ... - Execute raw JavaScript', '');
+      appendOutput('  <func> <args> - Execute function with shell-style args', '');
+    }
+
+    function listModulesCmd() {
+      appendOutput('Loaded modules:', 'output-result');
+      moduleData.forEach((mod) => {
+        appendOutput(`  ${mod.name} - ${mod.exports.length} exports`, '');
+      });
+    }
+
+    function executeRemote(command) {
+      appendOutput('Executing...', 'output-result');
+      document.getElementById('statusMessage').textContent = 'Executing...';
+
+      // Parse command and execute via fetch
+      fetch(`${deploymentUrl}?_mcp_run=true&func=${encodeURIComponent(command)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            appendOutput(JSON.stringify(data.result, null, 2), 'output-result');
+          } else {
+            appendOutput(`Error: ${data.error}`, 'output-error');
+          }
+          document.getElementById('statusMessage').textContent = 'Ready';
+        })
+        .catch((err) => {
+          appendOutput(`Error: ${err.message}`, 'output-error');
+          document.getElementById('statusMessage').textContent = 'Error';
+        });
+    }
+
+    // Quick actions
+    function runQuickTest() {
+      consoleInput.value = 'return new Date().toISOString()';
+      executeCommand();
+    }
+
+    function listModules() {
+      listModulesCmd();
+    }
+
+    function openScriptEditor() {
+      window.open(`https://script.google.com/d/${scriptId}/edit`, '_blank');
+    }
+
+    function copyScriptId() {
+      navigator.clipboard.writeText(scriptId);
+      document.getElementById('statusMessage').textContent = 'Script ID copied!';
+      setTimeout(() => {
+        document.getElementById('statusMessage').textContent = 'Ready';
+      }, 2000);
+    }
+
+    // Start auto-close timer
+    startTimer();
+  </script>
+</body>
+</html>
