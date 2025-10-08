@@ -59,6 +59,55 @@ export interface ModuleOptions {
 }
 
 /**
+ * Extracts hoisted function definitions from wrapped content
+ * Parses the bridge functions between _main() and __defineModule__
+ * @param content - The wrapped module content
+ * @returns Array of hoisted function definitions, or undefined if none found
+ */
+function extractHoistedFunctions(content: string): HoistedFunction[] | undefined {
+  // Look for the hoisted functions section markers
+  const startMarker = '// ===== HOISTED CUSTOM FUNCTIONS (for Google Sheets autocomplete) =====';
+  const endMarker = '// ===== END HOISTED CUSTOM FUNCTIONS =====';
+
+  const startIdx = content.indexOf(startMarker);
+  const endIdx = content.indexOf(endMarker);
+
+  if (startIdx === -1 || endIdx === -1) {
+    return undefined;  // No hoisted functions found
+  }
+
+  // Extract the content between markers
+  const hoistedSection = content.substring(startIdx + startMarker.length, endIdx).trim();
+
+  if (!hoistedSection) {
+    return undefined;
+  }
+
+  // Parse individual function definitions
+  const functions: HoistedFunction[] = [];
+
+  // Match function definitions with optional JSDoc
+  // Pattern: (optional JSDoc) function NAME(PARAMS) { ... }
+  const functionPattern = /(\/\*\*[\s\S]*?\*\/\s*)?function\s+(\w+)\s*\(([^)]*)\)\s*\{[\s\S]*?\}/g;
+
+  let match;
+  while ((match = functionPattern.exec(hoistedSection)) !== null) {
+    const jsdoc = match[1]?.trim();
+    const name = match[2];
+    const paramsStr = match[3].trim();
+    const params = paramsStr ? paramsStr.split(',').map(p => p.trim()) : [];
+
+    functions.push({
+      name,
+      params,
+      jsdoc: jsdoc || undefined
+    });
+  }
+
+  return functions.length > 0 ? functions : undefined;
+}
+
+/**
  * Debug information from extraction attempt
  */
 export interface ExtractionDebug {
@@ -419,14 +468,25 @@ ${defineCall}`;
 /**
  * Unwraps module content, extracting the inner code and existing options
  * @param content - The wrapped module content
- * @returns Object with unwrapped content and any existing options
+ * @returns Object with unwrapped content and any existing options (including hoisted functions)
  */
 export function unwrapModuleContent(content: string): {
   unwrappedContent: string;
   existingOptions: ModuleOptions | null;
 } {
-    // First extract options before unwrapping
-    const existingOptions = extractDefineModuleOptions(content);
+    // Extract options and hoisted functions before unwrapping
+    const loadNowOption = extractDefineModuleOptions(content);
+    const hoistedFunctions = extractHoistedFunctions(content);
+
+    // Combine into existingOptions
+    const existingOptions: ModuleOptions | null =
+      (loadNowOption || hoistedFunctions)
+        ? {
+            ...loadNowOption,
+            hoistedFunctions
+          }
+        : null;
+
     const lines = content.split('\n');
 
     // Find the _main function start

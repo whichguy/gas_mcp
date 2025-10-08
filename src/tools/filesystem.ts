@@ -570,8 +570,16 @@ export class WriteTool extends BaseTool {
         'Web app handler: write({scriptId: "1abc2def...", path: "WebApp", content: "function doGet(e) { return HtmlService.createHtmlOutput(\'Hello\'); }", moduleOptions: {loadNow: true}})',
         'Trigger function: write({scriptId: "1abc2def...", path: "Triggers", content: "function onOpen() { SpreadsheetApp.getUi().createMenu(\'Menu\').addToUi(); }", moduleOptions: {loadNow: true}})',
         'Utility module: write({scriptId: "1abc2def...", path: "Utils", content: "function formatDate(date) { return Utilities.formatDate(date, \'GMT\', \'yyyy-MM-dd\'); }", moduleOptions: {loadNow: false}})',
-        'Preserve existing: write({scriptId: "1abc2def...", path: "existing", content: "..."}) // Omit moduleOptions to preserve current loadNow setting'
-      ]
+        'Preserve existing: write({scriptId: "1abc2def...", path: "existing", content: "..."}) // Omit moduleOptions to preserve current loadNow and hoistedFunctions',
+        'Add hoisted function: write({scriptId: "1abc2def...", path: "SheetFuncs", content: "function ask(p,r){...}", moduleOptions: {hoistedFunctions: [{name: "ASK_CLAUDE", params: ["prompt","range"]}]}})',
+        'Remove hoisted functions: write({scriptId: "1abc2def...", path: "SheetFuncs", content: "...", moduleOptions: {hoistedFunctions: []}}) // Empty array removes all bridges'
+      ],
+      hoistedFunctionLifecycle: {
+        preservation: 'When moduleOptions is omitted, existing hoistedFunctions are preserved along with loadNow setting',
+        replacement: 'When moduleOptions.hoistedFunctions is provided with functions, replaces existing hoisted functions',
+        removal: 'When moduleOptions.hoistedFunctions is empty array [], removes all hoisted function bridges',
+        noCruft: 'Old hoisted functions are automatically cleaned up when replaced or removed - no orphaned bridges remain'
+      }
     }
   };
 
@@ -692,18 +700,26 @@ export class WriteTool extends BaseTool {
             console.error(`🔍 [GAS_WRITE DEBUG] Extracted existingOptions: ${JSON.stringify(existingOptions)}`);
 
             if (existingOptions) {
+              // Preserve existing hoisted functions if new ones not provided
               resolvedOptions = {
                 ...existingOptions,
-                hoistedFunctions  // Add hoisted functions if provided
+                ...(hoistedFunctions !== undefined && { hoistedFunctions })  // Only override if explicitly provided
               };
               console.error(`🔄 [GAS_WRITE] Inherited existing loadNow=${existingOptions.loadNow} from file`);
+              if (hoistedFunctions === undefined && existingOptions.hoistedFunctions) {
+                console.error(`🔄 [GAS_WRITE] Preserved ${existingOptions.hoistedFunctions.length} existing hoisted function(s)`);
+              }
             } else {
               resolvedOptions = hoistedFunctions ? { hoistedFunctions } : null;
               console.error(`🔄 [GAS_WRITE] Existing file has no options - using default`);
             }
 
-            if (hoistedFunctions) {
-              console.error(`🎯 [GAS_WRITE] Hoisting ${hoistedFunctions.length} function(s) for Google Sheets autocomplete`);
+            if (hoistedFunctions !== undefined) {
+              if (hoistedFunctions.length > 0) {
+                console.error(`🎯 [GAS_WRITE] Hoisting ${hoistedFunctions.length} function(s) for Google Sheets autocomplete`);
+              } else {
+                console.error(`🗑️ [GAS_WRITE] Removing all hoisted functions (empty array provided)`);
+              }
             }
 
             // DEBUG: Track preservation attempt with detailed extraction info
@@ -719,7 +735,7 @@ export class WriteTool extends BaseTool {
             // New file - use default (null) but include hoistedFunctions if provided
             resolvedOptions = hoistedFunctions ? { hoistedFunctions } : null;
             console.error(`📝 [GAS_WRITE] New file - using default __defineModule__(_main)`);
-            if (hoistedFunctions) {
+            if (hoistedFunctions && hoistedFunctions.length > 0) {
               console.error(`🎯 [GAS_WRITE] Hoisting ${hoistedFunctions.length} function(s) for Google Sheets autocomplete`);
             }
           }
