@@ -231,6 +231,61 @@
       "scriptId": "1klCNZAg7QU_QoAjnQ4wSMzczMmA-V9frpFPqBP6RkNmmbuv_MRonHOwZ",
       "name": "log-filter-test",
       "description": "Created: 10/8/2025"
+    },
+    "onopen-menu-test": {
+      "scriptId": "1PW9lqvb2hhpIi5MJMNw4Hl_ta5DoRAzItluqahhBeKO8cUnzEKpftaFv",
+      "name": "onopen-menu-test",
+      "description": "Created: 10/8/2025"
+    },
+    "auth-template-test": {
+      "scriptId": "12CTDtfZtFgTx5UxpH4GCERzkQIVoUDHY1yIIni3GSbh12e3s-JxuhkfQ",
+      "name": "auth-template-test",
+      "description": "Created: 10/8/2025"
+    },
+    "auth-template-full-test": {
+      "scriptId": "1KhphowZhzOBAIiw68GcVlAD4dHdy7yKd4IAHRMDYvqspHW5wEsLpFBKC",
+      "name": "auth-template-full-test",
+      "description": "Created: 10/8/2025"
+    },
+    "auth-fallback-test": {
+      "scriptId": "1fPFTfPQiV_P01YY5xkpDpzEwOf0KAcjVN9hve4RWThvoMBzV_3ZpNXmZ",
+      "name": "auth-fallback-test",
+      "description": "Created: 10/8/2025"
+    },
+    "final-auth-test": {
+      "scriptId": "1xtY3STFoTkbf8vRNozsLvb8ZR2xPH5DEVHuIEdYm16oEbtHjbFu9OaMN",
+      "name": "final-auth-test",
+      "description": "Created: 10/8/2025"
+    },
+    "complete-html-template-test": {
+      "scriptId": "1ISd0wMVY1silTDgUWIOjuQCa3q98RVz8cjfgqCqYctnUb9F73FAG_CeX",
+      "name": "complete-html-template-test",
+      "description": "Created: 10/8/2025"
+    },
+    "html-template-final-test": {
+      "scriptId": "1AhpWHrGmxnMHfDOJHP6EtwD5CS_H6gAN-MfTc5eh9wARPKOYw-1XE366",
+      "name": "html-template-final-test",
+      "description": "Created: 10/8/2025"
+    },
+    "html-template-test": {
+      "scriptId": "15YmhuZZT0MBw5khRciW_Deoqz_qGWidY6UgQZUVcGHSR4DCXnJ-HSIqS",
+      "name": "html-template-test",
+      "description": "Created: 10/8/2025"
+    },
+    "html-template-deploy-test": {
+      "scriptId": "1qao1-AMF8c02qhuSunj3QigsaoHaWPRJIAO2RQHoEk9biXVVDvZh5_kj",
+      "name": "html-template-deploy-test",
+      "description": "Created: 10/8/2025"
+    },
+    "final-html-template-test": {
+      "scriptId": "1gdmuViAD0R_kwEIxZRppAuxR0Qay7ek59q_QoQvkC6BO7m0XiCHoo7B5",
+      "name": "final-html-template-test",
+      "description": "Created: 10/8/2025"
+    },
+    "html-deploy-verification": {
+      "scriptId": "1C6zIOV3za2AXR-1AUA2avVmm2l0_sTKMA4RT7_-9Xpmb9_cDZJYE7so0",
+      "name": "html-deploy-verification",
+      "description": "Created: 10/8/2025"
     }
   },
   "localRoot": {
@@ -240,7 +295,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-08T15:36:54.705Z"
+    "lastModified": "2025-10-08T21:04:47.111Z"
   },
   "debug": true,
   "currentProject": {

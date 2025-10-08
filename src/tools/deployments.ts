@@ -44,7 +44,7 @@ function getManifestTemplate(): any {
   try {
     // Get the directory of this file - when compiled, this will be in dist/src/tools/
     const currentDir = path.dirname(new URL(import.meta.url).pathname);
-    
+
     // Determine if we're running from compiled code (dist/) or source code (src/)
     let srcDir: string;
     if (currentDir.includes('/dist/')) {
@@ -55,9 +55,9 @@ function getManifestTemplate(): any {
       // Running from source code: src/tools -> go up to src
       srcDir = path.join(currentDir, '..');
     }
-    
+
     const templatePath = path.join(srcDir, 'appsscript.json');
-    
+
     const content = fs.readFileSync(templatePath, 'utf8');
     return JSON.parse(content);
   } catch (error) {
@@ -65,6 +65,58 @@ function getManifestTemplate(): any {
     throw new Error(`Failed to read manifest template: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+
+
+/**
+ * Get the __mcp_gas_run_success.html template content
+ * @returns {string} The success HTML template content
+ */
+export function getSuccessHtmlTemplate(): string {
+  try {
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+
+    let srcDir: string;
+    if (currentDir.includes('/dist/')) {
+      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
+      srcDir = path.join(projectRoot, 'src');
+    } else {
+      srcDir = path.join(currentDir, '..');
+    }
+
+    const templatePath = path.join(srcDir, '__mcp_gas_run_success.html');
+
+    return fs.readFileSync(templatePath, 'utf8');
+  } catch (error) {
+    console.error('Error reading __mcp_gas_run_success.html template:', error);
+    throw new Error(`Failed to read success HTML template: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Get the __mcp_gas_run_error.html template content
+ * @returns {string} The error HTML template content
+ */
+export function getErrorHtmlTemplate(): string {
+  try {
+    const currentDir = path.dirname(new URL(import.meta.url).pathname);
+
+    let srcDir: string;
+    if (currentDir.includes('/dist/')) {
+      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
+      srcDir = path.join(projectRoot, 'src');
+    } else {
+      srcDir = path.join(currentDir, '..');
+    }
+
+    const templatePath = path.join(srcDir, '__mcp_gas_run_error.html');
+
+    return fs.readFileSync(templatePath, 'utf8');
+  } catch (error) {
+    console.error('Error reading __mcp_gas_run_error.html template:', error);
+    throw new Error(`Failed to read error HTML template: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -1140,6 +1192,18 @@ export class ProjectInitTool extends BaseTool {
         } else {
           result.errors.push(executionResult.error);
         }
+
+        // Install HTML templates alongside execution infrastructure
+        const htmlResults = await this.installHtmlTemplates(scriptId, existingFileNames, force, accessToken);
+        for (const htmlResult of htmlResults) {
+          if (htmlResult.success) {
+            result.filesInstalled.push(htmlResult.fileName);
+          } else if (htmlResult.skipped) {
+            result.filesSkipped.push(htmlResult.fileName);
+          } else {
+            result.errors.push(htmlResult.error);
+          }
+        }
       }
 
       // Update manifest
@@ -1234,7 +1298,7 @@ export class ProjectInitTool extends BaseTool {
       };
       
       await rawWriteTool.execute(writeParams);
-      
+
       console.error(`✅ [GAS_PROJECT_INIT] Execution infrastructure installed`);
       return { success: true, fileName };
     } catch (error: any) {
@@ -1245,11 +1309,85 @@ export class ProjectInitTool extends BaseTool {
   }
 
   /**
+   * Install HTML templates (__mcp_gas_run_success.html and __mcp_gas_run_error.html)
+   */
+  private async installHtmlTemplates(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
+    const successFileName = '__mcp_gas_run_success';
+    const errorFileName = '__mcp_gas_run_error';
+    const results: any[] = [];
+
+    // Install success template
+    if (existingFiles.has(successFileName) && !force) {
+      console.error(`⏭️ [GAS_PROJECT_INIT] Skipping success HTML template (already exists, use force=true to overwrite)`);
+      results.push({ skipped: true, fileName: successFileName });
+    } else {
+      try {
+        console.error(`🔧 [GAS_PROJECT_INIT] Installing success HTML template...`);
+
+        const successTemplate = getSuccessHtmlTemplate();
+
+        const { RawWriteTool } = await import('./filesystem.js');
+        const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
+
+        const writeParams = {
+          path: `${scriptId}/__mcp_gas_run_success`,
+          content: successTemplate,
+          fileType: 'HTML' as const,
+          accessToken
+        };
+
+        await rawWriteTool.execute(writeParams);
+
+        console.error(`✅ [GAS_PROJECT_INIT] Success HTML template installed`);
+        results.push({ success: true, fileName: successFileName });
+      } catch (error: any) {
+        const errorMessage = `Failed to install success HTML template: ${error.message}`;
+        console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
+        results.push({ error: errorMessage, fileName: successFileName });
+      }
+    }
+
+    // Install error template
+    if (existingFiles.has(errorFileName) && !force) {
+      console.error(`⏭️ [GAS_PROJECT_INIT] Skipping error HTML template (already exists, use force=true to overwrite)`);
+      results.push({ skipped: true, fileName: errorFileName });
+    } else {
+      try {
+        console.error(`🔧 [GAS_PROJECT_INIT] Installing error HTML template...`);
+
+        const errorTemplate = getErrorHtmlTemplate();
+
+        const { RawWriteTool } = await import('./filesystem.js');
+        const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
+
+        const writeParams = {
+          path: `${scriptId}/__mcp_gas_run_error`,
+          content: errorTemplate,
+          fileType: 'HTML' as const,
+          accessToken
+        };
+
+        await rawWriteTool.execute(writeParams);
+
+        console.error(`✅ [GAS_PROJECT_INIT] Error HTML template installed`);
+        results.push({ success: true, fileName: errorFileName });
+      } catch (error: any) {
+        const errorMessage = `Failed to install error HTML template: ${error.message}`;
+        console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
+        results.push({ error: errorMessage, fileName: errorFileName });
+      }
+    }
+
+    return results;
+  }
+
+
+  /**
    * Update project manifest (appsscript.json)
    */
   private async updateProjectManifest(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
     const fileName = 'appsscript';
-    
+
     if (existingFiles.has(fileName) && !force) {
       console.error(`⏭️ [GAS_PROJECT_INIT] Skipping manifest update (already exists, use force=true to overwrite)`);
       return { skipped: true, fileName };

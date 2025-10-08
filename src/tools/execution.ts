@@ -5,6 +5,7 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { CodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
 import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
+import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './deployments.js';
 import open from 'open';
 
 /**
@@ -2019,7 +2020,7 @@ export class ExecTool extends BaseTool {
         // Create browser URL with auth successful test function
         const authTestFunction = '"auth successful"';
         const encodedAuthTestFunction = encodeURIComponent(authTestFunction);
-        const browserUrl = `${response.url}${response.url.includes('?') ? '&' : '?'}func=${encodedAuthTestFunction}`;
+        const browserUrl = `${response.url}${response.url.includes('?') ? '&' : '?'}_mcp_run=true&func=${encodedAuthTestFunction}`;
         
         // Launch browser with the auth test URL
         console.error(`🚀 [GAS_RUN_AUTH] Opening browser for domain authorization: ${browserUrl}`);
@@ -2052,7 +2053,7 @@ export class ExecTool extends BaseTool {
     // Test function that returns an auth success string
     const testFunction = '"auth successful"';
     const encodedTestFunction = encodeURIComponent(testFunction);
-    const testUrl = `${baseUrl}?func=${encodedTestFunction}`;
+    const testUrl = `${baseUrl}?_mcp_run=true&func=${encodedTestFunction}`;
     
     console.error(`🔄 [DOMAIN_AUTH_POLL] Starting authorization polling`);
     console.error(`   Test URL: ${baseUrl}?func="auth successful"`);
@@ -2140,17 +2141,21 @@ export class ExecTool extends BaseTool {
       ]);
     };
     
-    // Check if shim exists
+    // Check if shim and HTML templates exist
     let shimExists = false;
+    let htmlTemplatesExist = false;
     try {
-      console.error('Checking if execution shim exists...');
+      console.error('Checking if execution shim and HTML templates exist...');
       const existingFiles = await withTimeout(
         this.gasClient.getProjectContent(scriptId, accessToken),
         15000, // 15-second timeout
         'Get project content'
       );
       shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run');
-      console.error(`Shim exists: ${shimExists}`);
+      const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run_success');
+      const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run_error');
+      htmlTemplatesExist = hasSuccessHtml && hasErrorHtml;
+      console.error(`Shim exists: ${shimExists}, HTML templates exist: ${htmlTemplatesExist}`);
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
         console.error(`Timeout checking for shim: ${error.message}`);
@@ -2159,7 +2164,7 @@ export class ExecTool extends BaseTool {
       // Assume shim doesn't exist if we can't check
       console.warn('Could not check for existing shim, assuming it does not exist');
     }
-    
+
     // Add execution shim if needed
     if (!shimExists) {
       console.error('Creating execution shim...');
@@ -2169,12 +2174,12 @@ export class ExecTool extends BaseTool {
         includeTestFunctions: true,
         mcpVersion: '1.0.0'
       });
-      
+
       const shimFile = shimCode.files.find((file: GASFile) => file.name === '__mcp_gas_run');
       if (!shimFile?.source) {
         throw new Error('Failed to generate execution shim code');
       }
-      
+
       try {
         await withTimeout(
           this.gasClient.updateFile(scriptId, '__mcp_gas_run', shimFile.source, 0, accessToken),
@@ -2189,7 +2194,34 @@ export class ExecTool extends BaseTool {
         throw error;
       }
     }
-    
+
+    // Deploy HTML templates if missing (independent of shim existence)
+    if (!htmlTemplatesExist) {
+      console.error('Deploying HTML templates...');
+      try {
+        const successHtml = getSuccessHtmlTemplate();
+        await withTimeout(
+          this.gasClient.updateFile(scriptId, '__mcp_gas_run_success', successHtml, 0, accessToken, 'HTML'),
+          20000,
+          'Update success HTML template'
+        );
+        console.error('Success HTML template deployed');
+
+        const errorHtml = getErrorHtmlTemplate();
+        await withTimeout(
+          this.gasClient.updateFile(scriptId, '__mcp_gas_run_error', errorHtml, 0, accessToken, 'HTML'),
+          20000,
+          'Update error HTML template'
+        );
+        console.error('Error HTML template deployed');
+      } catch (error: any) {
+        console.warn(`HTML template deployment failed: ${error.message} - IDE interface may not work properly`);
+        // Don't fail the whole setup if HTML templates fail - they're not critical for basic execution
+      }
+    } else {
+      console.error('HTML templates already exist, skipping deployment');
+    }
+
     // Update manifest
     console.error('Updating manifest entry points...');
     try {

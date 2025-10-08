@@ -204,7 +204,7 @@
    * doGet dispatcher - Web app GET requests
    * Returns last non-null response from handlers
    */
-  globalThis.doGet = function(e) {
+  globalThis.__doGet_dispatcher = function(e) {
     const handlers = __findEventHandlers__('doGet');
 
     if (handlers.length === 0) {
@@ -255,7 +255,7 @@
    * doPost dispatcher - Web app POST requests
    * Returns last non-null response from handlers
    */
-  globalThis.doPost = function(e) {
+  globalThis.__doPost_dispatcher = function(e) {
     const handlers = __findEventHandlers__('doPost');
 
     if (handlers.length === 0) {
@@ -306,7 +306,7 @@
    * onOpen dispatcher - Spreadsheet open trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.onOpen = function(e) {
+  globalThis.__onOpen_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onOpen');
 
     if (handlers.length === 0) {
@@ -338,7 +338,7 @@
    * onEdit dispatcher - Edit trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.onEdit = function(e) {
+  globalThis.__onEdit_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onEdit');
 
     if (handlers.length === 0) {
@@ -370,7 +370,7 @@
    * onSelectionChange dispatcher - Selection change trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.onSelectionChange = function(e) {
+  globalThis.__onSelectionChange_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onSelectionChange');
 
     if (handlers.length === 0) {
@@ -399,7 +399,7 @@
    * onInstall dispatcher - Add-on install trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.onInstall = function(e) {
+  globalThis.__onInstall_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onInstall');
 
     if (handlers.length === 0) {
@@ -431,7 +431,7 @@
    * onFormSubmit dispatcher - Form submit trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.onFormSubmit = function(e) {
+  globalThis.__onFormSubmit_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onFormSubmit');
 
     if (handlers.length === 0) {
@@ -877,3 +877,86 @@
 
   Logger.log('🚀 Module system initialized');
 })();
+
+// ===== HOISTED EVENT HANDLER DECLARATIONS (for GAS compile-time detection) =====
+// These top-level function declarations delegate to CommonJS dispatchers
+// Google Apps Script requires these as compile-time declarations, not runtime assignments
+
+/**
+ * @customfunction
+ */
+function onOpen(e) {
+  if (typeof globalThis.__onOpen_dispatcher === 'function') {
+    return globalThis.__onOpen_dispatcher(e);
+  } else {
+    Logger.log('⚠️ CommonJS onOpen dispatcher not found');
+  }
+}
+
+/**
+ * @customfunction
+ */
+function onEdit(e) {
+  if (typeof globalThis.__onEdit_dispatcher === 'function') {
+    return globalThis.__onEdit_dispatcher(e);
+  } else {
+    Logger.log('⚠️ CommonJS onEdit dispatcher not found');
+  }
+}
+
+/**
+ * @customfunction
+ */
+function onInstall(e) {
+  if (typeof globalThis.__onInstall_dispatcher === 'function') {
+    return globalThis.__onInstall_dispatcher(e);
+  } else {
+    Logger.log('⚠️ CommonJS onInstall dispatcher not found');
+  }
+}
+
+/**
+ * @customfunction
+ */
+function onFormSubmit(e) {
+  if (typeof globalThis.__onFormSubmit_dispatcher === 'function') {
+    return globalThis.__onFormSubmit_dispatcher(e);
+  } else {
+    Logger.log('⚠️ CommonJS onFormSubmit dispatcher not found');
+  }
+}
+
+/**
+ * @customfunction
+ */
+function onSelectionChange(e) {
+  if (typeof globalThis.__onSelectionChange_dispatcher === 'function') {
+    return globalThis.__onSelectionChange_dispatcher(e);
+  } else {
+    Logger.log('⚠️ CommonJS onSelectionChange dispatcher not found');
+  }
+}
+
+/**
+ * @customfunction
+ */
+function doGet(e) {
+  if (typeof globalThis.__doGet_dispatcher === 'function') {
+    return globalThis.__doGet_dispatcher(e);
+  } else {
+    Logger.log('⚠️ CommonJS doGet dispatcher not found');
+    return HtmlService.createHtmlOutput('<h1>Error: doGet handler not configured</h1>');
+  }
+}
+
+/**
+ * @customfunction
+ */
+function doPost(e) {
+  if (typeof globalThis.__doPost_dispatcher === 'function') {
+    return globalThis.__doPost_dispatcher(e);
+  } else {
+    Logger.log('⚠️ CommonJS doPost dispatcher not found');
+    return HtmlService.createHtmlOutput('<h1>Error: doPost handler not configured</h1>');
+  }
+}

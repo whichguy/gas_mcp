@@ -48,6 +48,7 @@ export interface HoistedFunction {
   name: string;       // Function name
   params: string[];   // Parameter names
   jsdoc?: string;     // Full JSDoc comment (optional)
+  delegateTo?: string; // Optional: delegate to this instead of require('module').name()
 }
 
 /**
@@ -360,6 +361,10 @@ export function detectAndCleanContent(content: string, filename: string): Cleani
  * These thin wrappers delegate to the module implementation, providing parse-time
  * top-level declarations while maintaining CommonJS organization.
  *
+ * IMPORTANT: Event handlers (onOpen, onEdit, etc.) should NOT be hoisted here.
+ * They are handled by __gas_triggers.js which provides compile-time declarations
+ * that delegate to CommonJS dispatchers (__eventName_dispatcher).
+ *
  * @param hoistedFunctions - Array of functions to hoist
  * @param moduleName - Module name for require() calls
  * @returns Generated bridge functions as string, or empty string if none
@@ -369,7 +374,27 @@ function generateHoistedBridges(hoistedFunctions: HoistedFunction[] | undefined,
     return '';
   }
 
-  const bridges = hoistedFunctions.map(fn => {
+  // Google Apps Script event handler names that should NOT be hoisted
+  // These are handled by __gas_triggers.js with compile-time declarations
+  const eventHandlerNames = new Set([
+    'onOpen', 'onEdit', 'onInstall', 'onFormSubmit',
+    'doGet', 'doPost', 'onSelectionChange'
+  ]);
+
+  // Filter out event handlers from hoisted functions
+  const customFunctions = hoistedFunctions.filter(fn => {
+    if (eventHandlerNames.has(fn.name)) {
+      console.error(`⚠️ [HOISTED] Skipping event handler "${fn.name}" - these must be declared in __gas_triggers.js, not hoisted as module functions`);
+      return false;
+    }
+    return true;
+  });
+
+  if (customFunctions.length === 0) {
+    return '';
+  }
+
+  const bridges = customFunctions.map(fn => {
     const paramList = fn.params.join(', ');
 
     // Default JSDoc with @customfunction if not provided
@@ -377,9 +402,14 @@ function generateHoistedBridges(hoistedFunctions: HoistedFunction[] | undefined,
  * @customfunction
  */`;
 
+    // Use delegateTo if provided, otherwise use require() pattern
+    const delegateCall = fn.delegateTo
+      ? `${fn.delegateTo}(${paramList})`
+      : `require('${moduleName}').${fn.name}(${paramList})`;
+
     return `${jsdoc}
 function ${fn.name}(${paramList}) {
-  return require('${moduleName}').${fn.name}(${paramList});
+  return ${delegateCall};
 }`;
   }).join('\n\n');
 
