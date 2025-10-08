@@ -494,6 +494,35 @@ export class WriteTool extends BaseTool {
               commonJsContext: 'In CommonJS, loadNow=true means module._main() executes at script startup, loadNow=false/null means it executes on first require() call',
               performance: 'For bulk operations on multiple files, provide explicit loadNow value to skip preservation API lookup'
             }
+          },
+          hoistedFunctions: {
+            type: 'array',
+            description: 'Functions to hoist as top-level declarations for Google Sheets autocomplete. These create thin bridge functions that delegate to the module implementation.',
+            items: {
+              type: 'object',
+              properties: {
+                name: {
+                  type: 'string',
+                  description: 'Function name to hoist'
+                },
+                params: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Parameter names for the function'
+                },
+                jsdoc: {
+                  type: 'string',
+                  description: 'Optional JSDoc comment with @customfunction tag. If omitted, a default comment is generated.'
+                }
+              },
+              required: ['name', 'params']
+            },
+            llmHints: {
+              whenToUse: 'Use for Google Sheets custom functions that need autocomplete. The hoisted bridge delegates to the module implementation.',
+              pattern: 'Bridge function calls require("moduleName").functionName(params) to delegate to the wrapped implementation.',
+              placement: 'Bridge functions are placed after _main() and before __defineModule__(), visible at parse time for Sheets autocomplete.',
+              example: 'hoistedFunctions: [{ name: "ASK_CLAUDE", params: ["prompt", "range"], jsdoc: "/** @customfunction */" }]'
+            }
           }
         },
         additionalProperties: true,
@@ -606,10 +635,19 @@ export class WriteTool extends BaseTool {
                                  'loadNow' in params.moduleOptions &&
                                  typeof params.moduleOptions.loadNow === 'boolean';
 
+      // Always pass hoistedFunctions if provided (doesn't need preservation logic)
+      const hoistedFunctions = params.moduleOptions?.hoistedFunctions;
+
       if (hasExplicitLoadNow) {
         // User provided explicit loadNow value - use as-is
-        resolvedOptions = { loadNow: params.moduleOptions.loadNow };
+        resolvedOptions = {
+          loadNow: params.moduleOptions.loadNow,
+          hoistedFunctions
+        };
         console.error(`🔧 [GAS_WRITE] User specified loadNow=${params.moduleOptions.loadNow}`);
+        if (hoistedFunctions) {
+          console.error(`🎯 [GAS_WRITE] Hoisting ${hoistedFunctions.length} function(s) for Google Sheets autocomplete`);
+        }
       } else {
         // User didn't specify - inherit from existing file
         try {
@@ -633,11 +671,18 @@ export class WriteTool extends BaseTool {
             console.error(`🔍 [GAS_WRITE DEBUG] Extracted existingOptions: ${JSON.stringify(existingOptions)}`);
 
             if (existingOptions) {
-              resolvedOptions = existingOptions;
+              resolvedOptions = {
+                ...existingOptions,
+                hoistedFunctions  // Add hoisted functions if provided
+              };
               console.error(`🔄 [GAS_WRITE] Inherited existing loadNow=${existingOptions.loadNow} from file`);
             } else {
-              resolvedOptions = null;
+              resolvedOptions = hoistedFunctions ? { hoistedFunctions } : null;
               console.error(`🔄 [GAS_WRITE] Existing file has no options - using default`);
+            }
+
+            if (hoistedFunctions) {
+              console.error(`🎯 [GAS_WRITE] Hoisting ${hoistedFunctions.length} function(s) for Google Sheets autocomplete`);
             }
 
             // DEBUG: Track preservation attempt with detailed extraction info
@@ -650,14 +695,17 @@ export class WriteTool extends BaseTool {
               willPreserve: !!existingOptions
             };
           } else {
-            // New file - use default (null)
-            resolvedOptions = null;
+            // New file - use default (null) but include hoistedFunctions if provided
+            resolvedOptions = hoistedFunctions ? { hoistedFunctions } : null;
             console.error(`📝 [GAS_WRITE] New file - using default __defineModule__(_main)`);
+            if (hoistedFunctions) {
+              console.error(`🎯 [GAS_WRITE] Hoisting ${hoistedFunctions.length} function(s) for Google Sheets autocomplete`);
+            }
           }
         } catch (error: any) {
-          // Error reading file - use default
+          // Error reading file - use default but include hoistedFunctions if provided
           console.error(`⚠️ [GAS_WRITE] Could not read existing file: ${error?.message || String(error)}`);
-          resolvedOptions = null;
+          resolvedOptions = hoistedFunctions ? { hoistedFunctions } : null;
         }
       }
 

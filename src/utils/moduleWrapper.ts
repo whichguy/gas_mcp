@@ -42,10 +42,20 @@ interface CommonJsAnalysis {
 }
 
 /**
+ * Hoisted function configuration for Google Sheets custom functions
+ */
+export interface HoistedFunction {
+  name: string;       // Function name
+  params: string[];   // Parameter names
+  jsdoc?: string;     // Full JSDoc comment (optional)
+}
+
+/**
  * Module options that can be passed to __defineModule__
  */
-interface ModuleOptions {
+export interface ModuleOptions {
   loadNow?: boolean;
+  hoistedFunctions?: HoistedFunction[];  // Functions to hoist for Sheets autocomplete
 }
 
 /**
@@ -297,11 +307,46 @@ export function detectAndCleanContent(content: string, filename: string): Cleani
 }
 
 /**
+ * Generates hoisted bridge functions for Google Sheets custom function autocomplete
+ * These thin wrappers delegate to the module implementation, providing parse-time
+ * top-level declarations while maintaining CommonJS organization.
+ *
+ * @param hoistedFunctions - Array of functions to hoist
+ * @param moduleName - Module name for require() calls
+ * @returns Generated bridge functions as string, or empty string if none
+ */
+function generateHoistedBridges(hoistedFunctions: HoistedFunction[] | undefined, moduleName: string): string {
+  if (!hoistedFunctions || hoistedFunctions.length === 0) {
+    return '';
+  }
+
+  const bridges = hoistedFunctions.map(fn => {
+    const paramList = fn.params.join(', ');
+
+    // Default JSDoc with @customfunction if not provided
+    const jsdoc = fn.jsdoc || `/**
+ * @customfunction
+ */`;
+
+    return `${jsdoc}
+function ${fn.name}(${paramList}) {
+  return require('${moduleName}').${fn.name}(${paramList});
+}`;
+  }).join('\n\n');
+
+  return `
+// ===== HOISTED CUSTOM FUNCTIONS (for Google Sheets autocomplete) =====
+${bridges}
+// ===== END HOISTED CUSTOM FUNCTIONS =====
+`;
+}
+
+/**
  * Wraps user content with _main() function and __defineModule__ call
  * Provides automatic access to require(), module, and exports via CommonJS system
  * @param content - The user's JavaScript code (should be pre-cleaned)
  * @param moduleName - The name of the module (derived from filename) - used for documentation only
- * @param options - Optional module loading options (e.g., loadNow)
+ * @param options - Optional module loading options (e.g., loadNow, hoistedFunctions)
  * @returns Wrapped content with _main() function and appropriate __defineModule__ call
  */
 export function wrapModuleContent(
@@ -356,6 +401,9 @@ ${defineCall}`;
         );
     }
 
+    // Generate hoisted bridge functions if specified
+    const hoistedBridges = generateHoistedBridges(options?.hoistedFunctions, moduleName);
+
     // Wrap content with _main function that provides CommonJS integration
     return `function _main(
   module = globalThis.__getCurrentModule(),
@@ -364,7 +412,7 @@ ${defineCall}`;
 ) {
 ${trimmedContent.split('\n').map(line => line ? `  ${line}` : '').join('\n')}
 }
-
+${hoistedBridges}
 ${defineCall}`;
 }
 
