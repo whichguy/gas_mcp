@@ -444,7 +444,15 @@ mcp__gas__cat({ scriptId: "...", path: "utils/helper" })
 // List files matching pattern
 mcp__gas__ls({ scriptId: "...", path: "utils/*" })
 
-// Search code with regex
+// ⚡ RECOMMENDED: High-performance multi-pattern search with ripgrep
+mcp__gas__ripgrep({
+  scriptId: "...",
+  pattern: "function.*test",
+  ignoreCase: true,
+  context: 2
+})
+
+// Simple grep (use ripgrep for advanced searches)
 mcp__gas__grep({ scriptId: "...", pattern: "function.*test", outputMode: "content" })
 
 // Find files by name pattern
@@ -457,14 +465,15 @@ mcp__gas__sed({
   replacement: "Logger.log"
 })
 
-// High-performance multi-pattern search with NEW features
+// ⚡ Advanced ripgrep features (STRONGLY RECOMMENDED over grep)
 mcp__gas__ripgrep({
   scriptId: "...",
-  pattern: "TODO|FIXME|HACK",
-  ignoreCase: true,  // NEW: Explicit case-insensitive search
-  sort: "path",      // NEW: Alphabetical sorting
-  trim: true,        // NEW: Clean whitespace
-  context: 2         // Show 2 lines of context
+  pattern: "TODO|FIXME|HACK",  // Multi-pattern OR search
+  ignoreCase: true,             // Case-insensitive
+  sort: "path",                 // Alphabetical sorting
+  trim: true,                   // Clean whitespace
+  context: 2,                   // Show 2 lines of context
+  showStats: true               // Performance statistics
 })
 ```
 
@@ -626,11 +635,23 @@ The MCP GAS Server uses a layered architecture:
 
 ## 📚 Documentation
 
-- **[Tool Reference](docs/TOOLS.md)**: Detailed documentation for all 46 tools
-- **[Architecture Guide](docs/ARCHITECTURE.md)**: System design and internals
-- **[Git Integration](docs/GIT_SYNC_WORKFLOWS.md)**: Version control workflows
-- **[API Documentation](docs/API.md)**: TypeScript API reference
-- **[Examples](examples/)**: Sample projects and use cases
+### Complete Tool Reference
+- **[docs/REFERENCE.md](docs/REFERENCE.md)** - Complete reference for all 63 tools with capabilities, limitations, and compatibility matrix
+
+### Developer Guides
+- **[docs/CROSS_TOOL_REFERENCES.md](docs/CROSS_TOOL_REFERENCES.md)** - Strategy for cross-tool references and workflow chaining
+- **[docs/SCHEMA_ENHANCEMENTS_SUMMARY.md](docs/SCHEMA_ENHANCEMENTS_SUMMARY.md)** - Progress tracking for schema improvements
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - System design and internals
+- **[Git Integration](docs/GIT_SYNC_WORKFLOWS.md)** - Version control workflows
+- **[API Documentation](docs/API.md)** - TypeScript API reference
+- **[Examples](examples/)** - Sample projects and use cases
+
+### Enhanced Tool Schemas
+All tools now include:
+- **Script Type Compatibility** - Clear indication of standalone vs container-bound support
+- **Limitations** - Specific constraints, quotas, and API restrictions
+- **Cross-Tool References** - Prerequisites, next steps, alternatives, and error recovery guidance
+- **⚡ Search Tool Preference** - **ripgrep is STRONGLY RECOMMENDED** over grep for all searches (multi-pattern, smart case, context control, better performance)
 
 ## 🤝 Contributing
 

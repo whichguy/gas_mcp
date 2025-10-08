@@ -113,6 +113,16 @@ export class FindTool extends BaseTool {
       whenToUse: 'Use for finding files with user-friendly virtual names',
       workflow: 'Similar to shell find command: gas_find({scriptId: "...", name: "*.test.gs"})',
       alternatives: 'Use gas_raw_find to see actual GAS file names',
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'File finding works universally for both script types. Shows user-friendly virtual names.'
+      },
+      limitations: {
+        flatFileStructure: 'GAS has no real directories - uses filename prefixes for logical organization',
+        wildcardSupport: 'Supports *, ?, [abc] wildcards but patterns match complete filenames not directory paths',
+        virtualFileNames: 'Dotfiles shown with virtual names (.gitignore) not GAS storage names (.gitignore.gs)'
+      },
       examples: [
         'Find all test files: gas_find({scriptId: "...", name: "*test*.gs"})',
         'Find config files: gas_find({scriptId: "...", name: ".git*"})',

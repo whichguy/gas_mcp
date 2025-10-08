@@ -226,6 +226,11 @@
       "scriptId": "1w7nTXOLmgSGAaujQnLIm4P-wASgYiwHzmRlrJnNF3fKLuzFW8fBNLxdn",
       "name": "module-options-preservation-te",
       "description": "Created: 10/7/2025"
+    },
+    "log-filter-test": {
+      "scriptId": "1klCNZAg7QU_QoAjnQ4wSMzczMmA-V9frpFPqBP6RkNmmbuv_MRonHOwZ",
+      "name": "log-filter-test",
+      "description": "Created: 10/8/2025"
     }
   },
   "localRoot": {
@@ -235,7 +240,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-07T18:34:28.680Z"
+    "lastModified": "2025-10-08T15:36:54.705Z"
   },
   "debug": true,
   "currentProject": {

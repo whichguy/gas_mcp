@@ -51,6 +51,16 @@ export class VersionGetTool extends BaseTool {
         '2. Have valid scriptId from gas_project_create or gas_ls',
         '3. Version must exist (use version_list to see available versions)'
       ],
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'Version management works universally for both script types.'
+      },
+      limitations: {
+        versionCreation: 'Versions are immutable snapshots - cannot be edited after creation',
+        versionLimit: 'Project version limit depends on account type (typically 50-100 versions)',
+        fileContentAccess: 'version_get returns metadata only - use gas_cat to read actual file contents'
+      },
       useCases: {
         codeReview: 'version_get({scriptId: "...", versionNumber: 5}) - Review specific version code',
         comparison: 'version_get for multiple versions to compare changes',
@@ -148,6 +158,16 @@ export class VersionListTool extends BaseTool {
         '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
         '2. Have valid scriptId from gas_project_create or gas_ls'
       ],
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'Version listing works universally for both script types.'
+      },
+      limitations: {
+        pagination: 'Returns up to pageSize versions per call - use pageToken for additional pages',
+        sortOrder: 'Versions returned in reverse chronological order (newest first)',
+        metadataOnly: 'Returns version metadata only - use version_get for detailed info'
+      },
       useCases: {
         history: 'version_list({scriptId: "..."}) - See complete version history',
         deployment: 'version_list to select version for gas_deploy_create',
