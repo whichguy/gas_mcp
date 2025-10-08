@@ -2053,7 +2053,7 @@ export class ExecTool extends BaseTool {
     // Test function that returns an auth success string
     const testFunction = '"auth successful"';
     const encodedTestFunction = encodeURIComponent(testFunction);
-    const testUrl = `${baseUrl}?_mcp_run=true&func=${encodedTestFunction}`;
+    const testUrl = `${baseUrl}?_mcp_run=true&func=${encodedTestFunction}&format=json`;
     
     console.error(`🔄 [DOMAIN_AUTH_POLL] Starting authorization polling`);
     console.error(`   Test URL: ${baseUrl}?func="auth successful"`);

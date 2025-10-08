@@ -35,6 +35,10 @@ function _main(module, exports, require) {
     const isAuthTest = e.parameter?.func === '"auth successful"' ||
                        e.parameter?.func === 'return "auth successful"';
 
+    // Check if client wants JSON (programmatic request) vs HTML (browser)
+    const wantsJson = e.parameter?.format === 'json' ||
+                      (e.parameter && !e.parameter.browser);
+
     // Verify we have the required func parameter
     if (!e.parameter || !e.parameter.func) {
       if (isAuthTest) {
@@ -67,11 +71,17 @@ function _main(module, exports, require) {
         throw new Error('No JavaScript code provided. Use ?_mcp_run=true&func=yourCode');
       }
 
-      // NEW: Handle auth test before execution to return HTML
+      // NEW: Handle auth test - return HTML for browser, JSON for polling
       if (isAuthTest) {
         const result = __gas_run(js_statement);
-        // Check if execution was successful
         const resultData = JSON.parse(result.getContent());
+
+        // If client wants JSON (programmatic polling), return JSON
+        if (wantsJson) {
+          return result; // Return original JSON response
+        }
+
+        // Browser request - return HTML with IDE interface
         if (resultData.success) {
           return htmlAuthSuccessResponse(resultData);
         } else {
