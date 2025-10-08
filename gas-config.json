@@ -286,6 +286,11 @@
       "scriptId": "1C6zIOV3za2AXR-1AUA2avVmm2l0_sTKMA4RT7_-9Xpmb9_cDZJYE7so0",
       "name": "html-deploy-verification",
       "description": "Created: 10/8/2025"
+    },
+    "post-rebuild-test": {
+      "scriptId": "1UZ-dFOJgiSyYZSdZePedlPN8bTIr3XbrJnJxPdgRS-31eJo0aE6Nto1z",
+      "name": "post-rebuild-test",
+      "description": "Created: 10/8/2025"
     }
   },
   "localRoot": {
@@ -295,7 +300,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-08T21:04:47.111Z"
+    "lastModified": "2025-10-08T21:08:00.588Z"
   },
   "debug": true,
   "currentProject": {
