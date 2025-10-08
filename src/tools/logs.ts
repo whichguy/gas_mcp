@@ -1,0 +1,271 @@
+import { BaseTool } from './base.js';
+import { GASClient } from '../api/gasClient.js';
+import { SessionAuthManager } from '../auth/sessionManager.js';
+
+/**
+ * List execution logs with Cloud Logging-first optimization
+ */
+export class LogsListTool extends BaseTool {
+  public name = 'logs_list';
+  public description = 'Browse execution logs with Cloud Logging integration. ⚠️ LIMITATION: Only works for standalone scripts with standard GCP projects - container-bound scripts (attached to Sheets/Docs/Forms) are NOT supported. For container-bound scripts or real-time logging, use gas_run which automatically captures Logger.log() output. Optimized for filtering by function name and recent time ranges.';
+
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid Google Drive file ID for an Apps Script project.',
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60,
+        llmHints: {
+          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
+          format: 'Long alphanumeric string from Google Drive'
+        }
+      },
+      functionName: {
+        type: 'string',
+        description: 'Filter by specific function name. PERFORMANCE: Triggers optimized Cloud Logging-first query (2-3x faster).',
+        llmHints: {
+          optimization: 'Providing this parameter significantly improves query performance',
+          usage: 'Use when debugging specific function executions'
+        }
+      },
+      minutes: {
+        type: 'number',
+        description: 'Number of minutes to look back from now (default: 15). Ignored if timeRange is provided.',
+        default: 15,
+        minimum: 1,
+        maximum: 10080,
+        llmHints: {
+          default: '15 minutes is the standard default',
+          recent: 'Use 5-10 minutes for very recent executions',
+          historical: 'Use 60-1440 minutes for broader historical analysis'
+        }
+      },
+      timeRange: {
+        type: 'object',
+        description: 'Explicit time range in RFC3339 format. Overrides minutes parameter.',
+        properties: {
+          start: {
+            type: 'string',
+            description: 'Start time in RFC3339 UTC "Zulu" format (e.g., "2024-01-01T00:00:00Z")'
+          },
+          end: {
+            type: 'string',
+            description: 'End time in RFC3339 UTC "Zulu" format (e.g., "2024-01-01T23:59:59Z")'
+          }
+        }
+      },
+      statusFilter: {
+        type: 'string',
+        description: 'Filter by process status (default: ALL)',
+        enum: ['COMPLETED', 'FAILED', 'TIMED_OUT', 'ALL'],
+        default: 'ALL',
+        llmHints: {
+          debugging: 'Use FAILED to quickly find errors',
+          monitoring: 'Use ALL for comprehensive view',
+          performance: 'Use COMPLETED for successful execution analysis'
+        }
+      },
+      pageSize: {
+        type: 'number',
+        description: 'Maximum number of processes to return (default: 50)',
+        minimum: 1,
+        maximum: 200,
+        default: 50
+      },
+      pageToken: {
+        type: 'string',
+        description: 'Token for pagination (optional). Get from previous response.nextPageToken'
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
+        llmHints: {
+          typical: 'Usually omitted - tool uses session authentication from gas_auth'
+        }
+      }
+    },
+    required: ['scriptId'],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      prerequisites: [
+        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '2. Have valid scriptId from gas_project_create or gas_ls',
+        '3. ⚠️ Script MUST be standalone with standard GCP project - container-bound scripts NOT supported'
+      ],
+      limitations: {
+        containerBound: '❌ Container-bound scripts (attached to Sheets/Docs/Forms) do NOT have accessible Cloud Logging. Cloud Logging API rejects their parentId with "invalid resource name" error.',
+        solution: '✅ For container-bound scripts: Use gas_run which automatically captures Logger.log() output in logger_output field',
+        historicalOnly: 'This tool retrieves historical logs only - for real-time logging use gas_run'
+      },
+      alternatives: {
+        containerBoundLogging: {
+          tool: 'gas_run',
+          usage: 'gas_run({scriptId, js_statement: "Logger.log(\'debug\'); yourCode()"})',
+          benefit: 'Automatically captures ALL Logger.log() output in logger_output field',
+          why: 'Real-time logging works universally for both standalone AND container-bound scripts'
+        },
+        realtimeLogging: {
+          tool: 'gas_run',
+          usage: 'Wrap code with Logger.log() statements for debugging',
+          benefit: 'Immediate feedback without waiting for Cloud Logging propagation'
+        }
+      },
+      nextSteps: [
+        'On SUCCESS: Use logs_get({scriptId, processId}) to retrieve detailed logs for specific process',
+        'On FAILURE (container-bound): Switch to gas_run for real-time logging',
+        'For analysis: Use process_list to see broader execution trends'
+      ],
+      useCases: {
+        recentErrors: 'logs_list({scriptId: "...", functionName: "myFunc", minutes: 15, statusFilter: "FAILED"})',
+        debugging: 'logs_list({scriptId: "...", functionName: "processData", minutes: 30})',
+        monitoring: 'logs_list({scriptId: "...", minutes: 60, statusFilter: "ALL"})',
+        historical: 'logs_list({scriptId: "...", timeRange: {start: "2024-01-01T00:00:00Z", end: "2024-01-01T23:59:59Z"}})',
+        containerBoundAlternative: '⚠️ For container-bound scripts, use gas_run({scriptId: "...", js_statement: "Logger.log(\'debug\'); yourFunction()"}) instead'
+      },
+      performance: {
+        fast: 'Including functionName uses optimized Cloud Logging-first query',
+        fallback: 'Without functionName, uses Process API first (slower but comprehensive)'
+      }
+    }
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const accessToken = await this.getAuthToken(params);
+
+    const scriptId = this.validate.scriptId(params.scriptId, 'logs listing');
+    const functionName = params.functionName ? this.validate.string(params.functionName, 'functionName', 'logs listing') : undefined;
+    const minutes = params.minutes ? this.validate.number(params.minutes, 'minutes', 'logs listing', 1, 10080) : 15;
+    const statusFilter = params.statusFilter || 'ALL';
+    const pageSize = params.pageSize ? this.validate.number(params.pageSize, 'pageSize', 'logs listing', 1, 200) : 50;
+    const pageToken = params.pageToken ? this.validate.string(params.pageToken, 'pageToken', 'logs listing') : undefined;
+
+    // Calculate time range
+    let startTime: string;
+    let endTime: string;
+
+    if (params.timeRange) {
+      startTime = params.timeRange.start || new Date(Date.now() - minutes * 60 * 1000).toISOString();
+      endTime = params.timeRange.end || new Date().toISOString();
+    } else {
+      startTime = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+      endTime = new Date().toISOString();
+    }
+
+    return await this.handleApiCall(
+      () => this.gasClient.listLogsWithCloudLogging(
+        scriptId,
+        {
+          functionName,
+          startTime,
+          endTime,
+          statusFilter,
+          pageSize,
+          pageToken
+        },
+        accessToken
+      ),
+      'list execution logs',
+      { scriptId, functionName, startTime, endTime, statusFilter, pageSize }
+    );
+  }
+}
+
+/**
+ * Get complete logs for a single process execution
+ */
+export class LogsGetTool extends BaseTool {
+  public name = 'logs_get';
+  public description = 'Get complete execution logs for a specific process. ⚠️ LIMITATION: Only works for standalone scripts with standard GCP projects - container-bound scripts (attached to Sheets/Docs/Forms) are NOT supported. For container-bound scripts, use gas_run which automatically captures Logger.log() output. Auto-paginates to retrieve all log entries.';
+
+  public inputSchema = {
+    type: 'object',
+    properties: {
+      scriptId: {
+        type: 'string',
+        description: 'Google Apps Script project ID',
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60
+      },
+      processId: {
+        type: 'string',
+        description: 'Process ID from logs_list or process_list response',
+        llmHints: {
+          source: 'Get this from logs_list or process_list response',
+          format: 'Long alphanumeric process identifier'
+        }
+      },
+      includeMetadata: {
+        type: 'boolean',
+        description: 'Include process metadata (function name, status, duration, etc.). Default: true',
+        default: true,
+        llmHints: {
+          complete: 'Use true for complete execution context',
+          logsOnly: 'Use false for just log messages'
+        }
+      },
+      accessToken: {
+        type: 'string',
+        description: 'Access token for stateless operation (optional)',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
+      }
+    },
+    required: ['scriptId', 'processId'],
+    additionalProperties: false,
+    llmWorkflowGuide: {
+      prerequisites: [
+        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '2. Have processId from logs_list or process_list',
+        '3. ⚠️ Script MUST be standalone with standard GCP project - container-bound scripts NOT supported'
+      ],
+      limitations: {
+        containerBound: '❌ Container-bound scripts (attached to Sheets/Docs/Forms) do NOT have accessible Cloud Logging. Cloud Logging API rejects their parentId with "invalid resource name" error.',
+        solution: '✅ For container-bound scripts: Use gas_run which automatically captures Logger.log() output in logger_output field',
+        historicalOnly: 'This tool retrieves historical logs only - for real-time logging use gas_run'
+      },
+      useCases: {
+        debugging: 'logs_get({scriptId: "...", processId: "..."}) - Get all logs for failed execution',
+        analysis: 'logs_get({scriptId: "...", processId: "...", includeMetadata: true}) - Full execution context',
+        logsOnly: 'logs_get({scriptId: "...", processId: "...", includeMetadata: false}) - Just console output',
+        containerBoundAlternative: '⚠️ For container-bound scripts, use gas_run({scriptId: "...", js_statement: "Logger.log(\'debug\'); yourFunction()"}) instead'
+      },
+      returnValue: {
+        logs: 'Array of log entries with timestamp, severity, message',
+        metadata: 'Process info (function, status, duration) if includeMetadata: true',
+        totalLogs: 'Total count of log entries retrieved'
+      }
+    }
+  };
+
+  private gasClient: GASClient;
+
+  constructor(sessionAuthManager?: SessionAuthManager) {
+    super(sessionAuthManager);
+    this.gasClient = new GASClient();
+  }
+
+  async execute(params: any): Promise<any> {
+    const accessToken = await this.getAuthToken(params);
+
+    const scriptId = this.validate.scriptId(params.scriptId, 'logs retrieval');
+    const processId = this.validate.string(params.processId, 'processId', 'logs retrieval');
+    const includeMetadata = params.includeMetadata !== false;
+
+    return await this.handleApiCall(
+      () => this.gasClient.getProcessLogs(scriptId, processId, includeMetadata, accessToken),
+      'get process logs',
+      { scriptId, processId, includeMetadata }
+    );
+  }
+}

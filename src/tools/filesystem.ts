@@ -81,6 +81,16 @@ export class CatTool extends BaseTool {
       whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
       workflow: 'Use with explicit scriptId: cat({scriptId: "abc123...", path: "utils.gs"})',
       alternatives: 'Use raw_cat only when you need explicit project ID control',
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'File reading works universally for both script types. Automatically unwraps CommonJS modules for clean editing.'
+      },
+      limitations: {
+        fileTypes: 'Only reads SERVER_JS (.gs), HTML (.html), and JSON (appsscript.json manifest only) files',
+        moduleWrapping: 'Automatically unwraps CommonJS _main() wrappers for editing - use raw_cat to see complete file with wrappers',
+        localCacheDependency: 'Prefers local ./src/ cache when available - use preferLocal: false to force remote read'
+      },
       pathRequirement: 'Provide scriptId parameter and simple filename in path, or embed scriptId in path and leave scriptId parameter empty.',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When reading files, the outer _main() wrapper is removed to show clean user code for editing. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
       moduleAccess: 'Your code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
@@ -535,6 +545,17 @@ export class WriteTool extends BaseTool {
       whenToUse: 'Use for normal file writing with explicit scriptId parameter. Automatically uses atomic hook validation when git is available, otherwise falls back to remote-first workflow.',
       workflow: 'Use with explicit scriptId: write({scriptId: "abc123...", path: "filename", content: "..."}). Git hook validation is automatic - no flags needed.',
       alternatives: 'Use raw_write when you need single-destination writes or advanced file positioning',
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'File writing works universally for both script types. Automatically wraps user code with CommonJS module system.'
+      },
+      limitations: {
+        fileTypes: 'Only writes SERVER_JS (.gs), HTML (.html), and JSON (appsscript.json manifest only) files',
+        moduleWrapping: 'Automatically wraps user code with CommonJS _main() for SERVER_JS - use raw_write for files that need exact content',
+        gitHookDependency: 'Git hook validation only works if .git/ directory exists - otherwise falls back to remote-first workflow',
+        preservationOverhead: 'Omitting moduleOptions triggers ~200-500ms API call to preserve existing loadNow setting'
+      },
       gitIntegration: 'When git repository exists: (1) Writes locally and runs git commit with hooks, (2) If hooks pass, syncs to remote, (3) If remote fails, reverts git commit. Without git: writes to remote first, then syncs locally.',
       commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
       moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
@@ -1369,6 +1390,16 @@ export class LsTool extends BaseTool {
     llmGuidance: {
       whenToUse: 'Use to explore project structure and find files by pattern',
       workflow: 'List all files: ls({scriptId: "..."}), with wildcards: ls({scriptId: "...", path: "*.test*"})',
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'File listing works universally for both script types. Shows virtual names for dotfiles.'
+      },
+      limitations: {
+        flatFileStructure: 'GAS has no real directories - uses filename prefixes like "utils/helper" to simulate folders',
+        wildcardPatterns: 'Supports * and ? wildcards, but pattern matching depends on wildcardMode setting',
+        virtualFileDisplay: 'Dotfiles (.gitignore, .git/config.gs) shown with virtual names, not GAS storage names'
+      },
       examples: [
         'List all projects: ls({})',
         'List project files: ls({scriptId: "1abc2def..."})',

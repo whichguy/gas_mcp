@@ -18,6 +18,53 @@ function estimateTokenCount(text: string): number {
 }
 
 /**
+ * Filter logger output using optional regex pattern and/or tail limit
+ * @param loggerOutput The raw logger output string
+ * @param filterPattern Optional regex pattern to match lines (case-insensitive)
+ * @param tailLines Optional number of lines to return from the end
+ * @returns Filtered logger output with metadata
+ */
+function filterLoggerOutput(
+  loggerOutput: string,
+  filterPattern?: string,
+  tailLines?: number
+): { filteredOutput: string; metadata: string } {
+  if (!loggerOutput) {
+    return { filteredOutput: '', metadata: '' };
+  }
+
+  const lines = loggerOutput.split('\n');
+  let filtered = lines;
+  let metadata = '';
+
+  // Apply regex filter if provided
+  if (filterPattern) {
+    try {
+      const regex = new RegExp(filterPattern, 'i'); // Case-insensitive by default
+      const originalCount = filtered.length;
+      filtered = filtered.filter(line => regex.test(line));
+      metadata += `[Filtered ${originalCount} lines → ${filtered.length} lines using pattern: ${filterPattern}]\n`;
+    } catch (error: any) {
+      metadata += `[Filter pattern error: ${error.message} - returning unfiltered output]\n`;
+    }
+  }
+
+  // Apply tail limit if provided
+  if (tailLines && tailLines > 0) {
+    const originalCount = filtered.length;
+    if (filtered.length > tailLines) {
+      filtered = filtered.slice(-tailLines);
+      metadata += `[Showing last ${tailLines} of ${originalCount} lines]\n`;
+    }
+  }
+
+  return {
+    filteredOutput: filtered.join('\n'),
+    metadata: metadata ? `\n${metadata}` : ''
+  };
+}
+
+/**
  * Protects MCP responses from exceeding token limits by truncating logger_output
  * @param response The response object to protect
  * @param maxTokens Maximum allowed tokens (default: 22000, leaving room for structure)
@@ -205,25 +252,86 @@ export class RunTool extends BaseTool {
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation (optional)'
+      },
+      logFilter: {
+        type: 'string',
+        description: 'Optional regex pattern to filter logger_output lines (ripgrep-style). Only lines matching this pattern will be included. If not specified, all logger output is returned.',
+        examples: [
+          'ERROR|WARN',           // Show only error/warning lines
+          '^\\[.*\\]',             // Lines starting with brackets
+          'TODO|FIXME',           // Show TODO/FIXME comments
+          'result.*:',            // Lines with "result" followed by colon
+        ]
+      },
+      logTail: {
+        type: 'number',
+        description: 'Optional: Return only the last N lines of logger_output. Useful when logs are overwhelming. Applied after logFilter if both are specified.',
+        minimum: 1,
+        maximum: 10000,
+        examples: [10, 50, 100]
       }
     },
     required: ['scriptId', 'js_statement'],
     llmGuidance: {
       whenToUse: 'Use for normal JavaScript execution with automatic deployment handling.',
       workflow: 'Provide explicit script ID: gas_run({scriptId: "1arGk_0LU7E...", js_statement: "Math.sqrt(16)"}) for inline code or gas_run({scriptId: "1arGk_0LU7E...", js_statement: "require(\\"Calculator\\").add(5, 3)"}) for functions from files.',
-      alternatives: 'Use gas_raw_run for the same functionality - both tools now require explicit script IDs',
+      prerequisites: [
+        'gas_auth - Authenticate with gas_auth({mode: "start"}) before first execution',
+        'Project exists - Use project_create to create new or project_list to find existing'
+      ],
+      nextSteps: [
+        'On SUCCESS: Check logger_output for debug info, consider version_create to snapshot working code',
+        'On FAILURE: Review error in response, check logger_output for stack traces',
+        'For testing changes: Run again after gas_write updates'
+      ],
+      alternatives: {
+        sameFeatures: 'gas_raw_run has identical functionality - both require explicit script IDs',
+        apiDeployments: 'exec_api - For functions deployed as API executables (requires prior deployment)',
+        interactiveDebug: 'Apps Script Editor - For step-by-step debugging with breakpoints'
+      },
+      errorRecovery: {
+        '__defineModule__ not defined': {
+          action: 'project_init({scriptId}) - Install CommonJS infrastructure',
+          reason: 'Project missing execution framework - common for scripts not created via project_create'
+        },
+        'Authentication required': {
+          action: 'gas_auth({mode: "start"}) - Re-authenticate session',
+          reason: 'OAuth token expired or not authenticated'
+        },
+        'Execution timeout': {
+          action: 'Increase executionTimeout parameter (default 780s, max 3600s)',
+          reason: 'Long-running operations exceed timeout - adjust based on expected duration'
+        },
+        'Script not found': {
+          action: 'Verify scriptId with project_list or info tools',
+          reason: 'Invalid or inaccessible script ID'
+        }
+      },
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically, automatically captures Logger.log() output',
+        notes: 'Execution works universally for both script types. This is the SOLUTION for debugging container-bound scripts.'
+      },
+      limitations: {
+        executionTime: 'Free tier: 6 minutes, Workspace: 30 minutes. Use executionTimeout parameter for long operations.',
+        requiresHeadDeployment: 'Automatically creates HEAD deployment (/dev URL) if needed',
+        memoryLimits: 'Subject to Google Apps Script memory quotas (varies by account type)'
+      },
       executionCapabilities: {
         arbitraryCode: 'Execute any JavaScript expressions, calculations, data processing of unlimited complexity',
         projectFunctions: 'CALL YOUR PROJECT FUNCTIONS: Use require("Utils").myFunction() to execute functions from any file in your project',
         commonJsIntegration: 'FULL MODULE SYSTEM: All dependencies resolved automatically, access to require(), module, exports throughout execution',
         gasServices: 'ALL Google Apps Script services: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, and 20+ other services',
-        loggerCapture: 'ALL Logger.log() output automatically captured and returned - use for debugging, progress tracking, result logging'
+        loggerCapture: 'ALL Logger.log() output automatically captured and returned - use for debugging, progress tracking, result logging',
+        logFiltering: 'Use logFilter for pattern-based filtering (ERROR|WARN), or logTail for last N lines (logTail: 50)',
+        overwhelmingLogs: 'When Logger.log() produces too much output, use logTail to see only recent lines or logFilter to find specific patterns'
       },
       executionPatterns: {
         inlineCode: 'Direct execution: Math.PI * 2, new Date(), Session.getActiveUser().getEmail()',
         builtinServices: 'Google Apps Script services: SpreadsheetApp.create(), DriveApp.getFiles()',
         projectFunctions: 'Your project functions: require("Utils").formatDate(), require("Database").getUser(123)',
-        combinedWorkflows: 'Complex workflows: const data = require("API").getData(); SpreadsheetApp.create("Report").getActiveSheet().getRange(1,1,data.length,3).setValues(data)'
+        combinedWorkflows: 'Complex workflows: const data = require("API").getData(); SpreadsheetApp.create("Report").getActiveSheet().getRange(1,1,data.length,3).setValues(data)',
+        filterExamples: 'Common filters: "ERROR|WARN" (errors), "^\\[.*\\]" (bracketed lines), "result.*:" (result lines)'
       }
     },
     responseSchema: {
@@ -240,7 +348,7 @@ export class RunTool extends BaseTool {
         },
         logger_output: {
           type: 'string',
-          description: 'All accumulated logger output from console.log(), Logger.log(), and other logging during execution. Includes module loading messages, debug output, and any previous logging in the session.'
+          description: 'Logger output from console.log(), Logger.log(), and other logging. May include filter metadata if logFilter or logTail parameters were used. Includes module loading messages, debug output, and session logging.'
         },
         scriptId: {
           type: 'string',
@@ -283,23 +391,27 @@ export class RunTool extends BaseTool {
     const autoRedeploy = params.autoRedeploy !== false;
     const executionTimeout = Math.min(Math.max(params.executionTimeout || 780, 780), 3600); // 13m-1h range
     const responseTimeout = Math.min(Math.max(params.responseTimeout || 780, 780), 3600); // 13m-1h range
-    
+    const logFilter = params.logFilter; // Optional regex pattern for filtering logs
+    const logTail = params.logTail; // Optional number of lines to show from end
+
     // Get auth token
     const accessToken = await this.getAuthToken(params);
-    
+
     // Use script ID directly (no resolution needed)
     const scriptId = params.scriptId;
-    
+
     // Create a raw tool instance to execute the actual logic
     const rawTool = new ExecTool(this.sessionAuthManager);
-    
+
     return await rawTool.execute({
       scriptId,
       js_statement,
       autoRedeploy,
       executionTimeout,
       responseTimeout,
-      accessToken
+      accessToken,
+      logFilter,
+      logTail
     });
   }
 }
@@ -865,6 +977,9 @@ export class ExecTool extends BaseTool {
           return: 'Return values are automatically JSON-serialized for response',
           debugging: 'Use console.log() or Logger.log() for debugging output in execution logs',
           logCapture: 'ALL Logger.log() output is automatically captured in response.logger_output field - no manual retrieval needed',
+          logFiltering: 'Use logFilter for pattern-based filtering (ERROR|WARN), or logTail for last N lines (logTail: 50)',
+          overwhelmingLogs: 'When Logger.log() produces too much output, use logTail to see only recent lines or logFilter to find specific patterns',
+          filterExamples: 'Common filters: "ERROR|WARN" (errors), "^\\[.*\\]" (bracketed lines), "result.*:" (result lines)',
           size: 'Up to 500,000 characters supported - write extremely complex multi-line operations freely',
           performance: 'Configurable timeouts up to 1 hour for long-running operations'
         }
@@ -914,6 +1029,23 @@ export class ExecTool extends BaseTool {
           stateless: 'Include when doing token-based operations without session storage',
           security: 'Never expose these tokens in logs or responses'
         }
+      },
+      logFilter: {
+        type: 'string',
+        description: 'Optional regex pattern to filter logger_output lines (ripgrep-style). Only lines matching this pattern will be included. If not specified, all logger output is returned.',
+        examples: [
+          'ERROR|WARN',           // Show only error/warning lines
+          '^\\[.*\\]',             // Lines starting with brackets
+          'TODO|FIXME',           // Show TODO/FIXME comments
+          'result.*:',            // Lines with "result" followed by colon
+        ]
+      },
+      logTail: {
+        type: 'number',
+        description: 'Optional: Return only the last N lines of logger_output. Useful when logs are overwhelming. Applied after logFilter if both are specified.',
+        minimum: 1,
+        maximum: 10000,
+        examples: [10, 50, 100]
       }
     },
     required: ['scriptId', 'js_statement'],
@@ -924,6 +1056,16 @@ export class ExecTool extends BaseTool {
         '2. Have a project: gas_project_create or get existing scriptId from gas_ls',
         '3. Optional: Add code files with gas_write before execution'
       ],
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically, automatically captures Logger.log() output',
+        notes: 'Execution works universally for both script types. This is the SOLUTION for debugging container-bound scripts.'
+      },
+      limitations: {
+        executionTime: 'Free tier: 6 minutes, Workspace: 30 minutes. Use executionTimeout parameter for long operations.',
+        requiresHeadDeployment: 'Automatically creates HEAD deployment (/dev URL) if needed',
+        memoryLimits: 'Subject to Google Apps Script memory quotas (varies by account type)'
+      },
       useCases: {
         calculation: 'gas_run({scriptId: "...", js_statement: "Math.pow(2, 10)"})',
         datetime: 'gas_run({scriptId: "...", js_statement: "new Date().toISOString()"})',
@@ -958,7 +1100,7 @@ export class ExecTool extends BaseTool {
         },
         logger_output: {
           type: 'string',
-          description: 'All accumulated logger output from console.log(), Logger.log(), and other logging during execution. Includes module loading messages, debug output, and any previous logging in the session.'
+          description: 'Logger output from console.log(), Logger.log(), and other logging. May include filter metadata if logFilter or logTail parameters were used. Includes module loading messages, debug output, and session logging.'
         },
         scriptId: {
           type: 'string',
@@ -1013,6 +1155,8 @@ export class ExecTool extends BaseTool {
     const autoRedeploy = params.autoRedeploy !== false;
     const executionTimeout = Math.min(Math.max(params.executionTimeout || 780, 780), 3600); // 13m-1h range
     const responseTimeout = Math.min(Math.max(params.responseTimeout || 780, 780), 3600); // 13m-1h range
+    const logFilter = params.logFilter; // Optional regex pattern for filtering logs
+    const logTail = params.logTail; // Optional number of lines to show from end
 
     if (!js_statement?.trim()) {
       throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
@@ -1024,9 +1168,9 @@ export class ExecTool extends BaseTool {
     try {
       // First try: Use provided token or attempt to get from session (optimistic)
       accessToken = params.accessToken || await this.tryGetAuthToken();
-      
+
       // 🚀 PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
-      return await this.executeOptimistic(scriptId, js_statement, accessToken || '', executionTimeout, responseTimeout, autoRedeploy);
+      return await this.executeOptimistic(scriptId, js_statement, accessToken || '', executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail);
     } catch (error: any) {
       // Check for authentication errors (401/403)
       const statusCode = error.statusCode || error.response?.status || error.data?.statusCode;
@@ -1081,7 +1225,7 @@ export class ExecTool extends BaseTool {
           console.error(`⚡ [OPTIMISTIC RETRY] Infrastructure exists (cached URL found), retrying without setup...`);
           // Try one more time before full infrastructure setup
           try {
-            return await this.executeOptimistic(scriptId, js_statement, accessToken);
+            return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail);
           } catch (retryError: any) {
             console.error(`🔄 [OPTIMISTIC RETRY FAILED] Proceeding with infrastructure setup: ${retryError.message}`);
           }
@@ -1130,20 +1274,20 @@ export class ExecTool extends BaseTool {
    * Execute with retry logic for deployment delays
    * Tests with a simple function first, then retries the actual function
    */
-  private async executeWithDeploymentRetry(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780): Promise<any> {
+  private async executeWithDeploymentRetry(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780, logFilter?: string, logTail?: number): Promise<any> {
     const maxRetryDuration = 60000; // 60 seconds total
     const retryInterval = 2000; // 2 seconds between retries
     const startTime = Date.now();
-    
+
     console.error(`🔄 [DEPLOYMENT RETRY] Starting retry logic for potential deployment delay`);
     console.error(`   Script ID: ${scriptId}`);
     console.error(`   Max retry duration: ${maxRetryDuration}ms`);
     console.error(`   Retry interval: ${retryInterval}ms`);
-    
+
     while (Date.now() - startTime < maxRetryDuration) {
       try {
         // First try the actual function
-        return await this.executeOptimistic(scriptId, js_statement, accessToken);
+        return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
       } catch (error: any) {
         const statusCode = error.statusCode || error.response?.status;
         
@@ -1162,7 +1306,7 @@ export class ExecTool extends BaseTool {
             
             // Deployment is ready, try the actual function one more time
             try {
-              return await this.executeOptimistic(scriptId, js_statement, accessToken);
+              return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
             } catch (actualError: any) {
               console.error(`❌ [DEPLOYMENT RETRY] Actual function still failed after test succeeded`);
               console.error(`   Error: ${actualError.message}`);
@@ -1176,7 +1320,7 @@ export class ExecTool extends BaseTool {
             if (testStatusCode === 200) {
               console.error(`✅ [DEPLOYMENT TEST] HTTP 200 received, deployment is ready - retrying original function`);
               try {
-                return await this.executeOptimistic(scriptId, js_statement, accessToken);
+                return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
               } catch (actualError: any) {
                 console.error(`❌ [DEPLOYMENT RETRY] Original function failed even after HTTP 200 test: ${actualError.message}`);
                 throw actualError;
@@ -1350,7 +1494,7 @@ export class ExecTool extends BaseTool {
     return [404, 403, 500].includes(statusCode) || isHtmlError;
   }
 
-  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780, autoRedeploy: boolean = true): Promise<any> {
+  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780, autoRedeploy: boolean = true, logFilter?: string, logTail?: number): Promise<any> {
     const startTime = Date.now();
     
     // 🚀 PERFORMANCE OPTIMIZATION: Check cached deployment URL first
@@ -1564,16 +1708,23 @@ export class ExecTool extends BaseTool {
           
           // Clear timeout and return success
           clearTimeout(timeoutId);
-          
+
           // Extract logger output from retry result if it exists
           const retryLoggerOutput = (retryResult && typeof retryResult === 'object' && retryResult.logger_output) || '';
-          
+
+          // Apply log filtering before protecting response size
+          const { filteredOutput, metadata } = filterLoggerOutput(
+            retryLoggerOutput,
+            logFilter,
+            logTail
+          );
+
           return protectResponseSize({
             status: 'success',
             scriptId,
             js_statement,
             result: retryResult && typeof retryResult === 'object' && retryResult.result !== undefined ? retryResult.result : retryResult,
-            logger_output: retryLoggerOutput,
+            logger_output: filteredOutput + metadata,
             executedAt: new Date().toISOString(),
             cookieAuthUsed: true
           });
@@ -1730,12 +1881,21 @@ export class ExecTool extends BaseTool {
       // Handle structured response format {type: "data"|"exception", payload: ...}
       if (result && typeof result === 'object' && result.type) {
         if (result.type === 'data') {
+
+          // Apply log filtering before protecting response size
+          const { filteredOutput, metadata } = filterLoggerOutput(
+            result.logger_output || '',
+            logFilter,
+            logTail
+          );
+
+
           return protectResponseSize({
             status: 'success',
             scriptId,
             js_statement,
             result: result.payload,
-            logger_output: result.logger_output || '',
+            logger_output: filteredOutput + metadata,
             executedAt: new Date().toISOString()
           });
         } else if (result.type === 'exception') {
@@ -1744,17 +1904,25 @@ export class ExecTool extends BaseTool {
           throw error;
         }
       }
-      
+
       // Extract logger output from the result if it exists
       const loggerOutput = (result && typeof result === 'object' && result.logger_output) || '';
-      
+
+      // Apply log filtering before protecting response size
+      const { filteredOutput, metadata } = filterLoggerOutput(
+        loggerOutput,
+        logFilter,
+        logTail
+      );
+
+
       // Return simple success response with logger output
       return protectResponseSize({
         status: 'success',
         scriptId,
         js_statement,
         result: result && typeof result === 'object' && result.result !== undefined ? result.result : result,
-        logger_output: loggerOutput,
+        logger_output: filteredOutput + metadata,
         executedAt: new Date().toISOString()
       });
     } catch (error: any) {

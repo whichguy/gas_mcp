@@ -61,6 +61,11 @@ import {
 } from '../tools/processes.js';
 
 import {
+  LogsListTool,
+  LogsGetTool
+} from '../tools/logs.js';
+
+import {
   VersionGetTool,
   VersionListTool
 } from '../tools/versions.js';
@@ -301,6 +306,10 @@ export class MCPGasServer {
    * ### Process Management (2 tools)
    * - `gas_process_list` - List user processes
    * - `gas_process_list_script` - List script processes
+   *
+   * ### Execution Logs (2 tools)
+   * - `gas_logs_list` - Browse execution logs with Cloud Logging-first optimization
+   * - `gas_logs_get` - Get complete logs for a single process with auto-pagination
    * 
    * ### Drive Integration (3 tools)
    * - `gas_find_drive_script` - Find container scripts
@@ -383,6 +392,10 @@ export class MCPGasServer {
       // Process management
       new ProcessListTool(authManager),
       new ProcessListScriptTool(authManager),
+
+      // 📋 Execution logs with Cloud Logging integration
+      new LogsListTool(authManager),      // Browse logs with Cloud Logging-first optimization
+      new LogsGetTool(authManager),       // Get complete logs for single process
       
       // Version management
       new VersionGetTool(authManager),

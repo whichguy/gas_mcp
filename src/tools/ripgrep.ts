@@ -1026,11 +1026,22 @@ export class RipgrepTool extends BaseTool {
     required: ['scriptId', 'pattern'],
     llmGuidance: {
       fileSystem: 'GAS has no real directories. Files like "utils/helper" and "api/client" are single filenames with pseudo-directory prefixes.',
-      
+
       pathPatterns: 'Use path patterns like "utils/*" to filter by filename prefixes. The "*" matches the remaining part of the filename after the prefix.',
-      
+
       whenToUse: 'Use for advanced text search with multiple patterns, context control, and pseudo-directory filtering in GAS flat file structure.',
-      
+
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'Advanced search works universally for both script types with full ripgrep-inspired features.'
+      },
+      limitations: {
+        maxCount: 'Hard limit of 1000 matches per file - use more specific patterns for files with many matches',
+        maxFiles: 'Hard limit of 500 files searched - use path parameter to narrow scope',
+        performance: 'Complex regex with multiline mode may be slow - profile with showStats: true if needed'
+      },
+
       examples: [
         'Multi-pattern search: {scriptId: "abc123...", patterns: ["function.*test", "describe.*spec"], smartCase: true}',
         'Context search: {scriptId: "abc123...", pattern: "TODO", contextBefore: 2, contextAfter: 3}',
@@ -1044,15 +1055,15 @@ export class RipgrepTool extends BaseTool {
         'Sorted by path: {scriptId: "abc123...", pattern: "function", sort: "path"}',
         'Trimmed output: {scriptId: "abc123...", pattern: "class.*\\\\{", trim: true}'
       ],
-      
+
       fileSystemReality: 'Remember: GAS files are flat. "utils/helper.js" appears as filename "utils/helper" in the project, not as file "helper.js" in folder "utils".',
-      
+
       pathFilteringLogic: 'Path filtering works on complete filenames using prefix matching, not directory traversal.',
-      
+
       performance: 'Optimized for large codebases with multiple patterns. In-memory processing with regex caching and performance statistics.',
-      
+
       workflow: 'Advanced search → analyze results → generate replacements → apply manually using gas_write',
-      
+
       contentComparison: 'gas_ripgrep searches the same clean user code that gas_cat shows (unwrapped from CommonJS), while gas_raw_ripgrep searches complete file content including system wrappers.'
     }
   };

@@ -6,6 +6,10 @@ This directory contains all technical documentation for the MCP Google Apps Scri
 
 ## 📁 Documentation Structure
 
+### 🎯 Quick Reference
+**Start here for comprehensive tool documentation**:
+- **[REFERENCE.md](REFERENCE.md)** - Complete reference for all 63 tools: capabilities, limitations, compatibility matrix, and troubleshooting
+
 ### 📚 API Documentation (`api/`)
 Complete API reference documentation for all MCP tools and endpoints.
 
@@ -37,6 +41,7 @@ Version control integration workflows and patterns for Google Apps Script.
 ## 🎯 Quick Navigation
 
 ### For Users
+- **🎯 Tool Reference**: Start with **[REFERENCE.md](REFERENCE.md)** for complete capabilities, limitations, and compatibility
 - **Getting Started**: See main [README.md](../README.md) in project root
 - **Claude Code Users**: See [CLAUDE.md](../CLAUDE.md) for specific instructions
 - **Installation**: Follow setup guide in main README.md
@@ -61,6 +66,7 @@ Version control integration workflows and patterns for Google Apps Script.
 
 | Document | Audience | Purpose |
 |----------|----------|---------|
+| **🎯 REFERENCE.md** | All Users | Complete tool capabilities, limitations, compatibility matrix, troubleshooting |
 | **API Reference** | Integrators, Power Users | Complete API documentation with examples |
 | **Local Sync API** | Developers | Local file synchronization details |
 | **Schemas & Validation** | Developers, Contributors | Technical schema specifications |

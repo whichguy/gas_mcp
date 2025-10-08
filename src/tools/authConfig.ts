@@ -29,6 +29,7 @@ export function loadOAuthConfigFromJson(): AuthConfig {
       'https://www.googleapis.com/auth/spreadsheets',
       'https://www.googleapis.com/auth/documents',
       'https://www.googleapis.com/auth/forms',
+      'https://www.googleapis.com/auth/logging.read',
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/userinfo.profile'
     ]

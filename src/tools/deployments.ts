@@ -812,6 +812,16 @@ export class ProjectCreateTool extends BaseTool {
         '5. Add code: gas_write({path: "fileName", content: "..."}) - uses current project',
         '6. Execute: gas_run({js_statement: "..."}) - uses current project'
       ],
+      scriptTypeCompatibility: {
+        standalone: '✅ Creates standalone scripts (default behavior)',
+        containerBound: '⚠️  Cannot create container-bound scripts via API - use driveContainerTools or Apps Script UI',
+        notes: 'Creates standalone scripts only. For container-bound scripts, bind manually or use create_script tool.'
+      },
+      limitations: {
+        projectType: 'Only creates standalone scripts - cannot create container-bound scripts',
+        quotas: 'Subject to Google Apps Script project creation quotas (varies by account type)',
+        initialState: 'Creates empty project with CommonJS infrastructure - no code files'
+      },
       returnValue: {
         scriptId: 'Save this ID - required for direct API operations',
         localName: 'Use this name with gas_project_set, gas_pull, gas_push, etc.',
@@ -819,11 +829,19 @@ export class ProjectCreateTool extends BaseTool {
         driveUrl: 'Direct link to edit project in Apps Script editor'
       },
       nextSteps: [
-        'Use gas_project_set({project: "localName"}) to set as current',
-        'Use gas_write to add JavaScript code files',
-        'Use gas_run to execute code in the project',
-        'Use deploy_create for web app or API deployments'
+        'IMMEDIATE: Save scriptId from response - required for all operations',
+        'OPTIONAL: gas_project_set({project: "localName"}) to set as current project',
+        'ADD CODE: gas_write({scriptId, path: "fileName", content: "..."}) to add files',
+        'TEST CODE: gas_run({scriptId, js_statement: "..."}) to test execution',
+        'DEPLOY: deploy_create({scriptId}) for web app or API deployments'
       ],
+      relatedTools: {
+        containerBoundAlternative: 'create_script - For creating container-bound scripts attached to Sheets/Docs/Forms',
+        projectManagement: 'project_list - List all configured projects, project_add - Add existing project to config',
+        codeManagement: 'gas_write - Add/update code files, gas_cat - Read existing files',
+        execution: 'gas_run - Execute JavaScript in the project',
+        deployment: 'version_create + deploy_create - Deploy to production'
+      },
       errorHandling: {
         'AuthenticationError': 'Run gas_auth to authenticate first',
         'PermissionError': 'Check Google Drive permissions and API access',
@@ -1032,6 +1050,16 @@ export class ProjectInitTool extends BaseTool {
         '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
         '2. Have valid scriptId from existing project (use gas_ls to find projects)'
       ],
+      scriptTypeCompatibility: {
+        standalone: '✅ Full Support - Works identically',
+        containerBound: '✅ Full Support - Works identically',
+        notes: 'Infrastructure initialization works universally for both script types.'
+      },
+      limitations: {
+        existingFiles: 'By default preserves existing files - use force: true to overwrite',
+        manifestUpdates: 'Updates appsscript.json manifest with standard configuration',
+        noRollback: 'Partial installations possible if errors occur - check filesInstalled and errors in response'
+      },
       useCases: {
         basicInit: 'project_init({scriptId: "..."}) - Install all infrastructure',
         commonJSOnly: 'project_init({scriptId: "...", includeExecutionInfrastructure: false}) - Only CommonJS',
