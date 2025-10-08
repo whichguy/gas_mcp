@@ -2017,12 +2017,10 @@ export class ExecTool extends BaseTool {
         
         console.error(`🔐 [GAS_RUN_AUTH] Browser authentication details:\n${JSON.stringify(authInfo, null, 2)}`);
         
-        // Create browser URL with auth successful test function
-        const authTestFunction = '"auth successful"';
-        const encodedAuthTestFunction = encodeURIComponent(authTestFunction);
-        const browserUrl = `${response.url}${response.url.includes('?') ? '&' : '?'}_mcp_run=true&func=${encodedAuthTestFunction}`;
-        
-        // Launch browser with the auth test URL
+        // Create browser URL with auth IDE action (shows IDE interface after auth)
+        const browserUrl = `${response.url}${response.url.includes('?') ? '&' : '?'}_mcp_run=true&action=auth_ide`;
+
+        // Launch browser with the auth IDE URL
         console.error(`🚀 [GAS_RUN_AUTH] Opening browser for domain authorization: ${browserUrl}`);
         await open(browserUrl);
         
@@ -2042,21 +2040,20 @@ export class ExecTool extends BaseTool {
    }
 
   /**
-   * Poll for domain authorization completion by testing with a simple function
-   * Makes requests to /dev?func=return%20"auth successful" until JSON response received
+   * Poll for domain authorization completion using action=auth_check
+   * Makes requests to /dev?action=auth_check&format=json until authorized status received
+   * Browser uses action=auth_ide to show IDE interface after auth
    */
   private async pollForDomainAuthorization(baseUrl: string, accessToken: string): Promise<void> {
     const maxPollDuration = 60000; // 60 seconds total
     const pollInterval = 3000; // 3 seconds between polls
     const startTime = Date.now();
     
-    // Test function that returns an auth success string
-    const testFunction = '"auth successful"';
-    const encodedTestFunction = encodeURIComponent(testFunction);
-    const testUrl = `${baseUrl}?_mcp_run=true&func=${encodedTestFunction}&format=json`;
+    // Poll with lightweight auth check action (no execution)
+    const testUrl = `${baseUrl}?_mcp_run=true&action=auth_check&format=json`;
     
     console.error(`🔄 [DOMAIN_AUTH_POLL] Starting authorization polling`);
-    console.error(`   Test URL: ${baseUrl}?func="auth successful"`);
+    console.error(`   Test URL: ${baseUrl}?action=auth_check&format=json`);
     console.error(`   Max duration: ${maxPollDuration}ms`);
     console.error(`   Poll interval: ${pollInterval}ms`);
     
@@ -2088,9 +2085,8 @@ export class ExecTool extends BaseTool {
           try {
             const pollResult = await pollResponse.json();
             
-            // Verify we got the expected auth successful response
-            if (pollResult === 'auth successful' || 
-                (typeof pollResult === 'object' && pollResult.result === 'auth successful')) {
+            // Check for authorized status from auth_check action
+            if (pollResult.status === 'authorized') {
               console.error(`✅ [DOMAIN_AUTH_POLL] Success! Domain authorization completed in ${elapsedTime}ms`);
               console.error(`   Poll result: ${JSON.stringify(pollResult)}`);
               return;
