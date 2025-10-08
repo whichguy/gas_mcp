@@ -31,86 +31,124 @@ function _main(module, exports, require) {
       return null; // Not a gas_run request, let other handlers check
     }
 
-    // NEW: Detect authorization test
-    const isAuthTest = e.parameter?.func === '"auth successful"' ||
-                       e.parameter?.func === 'return "auth successful"';
+    // Determine action (default to 'execute' for backward compatibility)
+    const action = e.parameter?.action || 'execute';
 
-    // Check if client wants JSON (programmatic request) vs HTML (browser)
-    const wantsJson = e.parameter?.format === 'json' ||
-                      (e.parameter && !e.parameter.browser);
+    // Check response format preference
+    // Default to HTML for browsers, JSON only if explicitly requested
+    const wantsJson = e.parameter?.format === 'json';
 
-    // Verify we have the required func parameter
-    if (!e.parameter || !e.parameter.func) {
-      if (isAuthTest) {
-        return htmlAuthErrorResponse({
-          error: 'No JavaScript statement provided',
-          context: 'doGet',
-          originalError: 'Missing func parameter'
-        });
-      }
-      return jsonResponse({
-        error: true,
-        message: 'Missing func parameter for gas_run',
-        usage: 'Append ?_mcp_run=true&func=<javascript> to URL',
-        accessed_url: ScriptApp.getService().getUrl()
-      });
+    // Route based on action
+    switch (action) {
+      case 'auth_check':
+        return handleAuthCheck(wantsJson);
+
+      case 'auth_ide':
+        return handleAuthIde(wantsJson);
+
+      case 'execute':
+      default:
+        return handleExecute(e, wantsJson);
     }
+  }
 
-    // This is a gas_run request, process it
+  /**
+   * Handle lightweight auth check (for polling)
+   * Returns auth status without executing user code
+   */
+  function handleAuthCheck(wantsJson) {
     try {
       validateDevMode();
-      const js_statement = extractGetParams(e.parameter);
-      if (!js_statement) {
-        if (isAuthTest) {
-          return htmlAuthErrorResponse({
-            error: 'No JavaScript code provided',
-            context: 'doGet',
-            originalError: 'Use ?_mcp_run=true&func=yourCode'
-          });
-        }
-        throw new Error('No JavaScript code provided. Use ?_mcp_run=true&func=yourCode');
-      }
+      return jsonResponse({
+        status: 'authorized',
+        message: 'Auth check successful',
+        deploymentUrl: ScriptApp.getService().getUrl(),
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      return jsonResponse({
+        status: 'error',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
 
-      // NEW: Handle auth test - return HTML for browser, JSON for polling
-      if (isAuthTest) {
-        const result = __gas_run(js_statement);
-        const resultData = JSON.parse(result.getContent());
+  /**
+   * Handle auth IDE interface (for browser)
+   * Executes test to get execution context, then shows IDE
+   */
+  function handleAuthIde(wantsJson) {
+    try {
+      validateDevMode();
 
-        // If client wants JSON (programmatic polling), return JSON
-        if (wantsJson) {
-          return result; // Return original JSON response
-        }
+      // Execute simple test to get execution context
+      const testResult = __gas_run('"auth successful"');
+      const resultData = JSON.parse(testResult.getContent());
 
-        // Browser request - return HTML with IDE interface
+      // Return IDE interface (or JSON if explicitly requested)
+      if (wantsJson) {
+        return testResult; // JSON with auth status
+      } else {
+        // Browser gets HTML IDE interface
         if (resultData.success) {
           return htmlAuthSuccessResponse(resultData);
         } else {
           return htmlAuthErrorResponse({
             error: resultData.message || 'Execution failed',
-            context: 'doGet',
+            context: 'auth_ide',
             originalError: resultData.message,
             logger: resultData.logger_output
           });
         }
       }
-
-      // Normal execution for non-auth requests
-      const result = __gas_run(js_statement);
-      return result;
     } catch (error) {
-      // Capture logger output even on setup errors
       const loggerOutput = Logger.getLog();
-
-      if (isAuthTest) {
+      if (wantsJson) {
+        return jsonResponse({
+          status: 'error',
+          error: error.message,
+          logger: loggerOutput
+        });
+      } else {
         return htmlAuthErrorResponse({
           error: error.message,
-          context: 'doGet',
+          context: 'auth_ide',
           originalError: error.toString(),
           stack: error.stack,
           logger: loggerOutput
         });
       }
+    }
+  }
 
+  /**
+   * Handle code execution (default action)
+   * Executes JavaScript code from func parameter
+   */
+  function handleExecute(e, wantsJson) {
+    // Verify func parameter exists
+    if (!e.parameter || !e.parameter.func) {
+      return jsonResponse({
+        error: true,
+        message: 'Missing func parameter for execution',
+        usage: 'Use ?_mcp_run=true&func=<javascript>',
+        accessed_url: ScriptApp.getService().getUrl()
+      });
+    }
+
+    try {
+      validateDevMode();
+      const js_statement = extractGetParams(e.parameter);
+      if (!js_statement) {
+        throw new Error('No JavaScript code provided. Use ?_mcp_run=true&func=yourCode');
+      }
+
+      // Execute and return result
+      const result = __gas_run(js_statement);
+      return result;
+    } catch (error) {
+      const loggerOutput = Logger.getLog();
       return errorResponse(error, 'doGet', 'unknown', loggerOutput);
     }
   }
