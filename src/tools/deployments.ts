@@ -864,7 +864,7 @@ export class ProjectCreateTool extends BaseTool {
       limitations: {
         projectType: 'Only creates standalone scripts - cannot create container-bound scripts',
         quotas: 'Subject to Google Apps Script project creation quotas (varies by account type)',
-        initialState: 'Creates empty project with CommonJS infrastructure - no code files'
+        initialState: 'Creates project with CommonJS.js module system (2-param signature) automatically deployed - ready for code files'
       },
       returnValue: {
         scriptId: 'Save this ID - required for direct API operations',
