@@ -3,96 +3,67 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Authorization Successful - <?= projectName ?></title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <title>Gas Debugger Console</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <style>
     :root {
-      /* Google Material 3 Color Scheme */
-      --google-blue: #1a73e8;
-      --google-blue-hover: #1765cc;
-      --google-red: #d93025;
-      --google-yellow: #f9ab00;
-      --google-green: #1e8e3e;
-      --google-grey-50: #f8f9fa;
-      --google-grey-100: #f1f3f4;
-      --google-grey-200: #e8eaed;
-      --google-grey-300: #dadce0;
-      --google-grey-700: #5f6368;
-      --google-grey-900: #202124;
+      --bg-primary: #202124;
+      --bg-secondary: #292a2d;
+      --bg-tertiary: #35363a;
+      --text-primary: #e8eaed;
+      --text-secondary: #9aa0a6;
+      --border: #3c4043;
+      --accent: #8ab4f8;
+      --success: #81c995;
+      --error: #f28b82;
+      --warning: #fdd663;
+      --google-blue: #8ab4f8;
+      --google-grey-100: #3c4043;
+      --google-grey-200: #5f6368;
+      --google-grey-700: #9aa0a6;
+    }
 
-      --bg-primary: #ffffff;
-      --bg-secondary: var(--google-grey-50);
-      --bg-tertiary: var(--google-grey-100);
-      --text-primary: var(--google-grey-900);
-      --text-secondary: var(--google-grey-700);
-      --accent-success: var(--google-green);
-      --accent-warning: var(--google-yellow);
-      --accent-error: var(--google-red);
-      --accent-primary: var(--google-blue);
-      --border: var(--google-grey-300);
-      --shadow: 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15);
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
 
     body {
-      margin: 0;
-      padding: 0;
-      font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+      font-family: 'Google Sans', 'Roboto', sans-serif;
       background: var(--bg-primary);
       color: var(--text-primary);
+      height: 100vh;
       overflow: hidden;
-      height: 100vh;
     }
 
-    .layout-grid {
-      display: grid;
-      grid-template-rows: 40px 1fr 30px;
-      height: 100vh;
-      width: 100vw;
-    }
-
-    .top-bar {
-      background: white;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 20px;
+    .header {
+      background: var(--bg-secondary);
       border-bottom: 1px solid var(--border);
-      box-shadow: var(--shadow);
-    }
-
-    .project-info {
+      padding: 12px 20px;
       display: flex;
       align-items: center;
-      gap: 15px;
+      gap: 12px;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 400;
+      margin: 0;
       color: var(--text-primary);
-      font-weight: 500;
     }
 
-    .project-info i {
-      color: var(--google-green);
-    }
-
-    .auto-close-controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .timer-display {
-      color: var(--text-secondary);
-      font-size: 14px;
-      font-weight: 500;
-      min-width: 120px;
-      text-align: right;
+    .header .bi {
+      color: var(--accent);
     }
 
     .main-content {
-      display: grid;
-      grid-template-columns: 300px 1fr 350px;
-      height: 100%;
+      display: flex;
+      height: calc(100vh - 49px);
       overflow: hidden;
       gap: 0;
+      position: relative;
     }
 
     .panel {
@@ -101,36 +72,77 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      transition: all 0.3s ease;
       position: relative;
-      resize: horizontal;
-      min-width: 200px;
-      max-width: 600px;
+      transition: width 0.3s ease;
+    }
+
+    .panel.left {
+      width: 300px;
+      min-width: 48px;
+    }
+
+    .panel.right {
+      width: 350px;
+      min-width: 48px;
+      border-right: none;
     }
 
     .panel.collapsed {
-      min-width: 48px !important;
-      max-width: 48px !important;
-      resize: none;
+      width: 48px !important;
     }
 
-    .panel.collapsed .panel-content,
-    .panel.collapsed .context-section {
+    .panel.collapsed .panel-content {
       display: none;
     }
 
+    .panel.collapsed .panel-header span {
+      display: none;
+    }
+
+    .console-panel {
+      flex: 1;
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .resize-handle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      cursor: col-resize;
+      z-index: 10;
+      background: transparent;
+      transition: background 0.2s;
+    }
+
+    .resize-handle:hover {
+      background: var(--google-blue);
+    }
+
+    .resize-handle.left {
+      right: 0;
+    }
+
+    .resize-handle.right {
+      left: 0;
+    }
+
     .panel-header {
-      padding: 10px 15px;
       background: var(--bg-secondary);
+      padding: 10px 16px;
       border-bottom: 1px solid var(--border);
-      font-weight: 500;
       font-size: 13px;
-      color: var(--text-primary);
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      cursor: pointer;
-      user-select: none;
+      align-items: center;
+      transition: background 0.2s;
+      flex-shrink: 0;
+      height: 44px;
     }
 
     .panel-header:hover {
@@ -145,6 +157,7 @@
       padding: 4px;
       border-radius: 4px;
       transition: all 0.2s;
+      flex-shrink: 0;
     }
 
     .collapse-btn:hover {
@@ -155,622 +168,841 @@
     .panel-content {
       flex: 1;
       overflow-y: auto;
-      padding: 10px;
-    }
-
-    .module-tree {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    .module-item {
-      padding: 8px 12px;
-      cursor: pointer;
-      border-radius: 4px;
-      margin-bottom: 2px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: background 0.15s;
-    }
-
-    .module-item:hover {
-      background: var(--bg-tertiary);
-    }
-
-    .module-item.active {
-      background: #094771;
-    }
-
-    .console-panel {
-      border-right: none;
-    }
-
-    .console-tabs {
-      display: flex;
-      gap: 2px;
-      padding: 10px 15px 0;
-      background: var(--bg-secondary);
-    }
-
-    .console-tab {
-      padding: 6px 16px;
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      cursor: pointer;
-      border-radius: 4px 4px 0 0;
-      font-size: 13px;
-      transition: all 0.15s;
-    }
-
-    .console-tab.active {
-      background: var(--bg-primary);
-      color: var(--accent-success);
+      padding: 12px;
     }
 
     .console-output {
-      flex: 1;
-      background: var(--google-grey-50);
-      font-family: 'Roboto Mono', 'Consolas', 'Monaco', monospace;
+      font-family: 'Monaco', 'Menlo', monospace;
       font-size: 13px;
-      padding: 16px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
       line-height: 1.6;
-    }
-
-    .console-input-area {
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
-      padding: 10px 15px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .console-input {
-      flex: 1;
-      background: white;
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      padding: 10px 16px;
       color: var(--text-primary);
-      font-family: 'Roboto Mono', 'Consolas', monospace;
-      font-size: 14px;
-      transition: all 0.2s;
-    }
-
-    .console-input:focus {
-      outline: none;
-      border-color: var(--google-blue);
-      box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
+      padding: 12px;
+      background: var(--bg-primary);
+      overflow-y: auto;
+      height: calc(100% - 120px);
     }
 
     .output-line {
       margin-bottom: 8px;
-      display: flex;
-      gap: 10px;
-    }
-
-    .output-prompt {
-      color: var(--google-blue);
-      font-weight: 500;
+      white-space: pre-wrap;
+      word-wrap: break-word;
     }
 
     .output-result {
-      color: var(--google-green);
+      color: var(--success);
     }
 
     .output-error {
-      color: var(--google-red);
+      color: var(--error);
     }
 
     .output-info {
-      color: var(--google-grey-700);
-      font-size: 12px;
-    }
-
-    .context-section {
-      margin-bottom: 20px;
-    }
-
-    .context-section h6 {
-      font-size: 12px;
-      text-transform: uppercase;
       color: var(--text-secondary);
-      margin-bottom: 10px;
-      letter-spacing: 0.5px;
+    }
+
+    .output-warning {
+      color: var(--warning);
+    }
+
+    .command-input {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 12px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .command-input input {
+      flex: 1;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text-primary);
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+    }
+
+    .command-input input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .command-input button {
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      color: var(--bg-primary);
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .command-input button:hover {
+      opacity: 0.9;
     }
 
     .context-item {
-      padding: 8px 12px;
-      background: var(--bg-tertiary);
-      border-radius: 4px;
-      margin-bottom: 6px;
-      font-size: 13px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .context-label {
-      color: var(--text-secondary);
-      font-size: 11px;
-    }
-
-    .context-value {
-      font-family: 'Consolas', 'Monaco', monospace;
-      color: var(--accent-success);
-      font-size: 12px;
-    }
-
-    .quick-action-btn {
-      width: 100%;
-      padding: 10px;
-      background: white;
-      border: 1px solid var(--border);
-      color: var(--text-primary);
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: all 0.2s;
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      padding: 12px;
       margin-bottom: 8px;
     }
 
-    .quick-action-btn:hover {
-      background: var(--google-grey-100);
-      border-color: var(--google-blue);
-      color: var(--google-blue);
-      box-shadow: var(--shadow);
-    }
-
-    .status-bar {
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 15px;
+    .context-item-header {
       font-size: 12px;
       color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
-    .status-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .context-item-value {
+      font-size: 13px;
+      color: var(--text-primary);
+      font-family: 'Monaco', 'Menlo', monospace;
     }
 
-    .badge-custom {
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 3px;
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
     }
 
-    .debug-toggle {
-      color: var(--google-grey-700);
-      cursor: pointer;
-      padding: 6px 10px;
-      font-size: 12px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+    ::-webkit-scrollbar-track {
+      background: var(--bg-primary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--bg-tertiary);
       border-radius: 4px;
-      transition: all 0.2s;
-      margin-top: 8px;
-      user-select: none;
     }
 
-    .debug-toggle:hover {
-      background: var(--google-grey-200);
-      color: var(--google-blue);
-    }
-
-    .debug-toggle i {
-      font-size: 10px;
-      transition: transform 0.2s;
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--border);
     }
 
     .debug-logs {
-      background: var(--google-grey-100);
-      border-left: 3px solid var(--google-grey-300);
-      padding: 10px 14px;
-      margin: 8px 0 8px 20px;
+      margin-top: 4px;
+      padding: 8px;
+      background: var(--bg-secondary);
       border-radius: 4px;
       font-size: 11px;
-      color: var(--google-grey-700);
-      max-height: 200px;
-      overflow-y: auto;
-      font-family: 'Roboto Mono', 'Consolas', monospace;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-break: break-word;
+      color: var(--text-secondary);
       display: none;
+      max-height: 500px;
+      overflow-y: auto;
+      transition: all 0.3s ease;
     }
 
     .debug-logs.show {
       display: block;
     }
+
+    .state-tree {
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 12px;
+    }
+
+    .state-item {
+      padding: 4px 8px;
+      margin-bottom: 2px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .state-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .state-item-key {
+      color: var(--google-blue);
+      font-weight: 500;
+    }
+
+    .state-item-value {
+      color: var(--text-secondary);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .state-item-type {
+      color: var(--text-secondary);
+      opacity: 0.6;
+      font-size: 10px;
+    }
+
+    .state-children {
+      margin-left: 16px;
+      border-left: 1px solid var(--border);
+      padding-left: 8px;
+      margin-top: 4px;
+      display: none;
+    }
+
+    .state-children.show {
+      display: block;
+    }
+
+    .state-item .bi-chevron-right {
+      font-size: 10px;
+      transition: transform 0.2s;
+    }
+
+    .state-item.expanded .bi-chevron-right {
+      transform: rotate(90deg);
+    }
+
+    /* Tab Styles */
+    .nav-tabs {
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0;
+      padding: 0 12px;
+    }
+
+    .nav-tabs .nav-link {
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 8px 16px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: all 0.2s;
+    }
+
+    .nav-tabs .nav-link:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--google-grey-200);
+    }
+
+    .nav-tabs .nav-link.active {
+      color: var(--accent);
+      background: transparent;
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* Process History Styles */
+    .process-list {
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 12px;
+    }
+
+    .process-item {
+      background: var(--bg-secondary);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .process-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .process-item-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .process-status-icon {
+      font-size: 14px;
+    }
+
+    .process-status-icon.success {
+      color: var(--success);
+    }
+
+    .process-status-icon.error {
+      color: var(--error);
+    }
+
+    .process-command {
+      flex: 1;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .process-time {
+      color: var(--text-secondary);
+      font-size: 10px;
+    }
+
+    .process-details {
+      display: none;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 11px;
+    }
+
+    .process-item.expanded .process-details {
+      display: block;
+    }
   </style>
 </head>
 <body>
-  <div class="layout-grid">
-    <!-- Top Bar -->
-    <div class="top-bar">
-      <div class="project-info">
-        <i class="bi bi-check-circle-fill"></i>
-        <span>Authorization Successful</span>
-        <span style="opacity: 0.8;">•</span>
-        <span style="font-weight: 400;"><?= projectName ?></span>
+  <div class="header">
+    <i class="bi bi-terminal-fill"></i>
+    <h1>Gas Debugger Console</h1>
+  </div>
+
+  <div class="main-content">
+    <div class="panel left" id="leftPanel">
+      <div class="resize-handle left"></div>
+      <div class="panel-header">
+        <span>Client State</span>
+        <button class="collapse-btn" onclick="togglePanel('leftPanel')">
+          <i class="bi bi-chevron-left"></i>
+        </button>
       </div>
-      <div class="auto-close-controls">
-        <span class="timer-display" id="timerDisplay">Auto-close in 10s</span>
-        <button class="btn btn-sm btn-outline-light" id="cancelBtn">
-          <i class="bi bi-x-circle"></i> Cancel
+      <div class="panel-content">
+        <div id="clientStateTree" class="state-tree"></div>
+      </div>
+    </div>
+
+    <div class="panel console-panel">
+      <div class="panel-header">Console Output</div>
+      <div class="console-output" id="consoleOutput">
+        <div class="output-line output-info">Gas Debugger Console initialized.</div>
+        <div class="output-line output-info">Type a command and press Enter or click Execute.</div>
+      </div>
+      <div class="command-input">
+        <input type="text" id="commandInput" placeholder="Type JavaScript code (use run(...) to call server functions)">
+        <button onclick="executeCommand()">
+          <i class="bi bi-play-fill"></i>
+        </button>
+        <button onclick="clearClientState()" style="background: var(--warning); padding: 8px 12px;" title="Clear client state">
+          <i class="bi bi-arrow-counterclockwise"></i>
         </button>
       </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="main-content">
-      <!-- Left Panel: Module Explorer -->
-      <div class="panel" id="leftPanel">
-        <div class="panel-header" onclick="togglePanel('leftPanel')">
-          <span><i class="bi bi-folder2-open"></i> Modules</span>
-          <button class="collapse-btn" onclick="togglePanel('leftPanel'); event.stopPropagation();">
-            <i class="bi bi-chevron-left"></i>
-          </button>
-        </div>
-        <div class="panel-content">
-          <ul class="module-tree" id="moduleTree">
-            <?
-              for (var i = 0; i < moduleList.length; i++) {
-                var mod = moduleList[i];
-            ?>
-            <li class="module-item" data-module="<?= mod.name ?>">
-              <i class="bi bi-file-code"></i>
-              <span><?= mod.name ?></span>
-              <? if (mod.loadNow) { ?>
-                <i class="bi bi-lightning-fill text-warning" title="Load on startup"></i>
-              <? } ?>
-            </li>
-            <? } ?>
-          </ul>
-        </div>
+    <div class="panel right" id="rightPanel">
+      <div class="resize-handle right"></div>
+      <div class="panel-header">
+        <span>Inspector</span>
+        <button class="collapse-btn" onclick="togglePanel('rightPanel')">
+          <i class="bi bi-chevron-right"></i>
+        </button>
       </div>
-
-      <!-- Center Panel: Console -->
-      <div class="panel console-panel">
-        <div class="console-tabs">
-          <button class="console-tab active" data-tab="console">Console</button>
-          <button class="console-tab" data-tab="history">History</button>
-          <button class="console-tab" data-tab="help">Help</button>
-        </div>
-        <div class="console-output" id="consoleOutput">
-          <div class="output-line">
-            <span class="output-prompt">&gt;</span>
-            <span>Welcome to <?= projectName ?> REPL Console</span>
-          </div>
-          <div class="output-line">
-            <span class="output-prompt">&gt;</span>
-            <span>Type 'help' for available commands</span>
-          </div>
-          <div class="output-line">
-            <span class="output-prompt">&gt;</span>
-            <span>Deployment: <span class="output-result"><?= deploymentUrl ?></span></span>
-          </div>
-        </div>
-        <div class="console-input-area">
-          <input
-            type="text"
-            class="console-input"
-            id="consoleInput"
-            placeholder="Enter command or JavaScript (use arrow keys for history)..."
-            autofocus
-          />
-          <button style="background: var(--google-blue); border: none; color: white; padding: 8px 16px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 500; transition: all 0.2s;"
-                  id="executeBtn"
-                  onmouseover="this.style.background='var(--google-blue-hover)'"
-                  onmouseout="this.style.background='var(--google-blue)'">
-            <i class="bi bi-play-fill"></i>
-            Run
-          </button>
-        </div>
-      </div>
-
-      <!-- Right Panel: Context -->
-      <div class="panel" id="rightPanel">
-        <div class="panel-header" onclick="togglePanel('rightPanel')">
-          <span><i class="bi bi-info-circle"></i> Context</span>
-          <button class="collapse-btn" onclick="togglePanel('rightPanel'); event.stopPropagation();">
-            <i class="bi bi-chevron-right"></i>
-          </button>
-        </div>
-        <div class="panel-content">
-          <div class="context-section">
-            <h6>Environment</h6>
-            <div class="context-item">
-              <span class="context-label">User</span>
-              <span class="context-value"><?= userEmail ?></span>
+      <div class="panel-content" style="display: flex; flex-direction: column; padding: 0;">
+        <ul class="nav nav-tabs">
+          <li class="nav-item">
+            <a class="nav-link active" href="#" onclick="switchTab(event, 'contextTab')">Context</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" onclick="switchTab(event, 'processesTab')">Processes</a>
+          </li>
+        </ul>
+        <div class="tab-content">
+          <div id="contextTab" class="tab-pane active">
+            <div class="context-item" style="margin-bottom: 8px;">
+              <button onclick="runQuickTest()" style="width: 100%; background: var(--accent); border: none; border-radius: 4px; padding: 6px 10px; color: var(--bg-primary); font-weight: 400; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: opacity 0.2s; font-size: 12px;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+                <i class="bi bi-lightning-fill" style="font-size: 11px;"></i> Run Quick Test
+              </button>
             </div>
             <div class="context-item">
-              <span class="context-label">Timezone</span>
-              <span class="context-value"><?= timezone ?></span>
+              <div class="context-item-header">Project</div>
+              <div class="context-item-value">fibonacci-sidebar-test</div>
             </div>
             <div class="context-item">
-              <span class="context-label">Script ID</span>
-              <span class="context-value"><?= scriptId.substring(0, 12) ?>...</span>
+              <div class="context-item-header">Script ID</div>
+              <div class="context-item-value">10Jfa2s9ilvmRGcZxpd9rEPNhNM-ZaxsK4jSRPphQRyGHwobnbO3k9mv2</div>
+            </div>
+            <div class="context-item">
+              <div class="context-item-header">Status</div>
+              <div class="context-item-value" style="color: var(--success);">
+                <i class="bi bi-check-circle-fill"></i> Ready
+              </div>
+            </div>
+            <div class="context-item">
+              <button onclick="openScriptEditor()" style="width: 100%; background: var(--accent); border: none; border-radius: 6px; padding: 8px 12px; color: var(--bg-primary); font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <i class="bi bi-code-slash"></i> Open Script Editor
+              </button>
             </div>
           </div>
-
-          <div class="context-section">
-            <h6>Quick Actions</h6>
-            <button class="quick-action-btn" onclick="runQuickTest()">
-              <i class="bi bi-lightning"></i> Run Quick Test
-            </button>
-            <button class="quick-action-btn" onclick="listModules()">
-              <i class="bi bi-list-ul"></i> List All Modules
-            </button>
-            <button class="quick-action-btn" onclick="openScriptEditor()">
-              <i class="bi bi-code-slash"></i> Open Script Editor
-            </button>
-            <button class="quick-action-btn" onclick="copyScriptId()">
-              <i class="bi bi-clipboard"></i> Copy Script ID
-            </button>
-          </div>
-
-          <div class="context-section">
-            <h6>Available APIs</h6>
-            <div class="context-item">
-              <span>SpreadsheetApp</span>
-              <i class="bi bi-check-circle text-success"></i>
-            </div>
-            <div class="context-item">
-              <span>DriveApp</span>
-              <i class="bi bi-check-circle text-success"></i>
-            </div>
-            <div class="context-item">
-              <span>GmailApp</span>
-              <i class="bi bi-check-circle text-success"></i>
+          <div id="processesTab" class="tab-pane">
+            <div id="processList" class="process-list">
+              <div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">
+                No processes yet. Run commands to see history.
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Status Bar -->
-    <div class="status-bar">
-      <div class="status-item">
-        <i class="bi bi-circle-fill text-success" style="font-size: 8px;"></i>
-        <span>Connected to HEAD deployment</span>
-      </div>
-      <div class="status-item">
-        <span id="statusMessage">Ready</span>
       </div>
     </div>
   </div>
 
   <script>
-    const moduleData = <?!= moduleListJson || '[]' ?>;
-    const deploymentUrl = "<?= deploymentUrl ?>";
-    const scriptId = "<?= scriptId ?>";
+    const consoleOutput = document.getElementById('consoleOutput');
+    const commandInput = document.getElementById('commandInput');
 
-    // Auto-close timer
-    let timeLeft = 10;
-    let timerInterval = null;
-    let autoCloseCancelled = false;
-
-    function startTimer() {
-      timerInterval = setInterval(() => {
-        if (autoCloseCancelled) {
-          clearInterval(timerInterval);
-          return;
-        }
-
-        timeLeft--;
-        document.getElementById('timerDisplay').textContent =
-          timeLeft > 0 ? 'Auto-close in ' + timeLeft + 's' : 'Closing...';
-
-        if (timeLeft <= 0) {
-          clearInterval(timerInterval);
-          window.close();
-        }
-      }, 1000);
-    }
-
-    document.getElementById('cancelBtn').addEventListener('click', () => {
-      autoCloseCancelled = true;
-      document.getElementById('timerDisplay').textContent = 'Auto-close cancelled';
-      document.getElementById('cancelBtn').style.display = 'none';
-    });
-
-    // Command history
-    const commandHistory = [];
+    // Command history management
+    let commandHistory = [];
     let historyIndex = -1;
 
-    // Console input handling
-    const consoleInput = document.getElementById('consoleInput');
-    const consoleOutput = document.getElementById('consoleOutput');
+    // Process history
+    let processHistory = [];
 
-    consoleInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        executeCommand();
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (historyIndex < commandHistory.length - 1) {
-          historyIndex++;
-          consoleInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
-        }
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (historyIndex > 0) {
-          historyIndex--;
-          consoleInput.value = commandHistory[commandHistory.length - 1 - historyIndex];
-        } else {
-          historyIndex = -1;
-          consoleInput.value = '';
-        }
+    // Client state management
+    let clientState = {
+      run: function(jsCode) {
+        const startTime = Date.now();
+        return new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(function(data) {
+              const clientTime = Date.now() - startTime;
+
+              // Display detailed execution info
+              const infoLine = document.createElement('div');
+              infoLine.className = 'output-line';
+              infoLine.style.fontSize = '11px';
+              infoLine.style.color = 'var(--text-secondary)';
+
+              let infoText = '';
+              if (data.execution_time_ms !== undefined) {
+                let timeStr;
+                if (data.execution_time_ms < 1000) {
+                  timeStr = data.execution_time_ms + 'ms';
+                } else {
+                  timeStr = (data.execution_time_ms / 1000).toFixed(2) + 's';
+                }
+                infoText += '⏱️  Server: ' + timeStr + ' | Client: ' + clientTime + 'ms';
+              }
+
+              if (infoText) {
+                infoLine.textContent = infoText;
+                consoleOutput.appendChild(infoLine);
+              }
+
+              // Display logger output if present
+              if (data.logger_output && data.logger_output.trim()) {
+                const logId = 'debug-logs-' + Date.now();
+                const logCount = data.logger_output.split('\n').filter(line => line.trim()).length;
+
+                const metaContainer = document.createElement('div');
+                metaContainer.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-top: 4px;';
+
+                const expander = document.createElement('span');
+                expander.style.cssText = 'color: var(--google-blue); cursor: pointer; font-size: 11px; display: flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; background: var(--google-grey-100); transition: all 0.2s;';
+                expander.innerHTML = '<i class="bi bi-chevron-right" style="font-size: 10px;"></i> Logs (' + logCount + ')';
+                expander.onclick = function() { toggleDebugLogs(logId, expander); };
+
+                metaContainer.appendChild(expander);
+
+                const debugLogs = document.createElement('div');
+                debugLogs.id = logId;
+                debugLogs.className = 'debug-logs';
+                debugLogs.textContent = data.logger_output;
+
+                const resultLine = document.createElement('div');
+                resultLine.className = 'output-line';
+                resultLine.appendChild(metaContainer);
+                resultLine.appendChild(debugLogs);
+                consoleOutput.appendChild(resultLine);
+              }
+
+              consoleOutput.scrollTop = consoleOutput.scrollHeight;
+
+              if (data.status === 'success' || data.success) {
+                resolve(data.result);
+              } else {
+                reject(new Error(data.error || data.message || 'Unknown error'));
+              }
+            })
+            .withFailureHandler(reject)
+            .invoke(jsCode);
+        });
       }
-    });
+    };
 
-    function executeCommand() {
-      const input = consoleInput.value.trim();
-      if (!input) return;
-
-      commandHistory.push(input);
-      historyIndex = -1;
-
-      appendOutput('> ' + input, 'output-prompt');
-
-      // Built-in commands
-      if (input === 'help') {
-        showHelp();
-      } else if (input === 'list') {
-        listModulesCmd();
-      } else if (input === 'clear') {
-        consoleOutput.innerHTML = '';
-      } else {
-        // Execute via deployment
-        executeRemote(input);
-      }
-
-      consoleInput.value = '';
+    function clearClientState() {
+      const preservedRun = clientState.run;
+      clientState = { run: preservedRun };
+      addOutput('Client state cleared', 'info');
+      updateClientStateDisplay();
     }
 
-    document.getElementById('executeBtn').addEventListener('click', executeCommand);
+    function updateClientStateDisplay() {
+      const container = document.getElementById('clientStateTree');
+      if (!container) return;
 
-    function appendOutput(text, className = '') {
+      // Get all keys except 'run' function
+      const keys = Object.keys(clientState).filter(key => key !== 'run');
+
+      if (keys.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-secondary); font-size: 11px; padding: 8px;">No variables stored</div>';
+        return;
+      }
+
+      // Incremental update: detect changes
+      const existingItems = {};
+      container.querySelectorAll('.state-item').forEach(item => {
+        const key = item.dataset.key;
+        if (key) existingItems[key] = item;
+      });
+
+      keys.forEach(key => {
+        const value = clientState[key];
+        const existingItem = existingItems[key];
+
+        if (existingItem) {
+          // Check if value changed
+          const currentValue = getValuePreview(value);
+          const displayedValue = existingItem.querySelector('.state-item-value').textContent;
+          if (currentValue !== displayedValue) {
+            // Update existing item
+            updateStateItem(existingItem, key, value);
+          }
+          delete existingItems[key];
+        } else {
+          // Add new item
+          renderStateItem(container, key, value, 0);
+        }
+      });
+
+      // Remove deleted items
+      Object.values(existingItems).forEach(item => {
+        const childrenContainer = item.nextElementSibling;
+        if (childrenContainer && childrenContainer.classList.contains('state-children')) {
+          childrenContainer.remove();
+        }
+        item.remove();
+      });
+    }
+
+    function getValuePreview(value) {
+      const type = typeof value;
+      const isArray = Array.isArray(value);
+
+      if (isArray) {
+        return `Array(${value.length})`;
+      } else if (type === 'object' && value !== null) {
+        const objKeys = Object.keys(value);
+        return `{ ${objKeys.slice(0, 2).join(', ')}${objKeys.length > 2 ? '...' : ''} }`;
+      } else if (type === 'string') {
+        return '"' + (value.length > 30 ? value.substring(0, 30) + '...' : value) + '"';
+      } else {
+        return String(value);
+      }
+    }
+
+    function updateStateItem(item, key, value) {
+      const valueSpan = item.querySelector('.state-item-value');
+      valueSpan.textContent = getValuePreview(value);
+
+      // Update tooltip
+      const type = typeof value;
+      const isArray = Array.isArray(value);
+      let tooltipValue;
+      if (isArray || (type === 'object' && value !== null)) {
+        tooltipValue = JSON.stringify(value, null, 2);
+      } else if (type === 'string') {
+        tooltipValue = value;
+      } else {
+        tooltipValue = String(value);
+      }
+      const displayType = isArray ? 'array' : type;
+      item.title = `${key}: ${tooltipValue} (type: ${displayType})`;
+    }
+
+    function renderStateItem(container, key, value, depth) {
+      const item = document.createElement('div');
+      item.className = 'state-item';
+      item.dataset.key = key;
+
+      const type = typeof value;
+      const isObject = type === 'object' && value !== null;
+      const isArray = Array.isArray(value);
+
+      // Create tooltip with full value and type
+      let tooltipValue;
+      if (isArray || isObject) {
+        tooltipValue = JSON.stringify(value, null, 2);
+      } else if (type === 'string') {
+        tooltipValue = value;
+      } else {
+        tooltipValue = String(value);
+      }
+      const displayType = isArray ? 'array' : type;
+      item.title = `${key}: ${tooltipValue} (type: ${displayType})`;
+
+      // Add chevron for expandable items
+      if (isObject) {
+        const chevron = document.createElement('i');
+        chevron.className = 'bi bi-chevron-right';
+        item.appendChild(chevron);
+      } else {
+        // Spacer for alignment
+        const spacer = document.createElement('span');
+        spacer.style.width = '14px';
+        spacer.style.display = 'inline-block';
+        item.appendChild(spacer);
+      }
+
+      // Key
+      const keySpan = document.createElement('span');
+      keySpan.className = 'state-item-key';
+      keySpan.textContent = key;
+      item.appendChild(keySpan);
+
+      // Value preview
+      const valueSpan = document.createElement('span');
+      valueSpan.className = 'state-item-value';
+      valueSpan.textContent = getValuePreview(value);
+      item.appendChild(valueSpan);
+
+      // Type indicator
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'state-item-type';
+      typeSpan.textContent = displayType;
+      item.appendChild(typeSpan);
+
+      container.appendChild(item);
+
+      // Add children container for objects/arrays
+      if (isObject) {
+        const childrenContainer = document.createElement('div');
+        childrenContainer.className = 'state-children';
+        container.appendChild(childrenContainer);
+
+        // Toggle expand/collapse
+        item.onclick = function(e) {
+          e.stopPropagation();
+          item.classList.toggle('expanded');
+          childrenContainer.classList.toggle('show');
+
+          // Render children on first expand
+          if (childrenContainer.classList.contains('show') && childrenContainer.innerHTML === '') {
+            if (isArray) {
+              value.forEach((item, index) => {
+                renderStateItem(childrenContainer, `[${index}]`, item, depth + 1);
+              });
+            } else {
+              Object.keys(value).forEach(childKey => {
+                renderStateItem(childrenContainer, childKey, value[childKey], depth + 1);
+              });
+            }
+          }
+        };
+      }
+    }
+
+    function addOutput(message, type = 'info') {
       const line = document.createElement('div');
-      line.className = 'output-line ' + className;
-      line.textContent = text;
+      line.className = `output-line output-${type}`;
+      line.textContent = message;
       consoleOutput.appendChild(line);
       consoleOutput.scrollTop = consoleOutput.scrollHeight;
     }
 
-    function showHelp() {
-      appendOutput('Available commands:', 'output-result');
-      appendOutput('  help     - Show this help', '');
-      appendOutput('  list     - List all modules', '');
-      appendOutput('  clear    - Clear console', '');
-      appendOutput('  js:> ... - Execute raw JavaScript', '');
-      appendOutput('  <func> <args> - Execute function with shell-style args', '');
+    function executeCommand() {
+      const command = commandInput.value.trim();
+      if (!command) return;
+
+      // Add to history
+      commandHistory.push(command);
+      historyIndex = commandHistory.length;
+
+      addOutput('> ' + command, 'info');
+
+      const startTime = Date.now();
+
+      // Clear input
+      commandInput.value = '';
+
+      // Execute in context with clientState
+      // Parse the command to detect variable assignments
+      try {
+        // Check if this is a simple assignment (e.g., "x = 5" or "const y = 10")
+        const assignmentMatch = command.match(/^(?:const|let|var)?\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(.+)$/);
+        
+        let wrappedCode;
+        if (assignmentMatch && !command.includes('function') && !command.includes('=>')) {
+          // This is a simple assignment - store it in clientState
+          const varName = assignmentMatch[1];
+          const varValue = assignmentMatch[2];
+          
+          // Check if the assignment involves run() - needs special async handling
+          if (varValue.includes('run(')) {
+            // Async assignment: wait for promise to resolve, then store result
+            wrappedCode = `(async function() {
+              const run = clientState.run;
+              const value = await ${varValue};
+              clientState.${varName} = value;
+              return value;
+            })()`;
+          } else {
+            // Sync assignment: store immediately
+            wrappedCode = `(async function() {
+              const run = clientState.run;
+              const value = ${varValue};
+              clientState.${varName} = value;
+              return value;
+            })()`;
+          }
+        } else {
+          // Regular expression - execute with clientState context using with statement
+          wrappedCode = `(async function() {
+            const run = clientState.run;
+            with (clientState) {
+              return ${command};
+            }
+          })()`;
+        }
+
+        const result = eval(wrappedCode);
+
+        // Handle promises from run() calls
+        if (result && typeof result.then === 'function') {
+          const executingLine = document.createElement('div');
+          executingLine.className = 'output-line';
+          executingLine.innerHTML = '<span class="output-info"><i class="bi bi-hourglass-split"></i> Executing...</span>';
+          executingLine.id = 'executing-indicator';
+          consoleOutput.appendChild(executingLine);
+          consoleOutput.scrollTop = consoleOutput.scrollHeight;
+
+          result.then(value => {
+            const indicator = document.getElementById('executing-indicator');
+            if (indicator) indicator.remove();
+            const execTime = Date.now() - startTime;
+            addOutput('✓ ' + JSON.stringify(value, null, 2), 'result');
+            addProcessToHistory(command, 'success', value, execTime);
+            updateClientStateDisplay();
+          }).catch(err => {
+            const indicator = document.getElementById('executing-indicator');
+            if (indicator) indicator.remove();
+            const execTime = Date.now() - startTime;
+            addOutput('✗ Error: ' + err.message, 'error');
+            addProcessToHistory(command, 'error', err.message, execTime);
+            updateClientStateDisplay();
+          });
+        } else {
+          const execTime = Date.now() - startTime;
+          addOutput('✓ ' + JSON.stringify(result, null, 2), 'result');
+          addProcessToHistory(command, 'success', result, execTime);
+        }
+      } catch (error) {
+        const execTime = Date.now() - startTime;
+        addOutput('✗ Error: ' + error.message, 'error');
+        addProcessToHistory(command, 'error', error.message, execTime);
+      }
+
+      // Update client state display after any command
+      updateClientStateDisplay();
     }
 
-    function listModulesCmd() {
-      appendOutput('Loaded modules:', 'output-result');
-      moduleData.forEach((mod) => {
-        appendOutput('  ' + mod.name + ' - ' + mod.exports.length + ' exports', '');
+    function addProcessToHistory(command, status, result, execTime) {
+      const timestamp = new Date().toLocaleTimeString();
+      const process = {
+        command,
+        status,
+        result,
+        execTime,
+        timestamp
+      };
+
+      processHistory.unshift(process);
+
+      // Keep only last 50 processes
+      if (processHistory.length > 50) {
+        processHistory = processHistory.slice(0, 50);
+      }
+
+      updateProcessList();
+    }
+
+    function updateProcessList() {
+      const processList = document.getElementById('processList');
+      if (!processList) return;
+
+      if (processHistory.length === 0) {
+        processList.innerHTML = '<div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">No processes yet. Run commands to see history.</div>';
+        return;
+      }
+
+      processList.innerHTML = '';
+
+      processHistory.forEach((process, index) => {
+        const item = document.createElement('div');
+        item.className = 'process-item';
+
+        const header = document.createElement('div');
+        header.className = 'process-item-header';
+
+        const icon = document.createElement('i');
+        icon.className = `bi ${process.status === 'success' ? 'bi-check-circle-fill' : 'bi-x-circle-fill'} process-status-icon ${process.status}`;
+        header.appendChild(icon);
+
+        const commandSpan = document.createElement('span');
+        commandSpan.className = 'process-command';
+        commandSpan.textContent = process.command;
+        header.appendChild(commandSpan);
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'process-time';
+        timeSpan.textContent = process.execTime + 'ms';
+        header.appendChild(timeSpan);
+
+        item.appendChild(header);
+
+        const details = document.createElement('div');
+        details.className = 'process-details';
+        details.innerHTML = `<div><strong>Time:</strong> ${process.timestamp}</div><div><strong>Result:</strong> ${typeof process.result === 'string' ? process.result : JSON.stringify(process.result, null, 2)}</div>`;
+        item.appendChild(details);
+
+        item.onclick = function() {
+          item.classList.toggle('expanded');
+        };
+
+        processList.appendChild(item);
       });
     }
 
-    function appendDebugToggle(logOutput) {
-      const debugId = 'debug-' + Date.now();
-      const toggle = document.createElement('div');
-      toggle.className = 'debug-toggle';
-      toggle.innerHTML = '<i class="bi bi-chevron-right"></i> Debug Logs (' + logOutput.split('\n').length + ' lines)';
-      toggle.onclick = function() { toggleDebugLogs(debugId); };
-
-      const logs = document.createElement('div');
-      logs.id = debugId;
-      logs.className = 'debug-logs';
-      logs.textContent = logOutput;
-
-      consoleOutput.appendChild(toggle);
-      consoleOutput.appendChild(logs);
-      consoleOutput.scrollTop = consoleOutput.scrollHeight;
-    }
-
-    function toggleDebugLogs(id) {
+    function toggleDebugLogs(id, expanderElement) {
       const logs = document.getElementById(id);
-      const toggle = logs.previousElementSibling;
-      const icon = toggle.querySelector('i');
+      const icon = expanderElement.querySelector('i');
 
       if (logs.classList.contains('show')) {
         logs.classList.remove('show');
         icon.className = 'bi bi-chevron-right';
+        expanderElement.style.background = 'var(--google-grey-100)';
       } else {
         logs.classList.add('show');
         icon.className = 'bi bi-chevron-down';
+        expanderElement.style.background = 'var(--google-grey-200)';
       }
     }
 
-    function executeRemote(command) {
-      appendOutput('Executing...', 'output-result');
-      document.getElementById('statusMessage').textContent = 'Executing...';
-
-      // Check if google.script.run is available
-      if (typeof google === 'undefined' || !google.script || !google.script.run) {
-        appendOutput('Error: google.script.run is not available. This page must be served from a Google Apps Script deployment.', 'output-error');
-        document.getElementById('statusMessage').textContent = 'Error';
-        return;
-      }
-
-      // Check if invoke function exists
-      if (typeof google.script.run.invoke !== 'function') {
-        appendOutput('Error: invoke() function not found. Make sure __global__ export is configured.', 'output-error');
-        document.getElementById('statusMessage').textContent = 'Error';
-        return;
-      }
-
-      // Execute via google.script.run using invoke()
-      google.script.run
-        .withSuccessHandler(function(data) {
-          if (data.success) {
-            // Show clean result only
-            appendOutput(JSON.stringify(data.result, null, 2), 'output-result');
-
-            // Show execution time
-            if (data.execution_time_ms !== undefined) {
-              appendOutput('⏱ Executed in ' + data.execution_time_ms + 'ms', 'output-info');
-            }
-
-            // Show collapsible debug logs (hidden by default)
-            if (data.logger_output && data.logger_output.trim()) {
-              appendDebugToggle(data.logger_output);
-            }
-          } else {
-            appendOutput('Error: ' + (data.error || data.message || 'Unknown error'), 'output-error');
-          }
-          document.getElementById('statusMessage').textContent = 'Ready';
-        })
-        .withFailureHandler(function(err) {
-          appendOutput('Error: ' + err.message, 'output-error');
-          document.getElementById('statusMessage').textContent = 'Error';
-        })
-        .invoke('__mcp_gas_run.__gas_run', command);
-    }
-
-    // Quick actions
-    function runQuickTest() {
-      consoleInput.value = 'return new Date().toISOString()';
-      executeCommand();
-    }
-
-    function listModules() {
-      listModulesCmd();
-    }
-
-    function openScriptEditor() {
-      window.open('https://script.google.com/d/' + scriptId + '/edit', '_blank');
-    }
-
-    function copyScriptId() {
-      navigator.clipboard.writeText(scriptId);
-      document.getElementById('statusMessage').textContent = 'Script ID copied!';
-      setTimeout(() => {
-        document.getElementById('statusMessage').textContent = 'Ready';
-      }, 2000);
-    }
-
-    // Panel collapse functionality
     function togglePanel(panelId) {
       const panel = document.getElementById(panelId);
       const btn = panel.querySelector('.collapse-btn i');
@@ -783,25 +1015,117 @@
         btn.className = panelId === 'leftPanel' ? 'bi bi-chevron-left' : 'bi bi-chevron-right';
       }
 
-      // Save state to localStorage
       localStorage.setItem('panel-' + panelId + '-collapsed', panel.classList.contains('collapsed'));
     }
 
-    // Restore panel states from localStorage
+    function switchTab(event, tabId) {
+      event.preventDefault();
+
+      // Remove active from all tabs and panes
+      document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+
+      // Add active to clicked tab and corresponding pane
+      event.target.classList.add('active');
+      document.getElementById(tabId).classList.add('active');
+    }
+
+    // Panel resizing
+    function initResize() {
+      const handles = document.querySelectorAll('.resize-handle');
+
+      handles.forEach(handle => {
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+        let panel = null;
+
+        handle.addEventListener('mousedown', function(e) {
+          isResizing = true;
+          panel = handle.parentElement;
+          startX = e.clientX;
+          startWidth = panel.offsetWidth;
+
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+          if (!isResizing) return;
+
+          const isLeft = handle.classList.contains('left');
+          const delta = isLeft ? (e.clientX - startX) : (startX - e.clientX);
+          const newWidth = startWidth + delta;
+
+          if (newWidth >= 200 && newWidth <= 800) {
+            panel.style.width = newWidth + 'px';
+          }
+        });
+
+        document.addEventListener('mouseup', function() {
+          if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+
+            if (panel) {
+              localStorage.setItem('panel-' + panel.id + '-width', panel.style.width);
+            }
+          }
+        });
+      });
+    }
+
     function restorePanelStates() {
       ['leftPanel', 'rightPanel'].forEach(panelId => {
         const collapsed = localStorage.getItem('panel-' + panelId + '-collapsed') === 'true';
         if (collapsed) {
           togglePanel(panelId);
         }
+
+        const width = localStorage.getItem('panel-' + panelId + '-width');
+        if (width) {
+          document.getElementById(panelId).style.width = width;
+        }
       });
     }
 
-    // Start auto-close timer
-    startTimer();
+    commandInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        executeCommand();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (historyIndex > 0) {
+          historyIndex--;
+          commandInput.value = commandHistory[historyIndex];
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (historyIndex < commandHistory.length - 1) {
+          historyIndex++;
+          commandInput.value = commandHistory[historyIndex];
+        } else {
+          historyIndex = commandHistory.length;
+          commandInput.value = '';
+        }
+      }
+    });
 
-    // Restore panel states on load
+    function openScriptEditor() {
+      const scriptId = '10Jfa2s9ilvmRGcZxpd9rEPNhNM-ZaxsK4jSRPphQRyGHwobnbO3k9mv2';
+      window.open('https://script.google.com/d/' + scriptId + '/edit', '_blank');
+    }
+
+    function runQuickTest() {
+      commandInput.value = '2 + 2';
+      executeCommand();
+    }
+
+    initResize();
     restorePanelStates();
+    updateClientStateDisplay();
   </script>
 </body>
 </html>
