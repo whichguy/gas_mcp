@@ -53,6 +53,11 @@ export class CatTool extends BaseFileSystemTool {
       whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
       workflow: 'Use with explicit scriptId: cat({scriptId: "abc123...", path: "utils.gs"})',
       alternatives: 'Use raw_cat only when you need explicit project ID control',
+      efficientAlternatives: {
+        searching: 'Use ripgrep (gas_ripgrep) or grep (gas_grep) for searching within files - much faster than reading entire files',
+        editing: 'Use edit (gas_edit) for token-efficient small changes, aider (gas_aider) for fuzzy matching edits, or sed (gas_sed) for pattern-based replacements',
+        whenToUseCat: 'Use cat only when you need to read the complete file content for understanding or major refactoring'
+      },
       scriptTypeCompatibility: {
         standalone: '✅ Full Support - Works identically',
         containerBound: '✅ Full Support - Works identically',
