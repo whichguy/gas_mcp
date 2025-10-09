@@ -469,6 +469,56 @@ function htmlAuthSuccessResponse(executionResult) {
   }
 }
 
+  /**
+   * Universal module function invocation for google.script.run
+   * @param {string} modulePath - Module.function path (e.g., '__mcp_gas_run.__gas_run')
+   * @param {...*} args - Arguments to pass to the function
+   * @returns {*} Result (auto-parses ContentService responses)
+   */
+  function invoke(modulePath, ...args) {
+    try {
+      // Parse module.function from path
+      const lastDot = modulePath.lastIndexOf('.');
+
+      if (lastDot === -1) {
+        return {
+          success: false,
+          error: `Invalid module path: ${modulePath}. Expected format: 'moduleName.functionName'`,
+          example: 'invoke("__mcp_gas_run.__gas_run", "2 + 2")'
+        };
+      }
+
+      const moduleName = modulePath.substring(0, lastDot);
+      const functionName = modulePath.substring(lastDot + 1);
+
+      const module = require(moduleName);
+      const fn = module[functionName];
+
+      if (typeof fn !== 'function') {
+        return {
+          success: false,
+          error: `${functionName} is not a function in ${moduleName}`,
+          available: Object.keys(module).filter(k => typeof module[k] === 'function')
+        };
+      }
+
+      const result = fn(...args);
+
+      // Auto-parse ContentService responses
+      if (result && typeof result.getContent === 'function') {
+        return JSON.parse(result.getContent());
+      }
+
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        error: error.toString(),
+        message: error.message
+      };
+    }
+  }
+
   // Export handlers
 
 function htmlAuthErrorResponse(errorData) {
@@ -560,13 +610,20 @@ function htmlAuthErrorResponse(errorData) {
 }
   module.exports = {
     doGetHandler,
-    doPostHandler
+    doPostHandler,
+    __gas_run,
+    invoke
   };
 
   // Register with event system
   module.exports.__events__ = {
     doGet: 'doGetHandler',
     doPost: 'doPostHandler'
+  };
+
+  // Expose invoke to global namespace for google.script.run
+  module.exports.__global__ = {
+    invoke: invoke
   };
 
   ///////// END USER CODE /////////
