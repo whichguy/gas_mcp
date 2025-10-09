@@ -268,6 +268,11 @@
       color: var(--google-red);
     }
 
+    .output-info {
+      color: var(--google-grey-700);
+      font-size: 12px;
+    }
+
     .context-section {
       margin-bottom: 20px;
     }
@@ -527,7 +532,7 @@
 
         timeLeft--;
         document.getElementById('timerDisplay').textContent =
-          timeLeft > 0 ? `Auto-close in ${timeLeft}s` : 'Closing...';
+          timeLeft > 0 ? 'Auto-close in ' + timeLeft + 's' : 'Closing...';
 
         if (timeLeft <= 0) {
           clearInterval(timerInterval);
@@ -578,7 +583,7 @@
       commandHistory.push(input);
       historyIndex = -1;
 
-      appendOutput(`> ${input}`, 'output-prompt');
+      appendOutput('> ' + input, 'output-prompt');
 
       // Built-in commands
       if (input === 'help') {
@@ -599,7 +604,7 @@
 
     function appendOutput(text, className = '') {
       const line = document.createElement('div');
-      line.className = `output-line ${className}`;
+      line.className = 'output-line ' + className;
       line.textContent = text;
       consoleOutput.appendChild(line);
       consoleOutput.scrollTop = consoleOutput.scrollHeight;
@@ -617,7 +622,7 @@
     function listModulesCmd() {
       appendOutput('Loaded modules:', 'output-result');
       moduleData.forEach((mod) => {
-        appendOutput(`  ${mod.name} - ${mod.exports.length} exports`, '');
+        appendOutput('  ' + mod.name + ' - ' + mod.exports.length + ' exports', '');
       });
     }
 
@@ -625,13 +630,38 @@
       appendOutput('Executing...', 'output-result');
       document.getElementById('statusMessage').textContent = 'Executing...';
 
-      // Execute via google.script.run
+      // Check if google.script.run is available
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        appendOutput('Error: google.script.run is not available. This page must be served from a Google Apps Script deployment.', 'output-error');
+        document.getElementById('statusMessage').textContent = 'Error';
+        return;
+      }
+
+      // Check if invoke function exists
+      if (typeof google.script.run.invoke !== 'function') {
+        appendOutput('Error: invoke() function not found. Make sure __global__ export is configured.', 'output-error');
+        document.getElementById('statusMessage').textContent = 'Error';
+        return;
+      }
+
+      // Execute via google.script.run using invoke()
       google.script.run
         .withSuccessHandler(function(data) {
           if (data.success) {
             appendOutput(JSON.stringify(data.result, null, 2), 'output-result');
+
+            // Show logger output if available
+            if (data.logger_output && data.logger_output.trim()) {
+              appendOutput('--- Logger Output ---', 'output-info');
+              appendOutput(data.logger_output, 'output-info');
+            }
+
+            // Show execution time
+            if (data.execution_time_ms !== undefined) {
+              appendOutput('Executed in ' + data.execution_time_ms + 'ms', 'output-info');
+            }
           } else {
-            appendOutput('Error: ' + (data.message || 'Unknown error'), 'output-error');
+            appendOutput('Error: ' + (data.error || data.message || 'Unknown error'), 'output-error');
           }
           document.getElementById('statusMessage').textContent = 'Ready';
         })
@@ -639,7 +669,7 @@
           appendOutput('Error: ' + err.message, 'output-error');
           document.getElementById('statusMessage').textContent = 'Error';
         })
-        .runCode(command);
+        .invoke('__mcp_gas_run.__gas_run', command);
     }
 
     // Quick actions
@@ -653,7 +683,7 @@
     }
 
     function openScriptEditor() {
-      window.open(`https://script.google.com/d/${scriptId}/edit`, '_blank');
+      window.open('https://script.google.com/d/' + scriptId + '/edit', '_blank');
     }
 
     function copyScriptId() {
@@ -678,13 +708,13 @@
       }
 
       // Save state to localStorage
-      localStorage.setItem(`panel-${panelId}-collapsed`, panel.classList.contains('collapsed'));
+      localStorage.setItem('panel-' + panelId + '-collapsed', panel.classList.contains('collapsed'));
     }
 
     // Restore panel states from localStorage
     function restorePanelStates() {
       ['leftPanel', 'rightPanel'].forEach(panelId => {
-        const collapsed = localStorage.getItem(`panel-${panelId}-collapsed`) === 'true';
+        const collapsed = localStorage.getItem('panel-' + panelId + '-collapsed') === 'true';
         if (collapsed) {
           togglePanel(panelId);
         }
