@@ -12,6 +12,7 @@
  * - GLOBAL EXPORTS for custom functions
  * - EVENT HANDLER SYSTEM for GAS triggers
  * - Global require() function (no parameter needed in _main)
+ * - Optional debug logging (set globalThis.DEBUG_COMMONJS = true to enable)
  *
  * Usage:
  * 1. Each module should define a _main function with the signature:
@@ -20,6 +21,12 @@
  *
  * 2. At the end of each module file, call: __defineModule__(_main);
  * 3. Use require('FileName') to import modules by their filename
+ *
+ * Debug Mode:
+ * - By default, all logging is disabled for production performance
+ * - To enable verbose module system logging, set: globalThis.DEBUG_COMMONJS = true
+ * - This can be done in any module or in the Apps Script execution environment
+ * - Example: In your main script, add at the top: globalThis.DEBUG_COMMONJS = true;
  *
  * CRITICAL: The _main function is called ONLY when the module is first required,
  * not when __defineModule__ is called. This enables lazy loading and proper
@@ -149,6 +156,25 @@
  * The dispatcher uses the first non-null response from handlers.
  */
 
+// ========== GLOBAL DEBUG FLAG ==========
+
+/**
+ * Global debug flag for CommonJS logging
+ * Set to true to enable verbose module system logging
+ * Default: false (production mode with minimal logging)
+ */
+globalThis.DEBUG_COMMONJS = globalThis.DEBUG_COMMONJS ?? false;
+
+/**
+ * Conditional logger - only logs when DEBUG_COMMONJS is enabled
+ * @param {...any} args - Arguments to log
+ */
+function debugLog(...args) {
+  if (globalThis.DEBUG_COMMONJS) {
+    Logger.log(...args);
+  }
+}
+
 // ========== GLOBAL FUNCTIONS (before IIFE) ==========
 
 /**
@@ -216,7 +242,7 @@ function require(moduleName) {
     // Set current module for the factory
     const previousModule = globalThis.__currentModule;
     globalThis.__currentModule = module;
-    Logger.log(`🔄 Loading module: ${found}`);
+    debugLog(`🔄 Loading module: ${found}`);
 
     // BACKWARD COMPATIBILITY: Call factory with appropriate signature
     const factory = moduleFactories[found];
@@ -224,7 +250,7 @@ function require(moduleName) {
 
     if (factory.length === 3) {
       // OLD STYLE: 3 parameters (module, exports, require)
-      Logger.log(`⚠️  Module ${found} uses deprecated 3-parameter signature - consider migrating to 2-parameter`);
+      debugLog(`⚠️  Module ${found} uses deprecated 3-parameter signature - consider migrating to 2-parameter`);
       result = factory(module, module.exports, require);
     } else {
       // NEW STYLE: 2 parameters (module, exports)
@@ -238,29 +264,29 @@ function require(moduleName) {
 
     // Restore previous module
     globalThis.__currentModule = previousModule;
-    Logger.log(`✅ Module loaded: ${found}`);
+    debugLog(`✅ Module loaded: ${found}`);
 
     // Process __global__ exports if present (key-value map)
     if (module.exports?.__global__ && typeof module.exports.__global__ === 'object' && !Array.isArray(module.exports.__global__)) {
-      Logger.log(`🌍 Module ${found} declares global exports`);
+      debugLog(`🌍 Module ${found} declares global exports`);
 
       for (const [key, value] of Object.entries(module.exports.__global__)) {
         globalThis[key] = value;
-        Logger.log(`  ✅ Exposed ${key} to global namespace (${typeof value})`);
+        debugLog(`  ✅ Exposed ${key} to global namespace (${typeof value})`);
       }
     }
 
     // Process __events__ if present
     if (module.exports.__events__ && typeof module.exports.__events__ === 'object') {
-      Logger.log(`📅 Module ${found} declares event handlers`);
+      debugLog(`📅 Module ${found} declares event handlers`);
 
       for (const [eventName, handlerName] of Object.entries(module.exports.__events__)) {
         const handlerFunction = module.exports[handlerName];
 
         if (typeof handlerFunction === 'function') {
-          Logger.log(`  ✅ Event handler ${eventName} → ${handlerName}`);
+          debugLog(`  ✅ Event handler ${eventName} → ${handlerName}`);
         } else {
-          Logger.log(`  ⚠️ Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
+          debugLog(`  ⚠️ Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
         }
       }
     }
@@ -287,11 +313,11 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
 
   // CRITICAL: explicitName is RESERVED for the CommonJS system module only
   // All user modules MUST use auto-detection
-  Logger.log(`📝 __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${options.loadNow || false}`);
+  debugLog(`📝 __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${options.loadNow || false}`);
 
   const moduleName = explicitName || globalThis.__detectModuleName__();
 
-  Logger.log(`   Resolved module name: ${moduleName}`);
+  debugLog(`   Resolved module name: ${moduleName}`);
 
   if (moduleFactories[moduleName]) {
     console.warn(`Module ${moduleName} already registered, skipping duplicate registration`);
@@ -300,23 +326,23 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
 
   // ALWAYS store the factory for lazy loading via require()
   moduleFactories[moduleName] = moduleFactory;
-  Logger.log(`   Factory stored for: ${moduleName}`);
+  debugLog(`   Factory stored for: ${moduleName}`);
 
   // If loadNow=true, immediately execute module via require()
   if (options.loadNow) {
-    Logger.log(`⚡ Load-now enabled for ${moduleName}, executing immediately...`);
+    debugLog(`⚡ Load-now enabled for ${moduleName}, executing immediately...`);
     try {
       require(moduleName);
-      Logger.log(`✅ Module ${moduleName} loaded immediately via require()`);
+      debugLog(`✅ Module ${moduleName} loaded immediately via require()`);
       return; // Module is now cached and processed by require()
     } catch (error) {
-      Logger.log(`❌ Error loading module ${moduleName} immediately: ${error.message}`);
+      debugLog(`❌ Error loading module ${moduleName} immediately: ${error.message}`);
       throw error; // Re-throw to prevent silent failures
     }
   }
 
   // Module registered without execution - will execute on first require()
-  Logger.log(`📦 Module registered: ${moduleName}`);
+  debugLog(`📦 Module registered: ${moduleName}`);
 }
 
 // ========== IIFE FOR INTERNAL INFRASTRUCTURE ==========
@@ -346,46 +372,46 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
   const __findEventHandlers__ = (eventName) => {
     const handlers = [];
 
-    Logger.log(`🔍 Searching for ${eventName} handlers...`);
-    Logger.log(`   Loaded modules: ${Object.keys(modules).join(', ')}`);
+    debugLog(`🔍 Searching for ${eventName} handlers...`);
+    debugLog(`   Loaded modules: ${Object.keys(modules).join(', ')}`);
 
     for (const [moduleName, module] of Object.entries(modules)) {
-      Logger.log(`   Checking module: ${moduleName}`);
+      debugLog(`   Checking module: ${moduleName}`);
 
       if (module.exports) {
-        Logger.log(`     - has exports: ✓`);
+        debugLog(`     - has exports: ✓`);
 
         if (module.exports.__events__) {
-          Logger.log(`     - has __events__: ✓`);
-          Logger.log(`     - events: ${JSON.stringify(Object.keys(module.exports.__events__))}`);
+          debugLog(`     - has __events__: ✓`);
+          debugLog(`     - events: ${JSON.stringify(Object.keys(module.exports.__events__))}`);
 
           if (module.exports.__events__[eventName]) {
             const handlerName = module.exports.__events__[eventName];
-            Logger.log(`     - has ${eventName} handler: ${handlerName}`);
+            debugLog(`     - has ${eventName} handler: ${handlerName}`);
 
             const handlerFunction = module.exports[handlerName];
 
             if (typeof handlerFunction === 'function') {
-              Logger.log(`     - handler is function: ✓`);
+              debugLog(`     - handler is function: ✓`);
               handlers.push({
                 module: moduleName,
                 handler: handlerFunction
               });
             } else {
-              Logger.log(`     - handler is NOT function: ${typeof handlerFunction}`);
+              debugLog(`     - handler is NOT function: ${typeof handlerFunction}`);
             }
           } else {
-            Logger.log(`     - no ${eventName} handler in __events__`);
+            debugLog(`     - no ${eventName} handler in __events__`);
           }
         } else {
-          Logger.log(`     - no __events__ property`);
+          debugLog(`     - no __events__ property`);
         }
       } else {
-        Logger.log(`     - no exports`);
+        debugLog(`     - no exports`);
       }
     }
 
-    Logger.log(`   Found ${handlers.length} handler(s) for ${eventName}`);
+    debugLog(`   Found ${handlers.length} handler(s) for ${eventName}`);
     return handlers;
   };
 
@@ -397,12 +423,12 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
     const handlers = __findEventHandlers__('doGet');
 
     if (handlers.length === 0) {
-      Logger.log('⚠️ No doGet handlers found in loaded modules');
+      debugLog('⚠️ No doGet handlers found in loaded modules');
       return ContentService.createTextOutput('No doGet handlers registered')
         .setMimeType(ContentService.MimeType.TEXT);
     }
 
-    Logger.log(`🚀 Dispatching doGet to ${handlers.length} handler(s)`);
+    debugLog(`🚀 Dispatching doGet to ${handlers.length} handler(s)`);
 
     let lastResponse = null;
     let successCount = 0;
@@ -410,7 +436,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
 
     for (const handlerInfo of handlers) {
       try {
-        Logger.log(`  → Calling ${handlerInfo.module}.doGet`);
+        debugLog(`  → Calling ${handlerInfo.module}.doGet`);
         const response = handlerInfo.handler(e);
         if (response) {
           lastResponse = response;
@@ -418,15 +444,15 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
         }
       } catch (error) {
         errorCount++;
-        Logger.log(`  ❌ Error in ${handlerInfo.module}.doGet: ${error.message}`);
-        Logger.log(`     Stack: ${error.stack}`);
+        debugLog(`  ❌ Error in ${handlerInfo.module}.doGet: ${error.message}`);
+        debugLog(`     Stack: ${error.stack}`);
       }
     }
 
-    Logger.log(`✅ doGet dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    debugLog(`✅ doGet dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
 
     if (errorCount > 0 && successCount === 0 && !lastResponse) {
-      Logger.log('❌ All doGet handlers failed, returning error response');
+      debugLog('❌ All doGet handlers failed, returning error response');
       return ContentService.createTextOutput(
         JSON.stringify({
           error: true,
@@ -448,12 +474,12 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
     const handlers = __findEventHandlers__('doPost');
 
     if (handlers.length === 0) {
-      Logger.log('⚠️ No doPost handlers found in loaded modules');
+      debugLog('⚠️ No doPost handlers found in loaded modules');
       return ContentService.createTextOutput('No doPost handlers registered')
         .setMimeType(ContentService.MimeType.TEXT);
     }
 
-    Logger.log(`🚀 Dispatching doPost to ${handlers.length} handler(s)`);
+    debugLog(`🚀 Dispatching doPost to ${handlers.length} handler(s)`);
 
     let lastResponse = null;
     let successCount = 0;
@@ -461,7 +487,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
 
     for (const handlerInfo of handlers) {
       try {
-        Logger.log(`  → Calling ${handlerInfo.module}.doPost`);
+        debugLog(`  → Calling ${handlerInfo.module}.doPost`);
         const response = handlerInfo.handler(e);
         if (response) {
           lastResponse = response;
@@ -469,15 +495,15 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
         }
       } catch (error) {
         errorCount++;
-        Logger.log(`  ❌ Error in ${handlerInfo.module}.doPost: ${error.message}`);
-        Logger.log(`     Stack: ${error.stack}`);
+        debugLog(`  ❌ Error in ${handlerInfo.module}.doPost: ${error.message}`);
+        debugLog(`     Stack: ${error.stack}`);
       }
     }
 
-    Logger.log(`✅ doPost dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    debugLog(`✅ doPost dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
 
     if (errorCount > 0 && successCount === 0 && !lastResponse) {
-      Logger.log('❌ All doPost handlers failed, returning error response');
+      debugLog('❌ All doPost handlers failed, returning error response');
       return ContentService.createTextOutput(
         JSON.stringify({
           error: true,
@@ -499,28 +525,28 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
     const handlers = __findEventHandlers__('onOpen');
 
     if (handlers.length === 0) {
-      Logger.log('⚠️ No onOpen handlers found in loaded modules');
+      debugLog('⚠️ No onOpen handlers found in loaded modules');
       return;
     }
 
-    Logger.log(`🚀 Dispatching onOpen to ${handlers.length} handler(s)`);
+    debugLog(`🚀 Dispatching onOpen to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
     for (const handlerInfo of handlers) {
       try {
-        Logger.log(`  → Calling ${handlerInfo.module}.onOpen`);
+        debugLog(`  → Calling ${handlerInfo.module}.onOpen`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        Logger.log(`  ❌ Error in ${handlerInfo.module}.onOpen: ${error.message}`);
-        Logger.log(`     Stack: ${error.stack}`);
+        debugLog(`  ❌ Error in ${handlerInfo.module}.onOpen: ${error.message}`);
+        debugLog(`     Stack: ${error.stack}`);
       }
     }
 
-    Logger.log(`✅ onOpen dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    debugLog(`✅ onOpen dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
@@ -531,28 +557,28 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
     const handlers = __findEventHandlers__('onEdit');
 
     if (handlers.length === 0) {
-      Logger.log('⚠️ No onEdit handlers found in loaded modules');
+      debugLog('⚠️ No onEdit handlers found in loaded modules');
       return;
     }
 
-    Logger.log(`🚀 Dispatching onEdit to ${handlers.length} handler(s)`);
+    debugLog(`🚀 Dispatching onEdit to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
     for (const handlerInfo of handlers) {
       try {
-        Logger.log(`  → Calling ${handlerInfo.module}.onEdit`);
+        debugLog(`  → Calling ${handlerInfo.module}.onEdit`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        Logger.log(`  ❌ Error in ${handlerInfo.module}.onEdit: ${error.message}`);
-        Logger.log(`     Stack: ${error.stack}`);
+        debugLog(`  ❌ Error in ${handlerInfo.module}.onEdit: ${error.message}`);
+        debugLog(`     Stack: ${error.stack}`);
       }
     }
 
-    Logger.log(`✅ onEdit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    debugLog(`✅ onEdit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
@@ -566,7 +592,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
       return; // Silent - this event fires frequently
     }
 
-    Logger.log(`🚀 Dispatching onSelectionChange to ${handlers.length} handler(s)`);
+    debugLog(`🚀 Dispatching onSelectionChange to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
@@ -577,11 +603,11 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
         successCount++;
       } catch (error) {
         errorCount++;
-        Logger.log(`  ❌ Error in ${handlerInfo.module}.onSelectionChange: ${error.message}`);
+        debugLog(`  ❌ Error in ${handlerInfo.module}.onSelectionChange: ${error.message}`);
       }
     }
 
-    Logger.log(`✅ onSelectionChange dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    debugLog(`✅ onSelectionChange dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
@@ -592,28 +618,28 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
     const handlers = __findEventHandlers__('onInstall');
 
     if (handlers.length === 0) {
-      Logger.log('⚠️ No onInstall handlers found in loaded modules');
+      debugLog('⚠️ No onInstall handlers found in loaded modules');
       return;
     }
 
-    Logger.log(`🚀 Dispatching onInstall to ${handlers.length} handler(s)`);
+    debugLog(`🚀 Dispatching onInstall to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
     for (const handlerInfo of handlers) {
       try {
-        Logger.log(`  → Calling ${handlerInfo.module}.onInstall`);
+        debugLog(`  → Calling ${handlerInfo.module}.onInstall`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        Logger.log(`  ❌ Error in ${handlerInfo.module}.onInstall: ${error.message}`);
-        Logger.log(`     Stack: ${error.stack}`);
+        debugLog(`  ❌ Error in ${handlerInfo.module}.onInstall: ${error.message}`);
+        debugLog(`     Stack: ${error.stack}`);
       }
     }
 
-    Logger.log(`✅ onInstall dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    debugLog(`✅ onInstall dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
@@ -624,28 +650,28 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
     const handlers = __findEventHandlers__('onFormSubmit');
 
     if (handlers.length === 0) {
-      Logger.log('⚠️ No onFormSubmit handlers found in loaded modules');
+      debugLog('⚠️ No onFormSubmit handlers found in loaded modules');
       return;
     }
 
-    Logger.log(`🚀 Dispatching onFormSubmit to ${handlers.length} handler(s)`);
+    debugLog(`🚀 Dispatching onFormSubmit to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
     for (const handlerInfo of handlers) {
       try {
-        Logger.log(`  → Calling ${handlerInfo.module}.onFormSubmit`);
+        debugLog(`  → Calling ${handlerInfo.module}.onFormSubmit`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        Logger.log(`  ❌ Error in ${handlerInfo.module}.onFormSubmit: ${error.message}`);
-        Logger.log(`     Stack: ${error.stack}`);
+        debugLog(`  ❌ Error in ${handlerInfo.module}.onFormSubmit: ${error.message}`);
+        debugLog(`     Stack: ${error.stack}`);
       }
     }
 
-    Logger.log(`✅ onFormSubmit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    debugLog(`✅ onFormSubmit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
@@ -662,7 +688,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
       const lines = stack.split('\n');
 
       // Reduced debug logging for better performance
-      Logger.log('🔍 Detecting module name...');
+      debugLog('🔍 Detecting module name...');
 
       for (const line of lines) {
         const trimmedLine = line.trim();
@@ -685,7 +711,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fullPath}"`);
+            debugLog(`✅ Module detected: "${fullPath}"`);
             return fullPath;
           }
         }
@@ -699,7 +725,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fullPath}"`);
+            debugLog(`✅ Module detected: "${fullPath}"`);
             return fullPath;
           }
         }
@@ -713,7 +739,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fileName}"`);
+            debugLog(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
@@ -727,7 +753,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fileName}"`);
+            debugLog(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
@@ -741,7 +767,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fileName}"`);
+            debugLog(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
@@ -755,7 +781,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fileName}"`);
+            debugLog(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
@@ -769,7 +795,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fileName}"`);
+            debugLog(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
@@ -783,13 +809,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            Logger.log(`✅ Module detected: "${fileName}"`);
+            debugLog(`✅ Module detected: "${fileName}"`);
             return fileName;
           }
         }
       }
 
-      Logger.log('⚠️ Module name detection failed');
+      debugLog('⚠️ Module name detection failed');
 
       // If no filename found, throw an exception with detailed debug info
       const debugInfo = {
@@ -912,7 +938,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
     };
   }, 'CommonJS');
 
-  Logger.log('🚀 Module system initialized');
+  debugLog('🚀 Module system initialized');
 })();
 
 // ===== HOISTED EVENT HANDLER DECLARATIONS (for GAS compile-time detection) =====
@@ -926,7 +952,7 @@ function onOpen(e) {
   if (typeof globalThis.__onOpen_dispatcher === 'function') {
     return globalThis.__onOpen_dispatcher(e);
   } else {
-    Logger.log('⚠️ CommonJS onOpen dispatcher not found');
+    debugLog('⚠️ CommonJS onOpen dispatcher not found');
   }
 }
 
@@ -937,7 +963,7 @@ function onEdit(e) {
   if (typeof globalThis.__onEdit_dispatcher === 'function') {
     return globalThis.__onEdit_dispatcher(e);
   } else {
-    Logger.log('⚠️ CommonJS onEdit dispatcher not found');
+    debugLog('⚠️ CommonJS onEdit dispatcher not found');
   }
 }
 
@@ -948,7 +974,7 @@ function onInstall(e) {
   if (typeof globalThis.__onInstall_dispatcher === 'function') {
     return globalThis.__onInstall_dispatcher(e);
   } else {
-    Logger.log('⚠️ CommonJS onInstall dispatcher not found');
+    debugLog('⚠️ CommonJS onInstall dispatcher not found');
   }
 }
 
@@ -959,7 +985,7 @@ function onFormSubmit(e) {
   if (typeof globalThis.__onFormSubmit_dispatcher === 'function') {
     return globalThis.__onFormSubmit_dispatcher(e);
   } else {
-    Logger.log('⚠️ CommonJS onFormSubmit dispatcher not found');
+    debugLog('⚠️ CommonJS onFormSubmit dispatcher not found');
   }
 }
 
@@ -970,7 +996,7 @@ function onSelectionChange(e) {
   if (typeof globalThis.__onSelectionChange_dispatcher === 'function') {
     return globalThis.__onSelectionChange_dispatcher(e);
   } else {
-    Logger.log('⚠️ CommonJS onSelectionChange dispatcher not found');
+    debugLog('⚠️ CommonJS onSelectionChange dispatcher not found');
   }
 }
 
@@ -981,7 +1007,7 @@ function doGet(e) {
   if (typeof globalThis.__doGet_dispatcher === 'function') {
     return globalThis.__doGet_dispatcher(e);
   } else {
-    Logger.log('⚠️ CommonJS doGet dispatcher not found');
+    debugLog('⚠️ CommonJS doGet dispatcher not found');
     return HtmlService.createHtmlOutput('<h1>Error: doGet handler not configured</h1>');
   }
 }
@@ -993,7 +1019,7 @@ function doPost(e) {
   if (typeof globalThis.__doPost_dispatcher === 'function') {
     return globalThis.__doPost_dispatcher(e);
   } else {
-    Logger.log('⚠️ CommonJS doPost dispatcher not found');
+    debugLog('⚠️ CommonJS doPost dispatcher not found');
     return HtmlService.createHtmlOutput('<h1>Error: doPost handler not configured</h1>');
   }
 }
