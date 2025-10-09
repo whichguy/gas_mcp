@@ -8,21 +8,36 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
   <style>
     :root {
-      --bg-primary: #1e1e1e;
-      --bg-secondary: #252526;
-      --bg-tertiary: #2d2d30;
-      --text-primary: #d4d4d4;
-      --text-secondary: #858585;
-      --accent-success: #4ec9b0;
-      --accent-warning: #ce9178;
-      --accent-error: #f48771;
-      --border: #3e3e42;
+      /* Google Material 3 Color Scheme */
+      --google-blue: #1a73e8;
+      --google-blue-hover: #1765cc;
+      --google-red: #d93025;
+      --google-yellow: #f9ab00;
+      --google-green: #1e8e3e;
+      --google-grey-50: #f8f9fa;
+      --google-grey-100: #f1f3f4;
+      --google-grey-200: #e8eaed;
+      --google-grey-300: #dadce0;
+      --google-grey-700: #5f6368;
+      --google-grey-900: #202124;
+
+      --bg-primary: #ffffff;
+      --bg-secondary: var(--google-grey-50);
+      --bg-tertiary: var(--google-grey-100);
+      --text-primary: var(--google-grey-900);
+      --text-secondary: var(--google-grey-700);
+      --accent-success: var(--google-green);
+      --accent-warning: var(--google-yellow);
+      --accent-error: var(--google-red);
+      --accent-primary: var(--google-blue);
+      --border: var(--google-grey-300);
+      --shadow: 0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15);
     }
 
     body {
       margin: 0;
       padding: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
       background: var(--bg-primary);
       color: var(--text-primary);
       overflow: hidden;
@@ -37,20 +52,25 @@
     }
 
     .top-bar {
-      background: linear-gradient(135deg, #198754 0%, #20c997 100%);
+      background: white;
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 0 20px;
       border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow);
     }
 
     .project-info {
       display: flex;
       align-items: center;
       gap: 15px;
-      color: white;
+      color: var(--text-primary);
       font-weight: 500;
+    }
+
+    .project-info i {
+      color: var(--google-green);
     }
 
     .auto-close-controls {
@@ -60,7 +80,7 @@
     }
 
     .timer-display {
-      color: white;
+      color: var(--text-secondary);
       font-size: 14px;
       font-weight: 500;
       min-width: 120px;
@@ -72,28 +92,64 @@
       grid-template-columns: 300px 1fr 350px;
       height: 100%;
       overflow: hidden;
+      gap: 0;
     }
 
     .panel {
-      background: var(--bg-secondary);
+      background: var(--bg-primary);
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      transition: all 0.3s ease;
+      position: relative;
+      resize: horizontal;
+      min-width: 200px;
+      max-width: 600px;
+    }
+
+    .panel.collapsed {
+      min-width: 48px !important;
+      max-width: 48px !important;
+      resize: none;
+    }
+
+    .panel.collapsed .panel-content,
+    .panel.collapsed .context-section {
+      display: none;
     }
 
     .panel-header {
       padding: 10px 15px;
-      background: var(--bg-tertiary);
+      background: var(--bg-secondary);
       border-bottom: 1px solid var(--border);
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-secondary);
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--text-primary);
       display: flex;
       align-items: center;
       justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .panel-header:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .collapse-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .collapse-btn:hover {
+      background: var(--google-grey-200);
+      color: var(--google-blue);
     }
 
     .panel-content {
@@ -156,13 +212,14 @@
 
     .console-output {
       flex: 1;
-      background: var(--bg-primary);
-      font-family: 'Consolas', 'Monaco', monospace;
-      font-size: 14px;
-      padding: 15px;
+      background: var(--google-grey-50);
+      font-family: 'Roboto Mono', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      padding: 16px;
       overflow-y: auto;
       white-space: pre-wrap;
       word-break: break-word;
+      line-height: 1.6;
     }
 
     .console-input-area {
@@ -176,18 +233,20 @@
 
     .console-input {
       flex: 1;
-      background: var(--bg-primary);
+      background: white;
       border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 8px 12px;
+      border-radius: 24px;
+      padding: 10px 16px;
       color: var(--text-primary);
-      font-family: 'Consolas', 'Monaco', monospace;
+      font-family: 'Roboto Mono', 'Consolas', monospace;
       font-size: 14px;
+      transition: all 0.2s;
     }
 
     .console-input:focus {
       outline: none;
-      border-color: var(--accent-success);
+      border-color: var(--google-blue);
+      box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
     }
 
     .output-line {
@@ -197,16 +256,16 @@
     }
 
     .output-prompt {
-      color: var(--accent-success);
-      font-weight: 600;
+      color: var(--google-blue);
+      font-weight: 500;
     }
 
     .output-result {
-      color: var(--accent-warning);
+      color: var(--google-green);
     }
 
     .output-error {
-      color: var(--accent-error);
+      color: var(--google-red);
     }
 
     .context-section {
@@ -246,23 +305,26 @@
     .quick-action-btn {
       width: 100%;
       padding: 10px;
-      background: var(--bg-tertiary);
+      background: white;
       border: 1px solid var(--border);
       color: var(--text-primary);
-      border-radius: 4px;
+      border-radius: 8px;
       cursor: pointer;
       font-size: 13px;
+      font-weight: 500;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: all 0.15s;
+      transition: all 0.2s;
       margin-bottom: 8px;
     }
 
     .quick-action-btn:hover {
-      background: var(--bg-primary);
-      border-color: var(--accent-success);
+      background: var(--google-grey-100);
+      border-color: var(--google-blue);
+      color: var(--google-blue);
+      box-shadow: var(--shadow);
     }
 
     .status-bar {
@@ -310,16 +372,18 @@
     <!-- Main Content -->
     <div class="main-content">
       <!-- Left Panel: Module Explorer -->
-      <div class="panel">
-        <div class="panel-header">
+      <div class="panel" id="leftPanel">
+        <div class="panel-header" onclick="togglePanel('leftPanel')">
           <span><i class="bi bi-folder2-open"></i> Modules</span>
-          <span class="badge-custom bg-success"><?= moduleCount ?></span>
+          <button class="collapse-btn" onclick="togglePanel('leftPanel'); event.stopPropagation();">
+            <i class="bi bi-chevron-left"></i>
+          </button>
         </div>
         <div class="panel-content">
           <ul class="module-tree" id="moduleTree">
             <?
-              for (let i = 0; i < moduleList.length; i++) {
-                const mod = moduleList[i];
+              for (var i = 0; i < moduleList.length; i++) {
+                var mod = moduleList[i];
             ?>
             <li class="module-item" data-module="<?= mod.name ?>">
               <i class="bi bi-file-code"></i>
@@ -362,16 +426,23 @@
             placeholder="Enter command or JavaScript (use arrow keys for history)..."
             autofocus
           />
-          <button class="btn btn-success btn-sm" id="executeBtn">
+          <button style="background: var(--google-blue); border: none; color: white; padding: 8px 16px; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 500; transition: all 0.2s;"
+                  id="executeBtn"
+                  onmouseover="this.style.background='var(--google-blue-hover)'"
+                  onmouseout="this.style.background='var(--google-blue)'">
             <i class="bi bi-play-fill"></i>
+            Run
           </button>
         </div>
       </div>
 
       <!-- Right Panel: Context -->
-      <div class="panel">
-        <div class="panel-header">
+      <div class="panel" id="rightPanel">
+        <div class="panel-header" onclick="togglePanel('rightPanel')">
           <span><i class="bi bi-info-circle"></i> Context</span>
+          <button class="collapse-btn" onclick="togglePanel('rightPanel'); event.stopPropagation();">
+            <i class="bi bi-chevron-right"></i>
+          </button>
         </div>
         <div class="panel-content">
           <div class="context-section">
@@ -554,21 +625,21 @@
       appendOutput('Executing...', 'output-result');
       document.getElementById('statusMessage').textContent = 'Executing...';
 
-      // Parse command and execute via fetch
-      fetch(`${deploymentUrl}?_mcp_run=true&func=${encodeURIComponent(command)}`)
-        .then((r) => r.json())
-        .then((data) => {
+      // Execute via google.script.run
+      google.script.run
+        .withSuccessHandler(function(data) {
           if (data.success) {
             appendOutput(JSON.stringify(data.result, null, 2), 'output-result');
           } else {
-            appendOutput(`Error: ${data.error}`, 'output-error');
+            appendOutput('Error: ' + (data.message || 'Unknown error'), 'output-error');
           }
           document.getElementById('statusMessage').textContent = 'Ready';
         })
-        .catch((err) => {
-          appendOutput(`Error: ${err.message}`, 'output-error');
+        .withFailureHandler(function(err) {
+          appendOutput('Error: ' + err.message, 'output-error');
           document.getElementById('statusMessage').textContent = 'Error';
-        });
+        })
+        .runCode(command);
     }
 
     // Quick actions
@@ -593,8 +664,38 @@
       }, 2000);
     }
 
+    // Panel collapse functionality
+    function togglePanel(panelId) {
+      const panel = document.getElementById(panelId);
+      const btn = panel.querySelector('.collapse-btn i');
+
+      panel.classList.toggle('collapsed');
+
+      if (panel.classList.contains('collapsed')) {
+        btn.className = panelId === 'leftPanel' ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+      } else {
+        btn.className = panelId === 'leftPanel' ? 'bi bi-chevron-left' : 'bi bi-chevron-right';
+      }
+
+      // Save state to localStorage
+      localStorage.setItem(`panel-${panelId}-collapsed`, panel.classList.contains('collapsed'));
+    }
+
+    // Restore panel states from localStorage
+    function restorePanelStates() {
+      ['leftPanel', 'rightPanel'].forEach(panelId => {
+        const collapsed = localStorage.getItem(`panel-${panelId}-collapsed`) === 'true';
+        if (collapsed) {
+          togglePanel(panelId);
+        }
+      });
+    }
+
     // Start auto-close timer
     startTimer();
+
+    // Restore panel states on load
+    restorePanelStates();
   </script>
 </body>
 </html>
