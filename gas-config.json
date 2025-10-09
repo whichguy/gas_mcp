@@ -311,6 +311,16 @@
       "scriptId": "1Dp3sf1eFQnzrpC-_PivJ2aSbOrb1YARB7-jxK4y5JTEVXp4_l3aNIz21",
       "name": "fresh-test-project",
       "description": "Created: 10/8/2025"
+    },
+    "clean-test-project": {
+      "scriptId": "1dbFfC4ITVrOFb65uBLwJ-GF6yWY5CnyQy85a6b8r06uDC-hTKThOQoTg",
+      "name": "clean-test-project",
+      "description": "Created: 10/8/2025"
+    },
+    "aider-fuzzy-test": {
+      "scriptId": "1WelE_ioHVkTxt2Wp4AZugZdsqkaEzl3DZvNU2JmSPfstp4bQJMvYh3qw",
+      "name": "aider-fuzzy-test",
+      "description": "Created: 10/8/2025"
     }
   },
   "localRoot": {
@@ -320,7 +330,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-08T23:28:58.171Z"
+    "lastModified": "2025-10-09T00:32:15.030Z"
   },
   "debug": true,
   "currentProject": {

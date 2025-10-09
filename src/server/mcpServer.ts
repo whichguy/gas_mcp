@@ -28,6 +28,8 @@ import { RipgrepTool, RawRipgrepTool } from '../tools/ripgrep.js';
 import { SedTool, RawSedTool } from '../tools/sed.js';
 import { EditTool } from '../tools/edit.js';
 import { RawEditTool } from '../tools/raw-edit.js';
+import { AiderTool } from '../tools/aider.js';
+import { RawAiderTool } from '../tools/raw-aider.js';
 import { ContextTool } from '../tools/gas-context.js';
 import { SummaryTool } from '../tools/gas-summary.js';
 import { DepsTool } from '../tools/gas-deps.js';
@@ -346,6 +348,7 @@ export class MCPGasServer {
       new RipgrepTool(authManager),       // High-performance search with ripgrep-inspired features
       new SedTool(authManager),           // sed-style find/replace with CommonJS processing
       new EditTool(authManager),          // Token-efficient exact string editing
+      new AiderTool(authManager),         // Token-efficient fuzzy string editing
       new FindTool(authManager),          // Find files with virtual names
       new ContextTool(authManager),       // Intelligent context-aware search (simplified version)
       new SummaryTool(authManager),       // Content summarization with multiple analysis modes
@@ -362,6 +365,7 @@ export class MCPGasServer {
       new RawRipgrepTool(authManager),    // Advanced: High-performance search on raw content with ripgrep features
       new RawSedTool(authManager),        // Advanced: sed-style find/replace on raw content including wrappers
       new RawEditTool(authManager),       // Advanced: Token-efficient editing on raw content
+      new RawAiderTool(authManager),      // Advanced: Token-efficient fuzzy editing on raw content
       new RawFindTool(authManager),       // Advanced: Find with actual GAS names
       new RawCpTool(authManager),        // Advanced: Bulk copy without CommonJS processing
       

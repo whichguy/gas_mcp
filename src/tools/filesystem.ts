@@ -461,7 +461,18 @@ export class WriteTool extends BaseTool {
           'function calculateTax(amount) { return amount * 0.08; }\nreturn { calculateTax };',
           'const utils = require("Utils");\nfunction process(data) { return utils.clean(data); }\nmodule.exports = { process };',
           'const config = require("Config");\nexports.apiKey = config.getKey();'
-        ]
+        ],
+        llmHints: {
+          tokenEfficiency: '⚠️ IMPORTANT: For small changes to existing files, consider using gas_edit or gas_aider instead for 95%+ token savings',
+          gas_edit: 'Use gas_edit for small exact-text changes (outputs ~10 tokens vs ~4,500 tokens for gas_write) when you know the exact text to replace',
+          gas_aider: 'Use gas_aider for small changes with formatting variations (fuzzy matching + 95%+ token savings) when text might have whitespace/formatting differences',
+          gas_write: 'Use gas_write when: (1) Creating new files from scratch, (2) Making large changes affecting multiple sections, (3) Refactoring entire file structure',
+          decisionTree: {
+            'Creating new file?': 'Use gas_write (file creation)',
+            'Small change to existing file?': 'Use gas_edit (exact match) or gas_aider (fuzzy match) for 95%+ token savings',
+            'Large changes or refactoring?': 'Use gas_write (entire file replacement)'
+          }
+        }
       },
       fileType: {
         type: 'string',
@@ -1118,33 +1129,11 @@ export class WriteTool extends BaseTool {
       }
     }
 
-    // 📊 Return comprehensive results
+    // 📊 Return token-efficient results (minimal by default)
     return {
-      path: path,
-      scriptId: scriptId,
-      filename,
-      size: content.length,
-      workflow: 'remote-first-git',
-      results,
-      gitRepository: {
-        initialized: gitStatus.gitInitialized,
-        path: gitStatus.repoPath,
-        isNewRepo: gitStatus.isNewRepo,
-        commitResult: gitCommitResult
-      },
-      syncStatus: syncStatus ? {
-        inSync: syncStatus.inSync,
-        differences: syncStatus.differences,
-        message: syncStatus.summary
-      } : null,
-      operations: {
-        localWrite: !remoteOnly,
-        remoteWrite: !localOnly,
-        gitCommit: gitCommitResult?.committed || false,
-        syncVerification: !!syncStatus
-      },
-      commonJsProcessing,
-      summary: `Successfully ${gitCommitResult?.committed ? 'committed and ' : ''}${localOnly ? 'wrote locally' : remoteOnly ? 'pushed to remote' : 'synchronized local and remote'}${commonJsProcessing.wrapperApplied ? ' with CommonJS integration' : ''}`
+      success: true,
+      path: `${scriptId}/${filename}`,
+      size: content.length
     };
   }
 
@@ -1297,29 +1286,11 @@ export class WriteTool extends BaseTool {
       }
     }
 
-    // Return comprehensive results
+    // Return token-efficient results (minimal by default)
     return {
+      success: true,
       path: `${scriptId}/${filename}`,
-      scriptId,
-      filename,
-      size: finalContent.length,
-      workflow: 'atomic-hook-validation',
-      results,
-      gitRepository: {
-        initialized: true,
-        path: gitStatus.repoPath,
-        commitHash: hookResult.commitHash,
-        hookModified: hookResult.hookModified
-      },
-      syncStatus: null, // Not applicable in atomic workflow (git provides version control)
-      operations: {
-        localWrite: true,
-        remoteWrite: !localOnly,
-        hookValidation: true,
-        gitCommit: true
-      },
-      commonJsProcessing,
-      summary: `Successfully validated with hooks${hookResult.hookModified ? ' (content modified)' : ''} and ${localOnly ? 'wrote locally' : 'synchronized to remote'}${commonJsProcessing.wrapperApplied ? ' with CommonJS integration' : ''}`
+      size: finalContent.length
     };
   }
 
