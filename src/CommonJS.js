@@ -9,12 +9,15 @@
  * - Circular dependency detection and handling
  * - Filename-based module naming for consistent require() calls
  * - Support for both explicit and automatic module naming
- * - GLOBAL EXPORTS for custom functions (NEW)
- * - EVENT HANDLER SYSTEM for GAS triggers (NEW)
+ * - GLOBAL EXPORTS for custom functions
+ * - EVENT HANDLER SYSTEM for GAS triggers
+ * - Global require() function (no parameter needed in _main)
  *
  * Usage:
  * 1. Each module should define a _main function with the signature:
- *    function _main(module = globalThis.__getCurrentModule(), exports = module.exports, require = globalThis.require)
+ *    function _main(module, exports) { ... }
+ *    Note: require() is globally available - no parameter needed!
+ *
  * 2. At the end of each module file, call: __defineModule__(_main);
  * 3. Use require('FileName') to import modules by their filename
  *
@@ -26,9 +29,12 @@
  * for the CommonJS system module only. All user modules MUST use auto-detection
  * by calling __defineModule__(_main) without an explicit name parameter.
  *
- * Example:
+ * Example (NEW 2-parameter signature):
  * ```javascript
- * function _main(module = globalThis.__getCurrentModule(), exports = module.exports, require = globalThis.require) {
+ * function _main(module, exports) {
+ *   // require() is globally available
+ *   const helper = require('Helper');
+ *
  *   function myFunction() {
  *     return "Hello from module";
  *   }
@@ -39,6 +45,12 @@
  * __defineModule__(_main);
  * ```
  *
+ * BACKWARD COMPATIBILITY:
+ * Old 3-parameter signature still works:
+ * ```javascript
+ * function _main(module, exports, require) { ... }
+ * ```
+ *
  * GLOBAL EXPORTS FEATURE (__global__ property):
  *
  * Modules can expose functions to the global namespace for use in Google Sheets formulas
@@ -46,9 +58,10 @@
  *
  * Example:
  * ```javascript
- * function _main(module, exports, require) {
+ * function _main(module, exports) {
  *   function MY_CUSTOM_FUNCTION(arg1, arg2) {
- *     return "result";
+ *     const helper = require('Helper');  // require() is global
+ *     return helper.process(arg1, arg2);
  *   }
  *
  *   module.exports = {
@@ -70,7 +83,7 @@
  *
  * Example:
  * ```javascript
- * function _main(module, exports, require) {
+ * function _main(module, exports) {
  *   function handleOpen(e) {
  *     const ui = SpreadsheetApp.getUi();
  *     ui.createMenu('My Menu').addItem('Action', 'doAction').addToUi();
@@ -136,13 +149,199 @@
  * The dispatcher uses the first non-null response from handlers.
  */
 
+// ========== GLOBAL FUNCTIONS (before IIFE) ==========
+
+/**
+ * Global require() function - loads modules on demand
+ * Accesses module registries via globalThis
+ *
+ * @param {string} moduleName - The name or path of the module to load
+ * @returns {Object} The module exports
+ */
+function require(moduleName) {
+  // Access registries exposed by IIFE
+  const modules = globalThis.__modules__;
+  const moduleFactories = globalThis.__moduleFactories__;
+  const loadingModules = globalThis.__loadingModules__;
+
+  // Normalize the module name
+  function normalize(name) {
+    // Remove leading './' or '../'
+    name = name.replace(/^\.\/?/, '');
+    name = name.replace(/^\.\.\/?/, '');
+    // Remove trailing .js
+    if (name.endsWith('.js')) name = name.slice(0, -3);
+    return name;
+  }
+
+  const candidates = [];
+  // 1. As given
+  candidates.push(moduleName);
+  // 2. Normalized (strip ./, ../, .js)
+  const norm = normalize(moduleName);
+  if (norm !== moduleName) candidates.push(norm);
+  // 3. Add .js if not present
+  if (!norm.endsWith('.js')) candidates.push(norm + '.js');
+  // 4. Remove directory if present (try just the basename)
+  const base = norm.split('/').pop();
+  if (base && base !== norm) {
+    candidates.push(base);
+    if (!base.endsWith('.js')) candidates.push(base + '.js');
+  }
+
+  // Try all candidates in order
+  let found = null;
+  for (const candidate of candidates) {
+    if (modules[candidate]) return modules[candidate].exports;
+    if (moduleFactories[candidate]) {
+      found = candidate;
+      break;
+    }
+  }
+
+  if (!found) {
+    throw new Error(`Module not found: ${moduleName}. Tried: ${candidates.join(', ')}. Available modules: ${Object.keys(moduleFactories).join(', ')}`);
+  }
+
+  // Detect circular dependencies
+  if (loadingModules.has(found)) {
+    throw new Error(`Circular dependency detected: ${found}`);
+  }
+
+  // Mark as loading
+  loadingModules.add(found);
+  try {
+    // Create module object
+    const module = { exports: {} };
+    modules[found] = module;
+
+    // Set current module for the factory
+    const previousModule = globalThis.__currentModule;
+    globalThis.__currentModule = module;
+    Logger.log(`🔄 Loading module: ${found}`);
+
+    // BACKWARD COMPATIBILITY: Call factory with appropriate signature
+    const factory = moduleFactories[found];
+    let result;
+
+    if (factory.length === 3) {
+      // OLD STYLE: 3 parameters (module, exports, require)
+      Logger.log(`⚠️  Module ${found} uses deprecated 3-parameter signature - consider migrating to 2-parameter`);
+      result = factory(module, module.exports, require);
+    } else {
+      // NEW STYLE: 2 parameters (module, exports)
+      result = factory(module, module.exports);
+    }
+
+    // If factory returns something, use it as exports
+    if (result !== undefined) {
+      module.exports = result;
+    }
+
+    // Restore previous module
+    globalThis.__currentModule = previousModule;
+    Logger.log(`✅ Module loaded: ${found}`);
+
+    // Process __global__ exports if present (key-value map)
+    if (module.exports.__global__ && typeof module.exports.__global__ === 'object' && !Array.isArray(module.exports.__global__)) {
+      Logger.log(`🌍 Module ${found} declares global exports`);
+
+      // Expose each key-value pair to global namespace
+      Object.keys(module.exports.__global__).forEach(key => {
+        const value = module.exports.__global__[key];
+        globalThis[key] = value;
+        Logger.log(`  ✅ Exposed ${key} to global namespace (${typeof value})`);
+      });
+    }
+
+    // Process __events__ if present
+    if (module.exports.__events__ && typeof module.exports.__events__ === 'object') {
+      Logger.log(`📅 Module ${found} declares event handlers`);
+
+      // Validate event handlers exist
+      Object.keys(module.exports.__events__).forEach(eventName => {
+        const handlerName = module.exports.__events__[eventName];
+        const handlerFunction = module.exports[handlerName];
+
+        if (typeof handlerFunction === 'function') {
+          Logger.log(`  ✅ Event handler ${eventName} → ${handlerName}`);
+        } else {
+          Logger.log(`  ⚠️ Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
+        }
+      });
+    }
+
+    return module.exports;
+  } finally {
+    // Remove from loading set
+    loadingModules.delete(found);
+  }
+}
+
+/**
+ * Global __defineModule__() function - registers modules
+ * Accesses module factories via globalThis
+ *
+ * @param {Function} moduleFactory - The _main function that creates the module
+ * @param {string} [explicitName] - RESERVED for CommonJS system module only
+ * @param {Object} [options] - Optional configuration
+ * @param {boolean} [options.loadNow=false] - If true, immediately execute module via require()
+ */
+function __defineModule__(moduleFactory, explicitName, options) {
+  // Access registries exposed by IIFE
+  const moduleFactories = globalThis.__moduleFactories__;
+
+  // Parse options parameter
+  const opts = typeof options === 'object' && options !== null ? options : {};
+
+  // CRITICAL: explicitName is RESERVED for the CommonJS system module only
+  // All user modules MUST use auto-detection
+  Logger.log(`📝 __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${opts.loadNow || false}`);
+
+  const moduleName = explicitName || globalThis.__detectModuleName__();
+
+  Logger.log(`   Resolved module name: ${moduleName}`);
+
+  if (moduleFactories[moduleName]) {
+    console.warn(`Module ${moduleName} already registered, skipping duplicate registration`);
+    return;
+  }
+
+  // ALWAYS store the factory for lazy loading via require()
+  moduleFactories[moduleName] = moduleFactory;
+  Logger.log(`   Factory stored for: ${moduleName}`);
+
+  // If loadNow=true, immediately execute module via require()
+  if (opts.loadNow) {
+    Logger.log(`⚡ Load-now enabled for ${moduleName}, executing immediately...`);
+    try {
+      require(moduleName);
+      Logger.log(`✅ Module ${moduleName} loaded immediately via require()`);
+      return; // Module is now cached and processed by require()
+    } catch (error) {
+      Logger.log(`❌ Error loading module ${moduleName} immediately: ${error.message}`);
+      throw error; // Re-throw to prevent silent failures
+    }
+  }
+
+  // Module registered without execution - will execute on first require()
+  Logger.log(`📦 Module registered: ${moduleName}`);
+}
+
+// ========== IIFE FOR INTERNAL INFRASTRUCTURE ==========
+
 (function() {
   'use strict';
 
-  // Module storage
+  // Module storage - exposed via globalThis for require() and __defineModule__
   const modules = {};
   const moduleFactories = {};
   const loadingModules = new Set();
+
+  // EXPOSE registries for global require() and __defineModule__
+  globalThis.__modules__ = modules;
+  globalThis.__moduleFactories__ = moduleFactories;
+  globalThis.__loadingModules__ = loadingModules;
 
   // ========== GLOBAL EVENT DISPATCHERS ==========
   // These functions are called by Google Apps Script when events occur
@@ -630,153 +829,6 @@
   }
 
   /**
-   * Registers a module with the system
-   * @param {Function} moduleFactory - The _main function that creates the module
-   * @param {string} [explicitName] - RESERVED for CommonJS system module only
-   * @param {Object} [options] - Optional configuration
-   * @param {boolean} [options.loadNow=false] - If true, immediately execute module via require()
-   */
-  function __defineModule__(moduleFactory, explicitName, options) {
-    // Parse options parameter
-    const opts = typeof options === 'object' && options !== null ? options : {};
-
-    // CRITICAL: explicitName is RESERVED for the CommonJS system module only
-    // All user modules MUST use auto-detection
-    Logger.log(`📝 __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${opts.loadNow || false}`);
-
-    const moduleName = explicitName || __detectModuleName__();
-
-    Logger.log(`   Resolved module name: ${moduleName}`);
-
-    if (moduleFactories[moduleName]) {
-      console.warn(`Module ${moduleName} already registered, skipping duplicate registration`);
-      return;
-    }
-
-    // ALWAYS store the factory for lazy loading via require()
-    moduleFactories[moduleName] = moduleFactory;
-    Logger.log(`   Factory stored for: ${moduleName}`);
-
-    // If loadNow=true, immediately execute module via require()
-    if (opts.loadNow) {
-      Logger.log(`⚡ Load-now enabled for ${moduleName}, executing immediately...`);
-      try {
-        require(moduleName);
-        Logger.log(`✅ Module ${moduleName} loaded immediately via require()`);
-        return; // Module is now cached and processed by require()
-      } catch (error) {
-        Logger.log(`❌ Error loading module ${moduleName} immediately: ${error.message}`);
-        throw error; // Re-throw to prevent silent failures
-      }
-    }
-
-    // Module registered without execution - will execute on first require()
-    Logger.log(`📦 Module registered: ${moduleName}`);
-  }
-
-  /**
-   * Loads a module on demand
-   * NOTE: This is where __global__ and __events__ properties are processed
-   * @param {string} moduleName - The name or path of the module to load
-   * @returns {Object} The module exports
-   */
-  function require(moduleName) {
-    // Normalize the module name
-    function normalize(name) {
-      // Remove leading './' or '../'
-      name = name.replace(/^\.\/?/, '');
-      name = name.replace(/^\.\.\/?/, '');
-      // Remove trailing .js
-      if (name.endsWith('.js')) name = name.slice(0, -3);
-      return name;
-    }
-    const candidates = [];
-    // 1. As given
-    candidates.push(moduleName);
-    // 2. Normalized (strip ./, ../, .js)
-    const norm = normalize(moduleName);
-    if (norm !== moduleName) candidates.push(norm);
-    // 3. Add .js if not present
-    if (!norm.endsWith('.js')) candidates.push(norm + '.js');
-    // 4. Remove directory if present (try just the basename)
-    const base = norm.split('/').pop();
-    if (base && base !== norm) {
-      candidates.push(base);
-      if (!base.endsWith('.js')) candidates.push(base + '.js');
-    }
-    // Try all candidates in order
-    let found = null;
-    for (const candidate of candidates) {
-      if (modules[candidate]) return modules[candidate].exports;
-      if (moduleFactories[candidate]) {
-        found = candidate;
-        break;
-      }
-    }
-    if (!found) {
-      throw new Error(`Module not found: ${moduleName}. Tried: ${candidates.join(', ')}. Available modules: ${Object.keys(moduleFactories).join(', ')}`);
-    }
-    // Detect circular dependencies
-    if (loadingModules.has(found)) {
-      throw new Error(`Circular dependency detected: ${found}`);
-    }
-    // Mark as loading
-    loadingModules.add(found);
-    try {
-      // Create module object
-      const module = { exports: {} };
-      modules[found] = module;
-      // Set current module for the factory
-      const previousModule = globalThis.__currentModule;
-      globalThis.__currentModule = module;
-      Logger.log(`🔄 Loading module: ${found}`);
-      // Call the factory function
-      const result = moduleFactories[found](module, module.exports, require);
-      // If factory returns something, use it as exports
-      if (result !== undefined) {
-        module.exports = result;
-      }
-      // Restore previous module
-      globalThis.__currentModule = previousModule;
-      Logger.log(`✅ Module loaded: ${found}`);
-
-      // Process __global__ exports if present (key-value map)
-      if (module.exports.__global__ && typeof module.exports.__global__ === 'object' && !Array.isArray(module.exports.__global__)) {
-        Logger.log(`🌍 Module ${found} declares global exports`);
-
-        // Expose each key-value pair to global namespace
-        Object.keys(module.exports.__global__).forEach(key => {
-          const value = module.exports.__global__[key];
-          globalThis[key] = value;
-          Logger.log(`  ✅ Exposed ${key} to global namespace (${typeof value})`);
-        });
-      }
-
-      // Process __events__ if present
-      if (module.exports.__events__ && typeof module.exports.__events__ === 'object') {
-        Logger.log(`📅 Module ${found} declares event handlers`);
-
-        // Validate event handlers exist
-        Object.keys(module.exports.__events__).forEach(eventName => {
-          const handlerName = module.exports.__events__[eventName];
-          const handlerFunction = module.exports[handlerName];
-
-          if (typeof handlerFunction === 'function') {
-            Logger.log(`  ✅ Event handler ${eventName} → ${handlerName}`);
-          } else {
-            Logger.log(`  ⚠️ Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
-          }
-        });
-      }
-
-      return module.exports;
-    } finally {
-      // Remove from loading set
-      loadingModules.delete(found);
-    }
-  }
-
-  /**
    * Gets the current module object (for use in _main functions)
    * Enhanced to preserve directory structure
    * @returns {Object} - The current module object
@@ -859,10 +911,9 @@
     return modules;
   }
 
-  // Expose functions globally
-  globalThis.__defineModule__ = __defineModule__;
-  globalThis.require = require;
-  globalThis.__getCurrentModule__ = __getCurrentModule__;
+  // Expose internal helper functions that are needed by global functions
+  globalThis.__detectModuleName__ = __detectModuleName__;  // Used by global __defineModule__()
+  globalThis.__getCurrentModule__ = __getCurrentModule__;  // Used by _main() default params
 
   // Register the shim module itself
   __defineModule__(function(_main) {

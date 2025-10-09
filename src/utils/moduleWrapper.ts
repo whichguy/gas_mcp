@@ -1,15 +1,22 @@
 /**
  * Module wrapper utilities for automatic _main() wrapping and unwrapping
  * Used by gas_write and gas_cat to make the CommonJS module system transparent
- * 
+ *
  * IMPORTANT: This utility ensures __defineModule__(_main) is called WITHOUT explicit module names
  * to use auto-detection. Explicit names are RESERVED for CommonJS system module only.
- * 
+ *
  * COMMONJS INTEGRATION: All SERVER_JS files automatically get access to:
- * - require() function for importing other user modules
- * - module object for module metadata and exports management  
+ * - require() function (globally available - no parameter needed!)
+ * - module object for module metadata and exports management
  * - exports object as shorthand for module.exports
  * See CommonJS.js for the underlying implementation details.
+ *
+ * MODULE SIGNATURE:
+ * - NEW (2-param): function _main(module, exports) { ... }
+ * - OLD (3-param): function _main(module, exports, require) { ... } (still supported for backward compat)
+ *
+ * The wrapping system generates the new 2-param signature.
+ * The unwrapping system handles BOTH signatures transparently.
  */
 
 /**
@@ -455,10 +462,9 @@ export function wrapModuleContent(
     if (!trimmedContent) {
         return `function _main(
   module = globalThis.__getCurrentModule(),
-  exports = module.exports,
-  require = globalThis.require
+  exports = module.exports
 ) {
-    // Empty module - CommonJS provides require(), module, exports automatically
+    // Empty module - CommonJS provides require() globally
 }
 
 ${defineCall}`;
@@ -484,10 +490,10 @@ ${defineCall}`;
     const hoistedBridges = generateHoistedBridges(options?.hoistedFunctions, moduleName);
 
     // Wrap content with _main function that provides CommonJS integration
+    // NOTE: require() is globally available - no parameter needed
     return `function _main(
   module = globalThis.__getCurrentModule(),
-  exports = module.exports,
-  require = globalThis.require
+  exports = module.exports
 ) {
 ${trimmedContent.split('\n').map(line => line ? `  ${line}` : '').join('\n')}
 }
