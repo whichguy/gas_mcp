@@ -244,7 +244,7 @@ export class PushTool extends BaseTool {
     // ✅ REUSE EXISTING FUNCTIONALITY: Leverage gas_raw_write for each file
     // This approach reuses existing tested code paths instead of duplicating API logic
     const results = [];
-    const { RawWriteTool } = await import('./filesystem.js');
+    const { RawWriteTool } = await import('./filesystem/index.js');
     const gasRawWriteTool = new RawWriteTool(this.sessionAuthManager);
     
     for (const file of localFiles) {

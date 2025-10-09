@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import {
   wrapModuleContent,
   unwrapModuleContent
-} from '../../dist/src/utils/moduleWrapper.js';
+} from '../../src/utils/moduleWrapper.js';
 
 describe('ModuleOptions Feature', () => {
   describe('wrapModuleContent with moduleOptions', () => {
