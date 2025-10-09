@@ -26,6 +26,8 @@ import { GrepTool, RawGrepTool } from '../tools/grep.js';
 import { FindTool, RawFindTool } from '../tools/find.js';
 import { RipgrepTool, RawRipgrepTool } from '../tools/ripgrep.js';
 import { SedTool, RawSedTool } from '../tools/sed.js';
+import { EditTool } from '../tools/edit.js';
+import { RawEditTool } from '../tools/raw-edit.js';
 import { ContextTool } from '../tools/gas-context.js';
 import { SummaryTool } from '../tools/gas-summary.js';
 import { DepsTool } from '../tools/gas-deps.js';
@@ -248,6 +250,7 @@ export class MCPGasServer {
    * - `gas_grep` - ✅ Content search with pattern matching (unwrapped user code)
    * - `gas_ripgrep` - ⚡ High-performance search with ripgrep-inspired features including multi-pattern, context control, and advanced regex
    * - `gas_sed` - 🔧 sed-style find/replace operations with regex capture groups ($1, $2) and multi-pattern support on clean user code
+   * - `gas_edit` - 💎 Token-efficient file editing with exact string matching (83% token savings vs gas_write)
    * - `gas_find` - ✅ Find files with shell-like patterns and virtual names
    * - `gas_rm` - Delete files
    * - `gas_mv` - Move/rename files
@@ -259,6 +262,7 @@ export class MCPGasServer {
    * - `gas_raw_grep` - ⚠️ Advanced: Search full content (API-only, never local files)
    * - `gas_raw_ripgrep` - ⚠️ Advanced: High-performance search on raw content including CommonJS wrappers and system code
    * - `gas_raw_sed` - ⚠️ Advanced: sed-style find/replace on raw content including wrappers for system-level modifications
+   * - `gas_raw_edit` - ⚠️ Advanced: Token-efficient editing on raw content (includes CommonJS wrappers)
    * - `gas_raw_find` - ⚠️ Advanced: Find files with actual GAS names
    * - `gas_raw_copy` - ⚠️ Advanced: Remote-to-remote file copying with merge strategies
    * 
@@ -341,6 +345,7 @@ export class MCPGasServer {
       new GrepTool(authManager),          // Content search with pattern matching
       new RipgrepTool(authManager),       // High-performance search with ripgrep-inspired features
       new SedTool(authManager),           // sed-style find/replace with CommonJS processing
+      new EditTool(authManager),          // Token-efficient exact string editing
       new FindTool(authManager),          // Find files with virtual names
       new ContextTool(authManager),       // Intelligent context-aware search (simplified version)
       new SummaryTool(authManager),       // Content summarization with multiple analysis modes
@@ -356,6 +361,7 @@ export class MCPGasServer {
       new RawGrepTool(authManager),       // Advanced: Search full content (API-only, never local files)
       new RawRipgrepTool(authManager),    // Advanced: High-performance search on raw content with ripgrep features
       new RawSedTool(authManager),        // Advanced: sed-style find/replace on raw content including wrappers
+      new RawEditTool(authManager),       // Advanced: Token-efficient editing on raw content
       new RawFindTool(authManager),       // Advanced: Find with actual GAS names
       new RawCpTool(authManager),        // Advanced: Bulk copy without CommonJS processing
       
