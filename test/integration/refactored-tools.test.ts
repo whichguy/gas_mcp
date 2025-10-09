@@ -14,7 +14,7 @@ describe('Refactored Tools Integration', function() {
 
   before(async () => {
     client = new MCPTestClient();
-    await client.connect();
+    await client.startAndConnect();
   });
 
   after(async () => {

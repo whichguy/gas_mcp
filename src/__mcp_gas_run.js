@@ -630,3 +630,12 @@ function htmlAuthErrorResponse(errorData) {
 }
 
 __defineModule__(_main, null, { loadNow: true });
+
+/**
+ * Hoisted bridge function for google.script.run compatibility
+ * Delegates to the module's invoke function
+ * @customfunction
+ */
+function invoke(modulePath, ...args) {
+  return require('__mcp_gas_run').invoke(modulePath, ...args);
+}
