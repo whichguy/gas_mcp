@@ -1,9 +1,11 @@
 /**
  * GitFormatTranslator - Handles translation between native git formats and GAS CommonJS modules
- * 
+ *
  * Supports bidirectional conversion of git configuration files while preserving
  * their native formats (INI, gitignore, attributes, etc.)
  */
+
+import * as GitUtils from './GitUtilities.js';
 
 export interface GitFileFormat {
   format: 'ini' | 'gitignore' | 'attributes' | 'ref' | 'json' | 'script' | 'text';
@@ -15,86 +17,34 @@ export interface GitFileFormat {
 export class GitFormatTranslator {
   /**
    * Check if a file is inside a .git/ folder
-   * Must have '.git/' in the path, and the file must be after it
+   * @deprecated Use GitUtils.isGitConfigFile() instead
    */
   static isGitConfigFile(filename: string): boolean {
-    // Must contain '.git/' (not just 'git/')
-    if (!filename.includes('.git/')) {
-      return filename.startsWith('.git/');
-    }
-    
-    // Ensure there's actual content after '.git/'
-    const gitIndex = filename.lastIndexOf('.git/');
-    const afterGit = filename.substring(gitIndex + 5); // 5 = '.git/'.length
-    
-    // Must have a filename after .git/ (not just '.git/' or '.git//')
-    return afterGit.length > 0 && !afterGit.startsWith('/');
+    return GitUtils.isGitConfigFile(filename);
   }
 
   /**
    * Extract the git file path relative to .git/ folder
-   * Only works for files actually inside .git/
+   * @deprecated Use GitUtils.getGitRelativePath() instead
    */
   static getGitRelativePath(filename: string): string | null {
-    if (!this.isGitConfigFile(filename)) {
-      return null;
-    }
-    
-    const path = filename.replace(/\.gs$/, '');
-    
-    // Find the last occurrence of '.git/'
-    const gitIndex = path.lastIndexOf('.git/');
-    
-    if (gitIndex === -1) {
-      // Should not happen if isGitConfigFile returned true
-      return null;
-    }
-    
-    // Return everything after '.git/'
-    return path.substring(gitIndex + 5);
+    return GitUtils.getGitRelativePath(filename);
   }
 
   /**
    * Get the project prefix (everything before .git/)
+   * @deprecated Use GitUtils.getProjectPrefix() instead
    */
   static getProjectPrefix(filename: string): string | null {
-    if (!this.isGitConfigFile(filename)) {
-      return null;
-    }
-    
-    const gitIndex = filename.indexOf('.git/');
-    
-    if (gitIndex === 0) {
-      // Root level .git/
-      return '';
-    }
-    
-    if (gitIndex > 0) {
-      // Nested .git/ - return path before it
-      return filename.substring(0, gitIndex).replace(/\/$/, '');
-    }
-    
-    return null;
+    return GitUtils.getProjectPrefix(filename);
   }
 
   /**
    * Detect format based on git-relative path
-   * Path must be relative to .git/ folder
+   * @deprecated Use GitUtils.detectGitFileFormat() instead
    */
   static detectFormat(gitRelativePath: string): GitFileFormat['format'] {
-    // gitRelativePath is already relative to .git/
-    // e.g., 'config', 'info/exclude', 'hooks/pre-commit'
-    
-    if (gitRelativePath === 'config') return 'ini';
-    if (gitRelativePath === 'HEAD') return 'ref';
-    if (gitRelativePath === 'description') return 'text';
-    if (gitRelativePath === 'info/exclude') return 'gitignore';
-    if (gitRelativePath === 'info/attributes') return 'attributes';
-    if (gitRelativePath.startsWith('hooks/')) return 'script';
-    if (gitRelativePath.startsWith('refs/')) return 'ref';
-    if (gitRelativePath.endsWith('.json')) return 'json';
-    
-    return 'text';
+    return GitUtils.detectGitFileFormat(gitRelativePath);
   }
 
   /**
@@ -174,15 +124,10 @@ __defineModule__(_main);`;
 
   /**
    * Unwrap CommonJS module wrapper
+   * @deprecated Use GitUtils.unwrapCommonJSModule() instead
    */
   private static unwrapCommonJS(source: string): string {
-    if (!source.includes('function _main(') || !source.includes('__defineModule__(_main)')) {
-      return source;
-    }
-    
-    // Extract content between function declaration and closing brace
-    const match = source.match(/function _main\([^)]*\)\s*{([\s\S]*?)}\s*\n?\s*__defineModule__\(_main\);?/);
-    return match ? match[1] : source;
+    return GitUtils.unwrapCommonJSModule(source);
   }
 
   /**
