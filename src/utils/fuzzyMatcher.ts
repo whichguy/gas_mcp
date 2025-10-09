@@ -21,9 +21,11 @@ export interface EditOperation {
 
 export class FuzzyMatcher {
   private debug: boolean = false;
+  private timeoutMs: number = 180000; // 3 minutes (180 seconds)
 
-  constructor(debug: boolean = false) {
+  constructor(debug: boolean = false, timeoutMs?: number) {
     this.debug = debug;
+    if (timeoutMs) this.timeoutMs = timeoutMs;
   }
 
   /**
@@ -117,32 +119,122 @@ export class FuzzyMatcher {
       return null;
     }
 
-    // Sliding window to find best match
+    // Start timeout timer
+    const startTime = Date.now();
+    let iterationCount = 0;
+
+    // PHASE 1: Try exact match first (handles 95% of cases instantly)
+    const exactPos = content.indexOf(searchText);
+    if (exactPos !== -1) {
+      if (this.debug) {
+        console.error(`Exact match found at position ${exactPos}`);
+      }
+      return {
+        position: exactPos,
+        text: searchText,
+        similarity: 1.0,
+        endPosition: exactPos + searchLength
+      };
+    }
+
+    // Normalize search text once for reuse in fuzzy matching
+    const normalizedSearch = this.normalizeForComparison(searchText);
+
+    // PHASE 2-4: Fuzzy matching with smart windows and coarse-then-fine search
+    // Note: We normalize each candidate in the loop. This is necessary because position mapping
+    // from normalized space to original space is complex (normalization changes string lengths).
+    // Performance is still good due to: (1) only 5 window sizes, (2) coarse-then-fine search
     let bestMatch: FuzzyMatch | null = null;
 
-    // Try different window sizes (±20% of search text length)
-    const minWindowSize = Math.max(1, Math.floor(searchLength * 0.8));
-    const maxWindowSize = Math.min(contentLength, Math.ceil(searchLength * 1.2));
+    // Try only 5 strategic window sizes instead of hundreds
+    const windowVariations = [-0.10, -0.05, 0, 0.05, 0.10];
 
-    for (let windowSize = minWindowSize; windowSize <= maxWindowSize; windowSize++) {
-      for (let i = 0; i <= contentLength - windowSize; i++) {
+    for (const variation of windowVariations) {
+      const windowSize = Math.floor(searchLength * (1 + variation));
+      if (windowSize < 1 || windowSize > contentLength) continue;
+
+      // Coarse search first (check every Nth position for speed)
+      const coarseStride = Math.max(1, Math.floor(searchLength / 20));
+      const promisingRegions: number[] = [];
+
+      for (let i = 0; i <= contentLength - windowSize; i += coarseStride) {
+        // Timeout check every 100 iterations
+        if (++iterationCount % 100 === 0) {
+          const elapsed = Date.now() - startTime;
+          if (elapsed > this.timeoutMs) {
+            throw new Error(
+              `Fuzzy matching timeout after ${(elapsed / 1000).toFixed(1)}s. ` +
+              `Search text too long (${searchText.length} chars). ` +
+              `Try shorter search text or use grep/ripgrep for large-scale searches.`
+            );
+          }
+        }
+
         const candidateText = content.substring(i, i + windowSize);
-        const similarity = this.calculateSimilarity(searchText, candidateText);
+        const normalizedCandidate = this.normalizeForComparison(candidateText);
+        const similarity = this.calculateSimilarityFromNormalized(normalizedSearch, normalizedCandidate);
 
-        if (similarity >= threshold && (!bestMatch || similarity > bestMatch.similarity)) {
-          bestMatch = {
-            position: i,
-            text: candidateText,
-            similarity,
-            endPosition: i + windowSize
-          };
+        // Track promising regions (within 0.1 of threshold)
+        if (similarity >= threshold - 0.1) {
+          promisingRegions.push(i);
 
-          // Early exit on perfect match
-          if (similarity === 1.0) {
-            if (this.debug) {
-              console.error(`Perfect match found at position ${i}`);
+          // Update best match
+          if (!bestMatch || similarity > bestMatch.similarity) {
+            bestMatch = {
+              position: i,
+              text: candidateText,
+              similarity,
+              endPosition: i + windowSize
+            };
+
+            // Early exit on excellent match (threshold + 10%)
+            if (similarity >= threshold + 0.10) {
+              if (this.debug) {
+                console.error(`Excellent match found at position ${i}, similarity=${similarity.toFixed(3)}`);
+              }
+              return bestMatch;
             }
-            return bestMatch;
+          }
+        }
+      }
+
+      // Fine search in promising regions (stride = 1 for precision)
+      for (const regionStart of promisingRegions) {
+        const searchStart = Math.max(0, regionStart - coarseStride);
+        const searchEnd = Math.min(contentLength - windowSize, regionStart + coarseStride);
+
+        for (let i = searchStart; i <= searchEnd; i++) {
+          // Timeout check every 100 iterations
+          if (++iterationCount % 100 === 0) {
+            const elapsed = Date.now() - startTime;
+            if (elapsed > this.timeoutMs) {
+              throw new Error(
+                `Fuzzy matching timeout after ${(elapsed / 1000).toFixed(1)}s. ` +
+                `Search text too long (${searchText.length} chars). ` +
+                `Try shorter search text or use grep/ripgrep for large-scale searches.`
+              );
+            }
+          }
+
+          const candidateText = content.substring(i, i + windowSize);
+          const normalizedCandidate = this.normalizeForComparison(candidateText);
+          const similarity = this.calculateSimilarityFromNormalized(normalizedSearch, normalizedCandidate);
+
+          if (similarity >= threshold && (!bestMatch || similarity > bestMatch.similarity)) {
+            bestMatch = {
+              position: i,
+              text: candidateText,
+              similarity,
+              endPosition: i + windowSize
+            };
+
+            // Early exit on excellent match
+            if (similarity >= threshold + 0.10) {
+              if (this.debug) {
+                console.error(`Excellent match found at position ${i}, similarity=${similarity.toFixed(3)}`);
+              }
+              return bestMatch;
+            }
           }
         }
       }
@@ -173,7 +265,19 @@ export class FuzzyMatcher {
     const normalized1 = this.normalizeForComparison(str1);
     const normalized2 = this.normalizeForComparison(str2);
 
-    // Check again after normalization
+    return this.calculateSimilarityFromNormalized(normalized1, normalized2);
+  }
+
+  /**
+   * Calculate similarity from already-normalized strings
+   * More efficient when strings are pre-normalized to avoid redundant normalization
+   *
+   * @param normalized1 - First normalized string
+   * @param normalized2 - Second normalized string
+   * @returns Similarity score (0.0 to 1.0)
+   */
+  private calculateSimilarityFromNormalized(normalized1: string, normalized2: string): number {
+    // Quick exact match check
     if (normalized1 === normalized2) {
       return 1.0;
     }
