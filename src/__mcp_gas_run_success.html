@@ -354,6 +354,51 @@
       padding: 2px 6px;
       border-radius: 3px;
     }
+
+    .debug-toggle {
+      color: var(--google-grey-700);
+      cursor: pointer;
+      padding: 6px 10px;
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 4px;
+      transition: all 0.2s;
+      margin-top: 8px;
+      user-select: none;
+    }
+
+    .debug-toggle:hover {
+      background: var(--google-grey-200);
+      color: var(--google-blue);
+    }
+
+    .debug-toggle i {
+      font-size: 10px;
+      transition: transform 0.2s;
+    }
+
+    .debug-logs {
+      background: var(--google-grey-100);
+      border-left: 3px solid var(--google-grey-300);
+      padding: 10px 14px;
+      margin: 8px 0 8px 20px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--google-grey-700);
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'Roboto Mono', 'Consolas', monospace;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      display: none;
+    }
+
+    .debug-logs.show {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -626,6 +671,37 @@
       });
     }
 
+    function appendDebugToggle(logOutput) {
+      const debugId = 'debug-' + Date.now();
+      const toggle = document.createElement('div');
+      toggle.className = 'debug-toggle';
+      toggle.innerHTML = '<i class="bi bi-chevron-right"></i> Debug Logs (' + logOutput.split('\n').length + ' lines)';
+      toggle.onclick = function() { toggleDebugLogs(debugId); };
+
+      const logs = document.createElement('div');
+      logs.id = debugId;
+      logs.className = 'debug-logs';
+      logs.textContent = logOutput;
+
+      consoleOutput.appendChild(toggle);
+      consoleOutput.appendChild(logs);
+      consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+
+    function toggleDebugLogs(id) {
+      const logs = document.getElementById(id);
+      const toggle = logs.previousElementSibling;
+      const icon = toggle.querySelector('i');
+
+      if (logs.classList.contains('show')) {
+        logs.classList.remove('show');
+        icon.className = 'bi bi-chevron-right';
+      } else {
+        logs.classList.add('show');
+        icon.className = 'bi bi-chevron-down';
+      }
+    }
+
     function executeRemote(command) {
       appendOutput('Executing...', 'output-result');
       document.getElementById('statusMessage').textContent = 'Executing...';
@@ -648,17 +724,17 @@
       google.script.run
         .withSuccessHandler(function(data) {
           if (data.success) {
+            // Show clean result only
             appendOutput(JSON.stringify(data.result, null, 2), 'output-result');
-
-            // Show logger output if available
-            if (data.logger_output && data.logger_output.trim()) {
-              appendOutput('--- Logger Output ---', 'output-info');
-              appendOutput(data.logger_output, 'output-info');
-            }
 
             // Show execution time
             if (data.execution_time_ms !== undefined) {
-              appendOutput('Executed in ' + data.execution_time_ms + 'ms', 'output-info');
+              appendOutput('⏱ Executed in ' + data.execution_time_ms + 'ms', 'output-info');
+            }
+
+            // Show collapsible debug logs (hidden by default)
+            if (data.logger_output && data.logger_output.trim()) {
+              appendDebugToggle(data.logger_output);
             }
           } else {
             appendOutput('Error: ' + (data.error || data.message || 'Unknown error'), 'output-error');

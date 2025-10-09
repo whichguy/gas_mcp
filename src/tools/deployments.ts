@@ -1012,7 +1012,7 @@ export class ProjectCreateTool extends BaseTool {
       console.error(`   - Using RawWriteTool to create file...`);
       
       // Use RawWriteTool to create the file (position 0 to execute first)
-      const { RawWriteTool } = await import('./filesystem.js');
+      const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
@@ -1248,7 +1248,7 @@ export class ProjectInitTool extends BaseTool {
     try {
       console.error(`🔧 [GAS_PROJECT_INIT] Installing CommonJS module system...`);
       
-      const { RawWriteTool } = await import('./filesystem.js');
+      const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
@@ -1286,7 +1286,7 @@ export class ProjectInitTool extends BaseTool {
       
       const executionTemplate = getExecutionTemplate();
       
-      const { RawWriteTool } = await import('./filesystem.js');
+      const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
@@ -1326,7 +1326,7 @@ export class ProjectInitTool extends BaseTool {
 
         const successTemplate = getSuccessHtmlTemplate();
 
-        const { RawWriteTool } = await import('./filesystem.js');
+        const { RawWriteTool } = await import('./filesystem/index.js');
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
@@ -1357,7 +1357,7 @@ export class ProjectInitTool extends BaseTool {
 
         const errorTemplate = getErrorHtmlTemplate();
 
-        const { RawWriteTool } = await import('./filesystem.js');
+        const { RawWriteTool } = await import('./filesystem/index.js');
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
@@ -1398,7 +1398,7 @@ export class ProjectInitTool extends BaseTool {
       
       const manifestTemplate = getManifestTemplate();
       
-      const { RawWriteTool } = await import('./filesystem.js');
+      const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {

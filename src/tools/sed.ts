@@ -20,8 +20,8 @@ import { BaseTool } from './base.js';
 import type { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
 import { RipgrepTool, RawRipgrepTool } from './ripgrep.js';
-import { CatTool, RawCatTool } from './filesystem.js';
-import { WriteTool, RawWriteTool } from './filesystem.js';
+import { CatTool, RawCatTool } from './filesystem/index.js';
+import { WriteTool, RawWriteTool } from './filesystem/index.js';
 
 /**
  * Interface for sed operation results

@@ -11,17 +11,17 @@ import { LocalFileManager } from '../utils/localFileManager.js';
 
 // Import all tools
 import { AuthTool } from '../tools/auth.js';
-import { 
-  LsTool, 
-  CatTool, 
+import {
+  LsTool,
+  CatTool,
   WriteTool,
   RawCatTool,
   RawWriteTool,
   RawCpTool,
-  RmTool, 
-  MvTool, 
-  CpTool 
-} from '../tools/filesystem.js';
+  RmTool,
+  MvTool,
+  CpTool
+} from '../tools/filesystem/index.js';
 import { GrepTool, RawGrepTool } from '../tools/grep.js';
 import { FindTool, RawFindTool } from '../tools/find.js';
 import { RipgrepTool, RawRipgrepTool } from '../tools/ripgrep.js';
