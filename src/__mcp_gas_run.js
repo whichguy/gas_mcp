@@ -274,7 +274,7 @@ function createFunction(code) {
 function __gas_run(js_statement) {
   const startTime = Date.now();
   
-  // 🚀 PERFORMANCE OPTIMIZATION: Skip logging for simple expressions
+  // [PERF] PERFORMANCE OPTIMIZATION: Skip logging for simple expressions
   const isSimpleExpression = /^[a-zA-Z0-9_.$\s*/()+-]+$/.test(js_statement) && 
                             js_statement.length < 50 && 
                             !js_statement.includes('function') && 
@@ -287,7 +287,7 @@ function __gas_run(js_statement) {
   }
 
   try {
-    // 🚀 PERFORMANCE OPTIMIZATION: Direct eval for simple math expressions
+    // [PERF] PERFORMANCE OPTIMIZATION: Direct eval for simple math expressions
     if (isSimpleExpression && /^[\d\s*/.()+-]+$/.test(js_statement)) {
       const result = eval(js_statement);
       const duration = Date.now() - startTime;
@@ -470,45 +470,69 @@ function htmlAuthSuccessResponse(executionResult) {
 }
 
   /**
-   * Universal module function invocation for google.script.run
-   * @param {string} modulePath - Module.function path (e.g., '__mcp_gas_run.__gas_run')
-   * @param {...*} args - Arguments to pass to the function
+   * Universal invocation for google.script.run
+   * Supports both:
+   * - Raw JavaScript expressions: invoke('2 + 2')
+   * - Module paths: invoke('__mcp_gas_run.__gas_run', '2 + 2')
+   * @param {string} codeOrPath - JavaScript code or Module.function path
+   * @param {...*} args - Arguments (for module path mode only)
    * @returns {*} Result (auto-parses ContentService responses)
    */
-  function invoke(modulePath, ...args) {
+  function invoke(codeOrPath, ...args) {
     try {
-      // Parse module.function from path
-      const lastDot = modulePath.lastIndexOf('.');
-
-      if (lastDot === -1) {
-        return {
-          success: false,
-          error: `Invalid module path: ${modulePath}. Expected format: 'moduleName.functionName'`,
-          example: 'invoke("__mcp_gas_run.__gas_run", "2 + 2")'
-        };
+      // Detect if this is a module path or raw JavaScript
+      // Module path: has a dot AND args provided OR looks like 'Module.function' pattern
+      const hasDot = codeOrPath.indexOf('.') !== -1;
+      const hasArgs = args.length > 0;
+      const looksLikeModulePath = hasDot && /^[a-zA-Z_$][a-zA-Z0-9_$.]*\.[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(codeOrPath);
+      
+      const isModulePath = (hasDot && hasArgs) || looksLikeModulePath;
+      
+      // MODE 1: Module path invocation
+      if (isModulePath) {
+        const lastDot = codeOrPath.lastIndexOf('.');
+        
+        if (lastDot === -1) {
+          return {
+            success: false,
+            error: `Invalid module path: ${codeOrPath}. Expected format: 'moduleName.functionName'`,
+            example: 'invoke("__mcp_gas_run.__gas_run", "2 + 2")'
+          };
+        }
+        
+        const moduleName = codeOrPath.substring(0, lastDot);
+        const functionName = codeOrPath.substring(lastDot + 1);
+        
+        const module = require(moduleName);
+        const fn = module[functionName];
+        
+        if (typeof fn !== 'function') {
+          return {
+            success: false,
+            error: `${functionName} is not a function in ${moduleName}`,
+            available: Object.keys(module).filter(k => typeof module[k] === 'function')
+          };
+        }
+        
+        const result = fn(...args);
+        
+        // Auto-parse ContentService responses
+        if (result && typeof result.getContent === 'function') {
+          return JSON.parse(result.getContent());
+        }
+        
+        return result;
       }
-
-      const moduleName = modulePath.substring(0, lastDot);
-      const functionName = modulePath.substring(lastDot + 1);
-
-      const module = require(moduleName);
-      const fn = module[functionName];
-
-      if (typeof fn !== 'function') {
-        return {
-          success: false,
-          error: `${functionName} is not a function in ${moduleName}`,
-          available: Object.keys(module).filter(k => typeof module[k] === 'function')
-        };
-      }
-
-      const result = fn(...args);
-
+      
+      // MODE 2: Raw JavaScript execution (default)
+      // Use the __gas_run function to execute the code
+      const result = __gas_run(codeOrPath);
+      
       // Auto-parse ContentService responses
       if (result && typeof result.getContent === 'function') {
         return JSON.parse(result.getContent());
       }
-
+      
       return result;
     } catch (error) {
       return {
@@ -629,7 +653,7 @@ function htmlAuthErrorResponse(errorData) {
   ///////// END USER CODE /////////
 }
 
-__defineModule__(_main, null, { loadNow: true });
+__defineModule__(_main, '__mcp_gas_run', { loadNow: true });
 
 /**
  * Hoisted bridge function for google.script.run compatibility

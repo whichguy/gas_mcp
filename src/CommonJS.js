@@ -12,7 +12,6 @@
  * - GLOBAL EXPORTS for custom functions
  * - EVENT HANDLER SYSTEM for GAS triggers
  * - Global require() function (no parameter needed in _main)
- * - Optional debug logging (set globalThis.DEBUG_COMMONJS = true to enable)
  *
  * Usage:
  * 1. Each module should define a _main function with the signature:
@@ -21,12 +20,6 @@
  *
  * 2. At the end of each module file, call: __defineModule__(_main);
  * 3. Use require('FileName') to import modules by their filename
- *
- * Debug Mode:
- * - By default, all logging is disabled for production performance
- * - To enable verbose module system logging, set: globalThis.DEBUG_COMMONJS = true
- * - This can be done in any module or in the Apps Script execution environment
- * - Example: In your main script, add at the top: globalThis.DEBUG_COMMONJS = true;
  *
  * CRITICAL: The _main function is called ONLY when the module is first required,
  * not when __defineModule__ is called. This enables lazy loading and proper
@@ -156,25 +149,6 @@
  * The dispatcher uses the first non-null response from handlers.
  */
 
-// ========== GLOBAL DEBUG FLAG ==========
-
-/**
- * Global debug flag for CommonJS logging
- * Set to true to enable verbose module system logging
- * Default: false (production mode with minimal logging)
- */
-globalThis.DEBUG_COMMONJS = globalThis.DEBUG_COMMONJS ?? false;
-
-/**
- * Conditional logger - only logs when DEBUG_COMMONJS is enabled
- * @param {...any} args - Arguments to log
- */
-function debugLog(...args) {
-  if (globalThis.DEBUG_COMMONJS) {
-    Logger.log(...args);
-  }
-}
-
 // ========== GLOBAL FUNCTIONS (before IIFE) ==========
 
 /**
@@ -191,12 +165,14 @@ function require(moduleName) {
   const loadingModules = globalThis.__loadingModules__;
 
   // Normalize the module name
-  const normalize = (name) => {
+  function normalize(name) {
+    // Remove leading './' or '../'
     name = name.replace(/^\.\/?/, '');
     name = name.replace(/^\.\.\/?/, '');
+    // Remove trailing .js
     if (name.endsWith('.js')) name = name.slice(0, -3);
     return name;
-  };
+  }
 
   const candidates = [];
   // 1. As given
@@ -242,7 +218,7 @@ function require(moduleName) {
     // Set current module for the factory
     const previousModule = globalThis.__currentModule;
     globalThis.__currentModule = module;
-    debugLog(`🔄 Loading module: ${found}`);
+    Logger.log(`[LOAD] Loading module: ${found}`);
 
     // BACKWARD COMPATIBILITY: Call factory with appropriate signature
     const factory = moduleFactories[found];
@@ -250,7 +226,7 @@ function require(moduleName) {
 
     if (factory.length === 3) {
       // OLD STYLE: 3 parameters (module, exports, require)
-      debugLog(`⚠️  Module ${found} uses deprecated 3-parameter signature - consider migrating to 2-parameter`);
+      Logger.log(`[WARN] Module ${found} uses deprecated 3-parameter signature - consider migrating to 2-parameter`);
       result = factory(module, module.exports, require);
     } else {
       // NEW STYLE: 2 parameters (module, exports)
@@ -264,31 +240,35 @@ function require(moduleName) {
 
     // Restore previous module
     globalThis.__currentModule = previousModule;
-    debugLog(`✅ Module loaded: ${found}`);
+    Logger.log(`[OK] Module loaded: ${found}`);
 
     // Process __global__ exports if present (key-value map)
-    if (module.exports?.__global__ && typeof module.exports.__global__ === 'object' && !Array.isArray(module.exports.__global__)) {
-      debugLog(`🌍 Module ${found} declares global exports`);
+    if (module.exports.__global__ && typeof module.exports.__global__ === 'object' && !Array.isArray(module.exports.__global__)) {
+      Logger.log(`[GLOBAL] Module ${found} declares global exports`);
 
-      for (const [key, value] of Object.entries(module.exports.__global__)) {
+      // Expose each key-value pair to global namespace
+      Object.keys(module.exports.__global__).forEach(key => {
+        const value = module.exports.__global__[key];
         globalThis[key] = value;
-        debugLog(`  ✅ Exposed ${key} to global namespace (${typeof value})`);
-      }
+        Logger.log(`  [OK] Exposed ${key} to global namespace (${typeof value})`);
+      });
     }
 
     // Process __events__ if present
     if (module.exports.__events__ && typeof module.exports.__events__ === 'object') {
-      debugLog(`📅 Module ${found} declares event handlers`);
+      Logger.log(`[EVENTS] Module ${found} declares event handlers`);
 
-      for (const [eventName, handlerName] of Object.entries(module.exports.__events__)) {
+      // Validate event handlers exist
+      Object.keys(module.exports.__events__).forEach(eventName => {
+        const handlerName = module.exports.__events__[eventName];
         const handlerFunction = module.exports[handlerName];
 
         if (typeof handlerFunction === 'function') {
-          debugLog(`  ✅ Event handler ${eventName} → ${handlerName}`);
+          Logger.log(`  [OK] Event handler ${eventName} → ${handlerName}`);
         } else {
-          debugLog(`  ⚠️ Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
+          Logger.log(`  [WARN] Warning: ${handlerName} is not a function, ${eventName} handler will be skipped`);
         }
-      }
+      });
     }
 
     return module.exports;
@@ -307,17 +287,20 @@ function require(moduleName) {
  * @param {Object} [options] - Optional configuration
  * @param {boolean} [options.loadNow=false] - If true, immediately execute module via require()
  */
-function __defineModule__(moduleFactory, explicitName, options = {}) {
+function __defineModule__(moduleFactory, explicitName, options) {
   // Access registries exposed by IIFE
   const moduleFactories = globalThis.__moduleFactories__;
 
+  // Parse options parameter
+  const opts = typeof options === 'object' && options !== null ? options : {};
+
   // CRITICAL: explicitName is RESERVED for the CommonJS system module only
   // All user modules MUST use auto-detection
-  debugLog(`📝 __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${options.loadNow || false}`);
+  Logger.log(`[DEFINE] __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${opts.loadNow || false}`);
 
   const moduleName = explicitName || globalThis.__detectModuleName__();
 
-  debugLog(`   Resolved module name: ${moduleName}`);
+  Logger.log(`   Resolved module name: ${moduleName}`);
 
   if (moduleFactories[moduleName]) {
     console.warn(`Module ${moduleName} already registered, skipping duplicate registration`);
@@ -326,23 +309,23 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
 
   // ALWAYS store the factory for lazy loading via require()
   moduleFactories[moduleName] = moduleFactory;
-  debugLog(`   Factory stored for: ${moduleName}`);
+  Logger.log(`   Factory stored for: ${moduleName}`);
 
   // If loadNow=true, immediately execute module via require()
-  if (options.loadNow) {
-    debugLog(`⚡ Load-now enabled for ${moduleName}, executing immediately...`);
+  if (opts.loadNow) {
+    Logger.log(`[LOADNOW] Load-now enabled for ${moduleName}, executing immediately...`);
     try {
       require(moduleName);
-      debugLog(`✅ Module ${moduleName} loaded immediately via require()`);
+      Logger.log(`[OK] Module ${moduleName} loaded immediately via require()`);
       return; // Module is now cached and processed by require()
     } catch (error) {
-      debugLog(`❌ Error loading module ${moduleName} immediately: ${error.message}`);
+      Logger.log(`[ERROR] Error loading module ${moduleName} immediately: ${error.message}`);
       throw error; // Re-throw to prevent silent failures
     }
   }
 
   // Module registered without execution - will execute on first require()
-  debugLog(`📦 Module registered: ${moduleName}`);
+  Logger.log(`[REGISTER] Module registered: ${moduleName}`);
 }
 
 // ========== IIFE FOR INTERNAL INFRASTRUCTURE ==========
@@ -369,74 +352,75 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
    * @param {string} eventName - Event name (doGet, doPost, onOpen, etc.)
    * @returns {Array} Array of {moduleName, handlerFunction} objects
    */
-  const __findEventHandlers__ = (eventName) => {
+  function __findEventHandlers__(eventName) {
     const handlers = [];
 
-    debugLog(`🔍 Searching for ${eventName} handlers...`);
-    debugLog(`   Loaded modules: ${Object.keys(modules).join(', ')}`);
+    Logger.log(`[SEARCH] Searching for ${eventName} handlers...`);
+    Logger.log(`   Loaded modules: ${Object.keys(modules).join(', ')}`);
 
-    for (const [moduleName, module] of Object.entries(modules)) {
-      debugLog(`   Checking module: ${moduleName}`);
+    Object.keys(modules).forEach(moduleName => {
+      const module = modules[moduleName];
+      Logger.log(`   Checking module: ${moduleName}`);
 
       if (module.exports) {
-        debugLog(`     - has exports: ✓`);
+        Logger.log(`     - has exports: ✓`);
 
         if (module.exports.__events__) {
-          debugLog(`     - has __events__: ✓`);
-          debugLog(`     - events: ${JSON.stringify(Object.keys(module.exports.__events__))}`);
+          Logger.log(`     - has __events__: ✓`);
+          Logger.log(`     - events: ${JSON.stringify(Object.keys(module.exports.__events__))}`);
 
           if (module.exports.__events__[eventName]) {
             const handlerName = module.exports.__events__[eventName];
-            debugLog(`     - has ${eventName} handler: ${handlerName}`);
+            Logger.log(`     - has ${eventName} handler: ${handlerName}`);
 
             const handlerFunction = module.exports[handlerName];
 
             if (typeof handlerFunction === 'function') {
-              debugLog(`     - handler is function: ✓`);
+              Logger.log(`     - handler is function: ✓`);
               handlers.push({
                 module: moduleName,
                 handler: handlerFunction
               });
             } else {
-              debugLog(`     - handler is NOT function: ${typeof handlerFunction}`);
+              Logger.log(`     - handler is NOT function: ${typeof handlerFunction}`);
             }
           } else {
-            debugLog(`     - no ${eventName} handler in __events__`);
+            Logger.log(`     - no ${eventName} handler in __events__`);
           }
         } else {
-          debugLog(`     - no __events__ property`);
+          Logger.log(`     - no __events__ property`);
         }
       } else {
-        debugLog(`     - no exports`);
+        Logger.log(`     - no exports`);
       }
-    }
+    });
 
-    debugLog(`   Found ${handlers.length} handler(s) for ${eventName}`);
+    Logger.log(`   Found ${handlers.length} handler(s) for ${eventName}`);
     return handlers;
-  };
+  }
 
   /**
    * doGet dispatcher - Web app GET requests
    * Returns last non-null response from handlers
    */
-  globalThis.__doGet_dispatcher = (e) => {
+  globalThis.__doGet_dispatcher = function(e) {
     const handlers = __findEventHandlers__('doGet');
 
     if (handlers.length === 0) {
-      debugLog('⚠️ No doGet handlers found in loaded modules');
+      Logger.log('[WARN] No doGet handlers found in loaded modules');
       return ContentService.createTextOutput('No doGet handlers registered')
         .setMimeType(ContentService.MimeType.TEXT);
     }
 
-    debugLog(`🚀 Dispatching doGet to ${handlers.length} handler(s)`);
+    Logger.log(`[DISPATCH] Dispatching doGet to ${handlers.length} handler(s)`);
 
     let lastResponse = null;
     let successCount = 0;
     let errorCount = 0;
 
-    for (const handlerInfo of handlers) {
+    handlers.forEach(function(handlerInfo) {
       try {
-        debugLog(`  → Calling ${handlerInfo.module}.doGet`);
+        Logger.log(`  → Calling ${handlerInfo.module}.doGet`);
         const response = handlerInfo.handler(e);
         if (response) {
           lastResponse = response;
@@ -444,15 +428,15 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
         }
       } catch (error) {
         errorCount++;
-        debugLog(`  ❌ Error in ${handlerInfo.module}.doGet: ${error.message}`);
-        debugLog(`     Stack: ${error.stack}`);
+        Logger.log(`  [ERROR] Error in ${handlerInfo.module}.doGet: ${error.message}`);
+        Logger.log(`     Stack: ${error.stack}`);
       }
-    }
+    });
 
-    debugLog(`✅ doGet dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    Logger.log(`[OK] doGet dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
 
     if (errorCount > 0 && successCount === 0 && !lastResponse) {
-      debugLog('❌ All doGet handlers failed, returning error response');
+      Logger.log('[ERROR] All doGet handlers failed, returning error response');
       return ContentService.createTextOutput(
         JSON.stringify({
           error: true,
@@ -470,24 +454,24 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
    * doPost dispatcher - Web app POST requests
    * Returns last non-null response from handlers
    */
-  globalThis.__doPost_dispatcher = (e) => {
+  globalThis.__doPost_dispatcher = function(e) {
     const handlers = __findEventHandlers__('doPost');
 
     if (handlers.length === 0) {
-      debugLog('⚠️ No doPost handlers found in loaded modules');
+      Logger.log('[WARN] No doPost handlers found in loaded modules');
       return ContentService.createTextOutput('No doPost handlers registered')
         .setMimeType(ContentService.MimeType.TEXT);
     }
 
-    debugLog(`🚀 Dispatching doPost to ${handlers.length} handler(s)`);
+    Logger.log(`[DISPATCH] Dispatching doPost to ${handlers.length} handler(s)`);
 
     let lastResponse = null;
     let successCount = 0;
     let errorCount = 0;
 
-    for (const handlerInfo of handlers) {
+    handlers.forEach(function(handlerInfo) {
       try {
-        debugLog(`  → Calling ${handlerInfo.module}.doPost`);
+        Logger.log(`  → Calling ${handlerInfo.module}.doPost`);
         const response = handlerInfo.handler(e);
         if (response) {
           lastResponse = response;
@@ -495,15 +479,15 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
         }
       } catch (error) {
         errorCount++;
-        debugLog(`  ❌ Error in ${handlerInfo.module}.doPost: ${error.message}`);
-        debugLog(`     Stack: ${error.stack}`);
+        Logger.log(`  [ERROR] Error in ${handlerInfo.module}.doPost: ${error.message}`);
+        Logger.log(`     Stack: ${error.stack}`);
       }
-    }
+    });
 
-    debugLog(`✅ doPost dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    Logger.log(`[OK] doPost dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
 
     if (errorCount > 0 && successCount === 0 && !lastResponse) {
-      debugLog('❌ All doPost handlers failed, returning error response');
+      Logger.log('[ERROR] All doPost handlers failed, returning error response');
       return ContentService.createTextOutput(
         JSON.stringify({
           error: true,
@@ -521,157 +505,157 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
    * onOpen dispatcher - Spreadsheet open trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.__onOpen_dispatcher = (e) => {
+  globalThis.__onOpen_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onOpen');
 
     if (handlers.length === 0) {
-      debugLog('⚠️ No onOpen handlers found in loaded modules');
+      Logger.log('[WARN] No onOpen handlers found in loaded modules');
       return;
     }
 
-    debugLog(`🚀 Dispatching onOpen to ${handlers.length} handler(s)`);
+    Logger.log(`[DISPATCH] Dispatching onOpen to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
-    for (const handlerInfo of handlers) {
+    handlers.forEach(function(handlerInfo) {
       try {
-        debugLog(`  → Calling ${handlerInfo.module}.onOpen`);
+        Logger.log(`  → Calling ${handlerInfo.module}.onOpen`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        debugLog(`  ❌ Error in ${handlerInfo.module}.onOpen: ${error.message}`);
-        debugLog(`     Stack: ${error.stack}`);
+        Logger.log(`  [ERROR] Error in ${handlerInfo.module}.onOpen: ${error.message}`);
+        Logger.log(`     Stack: ${error.stack}`);
       }
-    }
+    });
 
-    debugLog(`✅ onOpen dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    Logger.log(`[OK] onOpen dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
    * onEdit dispatcher - Edit trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.__onEdit_dispatcher = (e) => {
+  globalThis.__onEdit_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onEdit');
 
     if (handlers.length === 0) {
-      debugLog('⚠️ No onEdit handlers found in loaded modules');
+      Logger.log('[WARN] No onEdit handlers found in loaded modules');
       return;
     }
 
-    debugLog(`🚀 Dispatching onEdit to ${handlers.length} handler(s)`);
+    Logger.log(`[DISPATCH] Dispatching onEdit to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
-    for (const handlerInfo of handlers) {
+    handlers.forEach(function(handlerInfo) {
       try {
-        debugLog(`  → Calling ${handlerInfo.module}.onEdit`);
+        Logger.log(`  → Calling ${handlerInfo.module}.onEdit`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        debugLog(`  ❌ Error in ${handlerInfo.module}.onEdit: ${error.message}`);
-        debugLog(`     Stack: ${error.stack}`);
+        Logger.log(`  [ERROR] Error in ${handlerInfo.module}.onEdit: ${error.message}`);
+        Logger.log(`     Stack: ${error.stack}`);
       }
-    }
+    });
 
-    debugLog(`✅ onEdit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    Logger.log(`[OK] onEdit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
    * onSelectionChange dispatcher - Selection change trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.__onSelectionChange_dispatcher = (e) => {
+  globalThis.__onSelectionChange_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onSelectionChange');
 
     if (handlers.length === 0) {
       return; // Silent - this event fires frequently
     }
 
-    debugLog(`🚀 Dispatching onSelectionChange to ${handlers.length} handler(s)`);
+    Logger.log(`[DISPATCH] Dispatching onSelectionChange to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
-    for (const handlerInfo of handlers) {
+    handlers.forEach(function(handlerInfo) {
       try {
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        debugLog(`  ❌ Error in ${handlerInfo.module}.onSelectionChange: ${error.message}`);
+        Logger.log(`  [ERROR] Error in ${handlerInfo.module}.onSelectionChange: ${error.message}`);
       }
-    }
+    });
 
-    debugLog(`✅ onSelectionChange dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    Logger.log(`[OK] onSelectionChange dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
    * onInstall dispatcher - Add-on install trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.__onInstall_dispatcher = (e) => {
+  globalThis.__onInstall_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onInstall');
 
     if (handlers.length === 0) {
-      debugLog('⚠️ No onInstall handlers found in loaded modules');
+      Logger.log('[WARN] No onInstall handlers found in loaded modules');
       return;
     }
 
-    debugLog(`🚀 Dispatching onInstall to ${handlers.length} handler(s)`);
+    Logger.log(`[DISPATCH] Dispatching onInstall to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
-    for (const handlerInfo of handlers) {
+    handlers.forEach(function(handlerInfo) {
       try {
-        debugLog(`  → Calling ${handlerInfo.module}.onInstall`);
+        Logger.log(`  → Calling ${handlerInfo.module}.onInstall`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        debugLog(`  ❌ Error in ${handlerInfo.module}.onInstall: ${error.message}`);
-        debugLog(`     Stack: ${error.stack}`);
+        Logger.log(`  [ERROR] Error in ${handlerInfo.module}.onInstall: ${error.message}`);
+        Logger.log(`     Stack: ${error.stack}`);
       }
-    }
+    });
 
-    debugLog(`✅ onInstall dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    Logger.log(`[OK] onInstall dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
    * onFormSubmit dispatcher - Form submit trigger
    * Executes all handlers, never throws exceptions
    */
-  globalThis.__onFormSubmit_dispatcher = (e) => {
+  globalThis.__onFormSubmit_dispatcher = function(e) {
     const handlers = __findEventHandlers__('onFormSubmit');
 
     if (handlers.length === 0) {
-      debugLog('⚠️ No onFormSubmit handlers found in loaded modules');
+      Logger.log('[WARN] No onFormSubmit handlers found in loaded modules');
       return;
     }
 
-    debugLog(`🚀 Dispatching onFormSubmit to ${handlers.length} handler(s)`);
+    Logger.log(`[DISPATCH] Dispatching onFormSubmit to ${handlers.length} handler(s)`);
 
     let successCount = 0;
     let errorCount = 0;
 
-    for (const handlerInfo of handlers) {
+    handlers.forEach(function(handlerInfo) {
       try {
-        debugLog(`  → Calling ${handlerInfo.module}.onFormSubmit`);
+        Logger.log(`  → Calling ${handlerInfo.module}.onFormSubmit`);
         handlerInfo.handler(e);
         successCount++;
       } catch (error) {
         errorCount++;
-        debugLog(`  ❌ Error in ${handlerInfo.module}.onFormSubmit: ${error.message}`);
-        debugLog(`     Stack: ${error.stack}`);
+        Logger.log(`  [ERROR] Error in ${handlerInfo.module}.onFormSubmit: ${error.message}`);
+        Logger.log(`     Stack: ${error.stack}`);
       }
-    }
+    });
 
-    debugLog(`✅ onFormSubmit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
+    Logger.log(`[OK] onFormSubmit dispatch complete: ${successCount} succeeded, ${errorCount} failed`);
   };
 
   /**
@@ -680,7 +664,7 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
    * @returns {string} The detected module name with full path (e.g., "ai_tools/BaseConnector")
    * @throws {Error} If unable to detect module name from stack trace
    */
-  const __detectModuleName__ = () => {
+  function __detectModuleName__() {
     try {
       throw new Error();
     } catch (e) {
@@ -688,18 +672,18 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
       const lines = stack.split('\n');
 
       // Reduced debug logging for better performance
-      debugLog('🔍 Detecting module name...');
+      Logger.log('[DETECT] Detecting module name...');
 
-      for (const line of lines) {
-        const trimmedLine = line.trim();
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
 
-        if (!trimmedLine || trimmedLine.includes('__detectModuleName__') || trimmedLine.includes('__defineModule__')) {
+        if (!line || line.includes('__detectModuleName__') || line.includes('__defineModule__')) {
           continue;
         }
 
         // ENHANCED: Pattern for Google Apps Script virtual paths: "at path/filename:line:column"
         // This preserves the full directory structure (e.g., "ai_tools/BaseConnector")
-        let match = trimmedLine.match(/at\s+([^/\s:]+\/)?([^/\s:]+(?:\/[^/\s:]+)*):\d+:\d+/);
+        let match = line.match(/at\s+([^/\s:]+\/)?([^/\s:]+(?:\/[^/\s:]+)*):\d+:\d+/);
         if (match) {
           // If we have a path prefix, combine it with the filename part
           const pathPrefix = match[1] ? match[1].replace(/\/$/, '') : ''; // Remove trailing slash
@@ -711,13 +695,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fullPath}"`);
+            Logger.log(`[OK] Module detected: "${fullPath}"`);
             return fullPath;
           }
         }
 
         // Alternative pattern: "at full/path/filename:line:column" (single capture group)
-        match = trimmedLine.match(/at\s+([^/\s:]+(?:\/[^/\s:]+)+):\d+:\d+/);
+        match = line.match(/at\s+([^/\s:]+(?:\/[^/\s:]+)+):\d+:\d+/);
         if (match) {
           const fullPath = match[1];
           if (fullPath &&
@@ -725,13 +709,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fullPath}"`);
+            Logger.log(`[OK] Module detected: "${fullPath}"`);
             return fullPath;
           }
         }
 
         // Try pattern: (FileName:line:column) - for simple files without directories
-        match = trimmedLine.match(/\(([^/:()]+):\d+:\d+\)/);
+        match = line.match(/\(([^/:()]+):\d+:\d+\)/);
         if (match) {
           const fileName = match[1];
           if (fileName &&
@@ -739,13 +723,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fileName}"`);
+            Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
         }
 
         // Try pattern: at functionName (FileName:line:column) - for simple files
-        match = trimmedLine.match(/at\s+[^(]*\(([^/:()]+):\d+:\d+\)/);
+        match = line.match(/at\s+[^(]*\(([^/:()]+):\d+:\d+\)/);
         if (match) {
           const fileName = match[1];
           if (fileName &&
@@ -753,13 +737,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fileName}"`);
+            Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
         }
 
         // Try pattern: FileName.gs:line - for simple files
-        match = trimmedLine.match(/([^/\s]+)\.gs:\d+/);
+        match = line.match(/([^/\s]+)\.gs:\d+/);
         if (match) {
           const fileName = match[1];
           if (fileName &&
@@ -767,13 +751,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fileName}"`);
+            Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
         }
 
         // Try pattern: at FileName.functionName - for simple files
-        match = trimmedLine.match(/at\s+([^.\s]+)\./);
+        match = line.match(/at\s+([^.\s]+)\./);
         if (match) {
           const fileName = match[1];
           if (fileName &&
@@ -781,13 +765,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fileName}"`);
+            Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
         }
 
         // Try pattern: at FileName:line:column (Google Apps Script format) - for simple files
-        match = trimmedLine.match(/at\s+([^/\s:]+):\d+:\d+/);
+        match = line.match(/at\s+([^/\s:]+):\d+:\d+/);
         if (match) {
           const fileName = match[1];
           if (fileName &&
@@ -795,13 +779,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fileName}"`);
+            Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
         }
 
         // Try pattern: FileName:line:column (without "at" prefix) - for simple files
-        match = trimmedLine.match(/^\s*([^/\s:()]+):\d+:\d+/);
+        match = line.match(/^\s*([^/\s:()]+):\d+:\d+/);
         if (match) {
           const fileName = match[1];
           if (fileName &&
@@ -809,13 +793,13 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
               fileName !== 'CommonJS') {
-            debugLog(`✅ Module detected: "${fileName}"`);
+            Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
         }
       }
 
-      debugLog('⚠️ Module name detection failed');
+      Logger.log('[WARN] Module name detection failed');
 
       // If no filename found, throw an exception with detailed debug info
       const debugInfo = {
@@ -830,26 +814,26 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
 
       throw new Error('Unable to detect module name from stack trace. Debug info: ' + JSON.stringify(debugInfo, null, 2));
     }
-  };
+  }
 
   /**
    * Creates a new module object
    * @param {string} moduleName - The name of the module
    * @returns {Object} A new module object with exports property
    */
-  const __createModule__ = (moduleName) => {
+  function __createModule__(moduleName) {
     if (!modules[moduleName]) {
       modules[moduleName] = { exports: {} };
     }
     return modules[moduleName];
-  };
+  }
 
   /**
    * Gets the current module object (for use in _main functions)
    * Enhanced to preserve directory structure
    * @returns {Object} - The current module object
    */
-  const __getCurrentModule__ = () => {
+  function __getCurrentModule__() {
     try {
       throw new Error();
     } catch (e) {
@@ -905,23 +889,27 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
 
     // Fallback to a default module
     return __createModule__('unknown');
-  };
+  }
 
   /**
    * Debug function to get module information
    * @returns {Object} Module registry information
    */
-  const getModuleInfo = () => ({
-    registered: Object.keys(moduleFactories),
-    loaded: Object.keys(modules),
-    loading: [...loadingModules]
-  });
+  function getModuleInfo() {
+    return {
+      registered: Object.keys(moduleFactories),
+      loaded: Object.keys(modules),
+      loading: Array.from(loadingModules)
+    };
+  }
 
   /**
    * Debug function to get all modules
    * @returns {Object} All module objects
    */
-  const getModules = () => modules;
+  function getModules() {
+    return modules;
+  }
 
   // Expose internal helper functions that are needed by global functions
   globalThis.__detectModuleName__ = __detectModuleName__;  // Used by global __defineModule__()
@@ -930,15 +918,15 @@ function __defineModule__(moduleFactory, explicitName, options = {}) {
   // Register the shim module itself
   __defineModule__(function(_main) {
     return {
-      getModuleInfo,
-      getModules,
-      require,
-      __defineModule__,
-      __getCurrentModule__
+      getModuleInfo: getModuleInfo,
+      getModules: getModules,
+      require: require,
+      __defineModule__: __defineModule__,
+      __getCurrentModule__: __getCurrentModule__
     };
-  }, 'CommonJS');
+      }, 'CommonJS');
 
-  debugLog('🚀 Module system initialized');
+  Logger.log('[INIT] Module system initialized');
 })();
 
 // ===== HOISTED EVENT HANDLER DECLARATIONS (for GAS compile-time detection) =====
@@ -952,7 +940,7 @@ function onOpen(e) {
   if (typeof globalThis.__onOpen_dispatcher === 'function') {
     return globalThis.__onOpen_dispatcher(e);
   } else {
-    debugLog('⚠️ CommonJS onOpen dispatcher not found');
+    Logger.log('[WARN] CommonJS onOpen dispatcher not found');
   }
 }
 
@@ -963,7 +951,7 @@ function onEdit(e) {
   if (typeof globalThis.__onEdit_dispatcher === 'function') {
     return globalThis.__onEdit_dispatcher(e);
   } else {
-    debugLog('⚠️ CommonJS onEdit dispatcher not found');
+    Logger.log('[WARN] CommonJS onEdit dispatcher not found');
   }
 }
 
@@ -974,7 +962,7 @@ function onInstall(e) {
   if (typeof globalThis.__onInstall_dispatcher === 'function') {
     return globalThis.__onInstall_dispatcher(e);
   } else {
-    debugLog('⚠️ CommonJS onInstall dispatcher not found');
+    Logger.log('[WARN] CommonJS onInstall dispatcher not found');
   }
 }
 
@@ -985,7 +973,7 @@ function onFormSubmit(e) {
   if (typeof globalThis.__onFormSubmit_dispatcher === 'function') {
     return globalThis.__onFormSubmit_dispatcher(e);
   } else {
-    debugLog('⚠️ CommonJS onFormSubmit dispatcher not found');
+    Logger.log('[WARN] CommonJS onFormSubmit dispatcher not found');
   }
 }
 
@@ -996,7 +984,7 @@ function onSelectionChange(e) {
   if (typeof globalThis.__onSelectionChange_dispatcher === 'function') {
     return globalThis.__onSelectionChange_dispatcher(e);
   } else {
-    debugLog('⚠️ CommonJS onSelectionChange dispatcher not found');
+    Logger.log('[WARN] CommonJS onSelectionChange dispatcher not found');
   }
 }
 
@@ -1007,7 +995,7 @@ function doGet(e) {
   if (typeof globalThis.__doGet_dispatcher === 'function') {
     return globalThis.__doGet_dispatcher(e);
   } else {
-    debugLog('⚠️ CommonJS doGet dispatcher not found');
+    Logger.log('[WARN] CommonJS doGet dispatcher not found');
     return HtmlService.createHtmlOutput('<h1>Error: doGet handler not configured</h1>');
   }
 }
@@ -1019,7 +1007,7 @@ function doPost(e) {
   if (typeof globalThis.__doPost_dispatcher === 'function') {
     return globalThis.__doPost_dispatcher(e);
   } else {
-    debugLog('⚠️ CommonJS doPost dispatcher not found');
+    Logger.log('[WARN] CommonJS doPost dispatcher not found');
     return HtmlService.createHtmlOutput('<h1>Error: doPost handler not configured</h1>');
   }
 }
