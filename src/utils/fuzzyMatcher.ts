@@ -137,8 +137,48 @@ export class FuzzyMatcher {
       };
     }
 
-    // Normalize search text once for reuse in fuzzy matching
+    // PHASE 2: Try normalized exact match (handles whitespace-only variations)
+    // This is SAFE because we use position mapping to find the exact location in original content
+    const { normalized: normalizedContent, positionMap: contentPosMap } = this.normalizeWithPositionMap(content);
     const normalizedSearch = this.normalizeForComparison(searchText);
+
+    const normalizedPos = normalizedContent.indexOf(normalizedSearch);
+    if (normalizedPos !== -1) {
+      // Map normalized position back to original content position
+      const originalStartPos = contentPosMap[normalizedPos];
+
+      // Find the actual end position in original content by searching forward
+      // We need to find where the normalized match ends in the original text
+      let originalEndPos = originalStartPos;
+      let normalizedIdx = normalizedPos;
+      const normalizedEndPos = normalizedPos + normalizedSearch.length;
+
+      while (normalizedIdx < normalizedEndPos && normalizedIdx < contentPosMap.length) {
+        originalEndPos = contentPosMap[normalizedIdx] + 1; // +1 because we want position AFTER the char
+        normalizedIdx++;
+      }
+
+      // Verify the match in original content (safety check)
+      const matchedText = content.substring(originalStartPos, originalEndPos);
+      const matchedNormalized = this.normalizeForComparison(matchedText);
+
+      if (matchedNormalized === normalizedSearch) {
+        if (this.debug) {
+          console.error(`Normalized exact match found at position ${originalStartPos}`);
+        }
+        return {
+          position: originalStartPos,
+          text: matchedText,
+          similarity: 1.0,
+          endPosition: originalEndPos
+        };
+      }
+    }
+
+    // Prepare for fuzzy matching - extract character set for quick reject
+    const searchChars = new Set(normalizedSearch.split(''));
+    const minLength = Math.floor(searchLength * (1 - (1 - threshold)));
+    const maxLength = Math.ceil(searchLength * (1 + (1 - threshold)));
 
     // PHASE 2-4: Fuzzy matching with smart windows and coarse-then-fine search
     // Note: We normalize each candidate in the loop. This is necessary because position mapping
@@ -170,8 +210,29 @@ export class FuzzyMatcher {
           }
         }
 
+        // PHASE 3: Length-based quick reject
+        if (windowSize < minLength || windowSize > maxLength) {
+          continue; // Skip candidates that are too different in length
+        }
+
         const candidateText = content.substring(i, i + windowSize);
         const normalizedCandidate = this.normalizeForComparison(candidateText);
+
+        // PHASE 4: Character-set quick reject
+        // Check if candidate has all required characters from search text
+        const candidateChars = new Set(normalizedCandidate.split(''));
+        let hasAllChars = true;
+        for (const char of searchChars) {
+          if (!candidateChars.has(char)) {
+            hasAllChars = false;
+            break;
+          }
+        }
+        if (!hasAllChars) {
+          continue; // Skip candidates missing required characters
+        }
+
+        // PHASE 5: Full Levenshtein distance calculation (expensive)
         const similarity = this.calculateSimilarityFromNormalized(normalizedSearch, normalizedCandidate);
 
         // Track promising regions (within 0.1 of threshold)
@@ -216,8 +277,28 @@ export class FuzzyMatcher {
             }
           }
 
+          // Length-based quick reject
+          if (windowSize < minLength || windowSize > maxLength) {
+            continue;
+          }
+
           const candidateText = content.substring(i, i + windowSize);
           const normalizedCandidate = this.normalizeForComparison(candidateText);
+
+          // Character-set quick reject
+          const candidateChars = new Set(normalizedCandidate.split(''));
+          let hasAllChars = true;
+          for (const char of searchChars) {
+            if (!candidateChars.has(char)) {
+              hasAllChars = false;
+              break;
+            }
+          }
+          if (!hasAllChars) {
+            continue;
+          }
+
+          // Full Levenshtein distance calculation
           const similarity = this.calculateSimilarityFromNormalized(normalizedSearch, normalizedCandidate);
 
           if (similarity >= threshold && (!bestMatch || similarity > bestMatch.similarity)) {
@@ -318,6 +399,119 @@ export class FuzzyMatcher {
       .map(line => line.trimEnd())
       .join('\n')
       .trim();
+  }
+
+  /**
+   * Normalize text and build position mapping from normalized to original positions
+   * This allows safe position lookup after normalization
+   *
+   * @param text - Text to normalize
+   * @returns Object with normalized text and position map (normalized index → original index)
+   */
+  private normalizeWithPositionMap(text: string): { normalized: string; positionMap: number[] } {
+    const positionMap: number[] = [];
+    let normalized = '';
+    let originalPos = 0;
+
+    // Process character by character, tracking position changes
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const nextChar = text[i + 1];
+
+      // Handle \r\n → \n (2 chars become 1)
+      if (char === '\r' && nextChar === '\n') {
+        positionMap.push(originalPos);
+        normalized += '\n';
+        originalPos += 2;
+        i++; // Skip the \n
+        continue;
+      }
+
+      // Handle \r → \n (1 char stays 1)
+      if (char === '\r') {
+        positionMap.push(originalPos);
+        normalized += '\n';
+        originalPos++;
+        continue;
+      }
+
+      // Handle \t → spaces (1 char becomes 2)
+      if (char === '\t') {
+        positionMap.push(originalPos);
+        positionMap.push(originalPos); // Both spaces map to the tab
+        normalized += '  ';
+        originalPos++;
+        continue;
+      }
+
+      // Regular character
+      positionMap.push(originalPos);
+      normalized += char;
+      originalPos++;
+    }
+
+    // Now apply space normalization (multiple spaces → single)
+    // This is complex because we need to update the position map
+    const lines = normalized.split('\n');
+    let finalNormalized = '';
+    const finalPositionMap: number[] = [];
+    let normalizedPos = 0;
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+
+      // Handle leading spaces (preserve them)
+      const leadingSpaces = line.match(/^[ ]*/)?.[0] ?? '';
+      for (let i = 0; i < leadingSpaces.length; i++) {
+        finalNormalized += ' ';
+        finalPositionMap.push(positionMap[normalizedPos + i]);
+      }
+
+      // Handle rest of line (collapse multiple spaces)
+      const rest = line.substring(leadingSpaces.length);
+      let inSpaceRun = false;
+      for (let i = 0; i < rest.length; i++) {
+        const char = rest[i];
+        const origIdx = normalizedPos + leadingSpaces.length + i;
+
+        if (char === ' ') {
+          if (!inSpaceRun) {
+            // First space in a run - keep it
+            finalNormalized += ' ';
+            finalPositionMap.push(positionMap[origIdx]);
+            inSpaceRun = true;
+          }
+          // Skip subsequent spaces (they're collapsed)
+        } else {
+          finalNormalized += char;
+          finalPositionMap.push(positionMap[origIdx]);
+          inSpaceRun = false;
+        }
+      }
+
+      // Trim trailing whitespace from line
+      while (finalNormalized.length > 0 && finalNormalized[finalNormalized.length - 1] === ' ') {
+        finalNormalized = finalNormalized.slice(0, -1);
+        finalPositionMap.pop();
+      }
+
+      // Add newline if not last line
+      if (lineIdx < lines.length - 1) {
+        finalNormalized += '\n';
+        finalPositionMap.push(positionMap[normalizedPos + line.length]);
+      }
+
+      normalizedPos += line.length + 1; // +1 for the \n we split on
+    }
+
+    // Final trim
+    finalNormalized = finalNormalized.trim();
+    // Adjust position map for trim
+    while (finalPositionMap.length > finalNormalized.length) {
+      finalPositionMap.pop();
+    }
+
+    return { normalized: finalNormalized, positionMap: finalPositionMap };
   }
 
   /**
