@@ -1,12 +1,13 @@
 /**
  * GitProjectManager - Manages git configuration files across multiple projects
- * 
+ *
  * Supports .git/ folders at any path level with native format preservation
  */
 
 import { GitFormatTranslator, type GitFileFormat } from './GitFormatTranslator.js';
 import { parseINI, serializeINI, parseAttributes, parseRef } from './iniParser.js';
 import { GASClient } from '../api/gasClient.js';
+import * as GitUtils from './GitUtilities.js';
 
 export interface GitProject {
   prefix: string;           // e.g., 'foo/bar' or '' for root
@@ -55,38 +56,38 @@ export class GitProjectManager {
    */
   async loadAllGitProjects(scriptId: string, accessToken: string): Promise<Map<string, GitProject>> {
     const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-    
+
     // Strict filtering - only files actually inside .git/ folders
-    const gitFiles = files.filter(f => GitFormatTranslator.isGitConfigFile(f.name));
-    
+    const gitFiles = files.filter(f => GitUtils.isGitConfigFile(f.name));
+
     // Group by project prefix
     const projects = new Map<string, GitProject>();
-    
+
     for (const file of gitFiles) {
-      const prefix = GitFormatTranslator.getProjectPrefix(file.name);
-      const gitPath = GitFormatTranslator.getGitRelativePath(file.name);
-      
+      const prefix = GitUtils.getProjectPrefix(file.name);
+      const gitPath = GitUtils.getGitRelativePath(file.name);
+
       // Skip if we couldn't extract valid paths
       if (prefix === null || gitPath === null) {
         console.warn(`Skipping invalid git file: ${file.name}`);
         continue;
       }
-      
+
       if (!projects.has(prefix)) {
         projects.set(prefix, {
           prefix,
           files: new Map()
         });
       }
-      
+
       const nativeContent = GitFormatTranslator.fromGAS(file.source || '');
       projects.get(prefix)!.files.set(gitPath, {
-        format: GitFormatTranslator.detectFormat(gitPath),
+        format: GitUtils.detectGitFileFormat(gitPath),
         raw: nativeContent,
         parsed: this.parseContent(nativeContent, gitPath)
       });
     }
-    
+
     return projects;
   }
 
@@ -140,7 +141,7 @@ export class GitProjectManager {
 
     // Validate the path structure (will check with .gs appended since that's what GAS creates)
     const expectedGasPath = fullPath.endsWith('.gs') ? fullPath : fullPath + '.gs';
-    if (!GitFormatTranslator.isGitConfigFile(expectedGasPath)) {
+    if (!GitUtils.isGitConfigFile(expectedGasPath)) {
       throw new Error(`Path validation failed: ${expectedGasPath} is not a valid git config file`);
     }
     
@@ -278,7 +279,7 @@ export class GitProjectManager {
    * Parse content based on git-relative path
    */
   private parseContent(content: string, gitPath: string): any {
-    const format = GitFormatTranslator.detectFormat(gitPath);
+    const format = GitUtils.detectGitFileFormat(gitPath);
     
     switch (format) {
       case 'ini':
