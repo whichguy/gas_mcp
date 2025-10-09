@@ -7,6 +7,7 @@ import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { COMMON_TOOL_SCHEMAS } from '../utils/schemaPatterns.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 export interface DependencyNode {
   name: string;
@@ -276,13 +277,7 @@ export class DepsTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60
-      },
+      ...SchemaFragments.scriptId,
       analysisType: {
         type: 'string',
         enum: ['full', 'summary', 'circular', 'orphaned', 'graph'],
@@ -300,15 +295,8 @@ export class DepsTool extends BaseTool {
         description: 'Include complexity analysis for each module',
         default: true
       },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.workingDir,
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     additionalProperties: false

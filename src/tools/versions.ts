@@ -1,6 +1,7 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * Get details of a specific version of a script project
@@ -12,17 +13,7 @@ export class VersionGetTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project.',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44,
-        llmHints: {
-          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
-          format: '44-character Google Drive file ID, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5Jm'
-        }
-      },
+      ...SchemaFragments.scriptId,
       versionNumber: {
         type: 'number',
         description: 'Version number to retrieve. LLM USE: Get this from version_list or gas_deploy_list responses.',
@@ -33,15 +24,7 @@ export class VersionGetTool extends BaseTool {
           latest: 'Higher numbers represent more recent versions'
         }
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional). LLM TYPICAL: Omit - tool uses session authentication.',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
-        llmHints: {
-          typical: 'Usually omitted - tool uses session authentication from gas_auth',
-          stateless: 'Include when doing token-based operations without session storage'
-        }
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'versionNumber'],
     additionalProperties: false,
@@ -111,17 +94,7 @@ export class VersionListTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project.',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44,
-        llmHints: {
-          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
-          format: '44-character Google Drive file ID, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5Jm'
-        }
-      },
+      ...SchemaFragments.scriptId,
       pageSize: {
         type: 'number',
         description: 'Maximum number of versions to return (default: 50). LLM RECOMMENDATION: Use larger values to see complete version history.',
@@ -141,15 +114,7 @@ export class VersionListTool extends BaseTool {
           iteration: 'Keep calling with pageToken until nextPageToken is null'
         }
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional). LLM TYPICAL: Omit - tool uses session authentication.',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
-        llmHints: {
-          typical: 'Usually omitted - tool uses session authentication from gas_auth',
-          stateless: 'Include when doing token-based operations without session storage'
-        }
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     additionalProperties: false,

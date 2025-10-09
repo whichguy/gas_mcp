@@ -1,6 +1,7 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * List information about processes made by or on behalf of a user
@@ -94,15 +95,7 @@ export class ProcessListTool extends BaseTool {
           permissions: 'Use userAccessLevels to filter by user permission level'
         }
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional). LLM TYPICAL: Omit - tool uses session authentication.',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
-        llmHints: {
-          typical: 'Usually omitted - tool uses session authentication from gas_auth',
-          stateless: 'Include when doing token-based operations without session storage'
-        }
-      }
+      ...SchemaFragments.accessToken
     },
     required: [],
     additionalProperties: false,
@@ -154,17 +147,7 @@ export class ProcessListScriptTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project.',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        llmHints: {
-          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
-          format: '44-character Google Drive file ID, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5Jm'
-        }
-      },
+      ...SchemaFragments.scriptId,
       pageSize: {
         type: 'number',
         description: 'Maximum number of processes to return (default: 50). LLM RECOMMENDATION: Use larger values for comprehensive analysis.',
@@ -236,15 +219,7 @@ export class ProcessListScriptTool extends BaseTool {
           permissions: 'Use userAccessLevels to filter by user permission level'
         }
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional). LLM TYPICAL: Omit - tool uses session authentication.',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
-        llmHints: {
-          typical: 'Usually omitted - tool uses session authentication from gas_auth',
-          stateless: 'Include when doing token-based operations without session storage'
-        }
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     additionalProperties: false,

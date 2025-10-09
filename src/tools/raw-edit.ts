@@ -3,6 +3,7 @@ import { GASClient } from '../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { parsePath } from '../api/pathParser.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 interface RawEditOperation {
   oldText: string;
@@ -90,11 +91,7 @@ export class RawEditTool extends BaseTool {
         description: 'Tolerate whitespace differences (normalize spaces/tabs)',
         default: false
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['path', 'edits'],
     additionalProperties: false,

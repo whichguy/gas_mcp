@@ -1,6 +1,7 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * List execution logs with Cloud Logging-first optimization
@@ -12,17 +13,7 @@ export class LogsListTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid Google Drive file ID for an Apps Script project.',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        llmHints: {
-          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
-          format: 'Long alphanumeric string from Google Drive'
-        }
-      },
+      ...SchemaFragments.scriptId,
       functionName: {
         type: 'string',
         description: 'Filter by specific function name. PERFORMANCE: Triggers optimized Cloud Logging-first query (2-3x faster).',
@@ -79,14 +70,7 @@ export class LogsListTool extends BaseTool {
         type: 'string',
         description: 'Token for pagination (optional). Get from previous response.nextPageToken'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
-        llmHints: {
-          typical: 'Usually omitted - tool uses session authentication from gas_auth'
-        }
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     additionalProperties: false,
@@ -191,13 +175,7 @@ export class LogsGetTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60
-      },
+      ...SchemaFragments.scriptId,
       processId: {
         type: 'string',
         description: 'Process ID from logs_list or process_list response',
@@ -215,11 +193,7 @@ export class LogsGetTool extends BaseTool {
           logsOnly: 'Use false for just log messages'
         }
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'processId'],
     additionalProperties: false,

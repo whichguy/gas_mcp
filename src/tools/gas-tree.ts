@@ -9,6 +9,7 @@ import { GasDependencyAnalyzer, DependencyGraph } from './gas-deps.js';
 import { ContentSummarizer } from '../utils/contentSummarizer.js';
 import { COMMON_TOOL_SCHEMAS } from '../utils/schemaPatterns.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 export interface TreeNode {
   name: string;
@@ -351,13 +352,7 @@ export class TreeTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60
-      },
+      ...SchemaFragments.scriptId,
       viewMode: {
         type: 'string',
         enum: ['tree', 'flat', 'stats', 'dependencies'],
@@ -394,15 +389,8 @@ export class TreeTool extends BaseTool {
         description: 'Include system files (CommonJS, __mcp_gas_run, etc.) in analysis',
         default: false
       },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.workingDir,
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     additionalProperties: false

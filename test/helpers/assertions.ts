@@ -347,7 +347,7 @@ export class TestAssertionHelpers {
     }
     
     // Check for authentication patterns
-    if (message.includes('Authentication') || message.includes('gas_auth') || 
+    if (message.includes('Authentication') || message.includes('auth') || 
         message.includes('not authenticated') || message.includes('requiresAuth')) {
       return {
         error: {

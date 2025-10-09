@@ -8,6 +8,7 @@ import { GASClient } from '../api/gasClient.js';
 import { ContentSummarizer, SummaryOptions } from '../utils/contentSummarizer.js';
 import { COMMON_TOOL_SCHEMAS, CONTENT_MODE_SCHEMA } from '../utils/schemaPatterns.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 export class SummaryTool extends BaseTool {
   private gasClient: GASClient;
@@ -23,13 +24,7 @@ export class SummaryTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60
-      },
+      ...SchemaFragments.scriptId,
       path: {
         type: 'string',
         description: 'Optional path pattern to filter files. Supports wildcards (* and ?) for pattern matching.',
@@ -56,30 +51,10 @@ export class SummaryTool extends BaseTool {
         description: 'Include detailed metadata (functions, exports, imports, classes)',
         default: true
       },
-      includeFileTypes: {
-        type: 'array',
-        items: { 
-          type: 'string',
-          enum: ['SERVER_JS', 'HTML', 'JSON'] 
-        },
-        description: 'Filter by Google Apps Script file types (optional)',
-        examples: [['SERVER_JS'], ['SERVER_JS', 'HTML']]
-      },
-      excludeFiles: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'File patterns to exclude from summarization (supports wildcards)',
-        examples: [['*/test/*', '*/mock*'], ['*Backup*', '*Old*']]
-      },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.includeFileTypes,
+      ...SchemaFragments.excludeFiles,
+      ...SchemaFragments.workingDir,
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     additionalProperties: false

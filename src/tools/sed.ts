@@ -22,6 +22,8 @@ import { GASErrorHandler } from '../utils/errorHandler.js';
 import { RipgrepTool, RawRipgrepTool } from './ripgrep.js';
 import { CatTool, RawCatTool } from './filesystem/index.js';
 import { WriteTool, RawWriteTool } from './filesystem/index.js';
+import { RegexProcessor } from '../utils/regexProcessor.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * Interface for sed operation results
@@ -82,12 +84,7 @@ export class SedTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        description: 'Google Apps Script project ID',
-        type: 'string',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        examples: ['1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789']
-      },
+      ...SchemaFragments.scriptId,
       pattern: {
         description: 'Primary regex pattern to search for. Supports capture groups with $1, $2 syntax in replacement.',
         type: 'string',
@@ -124,36 +121,15 @@ export class SedTool extends BaseTool {
         default: '',
         examples: ['*.js', 'utils/*', '*Controller*', 'test/*.spec']
       },
-      includeFileTypes: {
-        description: 'Filter by GAS file types',
-        type: 'array',
-        items: {
-          type: 'string',
-          enum: ['SERVER_JS', 'HTML', 'JSON']
-        },
-        examples: [['SERVER_JS'], ['SERVER_JS', 'HTML']]
-      },
-      excludeFiles: {
-        description: 'File patterns to exclude from processing',
-        type: 'array',
-        items: { type: 'string' },
-        examples: [['*/test/*', '*/CommonJS'], ['*Test*', '*Spec*']]
-      },
+      ...SchemaFragments.includeFileTypes,
+      ...SchemaFragments.excludeFiles,
       global: {
         description: 'Replace all occurrences in each file (default: true)',
         type: 'boolean',
         default: true
       },
-      caseSensitive: {
-        description: 'Case-sensitive pattern matching (default: false)',
-        type: 'boolean',
-        default: false
-      },
-      dryRun: {
-        description: 'Preview changes without applying them',
-        type: 'boolean',
-        default: false
-      },
+      ...SchemaFragments.caseSensitive,
+      ...SchemaFragments.dryRun,
       maxFiles: {
         description: 'Maximum files to process (performance control)',
         type: 'number',
@@ -161,11 +137,7 @@ export class SedTool extends BaseTool {
         minimum: 1,
         maximum: 200
       },
-      accessToken: {
-        description: 'Access token for stateless operation (optional)',
-        type: 'string',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern', 'replacement'],
     additionalProperties: false
@@ -287,7 +259,7 @@ export class SedTool extends BaseTool {
   }
 
   /**
-   * Perform find/replace operations on content
+   * Perform find/replace operations on content using RegexProcessor utility
    */
   private performReplacements(
     content: string,
@@ -296,22 +268,24 @@ export class SedTool extends BaseTool {
     options: { global: boolean; caseSensitive: boolean }
   ): { newContent: string; replacementCount: number } {
     let newContent = content;
-    let replacementCount = 0;
+    let totalReplacementCount = 0;
 
     for (const pattern of patterns) {
       try {
-        // Build regex flags
-        const flags = options.global ? 'g' : '';
-        const caseFlags = options.caseSensitive ? '' : 'i';
-        const regex = new RegExp(pattern, flags + caseFlags);
+        // Use RegexProcessor for consistent regex handling
+        const { text, count } = RegexProcessor.replace(
+          pattern,
+          replacement,
+          newContent,
+          {
+            searchMode: 'regex',
+            caseSensitive: options.caseSensitive
+            // Note: global flag handled by RegexProcessor internally
+          }
+        );
 
-        // Count matches before replacement
-        const matches = newContent.match(new RegExp(pattern, 'g' + caseFlags));
-        const matchCount = matches ? matches.length : 0;
-
-        // Perform replacement
-        newContent = newContent.replace(regex, replacement);
-        replacementCount += matchCount;
+        newContent = text;
+        totalReplacementCount += count;
 
       } catch (error) {
         // Skip invalid regex patterns
@@ -319,7 +293,7 @@ export class SedTool extends BaseTool {
       }
     }
 
-    return { newContent, replacementCount };
+    return { newContent, replacementCount: totalReplacementCount };
   }
 }
 
@@ -342,12 +316,7 @@ export class RawSedTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        description: 'Google Apps Script project ID',
-        type: 'string',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        examples: ['1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789']
-      },
+      ...SchemaFragments.scriptId,
       pattern: {
         description: 'Primary regex pattern to search for in raw content. Supports capture groups with $1, $2 syntax.',
         type: 'string',
@@ -383,34 +352,15 @@ export class RawSedTool extends BaseTool {
         default: '',
         examples: ['*', '*.gs', 'CommonJS', '__mcp_gas_run']
       },
-      includeFileTypes: {
-        description: 'Filter by file types for raw content processing',
-        type: 'array',
-        items: {
-          type: 'string',
-          enum: ['SERVER_JS', 'HTML', 'JSON']
-        }
-      },
-      excludeFiles: {
-        description: 'File patterns to exclude from raw processing',
-        type: 'array',
-        items: { type: 'string' }
-      },
+      ...SchemaFragments.includeFileTypes,
+      ...SchemaFragments.excludeFiles,
       global: {
         description: 'Replace all occurrences in raw content (default: true)',
         type: 'boolean',
         default: true
       },
-      caseSensitive: {
-        description: 'Case-sensitive pattern matching in raw content (default: false)',
-        type: 'boolean',
-        default: false
-      },
-      dryRun: {
-        description: 'Preview raw content changes without applying them',
-        type: 'boolean',
-        default: false
-      },
+      ...SchemaFragments.caseSensitive,
+      ...SchemaFragments.dryRun,
       maxFiles: {
         description: 'Maximum files to process in raw mode',
         type: 'number',
@@ -418,11 +368,7 @@ export class RawSedTool extends BaseTool {
         minimum: 1,
         maximum: 200
       },
-      accessToken: {
-        description: 'Access token for stateless operation (optional)',
-        type: 'string',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern', 'replacement'],
     additionalProperties: false
@@ -543,7 +489,7 @@ export class RawSedTool extends BaseTool {
   }
 
   /**
-   * Perform find/replace operations on raw content
+   * Perform find/replace operations on raw content using RegexProcessor utility
    */
   private performReplacements(
     content: string,
@@ -552,22 +498,24 @@ export class RawSedTool extends BaseTool {
     options: { global: boolean; caseSensitive: boolean }
   ): { newContent: string; replacementCount: number } {
     let newContent = content;
-    let replacementCount = 0;
+    let totalReplacementCount = 0;
 
     for (const pattern of patterns) {
       try {
-        // Build regex flags
-        const flags = options.global ? 'g' : '';
-        const caseFlags = options.caseSensitive ? '' : 'i';
-        const regex = new RegExp(pattern, flags + caseFlags);
+        // Use RegexProcessor for consistent regex handling
+        const { text, count } = RegexProcessor.replace(
+          pattern,
+          replacement,
+          newContent,
+          {
+            searchMode: 'regex',
+            caseSensitive: options.caseSensitive
+            // Note: global flag handled by RegexProcessor internally
+          }
+        );
 
-        // Count matches before replacement
-        const matches = newContent.match(new RegExp(pattern, 'g' + caseFlags));
-        const matchCount = matches ? matches.length : 0;
-
-        // Perform replacement
-        newContent = newContent.replace(regex, replacement);
-        replacementCount += matchCount;
+        newContent = text;
+        totalReplacementCount += count;
 
       } catch (error) {
         // Skip invalid regex patterns
@@ -575,6 +523,6 @@ export class RawSedTool extends BaseTool {
       }
     }
 
-    return { newContent, replacementCount };
+    return { newContent, replacementCount: totalReplacementCount };
   }
 }

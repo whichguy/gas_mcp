@@ -2,6 +2,7 @@ import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getBaseName, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
 import { translateFilesForDisplay } from '../../utils/virtualFileTranslation.js';
 import { DETAILED_SCHEMA, RECURSIVE_SCHEMA, WILDCARD_MODE_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
+import { SchemaFragments } from '../../utils/schemaFragments.js';
 import type { ListParams, ListResult } from './shared/types.js';
 
 /**
@@ -17,17 +18,7 @@ export class LsTool extends BaseFileSystemTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID (optional - can also be embedded in path)',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       path: {
         type: 'string',
         description: 'Path to list with optional wildcard patterns. If scriptId parameter is provided, this should be a relative path (e.g., "utils/*"). If scriptId is empty, this should include the script ID prefix (e.g., "scriptId/utils/*"). For listing all projects, use empty string.',

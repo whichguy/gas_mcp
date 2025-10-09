@@ -211,7 +211,7 @@ export class AuthTestHelper {
    * Test authentication status
    */
   async getAuthStatus(): Promise<any> {
-    return await this.client.callAndParse('gas_auth', { mode: 'status' });
+    return await this.client.callAndParse('auth', { mode: 'status' });
   }
 
   /**
@@ -230,7 +230,7 @@ export class AuthTestHelper {
    * Start interactive authentication
    */
   async startInteractiveAuth(): Promise<any> {
-    return await this.client.callAndParse('gas_auth', { 
+    return await this.client.callAndParse('auth', {
       mode: 'start',
       openBrowser: false, // Don't open browser in tests
       waitForCompletion: false // 🔧 FIX: Don't wait for OAuth completion in automated tests to prevent timeout
@@ -241,7 +241,7 @@ export class AuthTestHelper {
    * Start interactive authentication with browser (for live integration tests)
    */
   async startInteractiveAuthWithBrowser(): Promise<any> {
-    return await this.client.callAndParse('gas_auth', { 
+    return await this.client.callAndParse('auth', {
       mode: 'start',
       openBrowser: true, // Open browser for live testing
       waitForCompletion: true // Wait for OAuth completion only in live tests
@@ -252,9 +252,9 @@ export class AuthTestHelper {
    * Complete authentication with code
    */
   async completeAuth(code: string): Promise<any> {
-    return await this.client.callAndParse('gas_auth', { 
+    return await this.client.callAndParse('auth', {
       mode: 'callback',
-      code 
+      code
     });
   }
 
@@ -262,7 +262,7 @@ export class AuthTestHelper {
    * Logout
    */
   async logout(): Promise<any> {
-    return await this.client.callAndParse('gas_auth', { mode: 'logout' });
+    return await this.client.callAndParse('auth', { mode: 'logout' });
   }
 
   /**

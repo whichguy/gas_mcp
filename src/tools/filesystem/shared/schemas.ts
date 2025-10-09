@@ -3,36 +3,15 @@
  * Eliminates duplication across 9 tool classes
  */
 
-export const SCRIPT_ID_SCHEMA = {
-  type: 'string',
-  description: 'Google Apps Script project ID (44 characters)',
-  pattern: '^[a-zA-Z0-9_-]{44}$',
-  minLength: 44,
-  maxLength: 44,
-  examples: ['1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789']
-} as const;
+import { SchemaFragments } from '../../../utils/schemaFragments.js';
 
-export const PATH_SCHEMA = {
-  type: 'string',
-  description: 'File path (filename only, or scriptId/filename if scriptId parameter is empty)',
-  minLength: 1,
-  examples: [
-    'utils.gs',
-    'models/User.gs',
-    'abc123def456.../helpers.gs'
-  ]
-} as const;
+export const SCRIPT_ID_SCHEMA = SchemaFragments.scriptId44;
 
-export const WORKING_DIR_SCHEMA = {
-  type: 'string',
-  description: 'Working directory (defaults to current directory)'
-} as const;
+export const PATH_SCHEMA = SchemaFragments.path;
 
-export const ACCESS_TOKEN_SCHEMA = {
-  type: 'string',
-  description: 'Access token for stateless operation (optional)',
-  pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-} as const;
+export const WORKING_DIR_SCHEMA = SchemaFragments.workingDir;
+
+export const ACCESS_TOKEN_SCHEMA = SchemaFragments.accessToken;
 
 export const FILE_TYPE_SCHEMA = {
   type: 'string',

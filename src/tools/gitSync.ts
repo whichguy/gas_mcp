@@ -12,6 +12,7 @@ import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
@@ -46,13 +47,7 @@ export class GitInitTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60
-      },
+      ...SchemaFragments.scriptId,
       repository: {
         type: 'string',
         description: 'Git repository URL (can be obtained from GitHub MCP: mcp__github__search_repositories or gh repo view)',
@@ -255,15 +250,7 @@ export class GitSyncTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID with .git/config.gs association (must run git_init first)',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       projectPath: {
         type: 'string',
         description: 'Path to nested git project within GAS (for multi-project support)',
@@ -1197,14 +1184,7 @@ export class GitStatusTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID to check for git association',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       projectPath: {
         type: 'string',
         description: 'Optional: Check specific nested project within GAS',
@@ -1421,12 +1401,7 @@ export class GitSetSyncFolderTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID with git association',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        examples: ['1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789']
-      },
+      ...SchemaFragments.scriptId,
       localPath: {
         type: 'string',
         description: 'New local sync folder path where git operations will occur',
@@ -1578,12 +1553,7 @@ export class GitGetSyncFolderTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID to query',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        examples: ['1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789']
-      }
+      ...SchemaFragments.scriptId
     },
     required: ['scriptId'],
     additionalProperties: false,

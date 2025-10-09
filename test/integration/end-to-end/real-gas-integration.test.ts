@@ -387,7 +387,7 @@ function testErrors() {
         
         // Test authentication infrastructure
         const tools = await client.listTools();
-        const authTool = tools.find(tool => tool.name === 'gas_auth');
+        const authTool = tools.find(tool => tool.name === 'auth');
         expect(authTool).to.exist;
         
         // Test that we can start auth flow (infrastructure test)

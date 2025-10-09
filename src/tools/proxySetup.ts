@@ -7,6 +7,7 @@ import { GASClient } from '../api/gasClient.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { AuthenticationError, ValidationError } from '../errors/mcpErrors.js';
 import { AUTH_MESSAGES } from '../constants/authMessages.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 export class ProxySetupTool extends BaseTool {
   public name = 'proxy_setup';
@@ -15,12 +16,9 @@ export class ProxySetupTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID'
-      },
+      ...SchemaFragments.scriptId,
       webAppUrl: {
-        type: 'string', 
+        type: 'string',
         description: 'Optional: existing web app URL to verify',
         default: null
       },
@@ -29,10 +27,7 @@ export class ProxySetupTool extends BaseTool {
         description: 'Whether to create deployment',
         default: true
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId']
   };

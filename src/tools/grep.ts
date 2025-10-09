@@ -20,10 +20,11 @@ import {
   matchesPathPattern,
   validatePathPattern 
 } from '../utils/grepEngine.js';
-import { 
+import {
   translatePathForOperation,
   gasNameToVirtual
 } from '../utils/virtualFileTranslation.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * grep - Search clean user code (unwrapped from CommonJS)
@@ -89,17 +90,7 @@ export class GrepTool extends BaseTool {
           'class\\\\s+(\\\\w+)',           // Find user class definitions
         ]
       },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       path: {
         type: 'string',
         description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Searches clean user code in matching files (same content processing as gas_cat). Examples: "" (entire project), "utils/*" (wildcard), ".*Controller.*" (regex).',
@@ -203,10 +194,7 @@ export class GrepTool extends BaseTool {
           ['JSON']                         // JSON files only
         ]
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern']
   };
@@ -472,17 +460,7 @@ export class RawGrepTool extends BaseTool {
           'Logger\\\\.log',                    // Find Logger.log in all content
         ]
       },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       path: {
         type: 'string',
         description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Always retrieves content via direct API calls, never uses local cached files. Same content processing as raw_cat.',
@@ -586,10 +564,7 @@ export class RawGrepTool extends BaseTool {
           ['JSON']                         // JSON files only
         ]
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern']
   };

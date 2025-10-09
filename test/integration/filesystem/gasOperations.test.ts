@@ -113,7 +113,7 @@ describe('MCP Server Google Apps Script Operations', () => {
           }
         }
         
-        const hasAuthGuidance = errorMessage.includes('gas_auth') || 
+        const hasAuthGuidance = errorMessage.includes('auth') || 
                                errorMessage.includes('authentication') ||
                                errorMessage.includes('authenticate');
         expect(hasAuthGuidance, `Expected authentication guidance in: ${errorMessage}`).to.be.true;
@@ -364,7 +364,7 @@ describe('MCP Server Google Apps Script Operations', () => {
       const promises: Promise<any>[] = [];
       for (let i = 0; i < 95; i++) { // Close to rate limit
         promises.push(
-          client.callTool('gas_auth', { mode: 'status' }).catch(() => null)
+          client.callTool('auth', { mode: 'status' }).catch(() => null)
         );
       }
 
@@ -384,7 +384,7 @@ describe('MCP Server Google Apps Script Operations', () => {
       const promises: Promise<any>[] = [];
       for (let i = 0; i < 100; i++) {
         promises.push(
-          client.callTool('gas_auth', { mode: 'status' }).catch(error => error)
+          client.callTool('auth', { mode: 'status' }).catch(error => error)
         );
       }
 

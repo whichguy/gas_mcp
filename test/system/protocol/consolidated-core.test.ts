@@ -63,7 +63,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       // Verify all expected GAS tools are present
       const toolNames = tools.map(tool => tool.name);
       const expectedTools = [
-        'gas_auth', 'gas_ls', 'gas_cat', 'gas_write', 
+        'auth', 'gas_ls', 'gas_cat', 'gas_write', 
         'gas_rm', 'gas_mv', 'gas_cp', 'gas_mkdir', 
         'gas_info', 'gas_reorder', 'gas_run', 
         'gas_version_create', 'gas_deploy_create'
@@ -92,9 +92,9 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       }
       
       const promises = [
-        client.callTool('gas_auth', { mode: 'status' }),
-        client.callTool('gas_auth', { mode: 'status' }),
-        client.callTool('gas_auth', { mode: 'status' })
+        client.callTool('auth', { mode: 'status' }),
+        client.callTool('auth', { mode: 'status' }),
+        client.callTool('auth', { mode: 'status' })
       ];
 
       const results = await Promise.all(promises);
@@ -150,7 +150,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
     it('should validate auth parameter requirements and modes', async () => {
       // Test invalid mode
       try {
-        await client.callTool('gas_auth', { mode: 'invalid_mode' });
+        await client.callTool('auth', { mode: 'invalid_mode' });
         expect.fail('Should have thrown error for invalid mode');
       } catch (error: any) {
         // Enhanced validation provides more detailed error messages
@@ -163,7 +163,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
 
       // Test callback without code
       try {
-        await client.callTool('gas_auth', { mode: 'callback' });
+        await client.callTool('auth', { mode: 'callback' });
         expect.fail('Should have thrown error for missing code');
       } catch (error: any) {
         const isValidError = error.message.includes('code') || 
@@ -306,7 +306,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
         auth = new AuthTestHelper(client);
       }
       
-      const result = await client.callTool('gas_auth', { mode: 'status' });
+      const result = await client.callTool('auth', { mode: 'status' });
       
       // Should follow MCP response format
       expect(result).to.have.property('content');
@@ -338,7 +338,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       const promises: Promise<any>[] = [];
       for (let i = 0; i < 50; i++) {
         promises.push(
-          client.callTool('gas_auth', { mode: 'status' }).catch(error => ({ error: error.message }))
+          client.callTool('auth', { mode: 'status' }).catch(error => ({ error: error.message }))
         );
       }
 

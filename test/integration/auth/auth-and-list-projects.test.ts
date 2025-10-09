@@ -179,9 +179,9 @@ describe('Auth + List Projects Integration Test', () => {
 
       // Make 3 concurrent API calls to test filesystem token cache sharing
       const promises = [
-        client.callTool('gas_auth', { mode: 'status' }),
-        client.callTool('gas_auth', { mode: 'status' }),
-        client.callTool('gas_auth', { mode: 'status' })
+        client.callTool('auth', { mode: 'status' }),
+        client.callTool('auth', { mode: 'status' }),
+        client.callTool('auth', { mode: 'status' })
       ];
 
       const results = await Promise.all(promises);

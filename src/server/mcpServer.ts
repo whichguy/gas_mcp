@@ -243,7 +243,7 @@ export class MCPGasServer {
    * ## Tool Categories Created (49 total tools):
    * 
    * ### 🔐 Authentication & Session (1 tool)
-   * - `gas_auth` - OAuth 2.0 flow management with desktop PKCE
+   * - `auth` - OAuth 2.0 flow management with desktop PKCE
    * 
    * ### 📂 Filesystem Operations - RECOMMENDED (9 tools)
    * - `gas_ls` - List projects and files  
@@ -552,12 +552,12 @@ export class MCPGasServer {
                   authRequired: {
                     message: 'Authentication required - please authenticate manually',
                     instructions: [
-                      'Use gas_auth with mode="start" to begin authentication',
+                      'Use auth with mode="start" to begin authentication',
                       'Complete the OAuth flow in your browser', 
                       'Then retry your original request'
                     ],
-                    command: `gas_auth({"mode": "start"})`,
-                    statusCheck: `gas_auth({"mode": "status"})`
+                    command: `auth({"mode": "start"})`,
+                    statusCheck: `auth({"mode": "status"})`
                   },
                   sessionId
                 }, null, 2)
@@ -635,7 +635,7 @@ export class MCPGasServer {
     console.error('MCP Gas Server connected and ready');
     console.error('Each client gets isolated authentication sessions');
     console.error('Use sessionId parameter to manage multiple sessions');
-    console.error('Use gas_auth(mode="start") to authenticate with Google Apps Script');
+    console.error('Use auth(mode="start") to authenticate with Google Apps Script');
     console.error('Authentication: Tools will return clear instructions when auth is needed');
     console.error('Direct execution: gas_run can execute ANY statement without wrapper functions');
 

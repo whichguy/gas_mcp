@@ -40,7 +40,7 @@ describe('✅ Corrected MCP Gas Server Best Practices', () => {
         const tools = await context.client.listTools();
         const toolNames = tools.map(tool => tool.name);
         
-        expect(toolNames).to.include('gas_auth');
+        expect(toolNames).to.include('auth');
         expect(toolNames).to.include('gas_ls');
         expect(toolNames).to.include('gas_write');
         

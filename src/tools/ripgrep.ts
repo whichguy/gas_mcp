@@ -15,6 +15,7 @@ import { GASClient } from '../api/gasClient.js';
 import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../api/pathParser.js';
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 // Enhanced error types for ripgrep operations
 export class RipgrepError extends Error {
@@ -839,17 +840,7 @@ export class RipgrepTool extends BaseTool {
           '.{0,50}error.{0,50}',           // Context around errors
         ]
       },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       patterns: {
         type: 'array',
         items: { type: 'string' },
@@ -1018,10 +1009,7 @@ export class RipgrepTool extends BaseTool {
         default: false,
         description: 'Remove leading and trailing whitespace from result lines'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
@@ -1348,17 +1336,7 @@ export class RawRipgrepTool extends BaseTool {
           'exports\\s*=\\s*module\\.exports', // Find exports assignments
         ]
       },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       patterns: {
         type: 'array',
         items: { type: 'string' },
@@ -1517,10 +1495,7 @@ export class RawRipgrepTool extends BaseTool {
         default: false,
         description: 'Remove leading and trailing whitespace from result lines'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {

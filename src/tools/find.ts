@@ -12,6 +12,7 @@ import { GASClient } from '../api/gasClient.js';
 import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, getBaseName } from '../api/pathParser.js';
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 import { 
   translatePathForOperation,
   gasNameToVirtual,
@@ -45,13 +46,7 @@ export class FindTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60
-      },
+      ...SchemaFragments.scriptId,
       path: {
         type: 'string',
         description: 'Starting directory path (supports wildcards)',
@@ -103,10 +98,7 @@ export class FindTool extends BaseTool {
         description: 'Use long listing format with details',
         default: false
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     llmGuidance: {
@@ -328,13 +320,7 @@ export class RawFindTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60
-      },
+      ...SchemaFragments.scriptId,
       path: {
         type: 'string',
         description: 'Starting directory path (supports wildcards)',
@@ -386,10 +372,7 @@ export class RawFindTool extends BaseTool {
         description: 'Use long listing format with details',
         default: false
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
     llmGuidance: {

@@ -3,6 +3,7 @@ import { GASClient } from '../api/gasClient.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 import { ProjectResolver } from '../utils/projectResolver.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * Detect GAS file type from content and filename for proper API submission
@@ -68,10 +69,7 @@ export class PullTool extends BaseTool {
         description: 'Force overwrite local files (default: false = merge mode preserves local changes)',
         default: false
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     }
   };
 
@@ -185,10 +183,7 @@ export class PushTool extends BaseTool {
         description: 'Show what would be pushed without actually pushing',
         default: false
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     }
   };
 
@@ -338,10 +333,7 @@ export class StatusTool extends BaseTool {
         description: 'Include detailed file-by-file comparison',
         default: false
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     }
   };
 
