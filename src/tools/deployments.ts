@@ -4,6 +4,7 @@ import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SCRIPT_ID_SCHEMA } from '../utils/schemaPatterns.js';
 import { SHIM_TEMPLATE } from '../config/shimTemplate.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -234,7 +235,7 @@ export class DeployCreateTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: SCRIPT_ID_SCHEMA,
+      ...SchemaFragments.scriptId,
       description: {
         type: 'string',
         description: 'Description of this deployment',
@@ -273,10 +274,7 @@ export class DeployCreateTool extends BaseTool {
         description: 'Manifest file name (default: appsscript)',
         default: 'appsscript'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId']
   };
@@ -405,16 +403,13 @@ export class VersionCreateTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: SCRIPT_ID_SCHEMA,
+      ...SchemaFragments.scriptId,
       description: {
         type: 'string',
         description: 'Description of this version',
         default: 'Version created via MCP'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId']
   };
@@ -476,7 +471,7 @@ export class DeployListTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: SCRIPT_ID_SCHEMA,
+      ...SchemaFragments.scriptId,
       pageSize: {
         type: 'number',
         description: 'Maximum number of deployments to return (default: 50). Let Google Apps Script API define pagination limits.',
@@ -486,10 +481,7 @@ export class DeployListTool extends BaseTool {
         type: 'string',
         description: 'Token for pagination (optional)'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId']
   };
@@ -1463,15 +1455,12 @@ export class DeployGetDetailsTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: SCRIPT_ID_SCHEMA,
+      ...SchemaFragments.scriptId,
       deploymentId: {
         type: 'string',
         description: 'The deployment ID to get details for'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'deploymentId']
   };
@@ -1691,15 +1680,12 @@ export class DeployDeleteTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: SCRIPT_ID_SCHEMA,
+      ...SchemaFragments.scriptId,
       deploymentId: {
         type: 'string',
         description: 'The deployment ID to delete'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'deploymentId']
   };
@@ -1735,7 +1721,7 @@ export class DeployUpdateTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: SCRIPT_ID_SCHEMA,
+      ...SchemaFragments.scriptId,
       deploymentId: {
         type: 'string',
         description: 'The deployment ID to update'
@@ -1764,10 +1750,7 @@ export class DeployUpdateTool extends BaseTool {
         enum: ['MYSELF', 'DOMAIN', 'ANYONE', 'ANYONE_ANONYMOUS'],
         description: 'Access level for API Executable (for EXECUTION_API type, optional)'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'deploymentId']
   };

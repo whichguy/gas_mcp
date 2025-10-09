@@ -6,6 +6,7 @@ import { CodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
 import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
 import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './deployments.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 import open from 'open';
 
 /**
@@ -216,17 +217,7 @@ export class RunTool extends BaseTool {
           'try { const user = require("Database").getUser(999); Logger.log("User found: " + user.name); return user; } catch(e) { Logger.log("User lookup failed: " + e.message); return null; }'
         ]
       },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID. Must be a valid 25-60 character Google Drive file ID for an Apps Script project.',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        examples: [
-          '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-          '1arGk_0LU7E12afUFkp5ABrQdb0kLgOqwJR0OF__FbXN3G2gev7oix7XJ'
-        ]
-      },
+      ...SchemaFragments.scriptId,
       autoRedeploy: {
         type: 'boolean',
         description: 'Enable automatic deployment infrastructure setup. FLEXIBLE OPTIONS: true (default) = auto-create deployments as needed, false = use existing deployments only, "force" = always create new deployment. Set to false for faster execution on pre-configured projects.',
@@ -250,10 +241,7 @@ export class RunTool extends BaseTool {
         type: 'string',
         description: 'Working directory (defaults to current directory)'
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      },
+      ...SchemaFragments.accessToken,
       logFilter: {
         type: 'string',
         description: 'Optional regex pattern to filter logger_output lines (ripgrep-style). Only lines matching this pattern will be included. If not specified, all logger output is returned.',
@@ -551,10 +539,7 @@ export class ExecApiTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID. ⚠️ MUST be deployed as API executable first! Use gas_version_create + gas_deploy_create before gas_run_api_exec. Can also use deployment ID directly.'
-      },
+      ...SchemaFragments.scriptId,
       functionName: {
         type: 'string',
         description: 'Name of the function to execute'
@@ -572,10 +557,7 @@ export class ExecApiTool extends BaseTool {
         description: 'Run in development mode (default: true)',
         default: true
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'functionName']
   };
@@ -882,18 +864,7 @@ export class ExecTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-                  description: 'Google Apps Script project ID. LLM REQUIREMENT: Must be a valid 44-character Google Drive file ID for an Apps Script project. Get this from gas_project_create or gas_ls tools.',
-        pattern: '^[a-zA-Z0-9_-]{25,60}$',
-        minLength: 25,
-        maxLength: 60,
-        llmHints: {
-          obtain: 'Use gas_project_create to create new project, or gas_ls to list existing projects',
-          format: 'Long alphanumeric string, looks like: 1jK_ujSHRCsEeBizi6xycuj_0y5qDqvMzLJHBE9HLUiM5JmSyzF4Ga_kM',
-          validation: 'Tool will validate this is a real, accessible project ID'
-        }
-      },
+      ...SchemaFragments.scriptId,
       js_statement: {
         type: 'string',
         description: 'JavaScript statement to execute directly in Google Apps Script. COMPREHENSIVE EXECUTION CAPABILITIES: (1) Run arbitrary JavaScript expressions and statements of unlimited length, (2) Execute existing functions from your project files using require("ModuleName").functionName() pattern, (3) Access ALL Google Apps Script services (DriveApp, SpreadsheetApp, GmailApp, etc.), (4) All Logger.log() output is automatically captured and returned. COMMONJS INTEGRATION: Use require("Utils").myFunction() to call functions from other project files - the CommonJS system resolves all dependencies automatically.',
@@ -1021,16 +992,7 @@ export class ExecTool extends BaseTool {
           maximum: 'Maximum 1 hour (3600 seconds) for extremely large datasets'
         }
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation. LLM USE: Bypass session authentication for one-off operations. Most LLM workflows should omit this and use session-based auth.',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
-        llmHints: {
-          typical: 'Usually omitted - tool uses session authentication from gas_auth',
-          stateless: 'Include when doing token-based operations without session storage',
-          security: 'Never expose these tokens in logs or responses'
-        }
-      },
+      ...SchemaFragments.accessToken,
       logFilter: {
         type: 'string',
         description: 'Optional regex pattern to filter logger_output lines (ripgrep-style). Only lines matching this pattern will be included. If not specified, all logger output is returned.',

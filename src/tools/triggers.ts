@@ -2,6 +2,7 @@ import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { BaseTool } from './base.js';
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { RunTool } from './execution.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * Trigger management tool for Google Apps Script projects
@@ -14,17 +15,8 @@ export class TriggerListTool extends BaseTool {
   public inputSchema = {
     type: 'object' as const,
     properties: {
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID (44 characters)',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44
-      },
+      ...SchemaFragments.accessToken,
+      ...SchemaFragments.scriptId,
       detailed: {
         type: 'boolean',
         default: false,
@@ -97,17 +89,8 @@ export class TriggerCreateTool extends BaseTool {
   public inputSchema = {
     type: 'object' as const,
     properties: {
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID (44 characters)',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44
-      },
+      ...SchemaFragments.accessToken,
+      ...SchemaFragments.scriptId,
       functionName: {
         type: 'string',
         description: 'Name of the function to be executed by the trigger',
@@ -770,17 +753,8 @@ export class TriggerDeleteTool extends BaseTool {
   public inputSchema = {
     type: 'object' as const,
     properties: {
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID (44 characters)',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44
-      },
+      ...SchemaFragments.accessToken,
+      ...SchemaFragments.scriptId,
       triggerId: {
         type: 'string',
         description: 'Unique ID of the trigger to delete (optional - if not provided, will delete by function name)'

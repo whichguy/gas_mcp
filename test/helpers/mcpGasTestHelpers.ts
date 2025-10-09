@@ -46,7 +46,7 @@ export class MCPGasTestHelper {
       
       // Cache authentication status to avoid repeated calls
       try {
-        const authResult = await MCPGasTestHelper.sharedClient.callAndParse('gas_auth', { mode: 'status' });
+        const authResult = await MCPGasTestHelper.sharedClient.callAndParse('auth', { mode: 'status' });
         MCPGasTestHelper.sharedAuthStatus = {
           authenticated: authResult.authenticated || false,
           user: authResult.user

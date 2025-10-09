@@ -29,7 +29,7 @@ describe('MCP Server Basic Connection Tests', () => {
       // Check for expected GAS tools
       const toolNames = tools.map(tool => tool.name);
       
-      expect(toolNames).to.include('gas_auth');
+      expect(toolNames).to.include('auth');
       expect(toolNames).to.include('gas_ls');
       expect(toolNames).to.include('gas_cat');
       expect(toolNames).to.include('gas_write');
@@ -57,7 +57,7 @@ describe('MCP Server Basic Connection Tests', () => {
 
     it('should handle auth status check without authentication', async () => {
       // This should return a non-authenticated status, not throw
-      const result = await client.callAndParse('gas_auth', { mode: 'status' });
+      const result = await client.callAndParse('auth', { mode: 'status' });
       
       expect(result).to.have.property('authenticated');
       expect(result.authenticated).to.be.false;
@@ -112,7 +112,7 @@ describe('MCP Server Basic Connection Tests', () => {
 
   describe('Protocol Compliance', () => {
     it('should return properly formatted responses', async () => {
-      const result = await client.callTool('gas_auth', { mode: 'status' });
+      const result = await client.callTool('auth', { mode: 'status' });
       
       // Should follow MCP response format
       expect(result).to.have.property('content');
@@ -127,9 +127,9 @@ describe('MCP Server Basic Connection Tests', () => {
 
     it('should handle concurrent requests properly', async () => {
       const promises = [
-        client.callTool('gas_auth', { mode: 'status' }),
-        client.callTool('gas_auth', { mode: 'status' }),
-        client.callTool('gas_auth', { mode: 'status' })
+        client.callTool('auth', { mode: 'status' }),
+        client.callTool('auth', { mode: 'status' }),
+        client.callTool('auth', { mode: 'status' })
       ];
 
       const results = await Promise.all(promises);

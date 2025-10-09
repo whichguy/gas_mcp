@@ -4,6 +4,7 @@ import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
  * Set current project and cache files locally with enhanced sync capabilities
@@ -35,10 +36,7 @@ export class ProjectSetTool extends BaseTool {
         ],
         description: 'Local project reference to set as current (name, script ID, or environment)'
       },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
+      ...SchemaFragments.workingDir,
       autoPull: {
         type: 'boolean',
         description: 'Automatically pull remote files to ./src/ after setting project',
@@ -66,10 +64,7 @@ export class ProjectSetTool extends BaseTool {
         description: 'Automatically pull files that exist remotely but not locally',
         default: true
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     },
     required: ['project']
   };
@@ -391,19 +386,13 @@ export class ProjectGetTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
+      ...SchemaFragments.workingDir,
       detailed: {
         type: 'boolean',
         description: 'Include detailed project info and file comparison',
         default: false
       },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)'
-      }
+      ...SchemaFragments.accessToken
     }
   };
 
@@ -517,19 +506,12 @@ export class ProjectAddTool extends BaseTool {
         minLength: 1,
         // Let Google Apps Script API define project name limits
       },
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID (44 characters)',
-        pattern: '^[a-zA-Z0-9_-]{44}$'
-      },
+      ...SchemaFragments.scriptId44,
       description: {
         type: 'string',
         description: 'Optional project description'
       },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      }
+      ...SchemaFragments.workingDir
     },
     required: ['name', 'scriptId']
   };
@@ -573,10 +555,7 @@ export class ProjectListTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      }
+      ...SchemaFragments.workingDir
     }
   };
 

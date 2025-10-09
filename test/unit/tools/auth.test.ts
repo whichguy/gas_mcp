@@ -28,7 +28,7 @@ describe('AuthTool', () => {
 
   describe('tool properties', () => {
     it('should have correct name and description', () => {
-      expect(authTool.name).to.equal('gas_auth');
+      expect(authTool.name).to.equal('auth');
       expect(authTool.description).to.include('Google Apps Script API');
       expect(authTool.description).to.include('OAuth 2.0');
     });

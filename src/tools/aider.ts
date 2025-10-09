@@ -5,6 +5,9 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { parsePath, resolveHybridScriptId } from '../api/pathParser.js';
 import { unwrapModuleContent, wrapModuleContent, shouldWrapContent } from '../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../utils/virtualFileTranslation.js';
+import { FuzzyMatcher, type EditOperation } from '../utils/fuzzyMatcher.js';
+import { DiffGenerator } from '../utils/diffGenerator.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 interface AiderOperation {
   searchText: string;
@@ -47,23 +50,8 @@ export class AiderTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID (44 characters)',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44
-      },
-      path: {
-        type: 'string',
-        description: 'File path (filename only, or scriptId/filename if scriptId parameter is empty)',
-        minLength: 1,
-        examples: [
-          'utils.gs',
-          'models/User.gs',
-          'abc123def456.../helpers.gs'
-        ]
-      },
+      ...SchemaFragments.scriptId,
+      ...SchemaFragments.path,
       edits: {
         type: 'array',
         description: 'Array of fuzzy edit operations. Each edit uses similarity matching to find text.',
@@ -93,20 +81,9 @@ export class AiderTool extends BaseTool {
         minItems: 1,
         maxItems: 20
       },
-      dryRun: {
-        type: 'boolean',
-        description: 'Preview changes without applying them. Returns matches found and similarity scores.',
-        default: false
-      },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.dryRun,
+      ...SchemaFragments.workingDir,
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
@@ -248,10 +225,14 @@ export class AiderTool extends BaseTool {
   };
 
   private gasClient: GASClient;
+  private fuzzyMatcher: FuzzyMatcher;
+  private diffGenerator: DiffGenerator;
 
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);
     this.gasClient = new GASClient();
+    this.fuzzyMatcher = new FuzzyMatcher();
+    this.diffGenerator = new DiffGenerator();
   }
 
   async execute(params: AiderParams): Promise<AiderResult> {
@@ -298,56 +279,53 @@ export class AiderTool extends BaseTool {
       }
     }
     const originalContent = content;
-    let editsApplied = 0;
+
+    // Convert params to EditOperation format
+    const editOperations: EditOperation[] = params.edits.map(edit => ({
+      searchText: edit.searchText,
+      replaceText: edit.replaceText,
+      similarityThreshold: edit.similarityThreshold
+    }));
+
+    // Find all matches first (validates no overlaps)
+    let editsWithMatches: EditOperation[];
+    try {
+      editsWithMatches = this.fuzzyMatcher.findAllMatches(content, editOperations);
+    } catch (error: any) {
+      // Overlap detected or other error
+      throw new FileOperationError('aider', params.path, error.message);
+    }
+
+    // Build matches array for response
     const matches: Array<{
       searchText: string;
       foundText: string;
       similarity: number;
       applied: boolean;
-    }> = [];
+    }> = editsWithMatches.map(edit => ({
+      searchText: edit.searchText,
+      foundText: edit.match?.text ?? '',
+      similarity: edit.match?.similarity ?? 0,
+      applied: edit.match !== undefined
+    }));
 
-    // Apply fuzzy edits sequentially
-    for (const [idx, edit] of params.edits.entries()) {
-      const { searchText, replaceText, similarityThreshold = 0.8 } = edit;
-
-      // Find best fuzzy match
-      const match = this.findFuzzyMatch(content, searchText, similarityThreshold);
-
-      if (!match) {
-        matches.push({
-          searchText,
-          foundText: '',
-          similarity: 0,
-          applied: false
-        });
-
-        if (!params.dryRun) {
-          throw new FileOperationError(
-            `aider (${idx + 1})`,
-            params.path,
-            `No match found above ${(similarityThreshold * 100).toFixed(0)}% similarity for: "${searchText.substring(0, 50)}${searchText.length > 50 ? '...' : ''}"`
-          );
-        }
-        continue;
-      }
-
-      matches.push({
-        searchText,
-        foundText: match.text,
-        similarity: match.similarity,
-        applied: true
-      });
-
-      // Apply replacement
-      content = content.substring(0, match.position) +
-                replaceText +
-                content.substring(match.position + match.text.length);
-
-      editsApplied++;
+    // Check if any edits failed to find matches
+    const failedEdits = editsWithMatches.filter(edit => edit.match === undefined);
+    if (failedEdits.length > 0 && !params.dryRun) {
+      const firstFailed = failedEdits[0];
+      const threshold = firstFailed.similarityThreshold ?? 0.8;
+      throw new FileOperationError(
+        'aider',
+        params.path,
+        `No match found above ${(threshold * 100).toFixed(0)}% similarity for: "${firstFailed.searchText.substring(0, 50)}${firstFailed.searchText.length > 50 ? '...' : ''}"`
+      );
     }
 
+    // Apply edits in reverse position order (prevents position invalidation)
+    const { content: modifiedContent, editsApplied } = this.fuzzyMatcher.applyEdits(content, editsWithMatches);
+
     // Check if any changes were made
-    if (content === originalContent) {
+    if (modifiedContent === originalContent) {
       return {
         success: true,
         editsApplied: 0,
@@ -358,7 +336,7 @@ export class AiderTool extends BaseTool {
 
     // Dry-run mode: return matches without writing
     if (params.dryRun) {
-      const diff = this.generateDiff(originalContent, content, params.path);
+      const diff = this.diffGenerator.generateDiff(originalContent, modifiedContent, params.path);
       return {
         success: true,
         editsApplied,
@@ -369,9 +347,9 @@ export class AiderTool extends BaseTool {
     }
 
     // Wrap CommonJS if needed before writing
-    let finalContent = content;
+    let finalContent = modifiedContent;
     if (fileContent.type === 'SERVER_JS' && shouldWrapContent(fileContent.type, filename)) {
-      finalContent = wrapModuleContent(content, filename);
+      finalContent = wrapModuleContent(modifiedContent, filename);
     }
 
     // Write modified content back to remote
@@ -385,149 +363,4 @@ export class AiderTool extends BaseTool {
     };
   }
 
-  /**
-   * Find best fuzzy match for search text in content
-   * Returns position, matched text, and similarity score
-   */
-  private findFuzzyMatch(content: string, searchText: string, threshold: number): {
-    position: number;
-    text: string;
-    similarity: number;
-  } | null {
-    const searchLength = searchText.length;
-    const contentLength = content.length;
-
-    // Sliding window to find best match
-    let bestMatch: { position: number; text: string; similarity: number } | null = null;
-
-    // Try different window sizes (±20% of search text length)
-    const minWindowSize = Math.max(1, Math.floor(searchLength * 0.8));
-    const maxWindowSize = Math.ceil(searchLength * 1.2);
-
-    for (let windowSize = minWindowSize; windowSize <= maxWindowSize; windowSize++) {
-      for (let i = 0; i <= contentLength - windowSize; i++) {
-        const candidateText = content.substring(i, i + windowSize);
-        const similarity = this.calculateSimilarity(searchText, candidateText);
-
-        if (similarity >= threshold && (!bestMatch || similarity > bestMatch.similarity)) {
-          bestMatch = {
-            position: i,
-            text: candidateText,
-            similarity
-          };
-        }
-      }
-    }
-
-    return bestMatch;
-  }
-
-  /**
-   * Calculate similarity between two strings using Levenshtein distance
-   * Returns value between 0.0 (completely different) and 1.0 (identical)
-   */
-  private calculateSimilarity(str1: string, str2: string): number {
-    // Normalize whitespace for comparison
-    const normalized1 = this.normalizeForComparison(str1);
-    const normalized2 = this.normalizeForComparison(str2);
-
-    const distance = this.levenshteinDistance(normalized1, normalized2);
-    const maxLength = Math.max(normalized1.length, normalized2.length);
-
-    if (maxLength === 0) return 1.0;
-
-    return 1.0 - (distance / maxLength);
-  }
-
-  /**
-   * Normalize text for similarity comparison
-   * Reduces whitespace variations while preserving structure
-   */
-  private normalizeForComparison(text: string): string {
-    return text
-      .replace(/\r\n/g, '\n')      // Normalize line endings
-      .replace(/\t/g, '  ')         // Tabs to spaces
-      .replace(/[ ]+/g, ' ')        // Multiple spaces to single
-      .replace(/\n[ ]+/g, '\n')     // Remove leading spaces on lines
-      .trim();
-  }
-
-  /**
-   * Calculate Levenshtein distance between two strings
-   * Optimized implementation with single array
-   */
-  private levenshteinDistance(str1: string, str2: string): number {
-    const len1 = str1.length;
-    const len2 = str2.length;
-
-    // Create array for dynamic programming
-    const distances = new Array(len2 + 1);
-
-    // Initialize first row
-    for (let j = 0; j <= len2; j++) {
-      distances[j] = j;
-    }
-
-    // Calculate distances
-    for (let i = 1; i <= len1; i++) {
-      let prev = distances[0];
-      distances[0] = i;
-
-      for (let j = 1; j <= len2; j++) {
-        const temp = distances[j];
-
-        if (str1[i - 1] === str2[j - 1]) {
-          distances[j] = prev;
-        } else {
-          distances[j] = Math.min(
-            prev + 1,           // substitution
-            distances[j] + 1,   // deletion
-            distances[j - 1] + 1 // insertion
-          );
-        }
-
-        prev = temp;
-      }
-    }
-
-    return distances[len2];
-  }
-
-  /**
-   * Generate git-style unified diff
-   */
-  private generateDiff(original: string, modified: string, path: string): string {
-    const originalLines = original.split('\n');
-    const modifiedLines = modified.split('\n');
-
-    const diff: string[] = [];
-    diff.push(`--- a/${path}`);
-    diff.push(`+++ b/${path}`);
-
-    let i = 0;
-    let j = 0;
-
-    while (i < originalLines.length || j < modifiedLines.length) {
-      if (i < originalLines.length && j < modifiedLines.length) {
-        if (originalLines[i] === modifiedLines[j]) {
-          diff.push(` ${originalLines[i]}`);
-          i++;
-          j++;
-        } else {
-          diff.push(`-${originalLines[i]}`);
-          diff.push(`+${modifiedLines[j]}`);
-          i++;
-          j++;
-        }
-      } else if (i < originalLines.length) {
-        diff.push(`-${originalLines[i]}`);
-        i++;
-      } else {
-        diff.push(`+${modifiedLines[j]}`);
-        j++;
-      }
-    }
-
-    return diff.join('\n');
-  }
 }

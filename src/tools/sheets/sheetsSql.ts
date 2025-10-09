@@ -1,6 +1,7 @@
 import { BaseTool } from '../base.js';
 import { SessionAuthManager } from '../../auth/sessionManager.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
+import { SchemaFragments } from '../../utils/schemaFragments.js';
 
 /**
  * Execute SQL-style operations on Google Sheets using Google's REST APIs

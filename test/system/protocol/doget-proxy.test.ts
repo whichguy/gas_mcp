@@ -73,7 +73,7 @@ describe('Real doGet() Proxy Integration Tests', () => {
             )) ||
             (error.code === -32000) || // Authentication error code
             (error.data && error.data.authUrl) ||
-            (error.data && error.data.instructions && error.data.instructions.includes('gas_auth')) ||
+            (error.data && error.data.instructions && error.data.instructions.includes('auth')) ||
             // Any error is acceptable when testing unauthenticated calls
             // because the tool should reject the call in some way
             (error !== null && error !== undefined)

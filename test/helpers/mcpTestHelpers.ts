@@ -65,7 +65,7 @@ export class MCPTestHelper {
       } else {
         // Check for real authentication - for integration tests
         try {
-          const authResult = await client.callAndParse('gas_auth', { mode: 'status' });
+          const authResult = await client.callAndParse('auth', { mode: 'status' });
           authenticated = authResult.authenticated || false;
           console.log(`🔐 Real authentication status: ${authenticated}`);
         } catch (error) {

@@ -5,6 +5,7 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { parsePath, resolveHybridScriptId } from '../api/pathParser.js';
 import { unwrapModuleContent, wrapModuleContent, shouldWrapContent } from '../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../utils/virtualFileTranslation.js';
+import { SchemaFragments } from '../utils/schemaFragments.js';
 
 interface EditOperation {
   oldText: string;
@@ -47,23 +48,8 @@ export class EditTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     properties: {
-      scriptId: {
-        type: 'string',
-        description: 'Google Apps Script project ID (44 characters)',
-        pattern: '^[a-zA-Z0-9_-]{44}$',
-        minLength: 44,
-        maxLength: 44
-      },
-      path: {
-        type: 'string',
-        description: 'File path (filename only, or scriptId/filename if scriptId parameter is empty)',
-        minLength: 1,
-        examples: [
-          'utils.gs',
-          'models/User.gs',
-          'abc123def456.../helpers.gs'
-        ]
-      },
+      ...SchemaFragments.scriptId44,
+      ...SchemaFragments.path,
       edits: {
         type: 'array',
         description: 'Array of edit operations to apply sequentially. Each edit specifies exact old text and new text.',
@@ -91,25 +77,14 @@ export class EditTool extends BaseTool {
         minItems: 1,
         maxItems: 20
       },
-      dryRun: {
-        type: 'boolean',
-        description: 'Preview changes without applying them. Returns git-style diff.',
-        default: false
-      },
+      ...SchemaFragments.dryRun,
       fuzzyWhitespace: {
         type: 'boolean',
         description: 'Tolerate whitespace differences (normalize spaces/tabs). Useful for code copied from formatted output.',
         default: false
       },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
-      accessToken: {
-        type: 'string',
-        description: 'Access token for stateless operation (optional)',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
-      }
+      ...SchemaFragments.workingDir,
+      ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,

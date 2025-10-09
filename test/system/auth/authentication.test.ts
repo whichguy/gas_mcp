@@ -41,7 +41,7 @@ describe('MCP Server Authentication Tests', () => {
       
       expect(status).to.have.property('instructions');
       expect(status.instructions).to.be.a('string');
-      expect(status.instructions).to.include('gas_auth');
+      expect(status.instructions).to.include('auth');
     });
 
     it('should handle auth status requests consistently', async () => {
@@ -221,7 +221,7 @@ describe('MCP Server Authentication Tests', () => {
 
       for (const response of malformedResponses) {
       try {
-          await client.callTool('gas_auth', { mode: 'callback', code: response as any });
+          await client.callTool('auth', { mode: 'callback', code: response as any });
           expect.fail('Should have thrown error for invalid response');
       } catch (error: any) {
           // Enhanced validation provides more detailed error messages
@@ -236,7 +236,7 @@ describe('MCP Server Authentication Tests', () => {
 
     it('should validate auth parameters', async () => {
       try {
-        await client.callTool('gas_auth', { mode: 'callback' }); // Missing code
+        await client.callTool('auth', { mode: 'callback' }); // Missing code
         expect.fail('Should have thrown error for missing code');
       } catch (error: any) {
         expect(error.message).to.include('code') || expect(error.message).to.include('required');
@@ -299,7 +299,7 @@ describe('MCP Server Authentication Tests', () => {
           
           // Test actual API call if possible
           try {
-            const result = await client.callTool('gas_auth', { mode: 'status' });
+            const result = await client.callTool('auth', { mode: 'status' });
             expect(result).to.have.property('content');
             console.log('✅ Live API call successful');
           } catch (apiError) {
