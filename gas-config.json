@@ -321,6 +321,11 @@
       "scriptId": "1WelE_ioHVkTxt2Wp4AZugZdsqkaEzl3DZvNU2JmSPfstp4bQJMvYh3qw",
       "name": "aider-fuzzy-test",
       "description": "Created: 10/8/2025"
+    },
+    "final-clean-test": {
+      "scriptId": "1QdjuAW9ZgU6R-r9Im2vxak2hqUnTUTJy6opohz8QTbNndGAbguUHTHh5",
+      "name": "final-clean-test",
+      "description": "Created: 10/8/2025"
     }
   },
   "localRoot": {
@@ -330,7 +335,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-09T00:32:15.030Z"
+    "lastModified": "2025-10-09T01:00:26.374Z"
   },
   "debug": true,
   "currentProject": {
