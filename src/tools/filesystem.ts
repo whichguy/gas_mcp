@@ -25,6 +25,8 @@ import {
 } from '../utils/hookIntegration.js';
 import { join, dirname } from 'path';
 import { writeFile, unlink, mkdir } from 'fs/promises';
+import { shouldAutoSync } from '../utils/syncDecisions.js';
+import { validateAndParseFilePath } from '../utils/filePathProcessor.js';
 
 /**
  * Read file contents with smart local/remote fallback (RECOMMENDED)
@@ -116,29 +118,12 @@ export class CatTool extends BaseTool {
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const preferLocal = params.preferLocal !== false;
 
-    // Apply virtual file translation for user-provided path
-    const translatedPath = translatePathForOperation(params.path, true);
-    
-    // Use hybrid script ID resolution with translated path
-    const hybridResolution = resolveHybridScriptId(params.scriptId, translatedPath);
-    const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
-
-    // SECURITY: Validate path BEFORE authentication
-    const path = this.validate.filePath(fullPath, 'file reading');
-    const parsedPath = parsePath(path);
-    
-    if (!parsedPath.isFile) {
-      throw new ValidationError('path', path, 'file path (must include filename)');
-    }
-
-    const scriptId = parsedPath.scriptId;
-    const filename = parsedPath.filename;
-    
-    if (!filename) {
-      throw new ValidationError('path', path, 'file path must include a filename');
-    }
-    
-    const projectName = scriptId; // Use scriptId as project name
+    // Validate and parse file path
+    const { scriptId, filename, projectName, fullPath } = validateAndParseFilePath(
+      params,
+      this.validate.filePath.bind(this.validate),
+      'file reading'
+    );
 
     // 🎯 GIT INTEGRATION: Ensure project has git repository
     const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
@@ -169,10 +154,10 @@ export class CatTool extends BaseTool {
       console.error(`📊 [GAS_CAT] ${syncStatus.summary}`);
       
       // 🎯 AUTO-SYNC: Handle first-time access and major sync issues
-      const shouldAutoSync = (this as any).shouldAutoSync(syncStatus, remoteFiles.length);
+      const autoSyncDecision = shouldAutoSync(syncStatus, remoteFiles.length);
       
-      if (shouldAutoSync.pull) {
-        console.error(`🔄 [GAS_CAT] ${shouldAutoSync.reason} - Auto-pulling all remote files...`);
+      if (autoSyncDecision.pull) {
+        console.error(`🔄 [GAS_CAT] ${autoSyncDecision.reason} - Auto-pulling all remote files...`);
         
         try {
           const pullResult = await LocalFileManager.copyRemoteToLocal(projectName, remoteFiles, workingDir);
@@ -379,44 +364,6 @@ export class CatTool extends BaseTool {
     return result;
   }
 
-  /**
-   * Determine if auto-sync should be triggered based on sync status.
-   * Conservative logic to avoid losing local changes.
-   */
-  private shouldAutoSync(syncStatus: {
-    inSync: boolean;
-    differences: {
-      onlyLocal: string[];
-      onlyRemote: string[];
-      contentDiffers: string[];
-    };
-    summary: string;
-  } | null, totalRemoteFiles: number): { pull: boolean; reason: string } {
-    if (!syncStatus) {
-      return { pull: false, reason: 'No sync status available' };
-    }
-
-    // Check for first-time access: no local files but remote files exist
-    const hasNoLocalFiles = syncStatus.differences.onlyLocal.length === 0 && 
-                            syncStatus.differences.contentDiffers.length === 0;
-    const hasRemoteFiles = syncStatus.differences.onlyRemote.length > 0;
-    
-    if (hasNoLocalFiles && hasRemoteFiles) {
-      return { pull: true, reason: 'First-time project access (no local files)' };
-    }
-
-    // Check for major out of sync: many remote-only files
-    if (syncStatus.differences.onlyRemote.length >= 3) {
-      return { pull: true, reason: `Missing ${syncStatus.differences.onlyRemote.length} remote files locally` };
-    }
-
-    // Don't auto-pull if there are local changes that could be lost
-    if (syncStatus.differences.onlyLocal.length > 0 || syncStatus.differences.contentDiffers.length > 0) {
-      return { pull: false, reason: 'Local changes detected - manual sync required' };
-    }
-
-    return { pull: false, reason: 'Sync status acceptable' };
-  }
 }
 
 /**
@@ -611,30 +558,12 @@ export class WriteTool extends BaseTool {
       throw new ValidationError('localOnly/remoteOnly', 'both true', 'only one can be true');
     }
 
-    // Apply virtual file translation for user-provided path
-    const translatedPath = translatePathForOperation(params.path, true);
-    
-    // Use hybrid script ID resolution with translated path
-    const hybridResolution = resolveHybridScriptId(params.scriptId, translatedPath);
-    const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
-
-    // SECURITY: Validate path BEFORE authentication (like gas_raw_write)
-    const path = this.validate.filePath(fullPath, 'file writing');
-    
-    const parsedPath = parsePath(path);
-    
-    if (!parsedPath.isFile) {
-      throw new ValidationError('path', path, 'file path (must include filename)');
-    }
-
-    const scriptId = parsedPath.scriptId;
-    const filename = parsedPath.filename;
-    
-    if (!filename) {
-      throw new ValidationError('path', path, 'file path must include a filename');
-    }
-    
-    const projectName = scriptId; // Use scriptId as project name
+    // Validate and parse file path
+    const { scriptId, filename, projectName, fullPath } = validateAndParseFilePath(
+      params,
+      this.validate.filePath.bind(this.validate),
+      'file writing'
+    );
     const originalContent = params.content;
 
     // 🔧 COMMONJS INTEGRATION: Process content for CommonJS module system
@@ -758,7 +687,7 @@ export class WriteTool extends BaseTool {
       }
 
       // Step 4: Apply standard CommonJS wrapper with resolved options
-      const moduleName = getModuleName(path);
+      const moduleName = getModuleName(fullPath);
       processedContent = wrapModuleContent(processedContent, moduleName, resolvedOptions);
 
       console.error(`✅ [GAS_WRITE] Applied CommonJS wrapper - require(), module, and exports now available to your code`);
@@ -855,11 +784,11 @@ export class WriteTool extends BaseTool {
         
         console.error(`📊 [GAS_WRITE] ${syncStatus.summary}`);
         
-        // 🎯 AUTO-SYNC: Handle first-time access and major sync issues  
-        const shouldAutoSync = (this as any).shouldAutoSync(syncStatus, remoteFiles.length);
-        
-        if (shouldAutoSync.pull) {
-          console.error(`🔄 [GAS_WRITE] ${shouldAutoSync.reason} - Auto-pulling all remote files before write...`);
+        // 🎯 AUTO-SYNC: Handle first-time access and major sync issues
+        const autoSyncDecision = shouldAutoSync(syncStatus, remoteFiles.length);
+
+        if (autoSyncDecision.pull) {
+          console.error(`🔄 [GAS_WRITE] ${autoSyncDecision.reason} - Auto-pulling all remote files before write...`);
           
           try {
             const pullResult = await LocalFileManager.copyRemoteToLocal(projectName, remoteFiles, workingDir);
@@ -898,7 +827,7 @@ export class WriteTool extends BaseTool {
             console.error(`   📝 Content differs: ${syncStatus.differences.contentDiffers.join(', ')}`);
           }
           
-          if (shouldAutoSync.reason === 'Local changes detected - manual sync required') {
+          if (autoSyncDecision.reason === 'Local changes detected - manual sync required') {
             console.error(`💡 [WRITE] Recommendation: Review local changes and use pull/push to sync manually before writing`);
           }
         }
