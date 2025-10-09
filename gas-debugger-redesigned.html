@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAS Debugger - OAuth & Script Testing</title>
+
+  <!-- Bootstrap 5.3.2 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+  <style>
+    :root {
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-tertiary: #2d2d30;
+      --bg-hover: #37373d;
+      --border-color: #3e3e42;
+      --text-primary: #d4d4d4;
+      --text-secondary: #858585;
+      --accent-cyan: #4ec9b0;
+      --accent-blue: #4fc1ff;
+      --accent-green: #89d185;
+      --accent-yellow: #dcdcaa;
+      --accent-orange: #ce9178;
+      --accent-red: #f48771;
+    }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container-fluid {
+      max-width: 1400px;
+      padding: 20px;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-primary);
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg-secondary);
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border-color);
+    }
+
+    /* Panel */
+    .panel {
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      background: var(--bg-tertiary);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .panel-header:hover {
+      background: var(--bg-hover);
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    /* Console Output */
+    .console-area {
+      background: var(--bg-primary);
+      border-radius: 4px;
+      padding: 16px;
+      min-height: 400px;
+      max-height: 600px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+    }
+
+    .console-output {
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+
+    .output-header {
+      background: var(--bg-tertiary);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .output-header:hover {
+      background: var(--bg-hover);
+    }
+
+    .output-header i {
+      font-size: 12px;
+      transition: transform 0.2s;
+    }
+
+    .output-header.expanded i {
+      transform: rotate(90deg);
+    }
+
+    .output-prompt {
+      color: var(--accent-cyan);
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      flex: 1;
+    }
+
+    .output-result {
+      padding: 16px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .result-value {
+      margin-bottom: 8px;
+    }
+
+    .result-success {
+      color: var(--accent-cyan);
+    }
+
+    .result-error {
+      color: var(--accent-red);
+    }
+
+    .execution-time {
+      color: var(--text-secondary);
+      font-size: 12px;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .logs-toggle {
+      background: var(--bg-tertiary);
+      border-top: 1px solid var(--border-color);
+      padding: 8px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .logs-toggle:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .logs-toggle i {
+      transition: transform 0.2s;
+      font-size: 12px;
+    }
+
+    .logs-content {
+      background: var(--bg-primary);
+      padding: 16px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      max-height: 300px;
+      overflow-y: auto;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .log-line {
+      margin-bottom: 4px;
+      color: var(--text-secondary);
+    }
+
+    .log-info { color: var(--accent-blue); }
+    .log-success { color: var(--accent-green); }
+    .log-warning { color: var(--accent-yellow); }
+    .log-error { color: var(--accent-red); }
+
+    /* JSON Syntax Highlighting */
+    .json-key { color: #9cdcfe; }
+    .json-string { color: var(--accent-orange); }
+    .json-number { color: #b5cea8; }
+    .json-boolean { color: #569cd6; }
+
+    /* Input Area */
+    .input-group {
+      margin-top: 16px;
+    }
+
+    .form-control {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+
+    .form-control:focus {
+      background: var(--bg-secondary);
+      border-color: var(--accent-cyan);
+      color: var(--text-primary);
+      box-shadow: 0 0 0 0.2rem rgba(78, 201, 176, 0.25);
+    }
+
+    .btn {
+      font-size: 14px;
+      padding: 8px 16px;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--accent-cyan);
+      border-color: var(--accent-cyan);
+      color: var(--bg-primary);
+    }
+
+    .btn-primary:hover {
+      background: #3da88f;
+      border-color: #3da88f;
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      border-color: var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-hover);
+    }
+
+    /* Tabs */
+    .nav-tabs {
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .nav-tabs .nav-link {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .nav-tabs .nav-link:hover {
+      color: var(--text-primary);
+      background: var(--bg-tertiary);
+    }
+
+    .nav-tabs .nav-link.active {
+      color: var(--accent-cyan);
+      background: var(--bg-secondary);
+      border-bottom: 2px solid var(--accent-cyan);
+    }
+
+    /* Context Panel */
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .info-row:last-child {
+      border-bottom: none;
+    }
+
+    .info-label {
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .info-value {
+      color: var(--text-primary);
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+    }
+
+    /* Quick Actions */
+    .quick-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Badge */
+    .badge-custom {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    /* Status Footer */
+    .status-footer {
+      background: var(--bg-tertiary);
+      border-top: 1px solid var(--border-color);
+      padding: 8px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-primary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <!-- Header -->
+    <div class="header">
+      <h2 class="mb-2">
+        <i class="bi bi-code-square"></i> GAS Debugger Console
+      </h2>
+      <p class="text-secondary mb-0">
+        Interactive debugging interface for Google Apps Script
+      </p>
+    </div>
+
+    <div class="row">
+      <!-- Main Console -->
+      <div class="col-lg-8">
+        <div class="panel">
+          <div class="panel-header" onclick="togglePanel(this)">
+            <div class="panel-title">
+              <i class="bi bi-chevron-down"></i>
+              <span>Console</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <!-- Tabs -->
+            <ul class="nav nav-tabs mb-3" role="tablist">
+              <li class="nav-item">
+                <a class="nav-link active" data-bs-toggle="tab" href="#console-tab">Console</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#history-tab">History</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#help-tab">Help</a>
+              </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content">
+              <!-- Console Tab -->
+              <div class="tab-pane fade show active" id="console-tab">
+                <div class="console-area" id="console-output">
+                  <div class="console-output">
+                    <div class="output-result">
+                      <div class="text-secondary">
+                        <i class="bi bi-terminal"></i> Welcome to GAS Debugger Console
+                      </div>
+                      <div class="text-secondary mt-2" style="font-size: 12px;">
+                        Type JavaScript code or use <code>invoke(modulePath, ...args)</code> to call module functions
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Input -->
+                <div class="input-group">
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="command-input"
+                    placeholder="Enter command or JavaScript (use arrow keys for history)..."
+                    autocomplete="off"
+                  >
+                  <button class="btn btn-primary" onclick="executeCommand()">
+                    <i class="bi bi-play-fill"></i> Run
+                  </button>
+                </div>
+              </div>
+
+              <!-- History Tab -->
+              <div class="tab-pane fade" id="history-tab">
+                <div class="console-area" id="history-output">
+                  <div class="text-secondary">No command history yet</div>
+                </div>
+              </div>
+
+              <!-- Help Tab -->
+              <div class="tab-pane fade" id="help-tab">
+                <div class="p-3">
+                  <h5>Available Commands</h5>
+                  <ul class="text-secondary">
+                    <li><code>invoke("modulePath", ...args)</code> - Call a module function</li>
+                    <li><code>return expression</code> - Evaluate and return JavaScript</li>
+                    <li><code>help</code> - Show this help</li>
+                  </ul>
+
+                  <h5 class="mt-4">Examples</h5>
+                  <pre class="bg-dark p-3 rounded"><code>// Simple math
+2 + 2
+
+// Get user email
+Session.getActiveUser().getEmail()
+
+// Call module function
+invoke("__mcp_gas_run.__gas_run", "return new Date()")
+
+// List modules
+invoke("__mcp_gas_run.__gas_run", "return Object.keys(require.cache)")</code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Context Panel -->
+      <div class="col-lg-4">
+        <!-- Environment Info -->
+        <div class="panel">
+          <div class="panel-header" onclick="togglePanel(this)">
+            <div class="panel-title">
+              <i class="bi bi-chevron-down"></i>
+              <span>Environment</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="info-row">
+              <span class="info-label">User</span>
+              <span class="info-value" id="user-email">Loading...</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Timezone</span>
+              <span class="info-value" id="timezone">Loading...</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Script ID</span>
+              <span class="info-value" id="script-id" style="font-size: 10px;">Loading...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="panel">
+          <div class="panel-header" onclick="togglePanel(this)">
+            <div class="panel-title">
+              <i class="bi bi-chevron-down"></i>
+              <span>Quick Actions</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="quick-actions">
+              <button class="btn btn-secondary" onclick="runQuickTest()">
+                <i class="bi bi-lightning-fill"></i> Run Quick Test
+              </button>
+              <button class="btn btn-secondary" onclick="listModules()">
+                <i class="bi bi-list-ul"></i> List All Modules
+              </button>
+              <button class="btn btn-secondary" onclick="openScriptEditor()">
+                <i class="bi bi-box-arrow-up-right"></i> Open Script Editor
+              </button>
+              <button class="btn btn-secondary" onclick="copyScriptId()">
+                <i class="bi bi-clipboard"></i> Copy Script ID
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Available APIs -->
+        <div class="panel">
+          <div class="panel-header" onclick="togglePanel(this)">
+            <div class="panel-title">
+              <i class="bi bi-chevron-down"></i>
+              <span>Available APIs</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="info-row">
+              <span class="info-value">SpreadsheetApp</span>
+              <i class="bi bi-check-circle text-success"></i>
+            </div>
+            <div class="info-row">
+              <span class="info-value">DriveApp</span>
+              <i class="bi bi-check-circle text-success"></i>
+            </div>
+            <div class="info-row">
+              <span class="info-value">GmailApp</span>
+              <i class="bi bi-check-circle text-success"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Footer -->
+  <div class="status-footer">
+    <div class="status-indicator">
+      <div class="status-dot"></div>
+      <span>Connected to HEAD deployment</span>
+    </div>
+    <span id="status-message">Ready</span>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    let commandHistory = [];
+    let historyIndex = -1;
+    let outputCounter = 0;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+      loadEnvironmentInfo();
+      setupKeyboardShortcuts();
+      setupCollapseListeners();
+    });
+
+    // Load environment info
+    function loadEnvironmentInfo() {
+      google.script.run
+        .withSuccessHandler(function(email) {
+          document.getElementById('user-email').textContent = email;
+        })
+        .withFailureHandler(function(error) {
+          document.getElementById('user-email').textContent = 'Unknown';
+        })
+        .evaluate('Session.getActiveUser().getEmail()');
+
+      google.script.run
+        .withSuccessHandler(function(tz) {
+          document.getElementById('timezone').textContent = tz;
+        })
+        .evaluate('Session.getScriptTimeZone()');
+
+      google.script.run
+        .withSuccessHandler(function(id) {
+          document.getElementById('script-id').textContent = id.substring(0, 20) + '...';
+          document.getElementById('script-id').title = id;
+        })
+        .evaluate('ScriptApp.getScriptId()');
+    }
+
+    // Execute command
+    function executeCommand() {
+      const input = document.getElementById('command-input');
+      const command = input.value.trim();
+
+      if (!command) return;
+
+      // Add to history
+      commandHistory.unshift(command);
+      historyIndex = -1;
+
+      // Clear input
+      input.value = '';
+
+      // Show executing state
+      appendOutput(command, { executing: true });
+
+      // Execute via invoke
+      google.script.run
+        .withSuccessHandler(function(result) {
+          updateLastOutput(command, result);
+        })
+        .withFailureHandler(function(error) {
+          updateLastOutput(command, {
+            success: false,
+            error: error.message || String(error),
+            execution_time_ms: 0
+          });
+        })
+        .invoke('__mcp_gas_run.__gas_run', command);
+    }
+
+    // Append output
+    function appendOutput(command, data) {
+      const consoleArea = document.getElementById('console-output');
+      const outputId = `output-${outputCounter++}`;
+
+      let html = `
+        <div class="console-output" id="${outputId}">
+          <div class="output-header" onclick="toggleOutputSection(this)">
+            <i class="bi bi-chevron-right"></i>
+            <span class="output-prompt">&gt; ${escapeHtml(command)}</span>
+          </div>
+      `;
+
+      if (data.executing) {
+        html += `
+          <div class="output-result">
+            <div class="text-secondary">
+              <i class="bi bi-hourglass-split"></i> Executing...
+            </div>
+          </div>
+        </div>`;
+      }
+
+      consoleArea.insertAdjacentHTML('beforeend', html);
+      consoleArea.scrollTop = consoleArea.scrollHeight;
+    }
+
+    // Update last output
+    function updateLastOutput(command, result) {
+      const lastOutput = document.querySelector('.console-output:last-child');
+      if (!lastOutput) return;
+
+      const outputId = `logs-${Date.now()}`;
+      const isError = !result.success;
+
+      // Format result value
+      let displayValue;
+      if (isError) {
+        displayValue = `
+          <div class="result-error">
+            <i class="bi bi-exclamation-triangle-fill"></i> ${escapeHtml(result.error || result.message || 'Unknown error')}
+          </div>
+        `;
+      } else {
+        displayValue = formatValue(result.result);
+      }
+
+      // Count log lines
+      const logLines = result.logger_output ? result.logger_output.split('\n').filter(l => l.trim()).length : 0;
+
+      // Build result HTML
+      let html = `
+        <div class="output-result">
+          <div class="result-value ${isError ? 'result-error' : 'result-success'}">
+            ${displayValue}
+          </div>
+          <div class="execution-time">
+            <i class="bi bi-stopwatch"></i> ${result.execution_time_ms || 0}ms
+          </div>
+        </div>
+      `;
+
+      // Add collapsible logs if available
+      if (logLines > 0) {
+        html += `
+          <div class="logs-toggle" data-bs-toggle="collapse" data-bs-target="#${outputId}">
+            <i class="bi bi-chevron-right"></i>
+            <span>Debug Logs</span>
+            <span class="badge bg-secondary badge-custom ms-auto">${logLines} lines</span>
+          </div>
+          <div class="collapse logs-content" id="${outputId}">
+            ${formatLogs(result.logger_output)}
+          </div>
+        `;
+      }
+
+      // Replace executing message with result
+      lastOutput.querySelector('.output-result').outerHTML = html;
+    }
+
+    // Format value for display
+    function formatValue(value) {
+      if (value === null) {
+        return '<span class="json-boolean">null</span>';
+      } else if (value === undefined) {
+        return '<span class="json-boolean">undefined</span>';
+      } else if (typeof value === 'string') {
+        return `<span class="json-string">"${escapeHtml(value)}"</span>`;
+      } else if (typeof value === 'number') {
+        return `<span class="json-number">${value}</span>`;
+      } else if (typeof value === 'boolean') {
+        return `<span class="json-boolean">${value}</span>`;
+      } else if (typeof value === 'object') {
+        return `<pre class="mb-0">${syntaxHighlightJson(value)}</pre>`;
+      }
+      return escapeHtml(String(value));
+    }
+
+    // Format logs with color coding
+    function formatLogs(logs) {
+      if (!logs) return '';
+
+      return logs.split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          let className = 'log-line';
+          if (line.includes('✅') || line.includes('SUCCESS')) {
+            className += ' log-success';
+          } else if (line.includes('⚠️') || line.includes('WARNING')) {
+            className += ' log-warning';
+          } else if (line.includes('INFO') || line.includes('📝') || line.includes('🌍')) {
+            className += ' log-info';
+          } else if (line.includes('ERROR') || line.includes('❌')) {
+            className += ' log-error';
+          }
+          return `<div class="${className}">${escapeHtml(line)}</div>`;
+        })
+        .join('');
+    }
+
+    // Syntax highlight JSON
+    function syntaxHighlightJson(obj) {
+      const json = JSON.stringify(obj, null, 2);
+      return json
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+        .replace(/: "([^"]+)"/g, ': <span class="json-string">"$1"</span>')
+        .replace(/: (-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+        .replace(/: (true|false|null)/g, ': <span class="json-boolean">$1</span>');
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Toggle panel
+    function togglePanel(header) {
+      const panel = header.parentElement;
+      const body = panel.querySelector('.panel-body');
+      const chevron = header.querySelector('i');
+
+      if (body.style.display === 'none') {
+        body.style.display = 'block';
+        chevron.classList.remove('bi-chevron-right');
+        chevron.classList.add('bi-chevron-down');
+      } else {
+        body.style.display = 'none';
+        chevron.classList.remove('bi-chevron-down');
+        chevron.classList.add('bi-chevron-right');
+      }
+    }
+
+    // Toggle output section
+    function toggleOutputSection(header) {
+      const output = header.nextElementSibling;
+      const chevron = header.querySelector('i');
+
+      if (output && output.classList.contains('output-result')) {
+        if (output.style.display === 'none') {
+          output.style.display = 'block';
+          chevron.classList.remove('bi-chevron-right');
+          chevron.classList.add('bi-chevron-down');
+          header.classList.add('expanded');
+        } else {
+          output.style.display = 'none';
+          chevron.classList.remove('bi-chevron-down');
+          chevron.classList.add('bi-chevron-right');
+          header.classList.remove('expanded');
+        }
+      }
+    }
+
+    // Setup keyboard shortcuts
+    function setupKeyboardShortcuts() {
+      const input = document.getElementById('command-input');
+
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          executeCommand();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (historyIndex < commandHistory.length - 1) {
+            historyIndex++;
+            input.value = commandHistory[historyIndex];
+          }
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (historyIndex > 0) {
+            historyIndex--;
+            input.value = commandHistory[historyIndex];
+          } else if (historyIndex === 0) {
+            historyIndex = -1;
+            input.value = '';
+          }
+        }
+      });
+    }
+
+    // Setup collapse listeners for chevron rotation
+    function setupCollapseListeners() {
+      document.body.addEventListener('click', function(e) {
+        const toggle = e.target.closest('.logs-toggle');
+        if (toggle) {
+          const chevron = toggle.querySelector('.bi-chevron-right, .bi-chevron-down');
+          if (chevron) {
+            setTimeout(() => {
+              const target = document.querySelector(toggle.getAttribute('data-bs-target'));
+              if (target) {
+                if (target.classList.contains('show')) {
+                  chevron.classList.remove('bi-chevron-right');
+                  chevron.classList.add('bi-chevron-down');
+                } else {
+                  chevron.classList.remove('bi-chevron-down');
+                  chevron.classList.add('bi-chevron-right');
+                }
+              }
+            }, 350);
+          }
+        }
+      });
+    }
+
+    // Quick Actions
+    function runQuickTest() {
+      document.getElementById('command-input').value = 'return new Date().toISOString()';
+      executeCommand();
+    }
+
+    function listModules() {
+      document.getElementById('command-input').value = 'return Object.keys(require.cache).join(", ")';
+      executeCommand();
+    }
+
+    function openScriptEditor() {
+      google.script.run
+        .withSuccessHandler(function(id) {
+          window.open(`https://script.google.com/d/${id}/edit`, '_blank');
+        })
+        .evaluate('ScriptApp.getScriptId()');
+    }
+
+    function copyScriptId() {
+      const scriptId = document.getElementById('script-id').title;
+      navigator.clipboard.writeText(scriptId).then(() => {
+        document.getElementById('status-message').textContent = 'Script ID copied!';
+        setTimeout(() => {
+          document.getElementById('status-message').textContent = 'Ready';
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>

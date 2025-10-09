@@ -1,0 +1,40 @@
+/* Fix for collapsed panel display issue */
+
+/* Ensure panel headers maintain proper width when collapsed */
+#leftPanel.collapsed,
+#rightPanel.collapsed {
+  min-width: 120px; /* Enough space for "Modules" and "Context" text */
+}
+
+/* Alternative: Keep full panel header visible */
+.panel-header {
+  white-space: nowrap;
+  overflow: visible;
+  min-width: fit-content;
+}
+
+/* Better solution: Use icon-only view when collapsed */
+.panel.collapsed .panel-title {
+  writing-mode: vertical-lr; /* Vertical text */
+  transform: rotate(180deg);
+  padding: 10px 5px;
+}
+
+/* Or rotate the chevron to indicate collapsed state */
+.panel.collapsed button[aria-label*="toggle"] {
+  transform: rotate(180deg);
+}
+
+/* Recommended: Show only icon when collapsed, full header when expanded */
+.panel-header.collapsed .panel-text {
+  display: none; /* Hide text */
+}
+
+.panel-header.collapsed {
+  width: 40px; /* Narrow collapsed width */
+  justify-content: center;
+}
+
+.panel-header.expanded .panel-text {
+  display: inline; /* Show text when expanded */
+}
