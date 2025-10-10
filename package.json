@@ -36,6 +36,7 @@
     "test:mcp-deploy": "npm run build && GAS_INTEGRATION_TEST=true mocha test/integration/mcp-gas-validation/deployment.test.ts --timeout 300000",
     "test:mcp-errors": "npm run build && GAS_INTEGRATION_TEST=true mocha test/integration/mcp-gas-validation/error-handling.test.ts --timeout 120000",
     "test:mcp-perf": "npm run build && GAS_INTEGRATION_TEST=true mocha test/integration/mcp-gas-validation/performance.test.ts --timeout 300000",
+    "test:mcp-git": "npm run build && GAS_INTEGRATION_TEST=true mocha test/integration/mcp-gas-validation/git-operations.test.ts --timeout 300000",
     "test:git": "node test/verification/verify-git-sync.cjs",
     "test:auth": "node test/verification/verify-auth.cjs",
     "test:files": "node test/verification/verify-file-ops.cjs",

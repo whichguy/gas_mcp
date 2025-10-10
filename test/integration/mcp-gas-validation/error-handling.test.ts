@@ -51,7 +51,7 @@ describe('Error Handling Validation Tests', () => {
       const invalidId = 'invalid-script-id-123';
 
       try {
-        await client.callTool('mcp__gas__ls', {
+        await client.callTool('ls', {
           scriptId: invalidId
         });
         expect.fail('Should have thrown error for invalid script ID');
@@ -66,7 +66,7 @@ describe('Error Handling Validation Tests', () => {
       const malformedId = 'abc123';  // Too short
 
       try {
-        await client.callTool('mcp__gas__ls', {
+        await client.callTool('ls', {
           scriptId: malformedId
         });
         expect.fail('Should have thrown validation error');
@@ -82,7 +82,7 @@ describe('Error Handling Validation Tests', () => {
       const nonExistentId = '1' + 'x'.repeat(43);
 
       try {
-        await client.callTool('mcp__gas__info', {
+        await client.callTool('info', {
           scriptId: nonExistentId
         });
         expect.fail('Should have thrown not found error');
@@ -110,7 +110,7 @@ describe('Error Handling Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       try {
-        await client.callTool('mcp__gas__mv', {
+        await client.callTool('mv', {
           scriptId: testProjectId,
           from: 'NonExistent',
           to: 'Target'
@@ -126,7 +126,7 @@ describe('Error Handling Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       try {
-        await client.callTool('mcp__gas__cp', {
+        await client.callTool('cp', {
           scriptId: testProjectId,
           from: 'MissingSource',
           to: 'Destination'
@@ -142,7 +142,7 @@ describe('Error Handling Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       try {
-        await client.callTool('mcp__gas__rm', {
+        await client.callTool('rm', {
           scriptId: testProjectId,
           path: 'NonExistentFile'
         });
@@ -260,7 +260,7 @@ describe('Error Handling Validation Tests', () => {
       const restrictedId = '1' + 'a'.repeat(43);  // Valid format but likely no access
 
       try {
-        await client.callTool('mcp__gas__ls', {
+        await client.callTool('ls', {
           scriptId: restrictedId
         });
         expect.fail('Should have thrown permission error');

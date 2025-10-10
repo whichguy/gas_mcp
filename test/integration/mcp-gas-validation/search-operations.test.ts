@@ -87,7 +87,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__grep', {
+      const result = await client.callTool('grep', {
         scriptId: testProjectId,
         pattern: 'Logger.log'
       });
@@ -101,7 +101,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__grep', {
+      const result = await client.callTool('grep', {
         scriptId: testProjectId,
         pattern: 'function\\s+\\w+'
       });
@@ -116,7 +116,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__grep', {
+      const result = await client.callTool('grep', {
         scriptId: testProjectId,
         pattern: 'Logger',
         caseSensitive: true
@@ -131,7 +131,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__grep', {
+      const result = await client.callTool('grep', {
         scriptId: testProjectId,
         pattern: 'TODO|FIXME'
       });
@@ -147,7 +147,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__ripgrep', {
+      const result = await client.callTool('ripgrep', {
         scriptId: testProjectId,
         pattern: 'Logger',
         patterns: ['console', 'return']
@@ -163,7 +163,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__ripgrep', {
+      const result = await client.callTool('ripgrep', {
         scriptId: testProjectId,
         pattern: 'Logger.log',
         context: 2
@@ -179,7 +179,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__ripgrep', {
+      const result = await client.callTool('ripgrep', {
         scriptId: testProjectId,
         pattern: 'LOGGER',
         ignoreCase: true
@@ -193,7 +193,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__ripgrep', {
+      const result = await client.callTool('ripgrep', {
         scriptId: testProjectId,
         pattern: 'function',
         sort: 'path'
@@ -216,7 +216,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__ripgrep', {
+      const result = await client.callTool('ripgrep', {
         scriptId: testProjectId,
         pattern: 'Logger.log',
         trim: true
@@ -237,7 +237,7 @@ function calculateValue(x, y) {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__sed', {
+      const result = await client.callTool('sed', {
         scriptId: testProjectId,
         pattern: 'Logger.log',
         replacement: 'console.log'
@@ -265,7 +265,7 @@ function anotherFunction() {
 }
 `);
 
-      const result = await client.callTool('mcp__gas__sed', {
+      const result = await client.callTool('sed', {
         scriptId: testProjectId,
         pattern: 'function\\s+(\\w+)',
         replacement: 'function RENAMED_$1'
@@ -282,7 +282,7 @@ function anotherFunction() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__sed', {
+      const result = await client.callTool('sed', {
         scriptId: testProjectId,
         pattern: 'return',
         replacement: 'return // modified'
@@ -302,7 +302,7 @@ function anotherFunction() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__sed', {
+      const result = await client.callTool('sed', {
         scriptId: testProjectId,
         pattern: 'const',
         replacement: 'var',
@@ -324,7 +324,7 @@ function anotherFunction() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__find', {
+      const result = await client.callTool('find', {
         scriptId: testProjectId,
         name: '*Target*'
       });
@@ -339,7 +339,7 @@ function anotherFunction() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__find', {
+      const result = await client.callTool('find', {
         scriptId: testProjectId,
         type: 'SERVER_JS'
       });
@@ -352,7 +352,7 @@ function anotherFunction() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__find', {
+      const result = await client.callTool('find', {
         scriptId: testProjectId,
         ls: true
       });
@@ -388,7 +388,7 @@ function   renderStateItem(container,   key,   value,   depth)   {
       const searchText = 'function renderStateItem(container, key, value, depth) { const item = document.createElement("div");';
       const replaceText = 'function renderStateItem(container, key, value, depth) { const element = document.createElement("div");';
 
-      const result = await client.callTool('mcp__gas__aider', {
+      const result = await client.callTool('aider', {
         scriptId: testProjectId,
         path: 'FuzzyTarget',
         edits: [{
@@ -427,7 +427,7 @@ ${'y'.repeat(2000)}
 
       const start = Date.now();
 
-      const result = await client.callTool('mcp__gas__aider', {
+      const result = await client.callTool('aider', {
         scriptId: testProjectId,
         path: 'LargeFuzzy',
         edits: [{
@@ -451,7 +451,7 @@ ${'y'.repeat(2000)}
       const content = 'AAABBBCCC';
       await gas.writeTestFile(testProjectId!, 'OverlapTest', content);
 
-      const result = await client.callTool('mcp__gas__aider', {
+      const result = await client.callTool('aider', {
         scriptId: testProjectId,
         path: 'OverlapTest',
         edits: [
@@ -481,7 +481,7 @@ ${'y'.repeat(2000)}
 
       const start = Date.now();
 
-      const result = await client.callTool('mcp__gas__grep', {
+      const result = await client.callTool('grep', {
         scriptId: testProjectId,
         pattern: 'function'
       });

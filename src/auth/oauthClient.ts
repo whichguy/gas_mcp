@@ -165,8 +165,8 @@ export class GASAuthClient {
                 }
             });
             
-            // Listen on OS-assigned port
-            this.server.listen(0, '127.0.0.1', () => {
+            // Listen on port 3000 (matches OAuth client redirect URI configuration)
+            this.server.listen(3000, '127.0.0.1', () => {
                 const address = this.server!.address();
                 if (address && typeof address === 'object') {
                     this.serverPort = address.port;

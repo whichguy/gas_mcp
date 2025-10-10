@@ -106,7 +106,7 @@ function largeModule() {
       }
 
       // Verify all exist
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -137,7 +137,7 @@ function largeModule() {
       const elapsed = Date.now() - start;
 
       // Verify all created
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -209,7 +209,7 @@ function largeModule() {
       });
 
       // Verify all files exist
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -255,7 +255,7 @@ function largeModule() {
       // Mix of writes, reads, and ls operations
       promises.push(gas.writeTestFile(testProjectId!, 'MixedWrite1', 'exports.a = 1;'));
       promises.push(gas.writeTestFile(testProjectId!, 'MixedWrite2', 'exports.b = 2;'));
-      promises.push(client.callTool('mcp__gas__ls', { scriptId: testProjectId }));
+      promises.push(client.callTool('ls', { scriptId: testProjectId }));
       promises.push(gas.writeTestFile(testProjectId!, 'MixedWrite3', 'exports.c = 3;'));
 
       const results = await Promise.all(promises);
@@ -274,7 +274,7 @@ function largeModule() {
       const promises = [];
       for (let i = 0; i < 5; i++) {
         promises.push(
-          client.callTool('mcp__gas__ls', {
+          client.callTool('ls', {
             scriptId: testProjectId
           })
         );
@@ -298,7 +298,7 @@ function largeModule() {
       const promises = [];
       for (let i = 0; i < 10; i++) {
         promises.push(
-          client.callTool('mcp__gas__info', {
+          client.callTool('info', {
             scriptId: testProjectId
           })
         );
@@ -338,7 +338,7 @@ function largeModule() {
 
       const start = Date.now();
 
-      const result = await client.callTool('mcp__gas__grep', {
+      const result = await client.callTool('grep', {
         scriptId: testProjectId,
         pattern: 'TODO'
       });
@@ -355,7 +355,7 @@ function largeModule() {
 
       const start = Date.now();
 
-      const result = await client.callTool('mcp__gas__ripgrep', {
+      const result = await client.callTool('ripgrep', {
         scriptId: testProjectId,
         pattern: 'function',
         sort: 'path'
