@@ -1,0 +1,479 @@
+/**
+ * Extended MCP Gas Validation Tests
+ *
+ * Tests advanced integration scenarios with real GAS projects:
+ * - Multi-file project management
+ * - Version control and deployment
+ * - Error handling and edge cases
+ * - Performance validation
+ */
+
+import { expect } from 'chai';
+import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { globalAuthState } from '../../setup/globalAuth.js';
+
+describe('Extended MCP Gas Validation Tests', () => {
+  let client: MCPTestClient;
+  let auth: AuthTestHelper;
+  let gas: GASTestHelper;
+  let testProjectId: string | null = null;
+
+  before(async function() {
+    this.timeout(30000);
+    if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
+      console.log('⚠️  Skipping integration tests - not authenticated');
+      this.skip();
+    }
+    client = globalAuthState.client;
+    auth = new AuthTestHelper(client);
+    gas = new GASTestHelper(client);
+  });
+
+  after(async function() {
+    this.timeout(30000);
+    if (testProjectId) {
+      console.log(`🧹 Cleaning up test project: ${testProjectId}`);
+      await gas.cleanupTestProject(testProjectId);
+    }
+  });
+
+  describe('Multi-File Project Management', () => {
+    it('should create project with 10+ files', async function() {
+      this.timeout(120000);
+      const result = await gas.createTestProject('MCP-Extended-Test');
+
+      expect(result).to.have.property('scriptId');
+      testProjectId = result.scriptId;
+      console.log(`✅ Created extended test project: ${testProjectId}`);
+
+      // Create 15 files
+      const fileCount = 15;
+      for (let i = 1; i <= fileCount; i++) {
+        await gas.writeTestFile(
+          testProjectId!,
+          `Module${i}`,
+          `function module${i}() { return ${i}; }\nexports.value = ${i};`
+        );
+      }
+
+      // Verify all files created
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      const output = lsResult.content[0].text;
+      for (let i = 1; i <= fileCount; i++) {
+        expect(output).to.include(`Module${i}`);
+      }
+    });
+
+    it('should perform bulk copy operations', async function() {
+      this.timeout(90000);
+      expect(testProjectId).to.not.be.null;
+
+      // Copy first 5 modules
+      for (let i = 1; i <= 5; i++) {
+        const result = await client.callTool('mcp__gas__cp', {
+          scriptId: testProjectId,
+          from: `Module${i}`,
+          to: `ModuleCopy${i}`
+        });
+
+        expect(result.content[0].text).to.include('copied');
+      }
+
+      // Verify copies exist
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      const output = lsResult.content[0].text;
+      for (let i = 1; i <= 5; i++) {
+        expect(output).to.include(`ModuleCopy${i}`);
+      }
+    });
+
+    it('should perform bulk delete operations', async function() {
+      this.timeout(90000);
+      expect(testProjectId).to.not.be.null;
+
+      // Delete copied modules
+      for (let i = 1; i <= 5; i++) {
+        const result = await client.callTool('mcp__gas__rm', {
+          scriptId: testProjectId,
+          path: `ModuleCopy${i}`
+        });
+
+        expect(result.content[0].text).to.include('deleted');
+      }
+
+      // Verify deletions
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      const output = lsResult.content[0].text;
+      for (let i = 1; i <= 5; i++) {
+        expect(output).to.not.include(`ModuleCopy${i}`);
+      }
+    });
+
+    it('should track file dependencies', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      // Create dependency chain
+      await gas.writeTestFile(testProjectId!, 'Base', 'exports.base = 100;');
+      await gas.writeTestFile(
+        testProjectId!,
+        'Dependent',
+        'const base = require("Base");\nexports.value = base.base * 2;'
+      );
+      await gas.writeTestFile(
+        testProjectId!,
+        'TopLevel',
+        'const dep = require("Dependent");\nexports.final = dep.value + 50;'
+      );
+
+      // Execute top-level to verify chain
+      const result = await gas.runFunction(
+        testProjectId!,
+        'const top = require("TopLevel"); return top.final;'
+      );
+
+      expect(result).to.have.property('status', 'success');
+      expect(result.result).to.equal(250); // 100 * 2 + 50 = 250
+    });
+
+    it('should reorder files', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__reorder', {
+        scriptId: testProjectId,
+        fileName: 'Module1',
+        newPosition: 5
+      });
+
+      expect(result.content[0].text).to.include('success');
+    });
+  });
+
+  describe('Version Control & Deployment', () => {
+    it('should create version', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__version_create', {
+        scriptId: testProjectId,
+        description: 'Test version for validation'
+      });
+
+      expect(result.content[0].text).to.include('version');
+      expect(result.content[0].text).to.match(/version.*created/i);
+    });
+
+    it('should list versions', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__version_list', {
+        scriptId: testProjectId
+      });
+
+      expect(result.content[0].text).to.include('version');
+    });
+
+    it('should create deployment', async function() {
+      this.timeout(120000);
+      expect(testProjectId).to.not.be.null;
+
+      // First create a version
+      const versionResult = await client.callTool('mcp__gas__version_create', {
+        scriptId: testProjectId,
+        description: 'Deployment version'
+      });
+
+      expect(versionResult.content[0].text).to.include('version');
+
+      // Extract version number from response
+      const versionMatch = versionResult.content[0].text.match(/version.*?(\d+)/i);
+      const versionNumber = versionMatch ? parseInt(versionMatch[1]) : 1;
+
+      // Create deployment
+      const deployResult = await client.callTool('mcp__gas__deploy_create', {
+        scriptId: testProjectId,
+        description: 'Test deployment',
+        versionNumber: versionNumber
+      });
+
+      expect(deployResult.content[0].text).to.include('deployment');
+    });
+
+    it('should list deployments', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__deploy_list', {
+        scriptId: testProjectId
+      });
+
+      expect(result.content[0].text).to.include('deployment');
+    });
+
+    it('should verify deployment configuration', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const listResult = await client.callTool('mcp__gas__deploy_list', {
+        scriptId: testProjectId
+      });
+
+      // Should have at least one deployment
+      expect(listResult.content[0].text).to.include('deployment');
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle invalid script ID', async function() {
+      this.timeout(30000);
+
+      const invalidId = 'invalid-script-id-123';
+
+      try {
+        await client.callTool('mcp__gas__ls', {
+          scriptId: invalidId
+        });
+        expect.fail('Should have thrown error for invalid script ID');
+      } catch (error: any) {
+        expect(error.message).to.match(/invalid|not found|permission/i);
+      }
+    });
+
+    it('should handle file not found', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      try {
+        await gas.readFile(testProjectId!, 'NonExistentFile');
+        expect.fail('Should have thrown file not found error');
+      } catch (error: any) {
+        expect(error.message).to.match(/not found|does not exist/i);
+      }
+    });
+
+    it('should handle invalid file operations', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      try {
+        await client.callTool('mcp__gas__mv', {
+          scriptId: testProjectId,
+          from: 'NonExistent',
+          to: 'Target'
+        });
+        expect.fail('Should have thrown error for non-existent source');
+      } catch (error: any) {
+        expect(error.message).to.match(/not found|does not exist/i);
+      }
+    });
+
+    it('should handle execution errors gracefully', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      try {
+        await gas.runFunction(testProjectId!, 'throw new Error("Intentional test error");');
+        expect.fail('Should have thrown execution error');
+      } catch (error: any) {
+        expect(error.message).to.include('Intentional test error');
+      }
+    });
+
+    it('should handle syntax errors in code', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      try {
+        // Invalid syntax
+        await gas.runFunction(testProjectId!, 'const x = ;');
+        expect.fail('Should have thrown syntax error');
+      } catch (error: any) {
+        expect(error.message).to.match(/syntax|unexpected/i);
+      }
+    });
+  });
+
+  describe('Performance Validation', () => {
+    it('should handle large file operations', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      // Create 100KB+ file
+      const largeContent = `
+function largeFunction() {
+  const data = ${JSON.stringify('x'.repeat(100000))};
+  return data.length;
+}
+`;
+
+      const result = await gas.writeTestFile(testProjectId!, 'LargeFile', largeContent);
+      expect(result).to.have.property('success', true);
+
+      // Read it back
+      const readResult = await gas.readFile(testProjectId!, 'LargeFile');
+      expect(readResult).to.include('largeFunction');
+    });
+
+    it('should handle bulk file creation', async function() {
+      this.timeout(180000);
+      expect(testProjectId).to.not.be.null;
+
+      const start = Date.now();
+
+      // Create 30 files
+      const fileCount = 30;
+      for (let i = 1; i <= fileCount; i++) {
+        await gas.writeTestFile(
+          testProjectId!,
+          `BulkFile${i}`,
+          `function bulk${i}() { return ${i}; }`
+        );
+      }
+
+      const elapsed = Date.now() - start;
+
+      // Verify all created
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      const output = lsResult.content[0].text;
+      for (let i = 1; i <= fileCount; i++) {
+        expect(output).to.include(`BulkFile${i}`);
+      }
+
+      console.log(`✅ Created ${fileCount} files in ${elapsed}ms`);
+    });
+
+    it('should verify rate limiting behavior', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      // Make multiple rapid requests
+      const promises = [];
+      for (let i = 0; i < 5; i++) {
+        promises.push(
+          client.callTool('mcp__gas__ls', {
+            scriptId: testProjectId
+          })
+        );
+      }
+
+      const results = await Promise.all(promises);
+
+      // All should succeed (rate limiter should handle this)
+      results.forEach(result => {
+        expect(result.content[0].text).to.be.a('string');
+      });
+    });
+  });
+
+  describe('Advanced Scenarios', () => {
+    it('should handle complex module dependencies', async function() {
+      this.timeout(90000);
+      expect(testProjectId).to.not.be.null;
+
+      // Create circular dependency scenario
+      await gas.writeTestFile(
+        testProjectId!,
+        'CircularA',
+        'exports.name = "A";\nexports.getB = function() { const b = require("CircularB"); return b.name; };'
+      );
+
+      await gas.writeTestFile(
+        testProjectId!,
+        'CircularB',
+        'exports.name = "B";\nexports.getA = function() { const a = require("CircularA"); return a.name; };'
+      );
+
+      // Should handle circular dependencies
+      const result = await gas.runFunction(
+        testProjectId!,
+        'const a = require("CircularA"); return a.getB();'
+      );
+
+      expect(result).to.have.property('status', 'success');
+      expect(result.result).to.equal('B');
+    });
+
+    it('should handle concurrent file operations', async function() {
+      this.timeout(90000);
+      expect(testProjectId).to.not.be.null;
+
+      // Create multiple files concurrently
+      const promises = [];
+      for (let i = 1; i <= 10; i++) {
+        promises.push(
+          gas.writeTestFile(
+            testProjectId!,
+            `Concurrent${i}`,
+            `exports.value = ${i};`
+          )
+        );
+      }
+
+      const results = await Promise.all(promises);
+
+      // All should succeed
+      results.forEach(result => {
+        expect(result).to.have.property('success', true);
+      });
+
+      // Verify all files exist
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      const output = lsResult.content[0].text;
+      for (let i = 1; i <= 10; i++) {
+        expect(output).to.include(`Concurrent${i}`);
+      }
+    });
+
+    it('should validate project info completeness', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__info', {
+        scriptId: testProjectId
+      });
+
+      const info = result.content[0].text;
+
+      // Should include key project information
+      expect(info).to.include(testProjectId!);
+      expect(info).to.include('MCP-Extended-Test');
+      expect(info).to.match(/file|script|project/i);
+    });
+
+    it('should handle special characters in file names', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const specialName = 'File_With-Special.Chars';
+
+      const result = await gas.writeTestFile(
+        testProjectId!,
+        specialName,
+        'exports.special = true;'
+      );
+
+      expect(result).to.have.property('success', true);
+
+      // Verify can read it back
+      const readResult = await gas.readFile(testProjectId!, specialName);
+      expect(readResult).to.include('special');
+    });
+  });
+});

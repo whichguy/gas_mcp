@@ -520,6 +520,15 @@
             <a class="nav-link active" href="#" onclick="switchTab(event, 'contextTab')">Context</a>
           </li>
           <li class="nav-item">
+            <a class="nav-link" href="#" onclick="switchTab(event, 'loggerTab')">Logger</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" onclick="switchTab(event, 'deploymentTab')">Deployment</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="#" onclick="switchTab(event, 'triggersTab')">Triggers</a>
+          </li>
+          <li class="nav-item">
             <a class="nav-link" href="#" onclick="switchTab(event, 'processesTab')">Processes</a>
           </li>
         </ul>
@@ -550,6 +559,82 @@
               </button>
             </div>
           </div>
+          <div id="loggerTab" class="tab-pane">
+            <div class="context-item">
+              <div class="context-item-header">Filter Pattern (Regex)</div>
+              <input type="text" id="logFilterPattern"
+                     placeholder="ERROR|WARN|INFO"
+                     style="width: 100%; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); padding: 6px; border-radius: 4px; font-size: 12px;">
+            </div>
+
+            <div class="context-item">
+              <div class="context-item-header">Show Last N Lines: <span id="tailValue">All</span></div>
+              <input type="range" id="logTailSlider" min="0" max="500" value="0" step="10"
+                     oninput="document.getElementById('tailValue').textContent = this.value == 0 ? 'All' : this.value"
+                     style="width: 100%;">
+            </div>
+
+            <div class="context-item">
+              <button onclick="setLogFilter('ERROR|WARN')" style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; margin-right: 4px;">Errors Only</button>
+              <button onclick="setLogFilter('^\\[.*\\]')" style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; margin-right: 4px;">Bracketed</button>
+              <button onclick="setLogFilter('')" style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px;">Clear Filter</button>
+            </div>
+
+            <div class="context-item">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px;">
+                <input type="checkbox" id="autoScrollLogs" checked>
+                <span>Auto-scroll to new logs</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="deploymentTab" class="tab-pane">
+            <div class="context-item" id="deploymentInfo">
+              <div class="context-item-header">Current Deployment</div>
+              <div id="deploymentUrl" class="context-item-value" style="word-break: break-all; cursor: pointer; color: var(--accent);"
+                   onclick="if(this.textContent && !this.textContent.includes('Loading')) window.open(this.textContent, '_blank')">
+                Loading...
+              </div>
+            </div>
+
+            <div class="context-item" style="display: flex; gap: 8px;">
+              <button onclick="copyDeploymentUrl()" style="flex: 1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i class="bi bi-clipboard"></i> Copy URL
+              </button>
+              <button onclick="openDeployment()" style="flex: 1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i class="bi bi-box-arrow-up-right"></i> Open
+              </button>
+              <button onclick="refreshDeployment()" style="flex: 1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i class="bi bi-arrow-clockwise"></i> Refresh
+              </button>
+            </div>
+
+            <div class="context-item">
+              <div class="context-item-header">Type</div>
+              <span id="deploymentType" style="display: inline-block; padding: 4px 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 11px; color: var(--accent);">WEB_APP</span>
+            </div>
+
+            <div class="context-item">
+              <div class="context-item-header">Status</div>
+              <span id="deploymentHealth" style="color: var(--success); font-size: 14px;">●</span>
+              <span id="deploymentHealthText" style="margin-left: 6px; font-size: 12px;">Healthy</span>
+            </div>
+          </div>
+
+          <div id="triggersTab" class="tab-pane">
+            <div id="triggersList" class="context-item" style="max-height: 400px; overflow-y: auto;">
+              <div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">
+                Click "Load Triggers" to view installable triggers
+              </div>
+            </div>
+
+            <div class="context-item">
+              <button onclick="loadTriggers()" style="width: 100%; padding: 8px; background: var(--accent); border: none; border-radius: 4px; color: var(--bg-primary); font-weight: 500; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i class="bi bi-arrow-clockwise"></i> Load Triggers
+              </button>
+            </div>
+          </div>
+
           <div id="processesTab" class="tab-pane">
             <div id="processList" class="process-list">
               <div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">
@@ -607,7 +692,30 @@
               // Display logger output if present
               if (data.logger_output && data.logger_output.trim()) {
                 const logId = 'debug-logs-' + Date.now();
-                const logCount = data.logger_output.split('\n').filter(line => line.trim()).length;
+
+                // Apply client-side filtering
+                let filteredLogs = data.logger_output;
+                const filterPattern = document.getElementById('logFilterPattern')?.value;
+                const tailLines = parseInt(document.getElementById('logTailSlider')?.value) || 0;
+
+                if (filterPattern) {
+                  try {
+                    const regex = new RegExp(filterPattern, 'i');
+                    const lines = filteredLogs.split('\n');
+                    filteredLogs = lines.filter(line => regex.test(line)).join('\n');
+                  } catch (e) {
+                    // Invalid regex - show unfiltered
+                  }
+                }
+
+                if (tailLines > 0) {
+                  const lines = filteredLogs.split('\n');
+                  if (lines.length > tailLines) {
+                    filteredLogs = lines.slice(-tailLines).join('\n');
+                  }
+                }
+
+                const logCount = filteredLogs.split('\n').filter(line => line.trim()).length;
 
                 const metaContainer = document.createElement('div');
                 metaContainer.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-top: 4px;';
@@ -622,7 +730,7 @@
                 const debugLogs = document.createElement('div');
                 debugLogs.id = logId;
                 debugLogs.className = 'debug-logs';
-                debugLogs.textContent = data.logger_output;
+                debugLogs.textContent = filteredLogs;
 
                 const resultLine = document.createElement('div');
                 resultLine.className = 'output-line';
@@ -631,7 +739,11 @@
                 consoleOutput.appendChild(resultLine);
               }
 
-              consoleOutput.scrollTop = consoleOutput.scrollHeight;
+              // Auto-scroll if enabled
+              const autoScroll = document.getElementById('autoScrollLogs')?.checked !== false;
+              if (autoScroll) {
+                consoleOutput.scrollTop = consoleOutput.scrollHeight;
+              }
 
               if (data.status === 'success' || data.success) {
                 resolve(data.result);
@@ -1030,6 +1142,137 @@
       document.getElementById(tabId).classList.add('active');
     }
 
+    // Logger Filter Functions
+    function setLogFilter(pattern) {
+      document.getElementById('logFilterPattern').value = pattern;
+      addOutput('Log filter set to: ' + (pattern || '(none)'), 'info');
+    }
+
+    // Deployment Functions
+    async function loadDeploymentInfo() {
+      const urlElement = document.getElementById('deploymentUrl');
+      const typeElement = document.getElementById('deploymentType');
+      const healthElement = document.getElementById('deploymentHealth');
+      const healthTextElement = document.getElementById('deploymentHealthText');
+
+      try {
+        urlElement.textContent = 'Loading...';
+
+        // Get deployment URL using ScriptApp
+        const url = await clientState.run(`ScriptApp.getService().getUrl()`);
+
+        urlElement.textContent = url;
+        typeElement.textContent = 'WEB_APP';
+        healthElement.style.color = 'var(--success)';
+        healthTextElement.textContent = 'Healthy';
+
+        addOutput('Deployment info loaded', 'info');
+      } catch (error) {
+        urlElement.textContent = 'Error loading deployment';
+        urlElement.style.color = 'var(--error)';
+        healthElement.style.color = 'var(--error)';
+        healthTextElement.textContent = 'Error';
+        addOutput('Deployment load error: ' + error.message, 'error');
+      }
+    }
+
+    function copyDeploymentUrl() {
+      const urlText = document.getElementById('deploymentUrl').textContent;
+      if (urlText && !urlText.includes('Loading') && !urlText.includes('Error')) {
+        navigator.clipboard.writeText(urlText).then(() => {
+          addOutput('Deployment URL copied to clipboard', 'info');
+        }).catch(err => {
+          addOutput('Failed to copy URL: ' + err.message, 'error');
+        });
+      }
+    }
+
+    function openDeployment() {
+      const urlText = document.getElementById('deploymentUrl').textContent;
+      if (urlText && !urlText.includes('Loading') && !urlText.includes('Error')) {
+        window.open(urlText, '_blank');
+      }
+    }
+
+    function refreshDeployment() {
+      loadDeploymentInfo();
+    }
+
+    // Triggers Functions
+    async function loadTriggers() {
+      const listContainer = document.getElementById('triggersList');
+      listContainer.innerHTML = '<div style="color: var(--text-secondary); padding: 8px; font-size: 11px;">Loading triggers...</div>';
+
+      try {
+        const result = await clientState.run(`
+          const triggers = ScriptApp.getProjectTriggers();
+          const result = triggers.map(t => ({
+            uniqueId: t.getUniqueId(),
+            handlerFunction: t.getHandlerFunction(),
+            triggerSource: t.getTriggerSource().toString(),
+            eventType: t.getEventType() ? t.getEventType().toString() : null
+          }));
+          JSON.stringify(result);
+        `);
+
+        const triggers = JSON.parse(result);
+
+        if (triggers.length === 0) {
+          listContainer.innerHTML = '<div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">No triggers found</div>';
+          addOutput('No triggers found in project', 'info');
+          return;
+        }
+
+        listContainer.innerHTML = triggers.map(t => `
+          <div class="trigger-card" style="background: var(--bg-secondary); padding: 10px; border-radius: 4px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="color: var(--accent); font-weight: 500; font-size: 12px;">
+                  ${t.handlerFunction}
+                </div>
+                <div style="color: var(--text-secondary); font-size: 11px; margin-top: 2px;">
+                  ${t.triggerSource}${t.eventType ? ' → ' + t.eventType : ''}
+                </div>
+              </div>
+              <button onclick="deleteTrigger('${t.uniqueId}')"
+                      style="background: var(--error); border: none; border-radius: 4px; padding: 4px 8px; color: white; cursor: pointer; font-size: 11px;">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>
+        `).join('');
+
+        addOutput(`Loaded ${triggers.length} trigger(s)`, 'info');
+      } catch (error) {
+        listContainer.innerHTML = `<div style="color: var(--error); padding: 8px; font-size: 11px;">Error: ${error.message}</div>`;
+        addOutput('Triggers load error: ' + error.message, 'error');
+      }
+    }
+
+    async function deleteTrigger(triggerId) {
+      if (!confirm('Delete this trigger? This action cannot be undone.')) {
+        return;
+      }
+
+      try {
+        await clientState.run(`
+          const triggers = ScriptApp.getProjectTriggers();
+          const trigger = triggers.find(t => t.getUniqueId() === '${triggerId}');
+          if (trigger) {
+            ScriptApp.deleteTrigger(trigger);
+            'Trigger deleted';
+          } else {
+            throw new Error('Trigger not found');
+          }
+        `);
+
+        addOutput('Trigger deleted successfully', 'info');
+        loadTriggers(); // Refresh list
+      } catch (error) {
+        addOutput('Delete failed: ' + error.message, 'error');
+      }
+    }
+
     // Panel resizing
     function initResize() {
       const handles = document.querySelectorAll('.resize-handle');
@@ -1126,6 +1369,9 @@
     initResize();
     restorePanelStates();
     updateClientStateDisplay();
+
+    // Load deployment info on startup
+    loadDeploymentInfo();
   </script>
 </body>
 </html>

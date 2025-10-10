@@ -1,0 +1,326 @@
+/**
+ * Basic MCP Gas Validation Tests
+ *
+ * Tests basic integration with real GAS projects:
+ * - Project lifecycle (create, verify, delete)
+ * - File CRUD operations (create, read, update, delete)
+ * - File operations (copy, move, rename)
+ * - Basic execution
+ * - Authentication validation
+ */
+
+import { expect } from 'chai';
+import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { globalAuthState } from '../../setup/globalAuth.js';
+
+describe('MCP Gas Basic Validation Tests', () => {
+  let client: MCPTestClient;
+  let auth: AuthTestHelper;
+  let gas: GASTestHelper;
+  let testProjectId: string | null = null;
+
+  before(async function() {
+    this.timeout(30000);
+    if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
+      console.log('⚠️  Skipping integration tests - not authenticated');
+      this.skip();
+    }
+    client = globalAuthState.client;
+    auth = new AuthTestHelper(client);
+    gas = new GASTestHelper(client);
+  });
+
+  after(async function() {
+    this.timeout(30000);
+    if (testProjectId) {
+      console.log(`🧹 Cleaning up test project: ${testProjectId}`);
+      await gas.cleanupTestProject(testProjectId);
+    }
+  });
+
+  describe('Authentication Validation', () => {
+    it('should verify auth status before tests', async function() {
+      this.timeout(15000);
+      const isAuth = await auth.isAuthenticated();
+      expect(isAuth).to.be.true;
+    });
+
+    it('should confirm session persistence', async function() {
+      this.timeout(15000);
+      const status = await auth.getAuthStatus();
+      expect(status).to.have.property('authenticated', true);
+    });
+  });
+
+  describe('Project Lifecycle', () => {
+    it('should create empty test project', async function() {
+      this.timeout(60000);
+      const result = await gas.createTestProject('MCP-Validation-Basic');
+
+      expect(result).to.have.property('scriptId');
+      expect(result.scriptId).to.be.a('string');
+      expect(result.scriptId).to.have.lengthOf(44);
+
+      testProjectId = result.scriptId;
+      console.log(`✅ Created test project: ${testProjectId}`);
+    });
+
+    it('should verify project exists via gas_info', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__info', {
+        scriptId: testProjectId
+      });
+
+      expect(result.content[0].text).to.include(testProjectId!);
+      expect(result.content[0].text).to.include('MCP-Validation-Basic');
+    });
+
+    it('should list projects and find our test project', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await gas.listProjects();
+
+      // Result should be a list of projects
+      expect(result).to.be.a('string');
+      expect(result).to.include(testProjectId!);
+    });
+  });
+
+  describe('File CRUD Operations', () => {
+    const testFileName = 'TestFile';
+    const testContent = 'function test() { return "Hello from test"; }';
+    const updatedContent = 'function test() { return "Updated test"; }';
+
+    it('should create file with gas_write', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await gas.writeTestFile(testProjectId!, testFileName, testContent);
+
+      expect(result).to.have.property('success', true);
+      expect(result).to.have.property('filePath');
+      expect(result.filePath).to.include(testFileName);
+    });
+
+    it('should read file with gas_cat', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await gas.readFile(testProjectId!, testFileName);
+
+      expect(result).to.be.a('string');
+      expect(result).to.include('Hello from test');
+    });
+
+    it('should update file content', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const writeResult = await gas.writeTestFile(testProjectId!, testFileName, updatedContent);
+      expect(writeResult).to.have.property('success', true);
+
+      const readResult = await gas.readFile(testProjectId!, testFileName);
+      expect(readResult).to.include('Updated test');
+    });
+
+    it('should verify file via gas_ls', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      expect(result.content[0].text).to.include(testFileName);
+    });
+
+    it('should delete file with gas_rm', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const deleteResult = await client.callTool('mcp__gas__rm', {
+        scriptId: testProjectId,
+        path: testFileName
+      });
+
+      expect(deleteResult.content[0].text).to.include('deleted');
+
+      // Verify file is gone
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      expect(lsResult.content[0].text).to.not.include(testFileName);
+    });
+  });
+
+  describe('File Operations', () => {
+    const sourceFile = 'SourceFile';
+    const copyTarget = 'CopiedFile';
+    const moveTarget = 'MovedFile';
+    const fileContent = 'function source() { return "source content"; }';
+
+    before(async function() {
+      this.timeout(30000);
+      if (testProjectId) {
+        await gas.writeTestFile(testProjectId, sourceFile, fileContent);
+      }
+    });
+
+    it('should copy file with gas_cp', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__cp', {
+        scriptId: testProjectId,
+        from: sourceFile,
+        to: copyTarget
+      });
+
+      expect(result.content[0].text).to.include('copied');
+
+      // Verify both files exist
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      expect(lsResult.content[0].text).to.include(sourceFile);
+      expect(lsResult.content[0].text).to.include(copyTarget);
+    });
+
+    it('should move/rename file with gas_mv', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callTool('mcp__gas__mv', {
+        scriptId: testProjectId,
+        from: copyTarget,
+        to: moveTarget
+      });
+
+      expect(result.content[0].text).to.include('moved');
+
+      // Verify old name gone, new name exists
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      expect(lsResult.content[0].text).to.not.include(copyTarget);
+      expect(lsResult.content[0].text).to.include(moveTarget);
+    });
+
+    it('should list files with pattern matching', async function() {
+      this.timeout(30000);
+      expect(testProjectId).to.not.be.null;
+
+      // Create multiple files
+      await gas.writeTestFile(testProjectId!, 'File1', 'content1');
+      await gas.writeTestFile(testProjectId!, 'File2', 'content2');
+      await gas.writeTestFile(testProjectId!, 'Other', 'other');
+
+      const result = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId,
+        path: 'File*'
+      });
+
+      const output = result.content[0].text;
+      expect(output).to.include('File1');
+      expect(output).to.include('File2');
+    });
+
+    it('should create multiple files in batch', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      const files = [
+        { name: 'Batch1', content: 'batch content 1' },
+        { name: 'Batch2', content: 'batch content 2' },
+        { name: 'Batch3', content: 'batch content 3' }
+      ];
+
+      for (const file of files) {
+        await gas.writeTestFile(testProjectId!, file.name, file.content);
+      }
+
+      const lsResult = await client.callTool('mcp__gas__ls', {
+        scriptId: testProjectId
+      });
+
+      const output = lsResult.content[0].text;
+      files.forEach(file => {
+        expect(output).to.include(file.name);
+      });
+    });
+  });
+
+  describe('Basic Execution', () => {
+    it('should execute simple expression with gas_run', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await gas.runFunction(testProjectId!, 'Math.PI * 2');
+
+      expect(result).to.have.property('status', 'success');
+      expect(result).to.have.property('result');
+      expect(result.result).to.be.closeTo(6.283185307179586, 0.0001);
+    });
+
+    it('should verify Logger.log output capture', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await gas.runFunction(
+        testProjectId!,
+        'Logger.log("Test message"); return 42;'
+      );
+
+      expect(result).to.have.property('status', 'success');
+      expect(result).to.have.property('logger_output');
+      expect(result.logger_output).to.include('Test message');
+      expect(result.result).to.equal(42);
+    });
+
+    it('should execute function that returns value', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await gas.runFunction(
+        testProjectId!,
+        'new Date().getFullYear()'
+      );
+
+      expect(result).to.have.property('status', 'success');
+      expect(result.result).to.be.a('number');
+      expect(result.result).to.be.at.least(2025);
+    });
+
+    it('should handle execution errors gracefully', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      try {
+        await gas.runFunction(testProjectId!, 'throw new Error("Test error");');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).to.include('Test error');
+      }
+    });
+
+    it('should execute GAS service calls', async function() {
+      this.timeout(60000);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await gas.runFunction(
+        testProjectId!,
+        'Session.getActiveUser().getEmail()'
+      );
+
+      expect(result).to.have.property('status', 'success');
+      expect(result.result).to.be.a('string');
+      expect(result.result).to.include('@');
+    });
+  });
+});
