@@ -708,7 +708,7 @@
 
       renderTreeItem: function(key, value, path = [], forceShow = false) {
         const filterResult = this.matchesFilter(key, value, path.slice(0, -1));
-        
+
         if (!forceShow && !filterResult.matches) {
           return null;
         }
@@ -817,7 +817,7 @@
         window.StateRenderer.render(this.storage);
       },
 
-      run: function(code) {
+      run: function(serverCode, clientCommand) {
         const startTime = performance.now();
 
         return new Promise((resolve, reject) => {
@@ -836,7 +836,7 @@
 
               // Check if execution succeeded (not just HTTP call)
               if (!response || response.success !== true) {
-                const errorMsg = response ? (response.error || response.message || JSON.stringify(response)) : 'No response';
+                const errorMsg = response ? (response.error || response.message || String(response.result) || JSON.stringify(response)) : 'No response';
                 window.UI.addOutput(
                   'Error: ' + errorMsg,
                   'error',
@@ -858,7 +858,7 @@
                 response.logger_output,
                 timing
               );
-              
+
               // Mark result as already displayed to prevent duplicate output
               const wrappedResult = { __runHandled: true, value: response.result };
               resolve(wrappedResult);
@@ -868,7 +868,7 @@
               window.UI.addOutput('Execution failed: ' + error.message, 'error', null, 'client: ' + clientTime + 'ms');
               reject(error);
             })
-            .invoke(code);
+            .invoke(serverCode);
         });
       },
 
@@ -889,14 +889,20 @@
     window.UI = {
       addOutput: function(message, type, serverLogs, timing, command) {
         const $console = $('#console');
-        
+
         // Echo the command if provided (like a REPL prompt)
         if (command && command.trim()) {
-          const $commandEcho = $('<div style="color: var(--text-secondary); font-family: Consolas, Monaco, monospace; font-size: 13px; margin-bottom: 8px; padding: 4px 8px; background: var(--bg-secondary); border-radius: 3px;">');
-          $commandEcho.text('> ' + command);
+          const $commandEcho = $('<div style="color: var(--text-secondary); font-family: Consolas, Monaco, monospace; font-size: 13px; margin-bottom: 8px; padding: 4px 8px; background: var(--bg-secondary); border-radius: 3px; display: flex; align-items: center; gap: 8px;">');
+          const $commandText = $('<span>').text('> ' + command);
+          const $replayBtn = $('<button class="replay-btn" style="margin-left: auto;" title="Re-run this command">↻</button>');
+          $replayBtn.on('click', function() {
+            $('#codeInput').val(command);
+            window.CodeExecutor.execute();
+          });
+          $commandEcho.append($commandText, $replayBtn);
           $console.append($commandEcho);
         }
-        
+
         const now = new Date();
         const timestamp = '[' + now.getHours().toString().padStart(2, '0') + ':' +
                          now.getMinutes().toString().padStart(2, '0') + ':' +
@@ -908,16 +914,6 @@
         const $header = $('<div class="output-header">' +
           '<span class="timestamp">' + timestamp + '</span>' +
           '</div>');
-
-        // Add replay button if command is provided
-        if (command) {
-          const $replayBtn = $('<button class="replay-btn" title="Re-run this command">↻</button>');
-          $replayBtn.on('click', function() {
-            $('#codeInput').val(command);
-            window.CodeExecutor.execute();
-          });
-          $header.append($replayBtn);
-        }
 
         const $message = $('<div class="output-message ' + type + '">').text(message);
 
@@ -985,23 +981,57 @@
         if (!code) return;
 
         // Add to history
-        this.commandHistory.push(code);
-        this.historyIndex = this.commandHistory.length;
+        window.CodeExecutor.commandHistory.push(code);
+        window.CodeExecutor.historyIndex = window.CodeExecutor.commandHistory.length;
 
         const startTime = performance.now();
 
         try {
           let codeToExecute = code;
-          try {
-            new Function('return ' + code);
-            codeToExecute = 'return ' + code;
-          } catch (e) {
-            codeToExecute = code;
+          let hasRunCall = code.includes('run(');
+
+          // For run() calls in assignments, we need special handling
+          // to ensure the variable gets the resolved value, not the Promise
+          if (hasRunCall && /^\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*run\(/.test(code)) {
+            // Assignment like: z = run("code")
+            // Extract variable name and run call
+            const match = code.match(/^\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(.+)$/);
+            if (match) {
+              const varName = match[1];
+              const runCall = match[2];
+              // Echo the command BEFORE executing (REPL style)
+              const $console = $('#console');
+              const $commandEcho = $('<div style="color: var(--text-secondary); font-family: Consolas, Monaco, monospace; font-size: 13px; margin-bottom: 8px; padding: 4px 8px; background: var(--bg-secondary); border-radius: 3px; display: flex; align-items: center; gap: 8px;">');
+              const $commandText = $('<span>').text('> ' + code);
+              const $replayBtn = $('<button class="replay-btn" style="margin-left: auto;" title="Re-run this command">↻</button>');
+              $replayBtn.on('click', function() {
+                $('#codeInput').val(code);
+                window.CodeExecutor.execute();
+              });
+              $commandEcho.append($commandText, $replayBtn);
+              $console.append($commandEcho);
+
+              // Execute run(), await it, then assign to variable
+              codeToExecute = `const __temp = await (${runCall}); clientState.set('${varName}', __temp.__runHandled ? __temp.value : __temp); return __temp;`;
+            } else {
+              codeToExecute = code;
+            }
+          } else {
+            // Normal expression evaluation
+            try {
+              new Function('return ' + code);
+              codeToExecute = 'return ' + code;
+            } catch (e) {
+              codeToExecute = code;
+            }
           }
 
           const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
           const fn = new AsyncFunction('clientState', 'run', codeToExecute);
-          const result = await fn(clientState, clientState.run.bind(clientState));
+          const boundRun = function(serverCode) {
+            return clientState.run(serverCode, code);
+          };
+          const result = await fn(clientState, boundRun);
 
           const clientTime = (performance.now() - startTime).toFixed(2);
 
@@ -1011,8 +1041,11 @@
 
           // Check if run() already handled output
           if (result && result.__runHandled) {
-            // Extract the actual value and update client state with it
-            clientState.inspectAndUpdate(code, result.value);
+            // For run() assignments, we already handled clientState.set() above
+            // For direct run() calls, we still need to inspect
+            if (!hasRunCall || !/^\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*=\s*run\(/.test(code)) {
+              clientState.inspectAndUpdate(code, result.value);
+            }
             return;  // Skip duplicate output
           }
 

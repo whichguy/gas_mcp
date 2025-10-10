@@ -11,6 +11,7 @@ export class MCPTestClient {
   private transport: StdioClientTransport | null = null;
   private serverProcess: ChildProcess | null = null;
   private connected = false;
+  private sessionId: string | null = null;
 
   constructor() {
     this.client = new Client(
@@ -20,6 +21,21 @@ export class MCPTestClient {
         capabilities: {}
       }
     );
+  }
+
+  /**
+   * Set session ID for all tool calls
+   */
+  setSessionId(sessionId: string): void {
+    this.sessionId = sessionId;
+    console.log(`🔑 MCPTestClient now using sessionId: ${sessionId}`);
+  }
+
+  /**
+   * Get current session ID
+   */
+  getSessionId(): string | null {
+    return this.sessionId;
   }
 
   /**
@@ -72,9 +88,15 @@ export class MCPTestClient {
       throw new Error('Client not connected');
     }
 
+    // Automatically include sessionId if set (unless already provided in arguments)
+    const params = arguments_ || {};
+    if (this.sessionId && !params.sessionId) {
+      params.sessionId = this.sessionId;
+    }
+
     const result = await this.client.callTool({
       name,
-      arguments: arguments_ || {}
+      arguments: params
     });
 
     // Check for tool errors and throw them (consistent with test expectations)
