@@ -270,14 +270,35 @@ export class AuthTestHelper {
    */
   async waitForAuth(timeoutMs: number = 60000): Promise<boolean> {
     const startTime = Date.now();
-    
+    let attempt = 0;
+
+    console.log(`⏳ Waiting for authentication (timeout: ${timeoutMs}ms)...`);
+
     while (Date.now() - startTime < timeoutMs) {
-      if (await this.isAuthenticated()) {
-        return true;
+      attempt++;
+      const elapsed = Date.now() - startTime;
+
+      try {
+        const isAuth = await this.isAuthenticated();
+
+        if (attempt === 1 || attempt % 5 === 0) {
+          console.log(`   Attempt ${attempt} (${Math.floor(elapsed/1000)}s elapsed): ${isAuth ? '✅ Authenticated' : '⏳ Not yet authenticated'}`);
+        }
+
+        if (isAuth) {
+          console.log(`✅ Authentication confirmed after ${attempt} attempts (${Math.floor(elapsed/1000)}s)`);
+          return true;
+        }
+      } catch (error) {
+        if (attempt === 1 || attempt % 10 === 0) {
+          console.log(`   Attempt ${attempt}: Error checking auth status - ${error}`);
+        }
       }
+
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    
+
+    console.log(`❌ Authentication timeout after ${attempt} attempts (${timeoutMs}ms)`);
     return false;
   }
 }

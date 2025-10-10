@@ -73,7 +73,7 @@ async function executeAtomicAuthFlow(
   
   // Check if flow already completed while waiting
   if (activeAuthFlows.has(authKey)) {
-    console.error(`⏳ Auth flow completed while waiting for ${authKey}`);
+    console.error(`Auth flow completed while waiting for ${authKey}`);
     return await activeAuthFlows.get(authKey);
   }
   
@@ -111,11 +111,11 @@ async function cacheDeploymentUrlsForSession(
   try {
     // Only cache for session-based auth managers
     if (!(authStateManager instanceof SessionAuthManager)) {
-      console.error('🔍 Skipping deployment URL caching for global auth manager');
+      console.error('Skipping deployment URL caching for global auth manager');
       return;
     }
 
-    console.error('🔍 Caching deployment URLs for session after authentication...');
+    console.error('Caching deployment URLs for session after authentication...');
     
     const gasClient = new GASClient();
     
@@ -123,11 +123,11 @@ async function cacheDeploymentUrlsForSession(
     // So for now, we'll implement caching on-demand in gas_run when a script is first used
     // This function is prepared for future enhancements where we might cache known script IDs
     
-    console.error('✅ Deployment URL caching prepared for on-demand use');
+    console.error('Deployment URL caching prepared for on-demand use');
     
   } catch (error: any) {
     // Don't fail authentication if deployment caching fails
-    console.warn('⚠️ Failed to cache deployment URLs (non-fatal):', error.message);
+    console.warn('Failed to cache deployment URLs (non-fatal):', error.message);
   }
 }
 
@@ -168,8 +168,8 @@ export async function gas_auth({
     switch (mode) {
       case 'status':
         try {
-          console.error('📊 Checking authentication status...');
-          const authStatus = authStateManager instanceof SessionAuthManager 
+          // Reduced logging - status checks happen frequently in tests
+          const authStatus = authStateManager instanceof SessionAuthManager
             ? await authStateManager.getAuthStatus()
             : authStateManager.getAuthStatus();
           
@@ -208,7 +208,7 @@ export async function gas_auth({
           }
         } catch (statusError: any) {
           // CRITICAL: Never throw auth errors from status mode to prevent auto-auth trigger
-          console.warn('⚠️ Error checking auth status (non-fatal):', statusError.message);
+          console.warn('Error checking auth status (non-fatal):', statusError.message);
           return {
             status: 'not_authenticated',
             message: 'Not currently authenticated (status check failed)',
@@ -228,7 +228,7 @@ export async function gas_auth({
 
       case 'logout':
         try {
-          console.error('🔓 Logging out...');
+          console.error('Logging out...');
           
           // CLEANUP: Clear any active flows and resolvers for this auth key
           activeAuthFlows.delete(authKey);
@@ -254,7 +254,7 @@ export async function gas_auth({
           };
         } catch (logoutError: any) {
           // CRITICAL: Never throw auth errors from logout mode to prevent auto-auth trigger
-          console.warn('⚠️ Error during logout (non-fatal):', logoutError.message);
+          console.warn('Error during logout (non-fatal):', logoutError.message);
           return {
             status: 'logged_out',
             message: 'Logout completed (with some cleanup errors)',
@@ -273,7 +273,7 @@ export async function gas_auth({
           const userInfo = authStateManager instanceof SessionAuthManager
             ? await authStateManager.getUserInfo()
             : authStateManager.getUserInfo();
-          console.error(`✅ Already authenticated as ${userInfo?.email}`);
+          console.error(`Already authenticated as ${userInfo?.email}`);
           
           // Get current token info for already authenticated case
           const authSession = authStateManager instanceof SessionAuthManager
@@ -299,7 +299,7 @@ export async function gas_auth({
         );
     }
   } catch (error: any) {
-    console.error('❌ Authentication error:', error);
+    console.error('Authentication error:', error);
     
     // CLEANUP on any error
     activeAuthFlows.delete(authKey);
@@ -307,7 +307,7 @@ export async function gas_auth({
     
     // BUG FIX: Never throw authentication errors for status/logout modes to prevent auto-auth trigger
     if (mode === 'status') {
-      console.warn('⚠️ Outer catch for status mode - returning not authenticated (non-fatal):', error.message);
+      console.warn('Outer catch for status mode - returning not authenticated (non-fatal):', error.message);
       return {
         status: 'not_authenticated',
         message: 'Not currently authenticated (status check error)',
@@ -316,7 +316,7 @@ export async function gas_auth({
     }
     
     if (mode === 'logout') {
-      console.warn('⚠️ Outer catch for logout mode - returning logged out (non-fatal):', error.message);
+      console.warn('Outer catch for logout mode - returning logged out (non-fatal):', error.message);
       return {
         status: 'logged_out',
         message: 'Logout completed (with errors)',
@@ -345,7 +345,7 @@ async function performSynchronizedAuthFlow(
   openBrowser: boolean,
   waitForCompletion: boolean
 ): Promise<any> {
-  console.error(`🔐 Starting synchronized OAuth flow for ${authKey}...`);
+  console.error(`Starting synchronized OAuth flow for ${authKey}...`);
   
   // Get config and create isolated auth client
   const config = getOAuthConfig();
@@ -359,7 +359,7 @@ async function performSynchronizedAuthFlow(
       const timeout = setTimeout(() => {
         const currentState = resolverStates.get(authKey);
         if (currentState === 'pending') {
-          console.error(`⏰ Auth timeout for ${authKey} after 5 minutes`);
+          console.error(`Auth timeout for ${authKey} after 5 minutes`);
           resolverStates.set(authKey, 'rejected');
           authCompletionResolvers.delete(authKey);
           resolverStates.delete(authKey);
@@ -374,7 +374,7 @@ async function performSynchronizedAuthFlow(
           try {
             // Handle the token response and set up authentication session
             if (result.tokenResponse) {
-              console.error(`🔐 Processing authentication session for ${authKey}...`);
+              console.error(`Processing authentication session for ${authKey}...`);
               
               const tokens = {
                 access_token: result.tokenResponse.access_token,
@@ -399,14 +399,14 @@ async function performSynchronizedAuthFlow(
                 });
               }
               
-              console.error(`✅ Authentication session established for ${userInfo.email}`);
+              console.error(`Authentication session established for ${userInfo.email}`);
               
               // ENHANCEMENT: Cache deployment URLs after successful authentication
               await cacheDeploymentUrlsForSession(authStateManager, tokens.access_token);
               
               // RACE CONDITION FIX: Signal that session setup is complete
               if (result.tokenResponse.sessionSetupComplete) {
-                console.error('🔄 Signaling session setup completion to OAuth callback...');
+                console.error('Signaling session setup completion to OAuth callback...');
                 result.tokenResponse.sessionSetupComplete();
               }
               
@@ -420,7 +420,7 @@ async function performSynchronizedAuthFlow(
               resolve(result);
             }
           } catch (error: any) {
-            console.error(`❌ Error processing authentication session for ${authKey}:`, error);
+            console.error(`Error processing authentication session for ${authKey}:`, error);
             reject(new OAuthError(`Session setup failed: ${error.message}`, 'validation'));
           }
         },
@@ -431,12 +431,12 @@ async function performSynchronizedAuthFlow(
 
     // Start the auth flow
     const authUrl = await authClient.startAuthFlow(openBrowser);
-    console.error(`🔗 Auth URL generated: ${authUrl}`);
-    console.error(`⏳ Waiting for OAuth callback to complete authentication...`);
+    console.error(`Auth URL generated: ${authUrl}`);
+    console.error(`Waiting for OAuth callback to complete authentication...`);
     
     // Wait for completion
     const result = await completionPromise;
-    console.error(`✅ Synchronized OAuth flow completed for ${authKey}`);
+    console.error(`Synchronized OAuth flow completed for ${authKey}`);
     return result;
     
   } else {
@@ -446,7 +446,7 @@ async function performSynchronizedAuthFlow(
     // RACE CONDITION FIX: Even in non-blocking mode, wait briefly for session sync
     // This prevents the race condition where users immediately call API functions
     // after getting the auth URL but before session storage completes
-    console.error('🔄 Non-blocking mode: Starting brief session sync wait...');
+    console.error('Non-blocking mode: Starting brief session sync wait...');
     
     // Set up a completion resolver for non-blocking mode too
     let nonBlockingResolver: { resolve: (result: any) => void; reject: (error: any) => void; timeout: NodeJS.Timeout } | undefined;
@@ -454,7 +454,7 @@ async function performSynchronizedAuthFlow(
     const sessionSyncPromise = new Promise<void>((resolve, reject) => {
       // Much shorter timeout for non-blocking mode (10 seconds)
       const timeout = setTimeout(() => {
-        console.error('⚠️ Non-blocking session sync timeout, proceeding anyway...');
+        console.error('Non-blocking session sync timeout, proceeding anyway...');
         authCompletionResolvers.delete(authKey);
         resolverStates.delete(authKey);
         resolve();
@@ -466,7 +466,7 @@ async function performSynchronizedAuthFlow(
           try {
             // Same session setup logic as blocking mode
             if (result.tokenResponse) {
-              console.error(`🔐 Non-blocking: Processing authentication session for ${authKey}...`);
+              console.error(`Non-blocking: Processing authentication session for ${authKey}...`);
               
               const tokens = {
                 access_token: result.tokenResponse.access_token,
@@ -490,12 +490,12 @@ async function performSynchronizedAuthFlow(
                 });
               }
               
-              console.error(`✅ Non-blocking: Authentication session established for ${userInfo.email}`);
+              console.error(`Non-blocking: Authentication session established for ${userInfo.email}`);
               await cacheDeploymentUrlsForSession(authStateManager, tokens.access_token);
               
               // Signal session setup complete
               if (result.tokenResponse.sessionSetupComplete) {
-                console.error('🔄 Non-blocking: Signaling session setup completion...');
+                console.error('Non-blocking: Signaling session setup completion...');
                 result.tokenResponse.sessionSetupComplete();
               }
             }
@@ -505,7 +505,7 @@ async function performSynchronizedAuthFlow(
             resolverStates.delete(authKey);
             resolve();
           } catch (error: any) {
-            console.error(`❌ Non-blocking session setup error (non-fatal):`, error);
+            console.error(`Non-blocking session setup error (non-fatal):`, error);
             clearTimeout(timeout);
             authCompletionResolvers.delete(authKey);
             resolverStates.delete(authKey);
@@ -513,7 +513,7 @@ async function performSynchronizedAuthFlow(
           }
         },
         reject: (error: any) => {
-          console.error(`❌ Non-blocking auth error (non-fatal):`, error);
+          console.error(`Non-blocking auth error (non-fatal):`, error);
           clearTimeout(timeout);
           authCompletionResolvers.delete(authKey);
           resolverStates.delete(authKey);
@@ -624,7 +624,7 @@ export class AuthTool extends BaseTool {
       // Let the MCP server handle response wrapping consistently
       return result;
     } catch (error: any) {
-      console.error('❌ Authentication tool error:', error);
+      console.error('Authentication tool error:', error);
       
       // SCHEMA FIX: Return plain error object, not MCP format
       return {
@@ -634,10 +634,10 @@ export class AuthTool extends BaseTool {
           phase: error.data?.phase || 'unknown'
         },
         instructions: [
-          '🔑 Authentication failed',
+          'Authentication failed',
           '📖 See DESKTOP_OAUTH_SETUP.md for setup instructions',
-          '🔧 Ensure OAuth client is configured as "Desktop Application"',
-          '🌐 Check Google Cloud Console OAuth client configuration'
+          'Ensure OAuth client is configured as "Desktop Application"',
+          'Check Google Cloud Console OAuth client configuration'
         ]
       };
     }

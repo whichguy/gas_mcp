@@ -125,13 +125,13 @@ import { McpGasConfigManager } from '../config/mcpGasConfig.js';
  * This server implements a **session-isolated** MCP server that provides Google Apps Script
  * integration for AI assistants like Claude in Cursor IDE. Key architectural features:
  * 
- * ### 🔒 Session Isolation Architecture
+ * ### Session Isolation Architecture
  * - **Multi-Client Support**: Each MCP client gets isolated authentication sessions
  * - **File-Based Persistence**: Sessions stored in `.auth/` directory for persistence across restarts
  * - **Independent Tool Instances**: Each session has its own tool instances with isolated auth
  * - **Graceful Session Management**: 24-hour session timeout with automatic cleanup
  * 
- * ### 🌐 OAuth 2.0 Singleton Callback Architecture
+ * ### OAuth 2.0 Singleton Callback Architecture
  * - **Fixed Port Requirement**: OAuth callback MUST use port 3000 (hardcoded redirect URI)
  * - **Singleton Callback Server**: Single OAuth callback server shared across all sessions
  * - **Port Conflict Resolution**: Intelligent handling of port conflicts and server lifecycle
@@ -143,17 +143,17 @@ import { McpGasConfigManager } from '../config/mcpGasConfig.js';
  * - **Structured Responses**: Returns helpful guidance and instructions to users
  * - **Test Mode Support**: Disables auto-auth in test mode to prevent browser conflicts
  * 
- * ### 📡 stdout/stderr Protocol Architecture
+ * ### stdout/stderr Protocol Architecture
  * - **stdout**: Exclusive MCP JSON-RPC protocol communication with clients
  * - **stderr**: Rich diagnostic logging, performance metrics, and operational monitoring
  * - **Protocol Compliance**: Ensures MCP specification adherence while enabling debugging
  * - **Client Separation**: Diagnostic logs don't interfere with tool responses
- * - **Emoji Conventions**: Visual log parsing with 🚀🔧📡✅❌ prefixes for operation types
+ * - **Emoji Conventions**: Visual log parsing with prefixes for operation types
  * - **Security**: Token masking and sanitized error reporting in production
  * 
  * See `docs/STDOUT_STDERR_DOCUMENTATION.md` for complete implementation details.
  * 
-    * ### 🛠️ Tool Architecture
+    * ### Tool Architecture
    * - **11 Core Tools**: Complete Google Apps Script API coverage
    * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
    * - **Schema Validation**: Comprehensive input validation with helpful error messages
@@ -218,8 +218,8 @@ export class MCPGasServer {
     try {
       // Check if configuration was already initialized from command line (--config argument)
       if (process.env.MCP_GAS_WORKING_DIR) {
-        console.error(`🔧 [SERVER] Configuration already initialized from command line, skipping re-initialization`);
-        console.error(`🔧 [SERVER] Using working directory: ${process.env.MCP_GAS_WORKING_DIR}`);
+        console.error(`[SERVER] Configuration already initialized from command line, skipping re-initialization`);
+        console.error(`[SERVER] Using working directory: ${process.env.MCP_GAS_WORKING_DIR}`);
         return;
       }
       
@@ -227,9 +227,9 @@ export class MCPGasServer {
       const { LocalFileManager } = await import('../utils/localFileManager.js');
       const workingDir = LocalFileManager.getResolvedWorkingDirectory();
       await McpGasConfigManager.initialize(workingDir);
-      console.error(`🔧 [SERVER] Unified configuration initialized`);
+      console.error(`[SERVER] Unified configuration initialized`);
     } catch (error) {
-      console.error(`❌ [SERVER] Config initialization failed: ${error}`);
+      console.error(`[SERVER] Config initialization failed: ${error}`);
     }
   }
 
@@ -242,53 +242,53 @@ export class MCPGasServer {
    * 
    * ## Tool Categories Created (49 total tools):
    * 
-   * ### 🔐 Authentication & Session (1 tool)
+   * ### Authentication & Session (1 tool)
    * - `auth` - OAuth 2.0 flow management with desktop PKCE
    * 
    * ### 📂 Filesystem Operations - RECOMMENDED (9 tools)
    * - `gas_ls` - List projects and files  
-   * - `gas_cat` - ✅ Smart reader (local-first with remote fallback)
-   * - `gas_write` - ✅ Auto-sync writer (local + remote)
-   * - `gas_grep` - ✅ Content search with pattern matching (unwrapped user code)
+   * - `gas_cat` - Smart reader (local-first with remote fallback)
+   * - `gas_write` - Auto-sync writer (local + remote)
+   * - `gas_grep` - Content search with pattern matching (unwrapped user code)
    * - `gas_ripgrep` - ⚡ High-performance search with ripgrep-inspired features including multi-pattern, context control, and advanced regex
-   * - `gas_sed` - 🔧 sed-style find/replace operations with regex capture groups ($1, $2) and multi-pattern support on clean user code
+   * - `gas_sed` - sed-style find/replace operations with regex capture groups ($1, $2) and multi-pattern support on clean user code
    * - `gas_edit` - 💎 Token-efficient file editing with exact string matching (83% token savings vs gas_write)
-   * - `gas_find` - ✅ Find files with shell-like patterns and virtual names
+   * - `gas_find` - Find files with shell-like patterns and virtual names
    * - `gas_rm` - Delete files
    * - `gas_mv` - Move/rename files
    * - `gas_cp` - Copy files
    * 
-   * ### 🔧 Filesystem Operations - ADVANCED (6 tools)
-   * - `gas_raw_cat` - ⚠️ Advanced: Read with explicit project ID paths
-   * - `gas_raw_write` - ⚠️ Advanced: Write with explicit project ID paths
-   * - `gas_raw_grep` - ⚠️ Advanced: Search full content (API-only, never local files)
-   * - `gas_raw_ripgrep` - ⚠️ Advanced: High-performance search on raw content including CommonJS wrappers and system code
-   * - `gas_raw_sed` - ⚠️ Advanced: sed-style find/replace on raw content including wrappers for system-level modifications
-   * - `gas_raw_edit` - ⚠️ Advanced: Token-efficient editing on raw content (includes CommonJS wrappers)
-   * - `gas_raw_find` - ⚠️ Advanced: Find files with actual GAS names
-   * - `gas_raw_copy` - ⚠️ Advanced: Remote-to-remote file copying with merge strategies
+   * ### Filesystem Operations - ADVANCED (6 tools)
+   * - `gas_raw_cat` - Advanced: Read with explicit project ID paths
+   * - `gas_raw_write` - Advanced: Write with explicit project ID paths
+   * - `gas_raw_grep` - Advanced: Search full content (API-only, never local files)
+   * - `gas_raw_ripgrep` - Advanced: High-performance search on raw content including CommonJS wrappers and system code
+   * - `gas_raw_sed` - Advanced: sed-style find/replace on raw content including wrappers for system-level modifications
+   * - `gas_raw_edit` - Advanced: Token-efficient editing on raw content (includes CommonJS wrappers)
+   * - `gas_raw_find` - Advanced: Find files with actual GAS names
+   * - `gas_raw_copy` - Advanced: Remote-to-remote file copying with merge strategies
    * 
-   * ### 🏗️ Project Management (4 tools)
+   * ### 🏗Project Management (4 tools)
    * - `gas_mkdir` - Create logical directories
    * - `gas_info` - Project information
    * - `gas_reorder` - File ordering
    * - `gas_project_metrics` - Performance analytics
    * 
-   * ### 🚀 Script Execution - RECOMMENDED (1 tool)
-   * - `gas_run` - ✅ Execute with current project context
+   * ### Script Execution - RECOMMENDED (1 tool)
+   * - `gas_run` - Execute with current project context
    * 
-   * ### 🔧 Script Execution - ADVANCED (3 tools)
-   * - `gas_raw_run` - ⚠️ Advanced: Execute with explicit script ID
+   * ### Script Execution - ADVANCED (3 tools)
+   * - `gas_raw_run` - Advanced: Execute with explicit script ID
    * - `gas_run_api_exec` - API-based execution
    * - `gas_proxy_setup` - Proxy configuration
    * 
-   * ### 🔄 Local-Remote Sync - INDIVIDUAL COMMANDS (3 tools)
+   * ### Local-Remote Sync - INDIVIDUAL COMMANDS (3 tools)
    * - `gas_pull` - Pull remote files to local project-specific directory
    * - `gas_push` - Push local project-specific files to remote project  
    * - `gas_status` - Compare local and remote files
    * 
-   * ### 🎯 Project Context - WORKFLOW (1 tool)
-   * - `gas_project_set` - ✅ Set current project and auto-pull files
+   * ### Project Context - WORKFLOW (1 tool)
+   * - `gas_project_set` - Set current project and auto-pull files
    * 
    * ### 📁 Local Root Management - PROJECT STRUCTURE (4 tools)
    * - `gas_local_set_root` - Set configurable local root directory for all projects
@@ -358,7 +358,7 @@ export class MCPGasServer {
       new MvTool(authManager),
       new CpTool(authManager),
       
-      // 🔧 Filesystem operations - ADVANCED raw tools (explicit project IDs)
+      // Filesystem operations - ADVANCED raw tools (explicit project IDs)
       new RawCatTool(authManager),        // Advanced: Explicit project ID paths
       new RawWriteTool(authManager),      // Advanced: Explicit project ID paths
       new RawGrepTool(authManager),       // Advanced: Search full content (API-only, never local files)
@@ -369,17 +369,17 @@ export class MCPGasServer {
       new RawFindTool(authManager),       // Advanced: Find with actual GAS names
       new RawCpTool(authManager),        // Advanced: Bulk copy without CommonJS processing
       
-      // 🏗️ Project management
+      // 🏗Project management
       new MkdirTool(authManager),
       new InfoTool(authManager),
       new ReorderTool(authManager),
       new ProjectMetricsTool(authManager),
       
-      // 🚀 Script execution - RECOMMENDED auto-sync tool
-      new RunTool(authManager),           // ✅ Uses current project context
+      // Script execution - RECOMMENDED auto-sync tool
+      new RunTool(authManager),           // Uses current project context
       
-      // 🔧 Script execution - ADVANCED raw tool
-      new ExecTool(authManager),        // ⚠️ Advanced: Explicit script ID
+      // Script execution - ADVANCED raw tool
+      new ExecTool(authManager),        // Advanced: Explicit script ID
       new ExecApiTool(authManager),    // Alternative API-based execution
       new ProxySetupTool(authManager),
       
@@ -403,7 +403,7 @@ export class MCPGasServer {
       new ProcessListTool(authManager),
       new ProcessListScriptTool(authManager),
 
-      // 📋 Execution logs with Cloud Logging integration
+      // Execution logs with Cloud Logging integration
       new LogsListTool(authManager),      // Browse logs with Cloud Logging-first optimization
       new LogsGetTool(authManager),       // Get complete logs for single process
       
@@ -411,13 +411,13 @@ export class MCPGasServer {
       new VersionGetTool(authManager),
       new VersionListTool(authManager),
       
-      // 🔄 Local-Remote sync operations - EXPLICIT workflow tools
+      // Local-Remote sync operations - EXPLICIT workflow tools
       new PullTool(authManager),          // Explicit pull for multi-env
       new PushTool(authManager),          // Explicit push for multi-env  
       new StatusTool(authManager),        // Diagnostic comparison
       
-      // 🎯 Project context - WORKFLOW tools (visible to MCP)
-      new ProjectSetTool(authManager),    // ✅ Main workflow: Set project & auto-pull
+      // Project context - WORKFLOW tools (visible to MCP)
+      new ProjectSetTool(authManager),    // Main workflow: Set project & auto-pull
       new ProjectGetTool(authManager),    // Get current project information
       new ProjectAddTool(authManager),    // Add project to configuration  
       new ProjectListTool(authManager),   // List all configured projects
@@ -425,19 +425,19 @@ export class MCPGasServer {
       // Local root management removed - all projects now use git sync pattern:
       // ~/gas-repos/project-{scriptId}/ for consistent file management
       
-      // ⏰ Trigger management - AUTOMATION tools
+      // Trigger management - AUTOMATION tools
       new TriggerListTool(authManager),    // List all installable triggers
       new TriggerCreateTool(authManager),  // Create time-based and event-driven triggers
       new TriggerDeleteTool(authManager),  // Delete triggers by ID or function name
       
-      // 🔧 Git Sync - SAFE GIT INTEGRATION (5 tools replacing old 12 tools)
+      // Git Sync - SAFE GIT INTEGRATION (5 tools replacing old 12 tools)
       new GitInitTool(authManager),           // Initialize git association with .git.gs file
       new GitSyncTool(authManager),           // Safe pull-merge-push synchronization
       new GitStatusTool(authManager),         // Check git association and sync status
       new GitSetSyncFolderTool(authManager),  // Set/update sync folder location
       new GitGetSyncFolderTool(authManager),  // Query sync folder location
 
-      // 📊 Google Sheets SQL - SQL-STYLE OPERATIONS on Google Sheets
+      // Google Sheets SQL - SQL-STYLE OPERATIONS on Google Sheets
       new SheetSqlTool(authManager),          // Execute SELECT/INSERT/UPDATE/DELETE on Google Sheets with SQL syntax
 
       // NOTE: All project context tools are now VISIBLE to MCP users/LLMs
@@ -491,7 +491,10 @@ export class MCPGasServer {
           throw new Error(`Unknown tool: ${name}`);
         }
 
-        console.error(`Executing tool: ${name}`);
+        // Reduced logging - only log non-auth operations
+        if (name !== 'auth' || (args && args.mode !== 'status')) {
+          console.error(`Executing tool: ${name}`);
+        }
 
         // Remove sessionId from args before passing to tool
         const toolArgs = { ...args };
@@ -508,7 +511,10 @@ export class MCPGasServer {
           sessionId: sessionId
         };
 
-        console.error(`[Session ${sessionId}] Tool ${name} completed successfully`);
+        // Reduced logging - only log auth and execution tools, not status checks
+        if (name !== 'auth' || (args && args.mode !== 'status')) {
+          console.error(`[Session ${sessionId}] Tool ${name} completed successfully`);
+        }
 
         // SCHEMA FIX: Check if tool already returned proper MCP format
         // Some tools (like gas_auth) return { content: [...], isError: false }
@@ -623,9 +629,9 @@ export class MCPGasServer {
     // Initialize default local root directory if not configured
     try {
       const localRoot = await LocalFileManager.initializeDefaultRoot();
-      console.error(`🗂️  Local root directory: ${localRoot}`);
+      console.error(` Local root directory: ${localRoot}`);
     } catch (error) {
-      console.error('⚠️  Warning: Failed to initialize local root directory:', error);
+      console.error(' Warning: Failed to initialize local root directory:', error);
       // Don't fail server startup for this, just log the warning
     }
     
@@ -642,7 +648,7 @@ export class MCPGasServer {
     // Clean up expired filesystem sessions on startup
     const filesCleaned = await SessionAuthManager.cleanupExpiredSessions();
     if (filesCleaned > 0) {
-      console.error(`🧹 Cleaned up ${filesCleaned} expired session files from filesystem`);
+      console.error(`Cleaned up ${filesCleaned} expired session files from filesystem`);
     }
   }
 

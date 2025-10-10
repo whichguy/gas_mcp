@@ -615,28 +615,55 @@ export class DeployListTool extends BaseTool {
       if (hasWebApp) {
         analysis.webAppCount++;
         const webAppEntry = entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-        // Get webAppUrl from entry point and convert to gas_run format if available
-        let webAppUrl = `https://script.google.com/macros/s/${scriptId}/dev`; // fallback
-        if (webAppEntry?.webApp?.url) {
-          webAppUrl = this.gasClient.constructGasRunUrlFromWebApp(webAppEntry.webApp.url);
+
+        // Get webAppUrl from entry point (production /exec URL)
+        let baseUrl = webAppEntry?.webApp?.url;
+        if (baseUrl) {
+          baseUrl = this.gasClient.constructGasRunUrlFromWebApp(baseUrl);
         }
-        
+
+        // Extract deployment ID from the production URL to construct /dev URL
+        // Production URL format: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+        let execDebugUrl = null;
+        let devDebugUrl = null;
+
+        if (baseUrl) {
+          const deploymentMatch = baseUrl.match(/\/s\/([^/]+)\//);
+          if (deploymentMatch) {
+            const deploymentHash = deploymentMatch[1];
+            // Debug console URLs with parameters (primary format for mcp_gas debugging)
+            execDebugUrl = `${baseUrl}?_mcp_run=true&action=auth_ide`;
+            // /dev URL with debug params (Google Workspace domain credentials only)
+            devDebugUrl = `https://script.google.com/macros/s/${deploymentHash}/dev?_mcp_run=true&action=auth_ide`;
+          }
+        }
+
         const webAppInfo = {
           deploymentId: deployment.deploymentId,
           versionNumber: deployment.versionNumber,
           description: deployment.description,
           updateTime: deployment.updateTime,
-          url: webAppUrl,
+          debugUrls: {
+            production: execDebugUrl,  // PRIMARY: /exec with debug params
+            development: devDebugUrl,  // /dev with debug params (domain credentials only)
+            note: '⚠️ /dev URLs require Google Workspace domain credentials'
+          },
           access: webAppEntry?.webApp?.access || 'Unknown',
           executeAs: webAppEntry?.webApp?.executeAs || 'Unknown',
           isHead: isHead
         };
-        
+
         analysis.webApps.push(webAppInfo);
-        
+
         analysis.urlCount++;
-        analysis.webAppUrls.push(webAppUrl);
-        analysis.testCommands.push(`curl "${webAppUrl}?func=myFunction"`);
+        if (execDebugUrl) {
+          analysis.webAppUrls.push(execDebugUrl);
+          analysis.testCommands.push(`# Open debug console:\n${execDebugUrl}`);
+        }
+        if (devDebugUrl) {
+          analysis.webAppUrls.push(devDebugUrl);
+          analysis.testCommands.push(`# Development debug console (domain credentials only):\n${devDebugUrl}`);
+        }
       }
 
       // API Executable analysis
@@ -671,14 +698,34 @@ export class DeployListTool extends BaseTool {
   private async formatDeployments(deployments: any[], scriptId: string, accessToken?: string): Promise<any[]> {
     return Promise.all(deployments.map(async deployment => {
       const hasWebApp = (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'WEB_APP');
-      
+
+      // Extract web app URL and construct debug console URLs
+      let execDebugUrl = null;
+      let devDebugUrl = null;
+
+      if (hasWebApp && deployment.entryPoints) {
+        const webAppEntry = deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+        if (webAppEntry?.webApp?.url) {
+          const baseUrl = this.gasClient.constructGasRunUrlFromWebApp(webAppEntry.webApp.url);
+
+          // Extract deployment ID to construct /dev URL
+          const deploymentMatch = baseUrl.match(/\/s\/([^/]+)\//);
+          if (deploymentMatch) {
+            const deploymentHash = deploymentMatch[1];
+            // Debug console URLs (primary format for mcp_gas debugging)
+            execDebugUrl = `${baseUrl}?_mcp_run=true&action=auth_ide`;
+            devDebugUrl = `https://script.google.com/macros/s/${deploymentHash}/dev?_mcp_run=true&action=auth_ide`;
+          }
+        }
+      }
+
       return {
         deploymentId: deployment.deploymentId,
         versionNumber: deployment.versionNumber,
         description: deployment.description,
         updateTime: deployment.updateTime,
         createTime: deployment.createTime,
-        
+
         // Entry point analysis
         entryPoints: (deployment.entryPoints || []).map((ep: any) => ({
           type: ep.entryPointType,
@@ -691,17 +738,22 @@ export class DeployListTool extends BaseTool {
             access: ep.executionApi?.access
           } : undefined
         })),
-        
+
         // Quick identifiers
         isHead: deployment.versionNumber === null || deployment.versionNumber === undefined || deployment.versionNumber === 0,
         hasWebApp: hasWebApp,
         hasApiExecutable: (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'EXECUTION_API'),
-        webAppUrl: hasWebApp && deployment.entryPoints ? 
-          (deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP')?.webApp?.url ? 
-            this.gasClient.constructGasRunUrlFromWebApp(deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP').webApp.url) : 
-            deployment.webAppUrl) : 
-          deployment.webAppUrl,
-        
+
+        // Debug console URLs (primary format for mcp_gas debugging)
+        debugUrls: hasWebApp ? {
+          production: execDebugUrl,  // PRIMARY: /exec with debug params
+          development: devDebugUrl,  // /dev with debug params (domain credentials only)
+          note: '⚠️ /dev URLs require Google Workspace domain credentials'
+        } : null,
+
+        // Legacy compatibility (returns production debug URL as primary)
+        webAppUrl: execDebugUrl,
+
         // Deployment config
         deploymentConfig: deployment.deploymentConfig
       };

@@ -4,5 +4,7 @@
   "spec": "test/**/*.test.ts",
   "timeout": 15000,
   "exit": true,
-  "require": "test/setup/globalAuth.ts"
+  "require": "test/setup/globalAuth.ts",
+  "reporter": "spec",
+  "color": true
 } 

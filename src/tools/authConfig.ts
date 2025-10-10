@@ -8,8 +8,13 @@ import { AuthConfig } from '../auth/oauthClient.js';
 /**
  * Load OAuth configuration from unified config
  */
+// Cache the config to avoid repeated logging
+let cachedAuthConfig: AuthConfig | null = null;
+
 export function loadOAuthConfigFromJson(): AuthConfig {
-  console.error('🔧 Loading OAuth configuration from unified config...');
+  if (cachedAuthConfig) {
+    return cachedAuthConfig;
+  }
 
   const authConfig: AuthConfig = {
     client_id: '428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com',
@@ -35,9 +40,11 @@ export function loadOAuthConfigFromJson(): AuthConfig {
     ]
   };
 
-  console.error(`🔐 OAuth client initialized with UWP configuration`);
-  console.error(`🔑 Client ID: ${authConfig.client_id.substring(0, 20)}...`);
-  console.error(`🏷️  Type: ${authConfig.type?.toUpperCase()}`);
+  // Cache the config
+  cachedAuthConfig = authConfig;
+
+  // Only log once when first loaded
+  console.error(`OAuth config loaded: UWP client (${authConfig.client_id.substring(0, 20)}...)`);
 
   return authConfig;
 }
