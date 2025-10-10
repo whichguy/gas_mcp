@@ -80,29 +80,50 @@ export const mochaHooks = {
     if (authStatus.authenticated && authStatus.tokenValid) {
         console.log(`✅ Using valid cached session for ${authStatus.user.email}.`);
         globalAuthState.isAuthenticated = true;
+
+        // Set sessionId on client so all tool calls use the authenticated session
+        if (authStatus.sessionId && globalAuthState.client) {
+          globalAuthState.client.setSessionId(authStatus.sessionId);
+          console.log(`🔑 Set sessionId on global client: ${authStatus.sessionId}`);
+        }
     } else {
         console.log('🔑 No valid authentication found. Starting interactive OAuth flow...');
         console.log('⚠️ Please complete authentication in the browser that will open.');
 
           try {
-        console.log('📋 Step 1: Starting OAuth flow with browser...');
+        console.log('📋 Starting OAuth flow with browser (waitForCompletion=true)...');
         const authResult = await globalAuthState.auth!.startInteractiveAuthWithBrowser();
-        console.log(`🔗 OAuth URL: ${authResult.authUrl}`);
+        console.log(`🔗 OAuth result: ${JSON.stringify(authResult, null, 2)}`);
 
-        console.log('📋 Step 2: Polling for authentication completion...');
-        const authCompleted = await globalAuthState.auth!.waitForAuth(120000); // 2 minutes
-        
-        if (!authCompleted) {
-              throw new Error('Authentication timed out');
+        // Check if already authenticated from the auth tool response
+        if (authResult.authenticated) {
+          console.log(`✅ Global authentication successful for ${authResult.user?.email || 'user'}.`);
+          globalAuthState.isAuthenticated = true;
+
+          // Set sessionId on client so all tool calls use the authenticated session
+          if (authResult.sessionId && globalAuthState.client) {
+            globalAuthState.client.setSessionId(authResult.sessionId);
+            console.log(`🔑 Set sessionId on global client: ${authResult.sessionId}`);
+          }
+        } else {
+          // Brief delay to allow session cache write to complete
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Check final auth status
+          const finalStatus = await globalAuthState.auth!.getAuthStatus();
+          if (!finalStatus.authenticated) {
+            throw new Error('Authentication was not successful after OAuth flow');
+          }
+
+          console.log(`✅ Global authentication successful for ${finalStatus.user.email}.`);
+          globalAuthState.isAuthenticated = true;
+
+          // Set sessionId on client so all tool calls use the authenticated session
+          if (finalStatus.sessionId && globalAuthState.client) {
+            globalAuthState.client.setSessionId(finalStatus.sessionId);
+            console.log(`🔑 Set sessionId on global client: ${finalStatus.sessionId}`);
+          }
         }
-        
-        const finalStatus = await globalAuthState.auth!.getAuthStatus();
-        if (!finalStatus.authenticated) {
-                throw new Error('Authentication was not successful after OAuth flow');
-        }
-        
-        console.log(`✅ Global authentication successful for ${finalStatus.user.email}.`);
-        globalAuthState.isAuthenticated = true;
           } catch (authError) {
             console.warn(`⚠️  OAuth setup failed: ${authError}. Some tests may be skipped.`);
             globalAuthState.isAuthenticated = false;

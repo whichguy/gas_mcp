@@ -1197,8 +1197,13 @@ export class ProjectInitTool extends BaseTool {
       },
       force: {
         type: 'boolean',
-        description: 'Force overwrite existing files (default: false)',
-        default: false
+        description: 'SHA verification behavior (default: false). When false: warns on SHA mismatch without repair. When true: auto-repairs SHA mismatches.',
+        default: false,
+        llmHints: {
+          defaultBehavior: 'force=false warns on SHA mismatch, preserves existing files',
+          autoRepair: 'force=true auto-repairs SHA mismatches by reinstalling infrastructure',
+          verification: 'Uses Git-compatible SHA-1 checksums to verify file integrity'
+        }
       },
       accessToken: {
         type: 'string',
@@ -1224,6 +1229,13 @@ export class ProjectInitTool extends BaseTool {
         containerBound: '✅ Full Support - Works identically',
         notes: 'Infrastructure initialization works universally for both script types.'
       },
+      shaVerification: {
+        algorithm: 'Git-compatible SHA-1 using blob format: sha1("blob " + size + "\\0" + content)',
+        forcefalse: 'Verifies files and warns on SHA mismatch without auto-repair (preserves existing files)',
+        forcetrue: 'Verifies files and auto-repairs SHA mismatches by reinstalling infrastructure',
+        warningLocation: 'Warnings appear in verificationWarnings array when force=false',
+        compatibility: 'SHA format matches git hash-object output for local verification'
+      },
       limitations: {
         existingFiles: 'By default preserves existing files - use force: true to overwrite',
         manifestUpdates: 'Updates appsscript.json manifest with standard configuration',
@@ -1233,13 +1245,15 @@ export class ProjectInitTool extends BaseTool {
         basicInit: 'project_init({scriptId: "..."}) - Install all infrastructure',
         commonJSOnly: 'project_init({scriptId: "...", includeExecutionInfrastructure: false}) - Only CommonJS',
         executionOnly: 'project_init({scriptId: "...", includeCommonJS: false}) - Only execution infrastructure',
-        forceUpdate: 'project_init({scriptId: "...", force: true}) - Overwrite existing files'
+        verifyOnly: 'project_init({scriptId: "...", force: false}) - Check SHA integrity, warn on mismatch (default)',
+        autoRepair: 'project_init({scriptId: "...", force: true}) - Auto-repair SHA mismatches by reinstalling'
       },
       returnValue: {
         status: 'Initialization result (success/partial/failed)',
         scriptId: 'The project ID that was initialized',
         filesInstalled: 'List of files that were installed/updated',
         filesSkipped: 'List of files that were skipped (already exist)',
+        verificationWarnings: 'SHA verification warnings when force=false and SHA mismatches detected',
         errors: 'Any errors encountered during initialization'
       },
       nextSteps: [
@@ -1277,7 +1291,8 @@ export class ProjectInitTool extends BaseTool {
       scriptId,
       filesInstalled: [],
       filesSkipped: [],
-      errors: []
+      errors: [],
+      verificationWarnings: []
     };
 
     try {
@@ -1294,6 +1309,10 @@ export class ProjectInitTool extends BaseTool {
           result.filesInstalled.push(commonJSResult.fileName);
         } else if (commonJSResult.skipped) {
           result.filesSkipped.push(commonJSResult.fileName);
+          // Collect verification warnings when force=false and SHA mismatch detected
+          if (commonJSResult.warning) {
+            result.verificationWarnings.push(commonJSResult.warning);
+          }
         } else {
           result.errors.push(commonJSResult.error);
         }
@@ -1306,6 +1325,10 @@ export class ProjectInitTool extends BaseTool {
           result.filesInstalled.push(executionResult.fileName);
         } else if (executionResult.skipped) {
           result.filesSkipped.push(executionResult.fileName);
+          // Collect verification warnings when force=false and SHA mismatch detected
+          if (executionResult.warning) {
+            result.verificationWarnings.push(executionResult.warning);
+          }
         } else {
           result.errors.push(executionResult.error);
         }

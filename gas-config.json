@@ -336,6 +336,51 @@
       "scriptId": "1xMdGqjsFoW-i3EF1AlWlvod9cvIjXcBjI_Py5brQsK2Da2_vwldqzeWq",
       "name": "commonjs2paramtest",
       "description": "Created: 10/9/2025"
+    },
+    "sha-test-1760107723501": {
+      "scriptId": "1Jb8xYrk5R4kRr2km8MDMFrmLZUFGImyUGh3osX4nUQDt0XzHSJuf4-sG",
+      "name": "sha-test-1760107723501",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-mismatch-test-176010774128": {
+      "scriptId": "1b1SmCWr7gd4YWxyVISiyCZ1VTZKxUG4cIBFAs4UVpUDomf4se72AWzDo",
+      "name": "sha-mismatch-test-176010774128",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-repair-test-1760107756186": {
+      "scriptId": "1tXqrM6ssoPFjeRgvg4V1_JRHtDR_RNweORdXaRWz8P89KT4Xq23KrpC6",
+      "name": "sha-repair-test-1760107756186",
+      "description": "Created: 10/10/2025"
+    },
+    "exec-sha-test-1760107771642": {
+      "scriptId": "1Xvjr2MQJCKywrf4r0ojXA9lHXcyWMZjNgHD4QrNF9sz8fBzCtRSEQBaB",
+      "name": "exec-sha-test-1760107771642",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-test-1760108097138": {
+      "scriptId": "1m4FFBpwfmpabMzJtgIWiB1Zm24ravX5gZKK502sS7zXLcFC62KpYsIcG",
+      "name": "sha-test-1760108097138",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-mismatch-test-176010811418": {
+      "scriptId": "134brhlyFGQp4BML7UnBUtkU92VYiGQP0mdz6T8ob1MAtnvStwNiwj6PX",
+      "name": "sha-mismatch-test-176010811418",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-repair-test-1760108136306": {
+      "scriptId": "1Y8It2nJGCXunFnXjEojHvUysCO2eN60_fc45MkGtJFT62OLbE_Ei5AMX",
+      "name": "sha-repair-test-1760108136306",
+      "description": "Created: 10/10/2025"
+    },
+    "exec-sha-test-1760108158873": {
+      "scriptId": "1fUqS-otuZrcr2XdWJ9mNHbqYRX8Oy9icM88w95KvreI7FtlXMyBTrFXv",
+      "name": "exec-sha-test-1760108158873",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-test-1760108335927": {
+      "scriptId": "16EC3So09zj5JycUGWhMOF0rB0lzlDiszfVZTSbbc4nIO6Wri-btD5X_5",
+      "name": "sha-test-1760108335927",
+      "description": "Created: 10/10/2025"
     }
   },
   "localRoot": {
@@ -345,7 +390,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-09T07:00:13.911Z"
+    "lastModified": "2025-10-10T14:59:13.338Z"
   },
   "debug": true,
   "currentProject": {

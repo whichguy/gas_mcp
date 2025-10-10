@@ -58,7 +58,7 @@ function getCommonJSTemplate(): string {
     const { SHIM_TEMPLATE } = require('./deployments.js');
     _shimTemplate = SHIM_TEMPLATE;
   }
-  return _shimTemplate;
+  return _shimTemplate!;
 }
 
 /**
