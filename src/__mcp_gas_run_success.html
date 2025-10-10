@@ -50,12 +50,84 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 16px;
     }
 
     .header h1 {
       font-size: 14px;
       font-weight: 500;
       color: var(--text-primary);
+      flex-shrink: 0;
+    }
+
+    .header-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .info-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      padding: 4px 8px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .info-label {
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .info-value {
+      color: var(--text-primary);
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+
+    .copyable {
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .copyable:hover {
+      background: var(--bg-primary);
+      color: var(--accent-blue);
+    }
+
+    .copyable:hover::after {
+      content: 'Click to copy';
+      position: absolute;
+      top: -24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      white-space: nowrap;
+      border: 1px solid var(--border-color);
+      z-index: 1000;
+      pointer-events: none;
+    }
+
+    .copyable.copied {
+      background: var(--success-green);
+      color: white;
+    }
+
+    .copyable.copied::after {
+      content: 'Copied!' !important;
+      background: var(--success-green);
     }
 
     .main-container {
@@ -555,11 +627,121 @@
       padding: 0 2px;
       border-radius: 2px;
     }
+
+    .logs-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logs-select {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .logs-select:hover {
+      border-color: var(--accent-blue);
+    }
+
+    .logs-select:focus {
+      border-color: var(--accent-blue);
+    }
+
+    .logs-status {
+      color: var(--text-secondary);
+      font-size: 11px;
+      margin-left: auto;
+    }
+
+    #logsContent {
+      padding: 16px;
+      overflow-y: auto;
+      max-height: calc(100% - 60px);
+    }
+
+    .log-entry {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      border-left: 3px solid var(--border-color);
+      line-height: 1.5;
+    }
+
+    .log-entry.info {
+      border-left-color: var(--accent-blue);
+    }
+
+    .log-entry.warning {
+      border-left-color: var(--warning-yellow);
+    }
+
+    .log-entry.error {
+      border-left-color: var(--error-red);
+    }
+
+    .log-entry.success {
+      border-left-color: var(--success-green);
+    }
+
+    .log-timestamp {
+      color: var(--text-secondary);
+      font-size: 10px;
+      margin-bottom: 4px;
+    }
+
+    .log-function {
+      color: var(--success-green);
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .log-message {
+      color: var(--text-primary);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .log-empty {
+      color: var(--text-secondary);
+      text-align: center;
+      padding: 40px 20px;
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>Gas Debugger Console</h1>
+    <div class="header-info">
+      <div class="info-item copyable" id="scriptNameInfo" title="Click to copy script name">
+        <span class="info-label">Script:</span>
+        <span class="info-value" id="scriptName">Loading...</span>
+      </div>
+      <div class="info-item copyable" id="scriptIdInfo" title="Click to copy script ID">
+        <span class="info-label">ID:</span>
+        <span class="info-value" id="scriptId">Loading...</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">Session:</span>
+        <span class="info-value" id="sessionTime">Just now</span>
+      </div>
+    </div>
   </div>
 
   <div class="main-container">
@@ -593,11 +775,24 @@
     <div class="console-area">
       <div class="tab-bar">
         <button class="tab active" data-tab="console">Console</button>
-        <button class="tab" data-tab="output">Output</button>
+        <button class="tab" data-tab="logs">Logs</button>
       </div>
 
       <div class="tab-content active" id="console"></div>
-      <div class="tab-content" id="output"></div>
+      <div class="tab-content" id="logs">
+        <div class="logs-controls">
+          <select id="logsTimeRange" class="logs-select">
+            <option value="15">Last 15 minutes</option>
+            <option value="60">Last 1 hour</option>
+            <option value="360">Last 6 hours</option>
+            <option value="1800">Last 30 hours</option>
+            <option value="0">All logs</option>
+          </select>
+          <button class="panel-btn" id="refreshLogsBtn">Refresh</button>
+          <span class="logs-status" id="logsStatus"></span>
+        </div>
+        <div id="logsContent"></div>
+      </div>
 
       <div class="input-area">
         <input
@@ -964,9 +1159,122 @@
     };
 
     window.DataLoader = {
+      loadScriptInfo: function() {
+        if (!google || !google.script || !google.script.run) {
+          console.error('google.script.run not available');
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function(info) {
+            if (info && info.scriptId) {
+              $('#scriptId').text(info.scriptId);
+              $('#scriptName').text(info.projectName || 'Unknown');
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('Failed to load script info:', error);
+            $('#scriptId').text('Error loading');
+            $('#scriptName').text('Error loading');
+          })
+          .getScriptInfo();
+      },
+
       loadProcesses: function() {
         const $processes = $('#processesList');
-        $processes.html('<div class="empty-state" style="padding: 20px;">Process tracking requires the Apps Script Processes API scope which is not currently enabled.<br><br>This feature would show recent script executions with their status, duration, and function names.<br><br>To enable, add this scope to appsscript.json:<br><code style="background: var(--bg-primary); padding: 4px 8px; border-radius: 3px; display: inline-block; margin-top: 8px;">https://www.googleapis.com/auth/script.processes</code></div>');
+        $processes.html('<div style="padding: 8px; color: var(--text-secondary); font-size: 11px;">Loading processes...</div>');
+
+        if (!google || !google.script || !google.script.run) {
+          $processes.html('<div style="padding: 8px; color: var(--error-red); font-size: 11px;">google.script.run not available</div>');
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (!response || !response.success) {
+              $processes.html('<div style="padding: 8px; color: var(--error-red); font-size: 11px;">' + (response ? response.error : 'Failed to load processes') + '</div>');
+              return;
+            }
+
+            const processes = response.processes || [];
+            if (processes.length === 0) {
+              $processes.html('<div style="padding: 8px; color: var(--text-secondary); font-size: 11px;">No recent processes</div>');
+              return;
+            }
+
+            $processes.empty();
+            processes.forEach(function(proc) {
+              const $item = $('<div class="process-item">');
+              const statusClass = proc.status === 'COMPLETED' ? 'completed' : 'failed';
+              const $status = $('<span class="process-status ' + statusClass + '">');
+              const time = new Date(proc.startTime).toLocaleTimeString();
+              const duration = proc.duration ? ' (' + proc.duration + 'ms)' : '';
+              const $text = $('<span>').text(proc.functionName + ' - ' + time + duration);
+              $item.append($status, $text);
+              $processes.append($item);
+            });
+          })
+          .withFailureHandler(function(error) {
+            $processes.html('<div style="padding: 8px; color: var(--error-red); font-size: 11px;">Error: ' + error.message + '</div>');
+          })
+          .getRecentProcesses();
+      },
+
+      loadLogs: function(minutes) {
+        const $content = $('#logsContent');
+        const $status = $('#logsStatus');
+
+        $content.html('<div class="log-empty">Loading logs...</div>');
+        $status.text('Loading...');
+
+        if (!google || !google.script || !google.script.run) {
+          $content.html('<div class="log-empty">google.script.run not available</div>');
+          $status.text('');
+          return;
+        }
+
+        google.script.run
+          .withSuccessHandler(function(response) {
+            if (!response || !response.success) {
+              $content.html('<div class="log-empty">' + (response ? response.error : 'Failed to load logs') + '</div>');
+              $status.text('Error');
+              return;
+            }
+
+            const logs = response.logs || [];
+            const timeRange = minutes === 0 ? 'all' : minutes + ' min';
+            $status.text(logs.length + ' entries (' + timeRange + ')');
+
+            if (logs.length === 0) {
+              $content.html('<div class="log-empty">No logs found for the selected time range</div>');
+              return;
+            }
+
+            $content.empty();
+            logs.forEach(function(log) {
+              const $entry = $('<div class="log-entry ' + (log.severity || 'info').toLowerCase() + '">');
+
+              if (log.timestamp) {
+                const $timestamp = $('<div class="log-timestamp">').text(new Date(log.timestamp).toLocaleString());
+                $entry.append($timestamp);
+              }
+
+              if (log.functionName) {
+                const $function = $('<div class="log-function">').text('Function: ' + log.functionName);
+                $entry.append($function);
+              }
+
+              const $message = $('<div class="log-message">').text(log.message || log.textPayload || JSON.stringify(log));
+              $entry.append($message);
+
+              $content.append($entry);
+            });
+          })
+          .withFailureHandler(function(error) {
+            $content.html('<div class="log-empty">Error: ' + error.message + '</div>');
+            $status.text('Error');
+          })
+          .getScriptLogs(minutes);
       }
     };
 
@@ -1069,6 +1377,102 @@
     };
 
     $(document).ready(function() {
+      // Load script info
+      window.DataLoader.loadScriptInfo();
+
+      // Setup session time counter
+      const sessionStart = new Date();
+      setInterval(function() {
+        const elapsed = Math.floor((new Date() - sessionStart) / 1000);
+        const minutes = Math.floor(elapsed / 60);
+        const seconds = elapsed % 60;
+        if (minutes > 0) {
+          $('#sessionTime').text(minutes + 'm ' + seconds + 's');
+        } else {
+          $('#sessionTime').text(seconds + 's');
+        }
+      }, 1000);
+
+      // Click-to-copy functionality
+      $('.copyable').on('click', function() {
+        const $elem = $(this);
+        const textToCopy = $elem.find('.info-value').text();
+
+        if (!textToCopy || textToCopy === 'Loading...' || textToCopy === 'Error loading') {
+          return;
+        }
+
+        // Copy to clipboard
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(textToCopy).then(function() {
+            $elem.addClass('copied');
+            setTimeout(function() {
+              $elem.removeClass('copied');
+            }, 1500);
+          }).catch(function(err) {
+            console.error('Copy failed:', err);
+          });
+        } else {
+          // Fallback for older browsers
+          const textarea = document.createElement('textarea');
+          textarea.value = textToCopy;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.select();
+          try {
+            document.execCommand('copy');
+            $elem.addClass('copied');
+            setTimeout(function() {
+              $elem.removeClass('copied');
+            }, 1500);
+          } catch (err) {
+            console.error('Copy failed:', err);
+          }
+          document.body.removeChild(textarea);
+        }
+      });
+
+      // Logs controls
+      $('#logsTimeRange').on('change', function() {
+        const minutes = parseInt($(this).val());
+        window.DataLoader.loadLogs(minutes);
+      });
+
+      $('#refreshLogsBtn').on('click', function() {
+        const minutes = parseInt($('#logsTimeRange').val());
+        window.DataLoader.loadLogs(minutes);
+      });
+
+      // Auto-refresh logs when Logs tab is active
+      let logsRefreshInterval = null;
+      $('.tab').on('click', function() {
+        const tab = $(this).data('tab');
+        if (tab === 'logs') {
+          const minutes = parseInt($('#logsTimeRange').val());
+          window.DataLoader.loadLogs(minutes);
+          // Auto-refresh every 10 seconds
+          if (logsRefreshInterval) clearInterval(logsRefreshInterval);
+          logsRefreshInterval = setInterval(function() {
+            if ($('.tab[data-tab="logs"]').hasClass('active')) {
+              window.DataLoader.loadLogs(parseInt($('#logsTimeRange').val()));
+            }
+          }, 10000);
+        } else {
+          if (logsRefreshInterval) {
+            clearInterval(logsRefreshInterval);
+            logsRefreshInterval = null;
+          }
+        }
+      });
+
+      // Auto-refresh processes every 30 seconds
+      setInterval(function() {
+        if ($('#processesPanel').is(':visible') && !$('#processesPanel').hasClass('collapsed')) {
+          window.DataLoader.loadProcesses();
+        }
+      }, 30000);
+
       $('#executeBtn').on('click', window.CodeExecutor.execute);
 
       $('#codeInput').on('keypress', function(e) {

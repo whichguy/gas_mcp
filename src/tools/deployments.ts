@@ -398,16 +398,17 @@ export class DeployCreateTool extends BaseTool {
           access: webAppAccess,
           executeAs: webAppExecuteAs
         };
-        
+
         // Always use gas_run URL format for consistency
         const webAppUrl = deployment.webAppUrl;
-        
+
         result.webAppUrl = webAppUrl;
         result.usage = [
           `Access your web app: ${webAppUrl}`,
           `Call functions: ${webAppUrl}?func=functionName`,
           `Test known result: ${webAppUrl}?func=knownResultFunction`,
-          `Expected result: {"operation":"addition","operands":[15,27],"result":42,"expected":42,"isCorrect":true}`
+          `Expected result: {"operation":"addition","operands":[15,27],"result":42,"expected":42,"isCorrect":true}`,
+          `\nNote: Use deploy_list for comprehensive URL information including HEAD (/dev) and versioned (/exec) deployment URLs with both standard and domain-specific formats.`
         ];
         result.testCommands = [
           `curl "${webAppUrl}?func=knownResultFunction"`,
@@ -610,6 +611,65 @@ export class DeployListTool extends BaseTool {
   }
 
   /**
+   * Extract deployment ID and domain from a web app URL
+   * Returns both standard and domain-specific URL formats
+   */
+  private extractUrlInfo(webAppUrl: string): {
+    deploymentId: string | null;
+    isDomainSpecific: boolean;
+    domain: string | null;
+    standardBaseUrl: string | null;
+    domainBaseUrl: string | null;
+  } {
+    try {
+      const url = new URL(webAppUrl);
+
+      // Match both domain-specific and standard formats
+      // Domain-specific: /a/macros/[DOMAIN]/s/[DEPLOYMENT_ID]/exec (or /dev)
+      // Standard:        /macros/s/[DEPLOYMENT_ID]/exec (or /dev)
+      const domainMatch = url.pathname.match(/\/a\/macros\/([^\/]+)\/s\/([^\/]+)\/(?:exec|dev)$/);
+      const standardMatch = url.pathname.match(/\/macros\/s\/([^\/]+)\/(?:exec|dev)$/);
+
+      if (domainMatch) {
+        const domain = domainMatch[1];
+        const deploymentId = domainMatch[2];
+        return {
+          deploymentId,
+          isDomainSpecific: true,
+          domain,
+          standardBaseUrl: `https://script.google.com/macros/s/${deploymentId}`,
+          domainBaseUrl: `https://script.google.com/a/macros/${domain}/s/${deploymentId}`
+        };
+      } else if (standardMatch) {
+        const deploymentId = standardMatch[1];
+        return {
+          deploymentId,
+          isDomainSpecific: false,
+          domain: null,
+          standardBaseUrl: `https://script.google.com/macros/s/${deploymentId}`,
+          domainBaseUrl: null
+        };
+      }
+
+      return {
+        deploymentId: null,
+        isDomainSpecific: false,
+        domain: null,
+        standardBaseUrl: null,
+        domainBaseUrl: null
+      };
+    } catch (error) {
+      return {
+        deploymentId: null,
+        isDomainSpecific: false,
+        domain: null,
+        standardBaseUrl: null,
+        domainBaseUrl: null
+      };
+    }
+  }
+
+  /**
    * Comprehensive deployment analysis
    */
   private analyzeDeployments(deployments: any[], scriptId: string): any {
@@ -668,25 +728,34 @@ export class DeployListTool extends BaseTool {
         analysis.webAppCount++;
         const webAppEntry = entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
 
-        // Get webAppUrl from entry point (production /exec URL)
-        let baseUrl = webAppEntry?.webApp?.url;
-        if (baseUrl) {
-          baseUrl = this.gasClient.constructGasRunUrlFromWebApp(baseUrl);
-        }
+        // Get original webAppUrl from entry point
+        const originalUrl = webAppEntry?.webApp?.url;
 
-        // Extract deployment ID from the production URL to construct /dev URL
-        // Production URL format: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
-        let execDebugUrl = null;
-        let devDebugUrl = null;
+        let urlInfo: any = null;
+        let headDebugUrl = null;
+        let versionedDebugUrl = null;
+        let domainHeadUrl = null;
+        let domainVersionedUrl = null;
 
-        if (baseUrl) {
-          const deploymentMatch = baseUrl.match(/\/s\/([^/]+)\//);
-          if (deploymentMatch) {
-            const deploymentHash = deploymentMatch[1];
-            // Debug console URLs with parameters (primary format for mcp_gas debugging)
-            execDebugUrl = `${baseUrl}?_mcp_run=true&action=auth_ide`;
-            // /dev URL with debug params (Google Workspace domain credentials only)
-            devDebugUrl = `https://script.google.com/macros/s/${deploymentHash}/dev?_mcp_run=true&action=auth_ide`;
+        if (originalUrl) {
+          // Extract URL information (deployment ID, domain, etc.)
+          urlInfo = this.extractUrlInfo(originalUrl);
+
+          // Build URLs based on deployment type
+          if (urlInfo.deploymentId) {
+            // HEAD deployment URLs (test - always reflects latest code)
+            headDebugUrl = `${urlInfo.standardBaseUrl}/dev?_mcp_run=true&action=auth_ide`;
+            if (urlInfo.isDomainSpecific && urlInfo.domainBaseUrl) {
+              domainHeadUrl = `${urlInfo.domainBaseUrl}/dev?_mcp_run=true&action=auth_ide`;
+            }
+
+            // Versioned deployment URLs (stable - reflects specific version)
+            if (!isHead) {
+              versionedDebugUrl = `${urlInfo.standardBaseUrl}/exec?_mcp_run=true&action=auth_ide`;
+              if (urlInfo.isDomainSpecific && urlInfo.domainBaseUrl) {
+                domainVersionedUrl = `${urlInfo.domainBaseUrl}/exec?_mcp_run=true&action=auth_ide`;
+              }
+            }
           }
         }
 
@@ -695,26 +764,51 @@ export class DeployListTool extends BaseTool {
           versionNumber: deployment.versionNumber,
           description: deployment.description,
           updateTime: deployment.updateTime,
-          debugUrls: {
-            production: execDebugUrl,  // PRIMARY: /exec with debug params
-            development: devDebugUrl,  // /dev with debug params (domain credentials only)
-            note: '⚠️ /dev URLs require Google Workspace domain credentials'
+
+          // HEAD deployment (test - always current)
+          headDeployment: {
+            standardUrl: headDebugUrl,
+            domainUrl: domainHeadUrl,
+            note: 'HEAD deployment - always reflects latest code, requires editor access',
+            domain: urlInfo?.domain || null
           },
+
+          // Versioned deployment (stable - specific version)
+          versionedDeployment: !isHead ? {
+            standardUrl: versionedDebugUrl,
+            domainUrl: domainVersionedUrl,
+            note: `Version ${deployment.versionNumber} - stable deployment`,
+            domain: urlInfo?.domain || null
+          } : null,
+
           access: webAppEntry?.webApp?.access || 'Unknown',
           executeAs: webAppEntry?.webApp?.executeAs || 'Unknown',
-          isHead: isHead
+          isHead: isHead,
+          isDomainSpecific: urlInfo?.isDomainSpecific || false
         };
 
         analysis.webApps.push(webAppInfo);
 
         analysis.urlCount++;
-        if (execDebugUrl) {
-          analysis.webAppUrls.push(execDebugUrl);
-          analysis.testCommands.push(`# Open debug console:\n${execDebugUrl}`);
+
+        // Add HEAD deployment URLs to test commands
+        if (headDebugUrl) {
+          analysis.webAppUrls.push(headDebugUrl);
+          analysis.testCommands.push(`# HEAD deployment (test - latest code, editor access required):\n${headDebugUrl}`);
+          if (domainHeadUrl) {
+            analysis.webAppUrls.push(domainHeadUrl);
+            analysis.testCommands.push(`# HEAD deployment (Google Workspace domain):\n${domainHeadUrl}`);
+          }
         }
-        if (devDebugUrl) {
-          analysis.webAppUrls.push(devDebugUrl);
-          analysis.testCommands.push(`# Development debug console (domain credentials only):\n${devDebugUrl}`);
+
+        // Add versioned deployment URLs to test commands
+        if (versionedDebugUrl && !isHead) {
+          analysis.webAppUrls.push(versionedDebugUrl);
+          analysis.testCommands.push(`# Version ${deployment.versionNumber} deployment (stable):\n${versionedDebugUrl}`);
+          if (domainVersionedUrl) {
+            analysis.webAppUrls.push(domainVersionedUrl);
+            analysis.testCommands.push(`# Version ${deployment.versionNumber} (Google Workspace domain):\n${domainVersionedUrl}`);
+          }
         }
       }
 
@@ -750,23 +844,38 @@ export class DeployListTool extends BaseTool {
   private async formatDeployments(deployments: any[], scriptId: string, accessToken?: string): Promise<any[]> {
     return Promise.all(deployments.map(async deployment => {
       const hasWebApp = (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'WEB_APP');
+      const isHead = deployment.versionNumber === null || deployment.versionNumber === undefined || deployment.versionNumber === 0;
 
-      // Extract web app URL and construct debug console URLs
-      let execDebugUrl = null;
-      let devDebugUrl = null;
+      // Extract web app URL information
+      let headDebugUrl = null;
+      let versionedDebugUrl = null;
+      let domainHeadUrl = null;
+      let domainVersionedUrl = null;
+      let urlInfo: any = null;
 
       if (hasWebApp && deployment.entryPoints) {
         const webAppEntry = deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-        if (webAppEntry?.webApp?.url) {
-          const baseUrl = this.gasClient.constructGasRunUrlFromWebApp(webAppEntry.webApp.url);
+        const originalUrl = webAppEntry?.webApp?.url;
 
-          // Extract deployment ID to construct /dev URL
-          const deploymentMatch = baseUrl.match(/\/s\/([^/]+)\//);
-          if (deploymentMatch) {
-            const deploymentHash = deploymentMatch[1];
-            // Debug console URLs (primary format for mcp_gas debugging)
-            execDebugUrl = `${baseUrl}?_mcp_run=true&action=auth_ide`;
-            devDebugUrl = `https://script.google.com/macros/s/${deploymentHash}/dev?_mcp_run=true&action=auth_ide`;
+        if (originalUrl) {
+          // Extract URL information (deployment ID, domain, etc.)
+          urlInfo = this.extractUrlInfo(originalUrl);
+
+          // Build URLs based on deployment type
+          if (urlInfo.deploymentId) {
+            // HEAD deployment URLs (test - always reflects latest code)
+            headDebugUrl = `${urlInfo.standardBaseUrl}/dev?_mcp_run=true&action=auth_ide`;
+            if (urlInfo.isDomainSpecific && urlInfo.domainBaseUrl) {
+              domainHeadUrl = `${urlInfo.domainBaseUrl}/dev?_mcp_run=true&action=auth_ide`;
+            }
+
+            // Versioned deployment URLs (stable - reflects specific version)
+            if (!isHead) {
+              versionedDebugUrl = `${urlInfo.standardBaseUrl}/exec?_mcp_run=true&action=auth_ide`;
+              if (urlInfo.isDomainSpecific && urlInfo.domainBaseUrl) {
+                domainVersionedUrl = `${urlInfo.domainBaseUrl}/exec?_mcp_run=true&action=auth_ide`;
+              }
+            }
           }
         }
       }
@@ -792,19 +901,32 @@ export class DeployListTool extends BaseTool {
         })),
 
         // Quick identifiers
-        isHead: deployment.versionNumber === null || deployment.versionNumber === undefined || deployment.versionNumber === 0,
+        isHead: isHead,
         hasWebApp: hasWebApp,
         hasApiExecutable: (deployment.entryPoints || []).some((ep: any) => ep.entryPointType === 'EXECUTION_API'),
+        isDomainSpecific: urlInfo?.isDomainSpecific || false,
 
-        // Debug console URLs (primary format for mcp_gas debugging)
+        // Debug console URLs - HEAD and versioned deployment structure
         debugUrls: hasWebApp ? {
-          production: execDebugUrl,  // PRIMARY: /exec with debug params
-          development: devDebugUrl,  // /dev with debug params (domain credentials only)
-          note: '⚠️ /dev URLs require Google Workspace domain credentials'
+          // HEAD deployment (test - always current)
+          headDeployment: {
+            standardUrl: headDebugUrl,
+            domainUrl: domainHeadUrl,
+            note: 'HEAD deployment - always reflects latest code, requires editor access',
+            domain: urlInfo?.domain || null
+          },
+
+          // Versioned deployment (stable - specific version)
+          versionedDeployment: !isHead ? {
+            standardUrl: versionedDebugUrl,
+            domainUrl: domainVersionedUrl,
+            note: `Version ${deployment.versionNumber} - stable deployment`,
+            domain: urlInfo?.domain || null
+          } : null
         } : null,
 
-        // Legacy compatibility (returns production debug URL as primary)
-        webAppUrl: execDebugUrl,
+        // Legacy compatibility (returns HEAD debug URL as primary for existing code)
+        webAppUrl: headDebugUrl,
 
         // Deployment config
         deploymentConfig: deployment.deploymentConfig
