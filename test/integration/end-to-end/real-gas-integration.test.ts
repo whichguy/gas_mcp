@@ -24,14 +24,14 @@ describe('Real Google Apps Script Integration Tests', () => {
 
   before(function() {
     // Use authentication availability instead of environment variable
-    if (!globalAuthState.client) {
+    if (!globalAuthState.client || !globalAuthState.auth) {
       console.log('ℹ️  Skipping real GAS integration tests (no global client available)');
       this.skip();
       return;
     }
 
     client = globalAuthState.client!;
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     gas = new GASTestHelper(client);
     
     // Check authentication status

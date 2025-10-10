@@ -113,6 +113,7 @@ export interface ListParams {
   detailed?: boolean;
   recursive?: boolean;
   wildcardMode?: 'filename' | 'fullpath' | 'auto';
+  checksums?: boolean;
   workingDir?: string;
   accessToken?: string;
 }

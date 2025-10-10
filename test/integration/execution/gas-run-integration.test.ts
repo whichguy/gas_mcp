@@ -11,11 +11,11 @@ describe('Real gas_run Integration Tests', () => {
 
   before(function() {
     // Use the shared global client to avoid multiple server processes
-    if (!globalAuthState.client) {
+    if (!globalAuthState.client || !globalAuthState.auth) {
       this.skip(); // Skip if global client not available
     }
     client = globalAuthState.client!;
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     gas = new GASTestHelper(client);
     console.log('🔗 Using shared global MCP client for real gas_run integration tests');
   });

@@ -15,6 +15,7 @@ import {
   LsTool,
   CatTool,
   WriteTool,
+  FileStatusTool,
   RawCatTool,
   RawWriteTool,
   RawCpTool,
@@ -236,17 +237,18 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    * 
-   * Each session gets its own instances of all 49 MCP tools, each configured
+   * Each session gets its own instances of all 50 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    * 
-   * ## Tool Categories Created (49 total tools):
-   * 
+   * ## Tool Categories Created (50 total tools):
+   *
    * ### Authentication & Session (1 tool)
    * - `auth` - OAuth 2.0 flow management with desktop PKCE
-   * 
-   * ### 📂 Filesystem Operations - RECOMMENDED (9 tools)
-   * - `gas_ls` - List projects and files  
+   *
+   * ### 📂 Filesystem Operations - RECOMMENDED (10 tools)
+   * - `gas_ls` - List projects and files
+   * - `gas_file_status` - Get comprehensive file status with SHA checksums  
    * - `gas_cat` - Smart reader (local-first with remote fallback)
    * - `gas_write` - Auto-sync writer (local + remote)
    * - `gas_grep` - Content search with pattern matching (unwrapped user code)
@@ -342,6 +344,7 @@ export class MCPGasServer {
       
       // 📂 Filesystem operations - RECOMMENDED auto-sync tools
       new LsTool(authManager),
+      new FileStatusTool(authManager),    // Get comprehensive file status with SHA checksums
       new CatTool(authManager),           // Smart reader (local-first)
       new WriteTool(authManager),         // Auto-sync writer
       new GrepTool(authManager),          // Content search with pattern matching

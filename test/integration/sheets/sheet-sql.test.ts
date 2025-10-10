@@ -34,7 +34,7 @@ describe('Google Sheets SQL Integration Tests', () => {
     }
 
     client = globalAuthState.client;
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
 
     console.log('\n🧪 Starting Google Sheets SQL Integration Tests');
     console.log(`📊 Test Spreadsheet: ${TEST_SPREADSHEET_ID}`);

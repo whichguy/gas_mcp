@@ -52,7 +52,7 @@ npm run test:all-verify          # Run all verification tests
 
 ## Architecture Overview
 
-This is a Model Context Protocol (MCP) server that bridges AI assistants with Google Apps Script (GAS). It provides 46 tools for creating, managing, and executing GAS projects through a unified interface.
+This is a Model Context Protocol (MCP) server that bridges AI assistants with Google Apps Script (GAS). It provides 50 tools for creating, managing, and executing GAS projects through a unified interface.
 
 ### Session Management
 The server uses in-memory session management (`SessionAuthManager`) for handling multiple concurrent MCP clients. Sessions are stored in a global `Map` and are lost on server restart, requiring re-authentication. This simplified approach removes filesystem dependencies and complex locking since MCP is half-duplex.
@@ -61,7 +61,7 @@ The server uses in-memory session management (`SessionAuthManager`) for handling
 
 1. **MCP Protocol Layer** (`src/server/mcpServer.ts`)
    - Handles MCP protocol communication via stdio
-   - Registers and dispatches tool calls (all 46 tools imported and registered)
+   - Registers and dispatches tool calls (all 50 tools imported and registered)
    - Manages error responses and tool results
    - Entry point: `src/index.ts` starts the server
 
@@ -247,6 +247,73 @@ gas_ripgrep {
 
 **Behind the Scenes**: Smart tools (cat, grep, sed) automatically unwrap CommonJS for clean editing. Raw variants (raw_cat, raw_grep) preserve exact content including system wrappers.
 
+#### 4. File Integrity and Git Integration
+
+Verify file integrity and detect changes without downloading entire file contents using Git-compatible SHA-1 checksums:
+
+**LS Tool with Checksums** (Quick verification):
+- `gas_ls` with `checksums: true` parameter adds Git SHA-1 to each file
+- Default behavior omits checksums for faster listing
+- Useful for quick file verification in large projects
+
+**File Status Tool** (Comprehensive analysis):
+- Dedicated tool for file verification and change detection
+- Supports multiple hash types: Git-compatible SHA-1, SHA-256, MD5
+- Pattern matching with wildcards for bulk operations
+- Rich metadata: lines, size, encoding, timestamps, modification user
+
+**Example Workflows**:
+```typescript
+// Quick verification during listing
+gas_ls({
+  scriptId: "...",
+  path: "*",
+  checksums: true  // Adds gitSha1 to each file
+})
+
+// Comprehensive file analysis
+gas_file_status({
+  scriptId: "...",
+  path: "utils/helper.gs",
+  hashTypes: ["git-sha1", "sha256", "md5"],  // Multiple hash algorithms
+  includeMetadata: true  // Lines, size, timestamps, user
+})
+
+// Pattern-based verification
+gas_file_status({
+  scriptId: "...",
+  path: "utils/*",  // Wildcard matching
+  hashTypes: ["git-sha1"]
+})
+
+// Detect file changes without downloading
+const status1 = gas_file_status({ scriptId: "...", path: "config.gs" });
+// ... make some changes ...
+const status2 = gas_file_status({ scriptId: "...", path: "config.gs" });
+// Compare status1.files[0].hashes['git-sha1'] vs status2.files[0].hashes['git-sha1']
+```
+
+**Git Integration Use Cases**:
+- **Change Detection**: Compare GAS files with local Git repository using `git hash-object`
+- **Integrity Verification**: Ensure files haven't changed since last sync
+- **Selective Downloads**: Only download files with SHA mismatches
+- **Build Optimization**: Skip unchanged files during deployment
+
+**Git SHA-1 Compatibility**:
+The Git-compatible SHA-1 uses the same blob format as `git hash-object`:
+```bash
+# Verify locally: the SHA-1 from gas_file_status should match
+echo -n "content" | git hash-object --stdin
+```
+
+Format: `sha1("blob " + <size> + "\0" + <content>)`
+
+**Performance Considerations**:
+- `gas_ls` with `checksums: false` (default) - Fastest for large directories
+- `gas_ls` with `checksums: true` - Adds ~50-100ms per file for checksum computation
+- `gas_file_status` - Best for detailed analysis of specific files or patterns
+- Supports up to 200 files per request (default 50)
+
 ---
 
 ### Key Architectural Patterns
@@ -380,11 +447,12 @@ All errors are transformed to MCP-compatible format with helpful messages.
 ## Tool Architecture & Naming Conventions
 
 ### Tool Categories and Naming
-The MCP server provides 46 tools organized into logical categories:
+The MCP server provides 50 tools organized into logical categories:
 
 #### Smart Tools (CommonJS Processing)
 - **mcp__gas__cat, mcp__gas__write, mcp__gas__cp** - Handle CommonJS wrapping/unwrapping automatically
 - **mcp__gas__ls, mcp__gas__rm, mcp__gas__mv, mcp__gas__mkdir** - Directory and file operations with smart path handling
+- **mcp__gas__file_status** - Comprehensive file verification with Git-compatible SHA-1, SHA-256, MD5 checksums
 - **mcp__gas__run, mcp__gas__info, mcp__gas__reorder** - Execution and project management
 - **mcp__gas__version_create, mcp__gas__deploy_create** - Deployment and versioning
 - **mcp__gas__grep, mcp__gas__find, mcp__gas__ripgrep, mcp__gas__sed** - Search and text processing tools
@@ -496,7 +564,7 @@ This is an **MCP (Model Context Protocol) server** specifically designed to work
 
 ### Working with MCP Gas Server
 
-When Claude Code connects to this server, it gains access to 46 Google Apps Script tools. The server handles:
+When Claude Code connects to this server, it gains access to 50 Google Apps Script tools. The server handles:
 - OAuth authentication flow with Google
 - File operations with automatic CommonJS module wrapping
 - Real-time code execution in Google's cloud infrastructure

@@ -26,7 +26,7 @@ describe('Project Lifecycle Validation Tests', () => {
       this.skip();
     }
     client = globalAuthState.client;
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     gas = new GASTestHelper(client);
   });
 

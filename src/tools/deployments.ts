@@ -118,6 +118,58 @@ export function getErrorHtmlTemplate(): string {
   }
 }
 
+/**
+ * Verify infrastructure file integrity using SHA-1 checksums
+ *
+ * @param scriptId - GAS project ID
+ * @param fileName - Infrastructure file name to verify
+ * @param sessionAuthManager - Session auth manager for FileStatusTool
+ * @param accessToken - Optional access token
+ * @returns Verification result with SHA comparison
+ */
+export async function verifyInfrastructureFile(
+  scriptId: string,
+  fileName: string,
+  sessionAuthManager: SessionAuthManager | undefined,
+  accessToken?: string
+): Promise<import('./infrastructure-registry.js').VerificationResult> {
+  try {
+    // Get infrastructure file info
+    const { INFRASTRUCTURE_REGISTRY } = await import('./infrastructure-registry.js');
+    const infraFile = INFRASTRUCTURE_REGISTRY[fileName];
+
+    if (!infraFile) {
+      return { verified: false, error: `Unknown infrastructure file: ${fileName}` };
+    }
+
+    // Get actual file SHA using FileStatusTool
+    const { FileStatusTool } = await import('./filesystem/index.js');
+    const statusTool = new FileStatusTool(sessionAuthManager);
+
+    const result = await statusTool.execute({
+      scriptId,
+      path: fileName,
+      hashTypes: ['git-sha1'],
+      includeMetadata: false,
+      accessToken
+    });
+
+    const actualSHA = result.files?.[0]?.hashes?.['git-sha1'];
+    const expectedSHA = infraFile.computeSHA();
+
+    return {
+      verified: actualSHA === expectedSHA,
+      expectedSHA,
+      actualSHA
+    };
+  } catch (error: any) {
+    return {
+      verified: false,
+      error: `Failed to verify ${fileName}: ${error.message}`
+    };
+  }
+}
+
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -1068,9 +1120,30 @@ export class ProjectCreateTool extends BaseTool {
       };
       
       const result = await rawWriteTool.execute(writeParams);
-      
-      console.error(`✅ [GAS_PROJECT_CREATE] CommonJS module system added to project via RawWriteTool`);
-      return { success: true, debug: { ...debugInfo, writeResult: result } };
+
+      // Verify CommonJS SHA after creation
+      console.error(`🔍 [GAS_PROJECT_CREATE] Verifying CommonJS integrity...`);
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        'CommonJS',
+        this.sessionAuthManager,
+        accessToken
+      );
+
+      if (!verification.verified) {
+        const verifyError = `CommonJS created but verification failed: ${verification.error || 'SHA mismatch'}`;
+        console.error(`⚠️ [GAS_PROJECT_CREATE] ${verifyError}`);
+        console.error(`   - Expected SHA: ${verification.expectedSHA}`);
+        console.error(`   - Actual SHA: ${verification.actualSHA}`);
+        return {
+          success: false,
+          error: verifyError,
+          debug: { ...debugInfo, verification, writeResult: result }
+        };
+      }
+
+      console.error(`✅ [GAS_PROJECT_CREATE] CommonJS verified (SHA: ${verification.actualSHA})`);
+      return { success: true, debug: { ...debugInfo, verification, writeResult: result } };
     } catch (error: any) {
               const errorMessage = `Failed to add CommonJS: ${error.message}`;
       console.error(`⚠️ [GAS_PROJECT_CREATE] ${errorMessage}`);
@@ -1283,18 +1356,49 @@ export class ProjectInitTool extends BaseTool {
    */
   private async installCommonJS(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
     const fileName = 'CommonJS';
-    
-    if (existingFiles.has(fileName) && !force) {
-      console.error(`⏭️ [GAS_PROJECT_INIT] Skipping CommonJS (already exists, use force=true to overwrite)`);
-      return { skipped: true, fileName };
+
+    // Check if file exists and verify if needed
+    if (existingFiles.has(fileName)) {
+      // File exists - verify SHA
+      console.error(`🔍 [GAS_PROJECT_INIT] CommonJS already exists, verifying integrity...`);
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        fileName,
+        this.sessionAuthManager,
+        accessToken
+      );
+
+      if (verification.verified) {
+        console.error(`✅ [GAS_PROJECT_INIT] CommonJS verified (SHA: ${verification.actualSHA})`);
+        return { skipped: true, fileName, verification };
+      }
+
+      // SHA mismatch detected
+      if (!force) {
+        // force=false: WARN only, don't repair
+        const warning = `CommonJS SHA mismatch detected but not repaired (use force=true to auto-repair). Expected: ${verification.expectedSHA}, Actual: ${verification.actualSHA}`;
+        console.error(`⚠️ [GAS_PROJECT_INIT] ${warning}`);
+        return {
+          skipped: true,
+          fileName,
+          verification,
+          warning
+        };
+      }
+
+      // force=true: Auto-repair
+      console.error(`🔧 [GAS_PROJECT_INIT] CommonJS SHA mismatch, auto-repairing (force=true)...`);
+      console.error(`   - Expected SHA: ${verification.expectedSHA}`);
+      console.error(`   - Actual SHA: ${verification.actualSHA}`);
+      // Fall through to reinstall
     }
 
     try {
       console.error(`🔧 [GAS_PROJECT_INIT] Installing CommonJS module system...`);
-      
+
       const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
-      
+
       const writeParams = {
         path: `${scriptId}/CommonJS`,
         content: SHIM_TEMPLATE,
@@ -1302,11 +1406,26 @@ export class ProjectInitTool extends BaseTool {
         position: 0, // Execute first
         accessToken
       };
-      
+
       await rawWriteTool.execute(writeParams);
-      
-      console.error(`✅ [GAS_PROJECT_INIT] CommonJS module system installed`);
-      return { success: true, fileName };
+
+      // Verify after installation
+      console.error(`🔍 [GAS_PROJECT_INIT] Verifying CommonJS after installation...`);
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        fileName,
+        this.sessionAuthManager,
+        accessToken
+      );
+
+      if (!verification.verified) {
+        const verifyError = `CommonJS installed but verification failed: ${verification.error || 'SHA mismatch'}`;
+        console.error(`⚠️ [GAS_PROJECT_INIT] ${verifyError}`);
+        return { error: verifyError, fileName, verification };
+      }
+
+      console.error(`✅ [GAS_PROJECT_INIT] CommonJS module system installed and verified (SHA: ${verification.actualSHA})`);
+      return { success: true, fileName, verification };
     } catch (error: any) {
       const errorMessage = `Failed to install CommonJS: ${error.message}`;
       console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
@@ -1319,20 +1438,51 @@ export class ProjectInitTool extends BaseTool {
    */
   private async installExecutionInfrastructure(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
     const fileName = '__mcp_gas_run';
-    
-    if (existingFiles.has(fileName) && !force) {
-      console.error(`⏭️ [GAS_PROJECT_INIT] Skipping execution infrastructure (already exists, use force=true to overwrite)`);
-      return { skipped: true, fileName };
+
+    // Check if file exists and verify if needed
+    if (existingFiles.has(fileName)) {
+      // File exists - verify SHA
+      console.error(`🔍 [GAS_PROJECT_INIT] Execution infrastructure already exists, verifying integrity...`);
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        fileName,
+        this.sessionAuthManager,
+        accessToken
+      );
+
+      if (verification.verified) {
+        console.error(`✅ [GAS_PROJECT_INIT] Execution infrastructure verified (SHA: ${verification.actualSHA})`);
+        return { skipped: true, fileName, verification };
+      }
+
+      // SHA mismatch detected
+      if (!force) {
+        // force=false: WARN only, don't repair
+        const warning = `Execution infrastructure SHA mismatch detected but not repaired (use force=true to auto-repair). Expected: ${verification.expectedSHA}, Actual: ${verification.actualSHA}`;
+        console.error(`⚠️ [GAS_PROJECT_INIT] ${warning}`);
+        return {
+          skipped: true,
+          fileName,
+          verification,
+          warning
+        };
+      }
+
+      // force=true: Auto-repair
+      console.error(`🔧 [GAS_PROJECT_INIT] Execution infrastructure SHA mismatch, auto-repairing (force=true)...`);
+      console.error(`   - Expected SHA: ${verification.expectedSHA}`);
+      console.error(`   - Actual SHA: ${verification.actualSHA}`);
+      // Fall through to reinstall
     }
 
     try {
       console.error(`🔧 [GAS_PROJECT_INIT] Installing execution infrastructure...`);
-      
+
       const executionTemplate = getExecutionTemplate();
-      
+
       const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
-      
+
       const writeParams = {
         path: `${scriptId}/__mcp_gas_run`,
         content: executionTemplate,
@@ -1340,11 +1490,26 @@ export class ProjectInitTool extends BaseTool {
         position: 1, // Execute after CommonJS
         accessToken
       };
-      
+
       await rawWriteTool.execute(writeParams);
 
-      console.error(`✅ [GAS_PROJECT_INIT] Execution infrastructure installed`);
-      return { success: true, fileName };
+      // Verify after installation
+      console.error(`🔍 [GAS_PROJECT_INIT] Verifying execution infrastructure after installation...`);
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        fileName,
+        this.sessionAuthManager,
+        accessToken
+      );
+
+      if (!verification.verified) {
+        const verifyError = `Execution infrastructure installed but verification failed: ${verification.error || 'SHA mismatch'}`;
+        console.error(`⚠️ [GAS_PROJECT_INIT] ${verifyError}`);
+        return { error: verifyError, fileName, verification };
+      }
+
+      console.error(`✅ [GAS_PROJECT_INIT] Execution infrastructure installed and verified (SHA: ${verification.actualSHA})`);
+      return { success: true, fileName, verification };
     } catch (error: any) {
       const errorMessage = `Failed to install execution infrastructure: ${error.message}`;
       console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
