@@ -62,7 +62,7 @@ describe('Deployment Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.EXECUTION);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__version_create', {
+      const result = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: 'Test version for validation'
       });
@@ -75,7 +75,7 @@ describe('Deployment Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__version_list', {
+      const result = await client.callTool('version_list', {
         scriptId: testProjectId
       });
 
@@ -87,7 +87,7 @@ describe('Deployment Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       // Create version 2
-      const result1 = await client.callTool('mcp__gas__version_create', {
+      const result1 = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: 'Version 2'
       });
@@ -95,7 +95,7 @@ describe('Deployment Validation Tests', () => {
       expect(result1.content[0].text).to.include('version');
 
       // Create version 3
-      const result2 = await client.callTool('mcp__gas__version_create', {
+      const result2 = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: 'Version 3'
       });
@@ -103,7 +103,7 @@ describe('Deployment Validation Tests', () => {
       expect(result2.content[0].text).to.include('version');
 
       // List should show multiple versions
-      const listResult = await client.callTool('mcp__gas__version_list', {
+      const listResult = await client.callTool('version_list', {
         scriptId: testProjectId
       });
 
@@ -117,7 +117,7 @@ describe('Deployment Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       // First create a version
-      const versionResult = await client.callTool('mcp__gas__version_create', {
+      const versionResult = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: 'Deployment version'
       });
@@ -129,7 +129,7 @@ describe('Deployment Validation Tests', () => {
       const versionNumber = versionMatch ? parseInt(versionMatch[1]) : 1;
 
       // Create deployment
-      const deployResult = await client.callTool('mcp__gas__deploy_create', {
+      const deployResult = await client.callTool('deploy_create', {
         scriptId: testProjectId,
         description: 'Test deployment',
         versionNumber: versionNumber
@@ -142,7 +142,7 @@ describe('Deployment Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__deploy_list', {
+      const result = await client.callTool('deploy_list', {
         scriptId: testProjectId
       });
 
@@ -153,7 +153,7 @@ describe('Deployment Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const listResult = await client.callTool('mcp__gas__deploy_list', {
+      const listResult = await client.callTool('deploy_list', {
         scriptId: testProjectId
       });
 
@@ -166,7 +166,7 @@ describe('Deployment Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       // Create version for API deployment
-      const versionResult = await client.callTool('mcp__gas__version_create', {
+      const versionResult = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: 'API version'
       });
@@ -175,7 +175,7 @@ describe('Deployment Validation Tests', () => {
       const versionNumber = versionMatch ? parseInt(versionMatch[1]) : 1;
 
       // Create API executable deployment
-      const deployResult = await client.callTool('mcp__gas__deploy_create', {
+      const deployResult = await client.callTool('deploy_create', {
         scriptId: testProjectId,
         description: 'API deployment',
         versionNumber: versionNumber,
@@ -196,7 +196,7 @@ describe('Deployment Validation Tests', () => {
       await gas.writeTestFile(testProjectId!, 'SnapshotTest', initialCode);
 
       // Create version 1 - this should snapshot the current code
-      const version1Result = await client.callTool('mcp__gas__version_create', {
+      const version1Result = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: 'Snapshot version v1'
       });
@@ -209,14 +209,14 @@ describe('Deployment Validation Tests', () => {
       await gas.writeTestFile(testProjectId!, 'SnapshotTest', modifiedCode);
 
       // Verify file was actually modified
-      const modifiedContent = await client.callTool('mcp__gas__cat', {
+      const modifiedContent = await client.callTool('cat', {
         scriptId: testProjectId,
         path: 'SnapshotTest'
       });
       expect(modifiedContent.content[0].text).to.include('snapshot-v2-modified');
 
       // Step 3: Create deployment of version 1 (should use snapshot, not modified code)
-      const deployResult = await client.callTool('mcp__gas__deploy_create', {
+      const deployResult = await client.callTool('deploy_create', {
         scriptId: testProjectId,
         description: 'Snapshot test deployment',
         versionNumber: version1Number
@@ -224,7 +224,7 @@ describe('Deployment Validation Tests', () => {
       expect(deployResult.content[0].text).to.include('deployment');
 
       // Step 4: Verify deployment exists and is linked to version 1
-      const deployListResult = await client.callTool('mcp__gas__deploy_list', {
+      const deployListResult = await client.callTool('deploy_list', {
         scriptId: testProjectId
       });
       expect(deployListResult.content[0].text).to.include('deployment');
@@ -249,7 +249,7 @@ describe('Deployment Validation Tests', () => {
       await gas.writeTestFile(testProjectId!, 'HeadTest', initialCode);
 
       // Create HEAD deployment (no version number = uses @HEAD)
-      const deployResult = await client.callTool('mcp__gas__deploy_create', {
+      const deployResult = await client.callTool('deploy_create', {
         scriptId: testProjectId,
         description: 'HEAD deployment test'
         // No versionNumber = uses @HEAD
@@ -261,7 +261,7 @@ describe('Deployment Validation Tests', () => {
       await gas.writeTestFile(testProjectId!, 'HeadTest', modifiedCode);
 
       // Verify file was modified
-      const modifiedContent = await client.callTool('mcp__gas__cat', {
+      const modifiedContent = await client.callTool('cat', {
         scriptId: testProjectId,
         path: 'HeadTest'
       });
@@ -270,7 +270,7 @@ describe('Deployment Validation Tests', () => {
       // HEAD deployment should now serve the modified code
       // (We can't execute to verify, but the API contract guarantees this behavior)
       // List deployments to verify HEAD deployment exists
-      const deployListResult = await client.callTool('mcp__gas__deploy_list', {
+      const deployListResult = await client.callTool('deploy_list', {
         scriptId: testProjectId
       });
       expect(deployListResult.content[0].text).to.include('deployment');
@@ -287,7 +287,7 @@ describe('Deployment Validation Tests', () => {
       await gas.writeTestFile(testProjectId!, 'Main', 'function main() { return "v2"; }');
 
       // Create new version
-      const result = await client.callTool('mcp__gas__version_create', {
+      const result = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: 'Updated main function'
       });
@@ -295,7 +295,7 @@ describe('Deployment Validation Tests', () => {
       expect(result.content[0].text).to.include('version');
 
       // List versions should show progression
-      const listResult = await client.callTool('mcp__gas__version_list', {
+      const listResult = await client.callTool('version_list', {
         scriptId: testProjectId
       });
 
@@ -308,7 +308,7 @@ describe('Deployment Validation Tests', () => {
 
       const description = `Test version ${Date.now()}`;
 
-      const result = await client.callTool('mcp__gas__version_create', {
+      const result = await client.callTool('version_create', {
         scriptId: testProjectId,
         description: description
       });

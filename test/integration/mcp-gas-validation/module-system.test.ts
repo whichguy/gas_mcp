@@ -39,7 +39,7 @@ describe('Module System Validation Tests', () => {
     console.log(`✅ Created CommonJS test project: ${testProjectId}`);
 
     // Verify CommonJS.js exists
-    const lsResult = await client.callTool('mcp__gas__ls', {
+    const lsResult = await client.callTool('ls', {
       scriptId: testProjectId
     });
 
@@ -104,7 +104,7 @@ exports.generateId = function() {
       await gas.writeTestFile(testProjectId!, 'TestModule', cleanCode);
 
       // Read with raw_cat to see wrapped content
-      const rawResult = await client.callTool('mcp__gas__raw_cat', {
+      const rawResult = await client.callTool('raw_cat', {
         path: `${testProjectId}/TestModule`
       });
 
@@ -272,7 +272,7 @@ Logger.log("Eager module loaded at startup");
 exports.value = "eager";
 `;
 
-      const result = await client.callTool('mcp__gas__write', {
+      const result = await client.callTool('write', {
         scriptId: testProjectId,
         path: 'EagerModule',
         content: eagerCode,
@@ -293,7 +293,7 @@ Logger.log("Lazy module loaded on first require");
 exports.value = "lazy";
 `;
 
-      const result = await client.callTool('mcp__gas__write', {
+      const result = await client.callTool('write', {
         scriptId: testProjectId,
         path: 'LazyModule',
         content: lazyCode,
@@ -410,7 +410,7 @@ exports.getA = function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__raw_cat', {
+      const result = await client.callTool('raw_cat', {
         path: `${testProjectId}/CommonJS`
       });
 

@@ -18,6 +18,10 @@ export const resolverStates = new Map<string, 'pending' | 'resolved' | 'rejected
  * RACE CONDITION FIX: Prevents duplicate completion signals
  */
 export function signalAuthCompletion(authKey: string, result: any): void {
+  console.error(`\n🔍 DEBUG: signalAuthCompletion called for ${authKey}`);
+  console.error(`   - Current state: ${resolverStates.get(authKey)}`);
+  console.error(`   - Resolver exists: ${authCompletionResolvers.has(authKey)}`);
+
   // ATOMIC STATE CHECK - prevent duplicate signals
   const currentState = resolverStates.get(authKey);
   if (currentState && currentState !== 'pending') {
@@ -35,7 +39,11 @@ export function signalAuthCompletion(authKey: string, result: any): void {
     authCompletionResolvers.delete(authKey);
     resolverStates.delete(authKey); // Cleanup state tracking
 
+    console.error(`   - About to call resolver.resolve()`);
     resolver.resolve(result);
+    console.error(`   - resolver.resolve() called successfully\n`);
+  } else {
+    console.error(`❌ ERROR: No resolver found for ${authKey}!`);
   }
 }
 

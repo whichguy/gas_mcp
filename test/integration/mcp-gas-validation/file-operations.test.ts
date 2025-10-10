@@ -90,7 +90,7 @@ describe('File Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__ls', {
+      const result = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -101,7 +101,7 @@ describe('File Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const deleteResult = await client.callTool('mcp__gas__rm', {
+      const deleteResult = await client.callTool('rm', {
         scriptId: testProjectId,
         path: testFileName
       });
@@ -109,7 +109,7 @@ describe('File Operations Validation Tests', () => {
       expect(deleteResult.content[0].text).to.include('deleted');
 
       // Verify file is gone
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -134,7 +134,7 @@ describe('File Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__cp', {
+      const result = await client.callTool('cp', {
         scriptId: testProjectId,
         from: sourceFile,
         to: copyTarget
@@ -143,7 +143,7 @@ describe('File Operations Validation Tests', () => {
       expect(result.content[0].text).to.include('copied');
 
       // Verify both files exist
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -155,7 +155,7 @@ describe('File Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__mv', {
+      const result = await client.callTool('mv', {
         scriptId: testProjectId,
         from: copyTarget,
         to: moveTarget
@@ -164,7 +164,7 @@ describe('File Operations Validation Tests', () => {
       expect(result.content[0].text).to.include('moved');
 
       // Verify old name gone, new name exists
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -183,7 +183,7 @@ describe('File Operations Validation Tests', () => {
 
       // Copy them
       for (let i = 1; i <= 5; i++) {
-        const result = await client.callTool('mcp__gas__cp', {
+        const result = await client.callTool('cp', {
           scriptId: testProjectId,
           from: `Module${i}`,
           to: `ModuleCopy${i}`
@@ -193,7 +193,7 @@ describe('File Operations Validation Tests', () => {
       }
 
       // Verify copies exist
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -209,7 +209,7 @@ describe('File Operations Validation Tests', () => {
 
       // Delete copied modules
       for (let i = 1; i <= 5; i++) {
-        const result = await client.callTool('mcp__gas__rm', {
+        const result = await client.callTool('rm', {
           scriptId: testProjectId,
           path: `ModuleCopy${i}`
         });
@@ -218,7 +218,7 @@ describe('File Operations Validation Tests', () => {
       }
 
       // Verify deletions
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -239,7 +239,7 @@ describe('File Operations Validation Tests', () => {
       await gas.writeTestFile(testProjectId!, 'File2', 'content2');
       await gas.writeTestFile(testProjectId!, 'Other', 'other');
 
-      const result = await client.callTool('mcp__gas__ls', {
+      const result = await client.callTool('ls', {
         scriptId: testProjectId,
         path: 'File*'
       });
@@ -265,7 +265,7 @@ describe('File Operations Validation Tests', () => {
         await gas.writeTestFile(testProjectId!, file.name, file.content);
       }
 
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -294,7 +294,7 @@ describe('File Operations Validation Tests', () => {
       const elapsed = Date.now() - start;
 
       // Verify all created
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -356,7 +356,7 @@ function largeFunction() {
       // Create a file to reorder
       await gas.writeTestFile(testProjectId!, 'ReorderTest', 'exports.test = true;');
 
-      const result = await client.callTool('mcp__gas__reorder', {
+      const result = await client.callTool('reorder', {
         scriptId: testProjectId,
         fileName: 'ReorderTest',
         newPosition: 5
@@ -391,7 +391,7 @@ function largeFunction() {
       });
 
       // Verify all files exist
-      const lsResult = await client.callTool('mcp__gas__ls', {
+      const lsResult = await client.callTool('ls', {
         scriptId: testProjectId
       });
 

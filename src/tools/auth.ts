@@ -368,9 +368,11 @@ async function performSynchronizedAuthFlow(
       }, 300000); // 5 minute timeout
 
       // Store resolver with PENDING state
+      console.error(`🔍 DEBUG: Storing resolver for ${authKey} with PENDING state`);
       resolverStates.set(authKey, 'pending');
       authCompletionResolvers.set(authKey, {
         resolve: async (result: any) => {
+          console.error(`🔍 DEBUG: Resolver.resolve() called for ${authKey}`);
           try {
             // Handle the token response and set up authentication session
             if (result.tokenResponse) {
@@ -433,9 +435,11 @@ async function performSynchronizedAuthFlow(
     const authUrl = await authClient.startAuthFlow(openBrowser);
     console.error(`Auth URL generated: ${authUrl}`);
     console.error(`Waiting for OAuth callback to complete authentication...`);
-    
+
     // Wait for completion
+    console.error(`🔍 DEBUG: About to await completionPromise for ${authKey}`);
     const result = await completionPromise;
+    console.error(`🔍 DEBUG: completionPromise resolved for ${authKey}`);
     console.error(`Synchronized OAuth flow completed for ${authKey}`);
     return result;
     
