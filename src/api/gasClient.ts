@@ -5,6 +5,7 @@ import { GASApiError } from '../errors/mcpErrors.js';
 import { getFileType, sortFilesForExecution } from './pathParser.js';
 import { AuthConfig } from '../auth/oauthClient.js';
 import { loadOAuthConfigFromJson } from '../tools/authConfig.js';
+import { convertToBearerCompatibleUrl } from '../utils/urlParser.js';
 
 /**
  * Google Apps Script project information
@@ -1549,32 +1550,16 @@ export class GASClient {
   constructGasRunUrlFromWebApp(webAppUrl: string): string {
     console.error(`🔧 [URL_CONVERSION] Converting web app URL for Bearer token compatibility: ${webAppUrl}`);
 
-    try {
-      const url = new URL(webAppUrl);
+    // Use shared URL parser utility (with trailing slash support and unified regex)
+    const standardUrl = convertToBearerCompatibleUrl(webAppUrl);
 
-      // Extract deployment ID from the URL path
-      // Path formats:
-      // Domain-specific: /a/macros/[DOMAIN]/s/[DEPLOYMENT_ID]/exec (or /dev)
-      // Standard:        /macros/s/[DEPLOYMENT_ID]/exec (or /dev)
-      const pathMatch = url.pathname.match(/\/(?:a\/macros\/[^\/]+\/)?s\/([^\/]+)\/(?:exec|dev)$/);
-
-      if (!pathMatch) {
-        console.error(`⚠️ [URL_CONVERSION] Unexpected URL format, returning as-is: ${webAppUrl}`);
-        return webAppUrl;
-      }
-
-      const deploymentId = pathMatch[1];
-
-      // Construct standard format URL that works with Bearer token authentication
-      // Note: Both HEAD (/dev) and versioned (/exec) deployments exist for web apps
-      // This conversion converts to /dev for HEAD deployment access
-      const standardUrl = `https://script.google.com/macros/s/${deploymentId}/dev`;
-
+    if (standardUrl === webAppUrl) {
+      console.error(`⚠️ [URL_CONVERSION] URL conversion unchanged, may be unexpected format: ${webAppUrl}`);
+    } else {
       const isDomainSpecific = webAppUrl.includes('/a/macros/');
       const conversionInfo = {
         originalUrl: webAppUrl,
         convertedUrl: standardUrl,
-        deploymentId: deploymentId,
         conversionType: isDomainSpecific ? 'Domain-specific → Standard (Bearer token compatible)' : 'Standard → Standard (HEAD deployment)',
         authenticationCompatible: true,
         bearerTokenSupported: true,
@@ -1584,19 +1569,9 @@ export class GASClient {
       };
 
       console.error(`✅ [URL_CONVERSION] Conversion details:\n${JSON.stringify(conversionInfo, null, 2)}`);
-
-      return standardUrl;
-
-    } catch (error: any) {
-      console.error(`❌ [URL_CONVERSION] Failed to parse URL: ${error.message}`);
-      console.error(`🔧 [URL_CONVERSION] Falling back to simple /exec → /dev replacement`);
-
-      // Fallback: simple replacement
-      if (webAppUrl.includes('/exec')) {
-        return webAppUrl.replace('/exec', '/dev');
-      }
-      return webAppUrl;
     }
+
+    return standardUrl;
   }
 
   /**

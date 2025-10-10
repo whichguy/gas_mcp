@@ -15,7 +15,7 @@
 
 import { expect } from 'chai';
 import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
-import { globalAuthState } from '../../setup/globalAuth.js';
+import { setupIntegrationTest, globalAuthState } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('Deployment Validation Tests', () => {
@@ -25,13 +25,18 @@ describe('Deployment Validation Tests', () => {
   let testProjectId: string | null = null;
 
   before(async function() {
-    this.timeout(TEST_TIMEOUTS.EXECUTION);
+    this.timeout(130000); // Allow time for OAuth flow if needed
+
+    // Explicit setup call - this is where auth happens
+    await setupIntegrationTest();
+
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
-      console.log('⚠️  Skipping integration tests - not authenticated');
+      console.log('⚠️  Skipping integration tests - authentication failed');
       this.skip();
     }
+
     client = globalAuthState.client;
-    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
+    auth = globalAuthState.auth!;
     gas = new GASTestHelper(client);
 
     // Create test project with some files

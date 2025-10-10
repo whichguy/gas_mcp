@@ -16,7 +16,7 @@
     "copy:assets": "node scripts/copy-assets.js",
     "copy:assets:watch": "chokidar \"src/**/*.{js,json}\" -c \"npm run copy:assets\"",
     "test": "npm run test:core",
-    "test:unit": "mocha test/unit/**/*.test.ts",
+    "test:unit": "mocha test/unit/**/*.test.ts --timeout 5000",
     "test:core": "mocha test/system/protocol/consolidated-core.test.ts --timeout 30000",
     "test:integration": "npm run build && GAS_INTEGRATION_TEST=true mocha 'test/integration/**/*.test.ts' --timeout 300000",
     "test:system": "npm run build && mocha 'test/system/**/*.test.ts' --timeout 30000",

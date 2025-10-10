@@ -5,6 +5,7 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SCRIPT_ID_SCHEMA } from '../utils/schemaPatterns.js';
 import { SHIM_TEMPLATE } from '../config/shimTemplate.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { extractUrlInfo as extractUrlInfoUtil, UrlExtractionResult } from '../utils/urlParser.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -613,60 +614,14 @@ export class DeployListTool extends BaseTool {
   /**
    * Extract deployment ID and domain from a web app URL
    * Returns both standard and domain-specific URL formats
+   *
+   * @param webAppUrl - Full web app URL from Google Apps Script API
+   * @returns URL extraction result with deployment ID, domain, and both URL formats
+   *
+   * @see {@link extractUrlInfoUtil} from urlParser.ts for implementation details
    */
-  private extractUrlInfo(webAppUrl: string): {
-    deploymentId: string | null;
-    isDomainSpecific: boolean;
-    domain: string | null;
-    standardBaseUrl: string | null;
-    domainBaseUrl: string | null;
-  } {
-    try {
-      const url = new URL(webAppUrl);
-
-      // Match both domain-specific and standard formats
-      // Domain-specific: /a/macros/[DOMAIN]/s/[DEPLOYMENT_ID]/exec (or /dev)
-      // Standard:        /macros/s/[DEPLOYMENT_ID]/exec (or /dev)
-      const domainMatch = url.pathname.match(/\/a\/macros\/([^\/]+)\/s\/([^\/]+)\/(?:exec|dev)$/);
-      const standardMatch = url.pathname.match(/\/macros\/s\/([^\/]+)\/(?:exec|dev)$/);
-
-      if (domainMatch) {
-        const domain = domainMatch[1];
-        const deploymentId = domainMatch[2];
-        return {
-          deploymentId,
-          isDomainSpecific: true,
-          domain,
-          standardBaseUrl: `https://script.google.com/macros/s/${deploymentId}`,
-          domainBaseUrl: `https://script.google.com/a/macros/${domain}/s/${deploymentId}`
-        };
-      } else if (standardMatch) {
-        const deploymentId = standardMatch[1];
-        return {
-          deploymentId,
-          isDomainSpecific: false,
-          domain: null,
-          standardBaseUrl: `https://script.google.com/macros/s/${deploymentId}`,
-          domainBaseUrl: null
-        };
-      }
-
-      return {
-        deploymentId: null,
-        isDomainSpecific: false,
-        domain: null,
-        standardBaseUrl: null,
-        domainBaseUrl: null
-      };
-    } catch (error) {
-      return {
-        deploymentId: null,
-        isDomainSpecific: false,
-        domain: null,
-        standardBaseUrl: null,
-        domainBaseUrl: null
-      };
-    }
+  private extractUrlInfo(webAppUrl: string): UrlExtractionResult {
+    return extractUrlInfoUtil(webAppUrl);
   }
 
   /**
