@@ -9,134 +9,25 @@ import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './deployments.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import open from 'open';
 
-/**
- * Simple token counting utility for MCP response size protection
- * Estimates tokens using approximate character-to-token ratio
- */
-function estimateTokenCount(text: string): number {
-  // Rough estimation: 1 token ≈ 4 characters (conservative)
-  // This accounts for JSON structure, whitespace, and encoding overhead
-  return Math.ceil(text.length / 3.5);
-}
-
-/**
- * Filter logger output using optional regex pattern and/or tail limit
- * @param loggerOutput The raw logger output string
- * @param filterPattern Optional regex pattern to match lines (case-insensitive)
- * @param tailLines Optional number of lines to return from the end
- * @returns Filtered logger output with metadata
- */
-function filterLoggerOutput(
-  loggerOutput: string,
-  filterPattern?: string,
-  tailLines?: number
-): { filteredOutput: string; metadata: string } {
-  if (!loggerOutput) {
-    return { filteredOutput: '', metadata: '' };
-  }
-
-  const lines = loggerOutput.split('\n');
-  let filtered = lines;
-  let metadata = '';
-
-  // Apply regex filter if provided
-  if (filterPattern) {
-    try {
-      const regex = new RegExp(filterPattern, 'i'); // Case-insensitive by default
-      const originalCount = filtered.length;
-      filtered = filtered.filter(line => regex.test(line));
-      metadata += `[Filtered ${originalCount} lines → ${filtered.length} lines using pattern: ${filterPattern}]\n`;
-    } catch (error: any) {
-      metadata += `[Filter pattern error: ${error.message} - returning unfiltered output]\n`;
-    }
-  }
-
-  // Apply tail limit if provided
-  if (tailLines && tailLines > 0) {
-    const originalCount = filtered.length;
-    if (filtered.length > tailLines) {
-      filtered = filtered.slice(-tailLines);
-      metadata += `[Showing last ${tailLines} of ${originalCount} lines]\n`;
-    }
-  }
-
-  return {
-    filteredOutput: filtered.join('\n'),
-    metadata: metadata ? `\n${metadata}` : ''
-  };
-}
-
-/**
- * Protects MCP responses from exceeding token limits by truncating logger_output
- * @param response The response object to protect
- * @param maxTokens Maximum allowed tokens (default: 22000, leaving room for structure)
- * @returns Protected response with truncated logger_output if needed
- */
-function protectResponseSize(response: any, maxTokens: number = 22000): any {
-  // Convert response to JSON to get accurate size estimate
-  const responseJson = JSON.stringify(response);
-  const estimatedTokens = estimateTokenCount(responseJson);
-  
-  if (estimatedTokens <= maxTokens) {
-    // Response is within limits, return as-is
-    return response;
-  }
-  
-  console.error(`⚠️ [RESPONSE SIZE PROTECTION] Response size: ${estimatedTokens} tokens > ${maxTokens} limit - truncating logger_output`);
-  
-  // Calculate how much we need to reduce
-  const excessTokens = estimatedTokens - maxTokens;
-  const loggerOutput = response.logger_output || '';
-  
-  if (!loggerOutput) {
-    // No logger output to truncate, but response is still too large
-    console.error(`❌ [RESPONSE SIZE PROTECTION] Response too large but no logger_output to truncate!`);
-    return {
-      ...response,
-      result: '[TRUNCATED: Response too large for MCP protocol]',
-      logger_output: `⚠️ RESPONSE SIZE ERROR: Response (${estimatedTokens} tokens) exceeded MCP limit (${maxTokens}) but had no logger_output to truncate.`
-    };
-  }
-  
-  // Calculate target logger_output size (conservatively remove extra tokens)
-  const excessChars = Math.ceil(excessTokens * 4); // Conservative character removal
-  const targetLoggerSize = Math.max(0, loggerOutput.length - excessChars - 500); // Extra buffer
-  
-  if (targetLoggerSize <= 0) {
-    // Logger output needs to be completely removed
-    return {
-      ...response,
-      logger_output: `⚠️ LOGGER TRUNCATED: Full logger output (${loggerOutput.length} chars) removed due to MCP token limit. Original response: ${estimatedTokens} tokens > ${maxTokens} limit.`
-    };
-  }
-  
-  // Truncate logger output and add informative message
-  const truncatedLogger = loggerOutput.substring(0, targetLoggerSize);
-  const truncationMessage = `\n\n⚠️ LOGGER TRUNCATED: Output truncated from ${loggerOutput.length} to ${targetLoggerSize} chars (removed ${loggerOutput.length - targetLoggerSize} chars) due to MCP token limit. Original response: ${estimatedTokens} tokens > ${maxTokens} limit.`;
-  
-  const protectedResponse = {
-    ...response,
-    logger_output: truncatedLogger + truncationMessage
-  };
-  
-  // Verify the protected response is within limits
-  const protectedJson = JSON.stringify(protectedResponse);
-  const protectedTokens = estimateTokenCount(protectedJson);
-  
-  console.error(`✅ [RESPONSE SIZE PROTECTION] Protected response: ${protectedTokens} tokens (was ${estimatedTokens})`);
-  
-  return protectedResponse;
-}
+// Import extracted utilities
+import {
+  estimateTokenCount,
+  filterLoggerOutput,
+  protectResponseSize
+} from './execution/utilities/response-protection.js';
+import { ensureManifestEntryPoints } from './execution/utilities/manifest-config.js';
+import { setupInfrastructure } from './execution/infrastructure/setup-manager.js';
+import { performDomainAuth } from './execution/auth/domain-auth.js';
 
 /**
  * Execute JavaScript in Google Apps Script with current project support (RECOMMENDED)
  * 
- * ✅ RECOMMENDED - Use for normal code execution
+ * RECOMMENDED - Use for normal code execution
  * Automatically uses current project when set, otherwise requires explicit script ID
  */
 export class RunTool extends BaseTool {
   public name = 'run';
-  public description = '🚀 RECOMMENDED: Execute JavaScript using current project context or explicit script ID';
+  public description = 'RECOMMENDED: Execute JavaScript using current project context or explicit script ID';
   
   public inputSchema = {
     type: 'object',
@@ -297,8 +188,8 @@ export class RunTool extends BaseTool {
         }
       },
       scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically, automatically captures Logger.log() output',
+        standalone: 'Full Support - Works identically',
+        containerBound: 'Full Support - Works identically, automatically captures Logger.log() output',
         notes: 'Execution works universally for both script types. This is the SOLUTION for debugging container-bound scripts.'
       },
       limitations: {
@@ -405,124 +296,6 @@ export class RunTool extends BaseTool {
   }
 }
 
-/**
- * Helper function to ensure manifest has proper entry point configuration
- * (Shared from deployments.ts - we need to create a utility module for this)
- */
-async function ensureManifestEntryPoints(
-  gasClient: GASClient, 
-  scriptId: string, 
-  entryPointType: 'WEB_APP' | 'EXECUTION_API', 
-  accessLevel: 'MYSELF' | 'DOMAIN' | 'ANYONE' | 'ANYONE_ANONYMOUS',
-  accessToken?: string
-): Promise<void> {
-  try {
-    console.error(`🔧 Ensuring manifest configured for ${entryPointType} deployment...`);
-    
-    // Get current project content
-    const files = await gasClient.getProjectContent(scriptId, accessToken);
-    
-    // Find manifest file (prefer 'appsscript' over 'appsscript.json' to avoid duplicates)
-    let manifestFile = files.find(f => f.name === 'appsscript');
-    if (!manifestFile) {
-      manifestFile = files.find(f => f.name === 'appsscript.json');
-    }
-    
-    let manifest: any;
-    let manifestFileName = 'appsscript'; // Always use 'appsscript' to prevent .json.json issues
-    
-    if (!manifestFile || !manifestFile.source) {
-      console.error('⚠️  No manifest file found, creating new appsscript file...');
-      manifest = {};
-    } else {
-      console.error(`📁 Found existing manifest: ${manifestFile.name}`);
-      try {
-        manifest = JSON.parse(manifestFile.source);
-        console.error('📁 Parsed existing manifest successfully');
-      } catch (parseError) {
-        console.warn('⚠️  Failed to parse existing manifest, starting fresh...');
-        manifest = {};
-      }
-      
-      // If we found appsscript.json but we're going to save as appsscript, 
-      // we should clean up the duplicate later
-      if (manifestFile.name === 'appsscript.json') {
-        console.error('🔧 Will use standard "appsscript" filename to prevent duplicates');
-      }
-    }
-    
-    // Always ensure base properties are set
-    manifest.timeZone = manifest.timeZone || 'America/Los_Angeles';
-    manifest.dependencies = manifest.dependencies || {};
-    manifest.exceptionLogging = manifest.exceptionLogging || 'STACKDRIVER';
-    manifest.runtimeVersion = manifest.runtimeVersion || 'V8';
-    
-    let needsUpdate = false;
-    
-    if (entryPointType === 'WEB_APP') {
-      console.error('🌐 Configuring manifest for WEB_APP deployment only...');
-      
-      // Force web app configuration
-      if (!manifest.webapp || manifest.webapp.access !== accessLevel) {
-        manifest.webapp = {
-          access: accessLevel,
-          executeAs: 'USER_ACCESSING'
-        };
-        needsUpdate = true;
-        console.error(`📝 Set webapp configuration: access=${accessLevel}, executeAs=USER_ACCESSING`);
-      }
-      
-      // CRITICAL: Remove executionApi to prevent library deployment confusion
-      if (manifest.executionApi) {
-        delete manifest.executionApi;
-        needsUpdate = true;
-        console.error('🗑️  Removed executionApi configuration to force web app deployment');
-      }
-      
-      // Remove library configuration if present
-      if (manifest.library) {
-        delete manifest.library;
-        needsUpdate = true;
-        console.error('🗑️  Removed library configuration to force web app deployment');
-      }
-      
-    } else if (entryPointType === 'EXECUTION_API') {
-      console.error('⚙️ Configuring manifest for EXECUTION_API deployment...');
-      
-      // Ensure executionApi entry point exists for API Executable deployments
-      if (!manifest.executionApi || manifest.executionApi.access !== accessLevel) {
-        manifest.executionApi = {
-          access: accessLevel
-        };
-        needsUpdate = true;
-        console.error(`📝 Set executionApi configuration: access=${accessLevel}`);
-      }
-    }
-    
-    // Update manifest if needed
-    if (needsUpdate) {
-      const manifestContent = JSON.stringify(manifest, null, 2);
-      
-      try {
-        // Always use 'appsscript' filename to prevent .json.json double extensions
-        console.error(`🔧 Updating manifest file: ${manifestFileName}`);
-        await gasClient.updateFile(scriptId, manifestFileName, manifestContent, undefined, accessToken);
-        console.error(`✅ Updated manifest (${manifestFileName}) with proper entry points for ${entryPointType}`);
-        console.error(`📄 Final manifest:`, manifestContent);
-      } catch (updateError: any) {
-        console.error(`❌ Failed to update manifest: ${updateError.message}`);
-        // Don't try alternatives to prevent creating duplicate manifest files
-        console.error('⚠️  Manifest update failed, but deployment can still proceed');
-      }
-    } else {
-      console.error(`✅ Manifest already has proper ${entryPointType} configuration`);
-    }
-    
-  } catch (error: any) {
-    console.error('❌ Failed to update manifest entry points:', error.message);
-    // Don't throw error as deployment can still proceed, but log it as error
-  }
-}
 
 /**
  * Execute functions in Google Apps Script projects via API executable
@@ -534,7 +307,7 @@ async function ensureManifestEntryPoints(
  */
 export class ExecApiTool extends BaseTool {
   public name = 'exec_api';
-  public description = 'Execute a function in a Google Apps Script project via API executable. ⚠️ CRITICAL: Functions must be deployed as API executable before execution. Use gas_version_create → gas_deploy_create → gas_run_api_exec workflow for new/modified functions.';
+  public description = 'Execute a function in a Google Apps Script project via API executable. CRITICAL: Functions must be deployed as API executable before execution. Use gas_version_create → gas_deploy_create → gas_run_api_exec workflow for new/modified functions.';
   
   public inputSchema = {
     type: 'object',
@@ -605,14 +378,14 @@ export class ExecApiTool extends BaseTool {
           `Authentication required for gas_run_api_exec operation. Use gas_auth(mode="start") to authenticate and retry.`
         );
       }
-      console.error(`🚀 Executing function: ${functionName} in script: ${scriptId}`);
+      console.error(`Executing function: ${functionName} in script: ${scriptId}`);
       console.error(`📋 Parameters: ${JSON.stringify(parameters)}`);
-      console.error(`🔧 Dev mode: ${devMode}`);
+      console.error(`Dev mode: ${devMode}`);
 
       const result = await this.gasClient.executeFunction(scriptId, functionName, parameters, accessToken);
 
       if (result.error) {
-        console.error(`❌ Function execution failed:`, result.error);
+        console.error(`Function execution failed:`, result.error);
         
         return {
           status: 'error',
@@ -628,7 +401,7 @@ export class ExecApiTool extends BaseTool {
         };
       }
 
-      console.error(`✅ Function executed successfully`);
+      console.error(`Function executed successfully`);
       console.error(`📤 Result:`, result.result);
 
       return {
@@ -686,7 +459,7 @@ export class ExecApiTool extends BaseTool {
       }
       
       // Log detailed error information for debugging
-      console.error(`📊 Error details:`, {
+      console.error(`Error details:`, {
         name: error.name,
         message: error.message,
         errorData: error.data,
@@ -705,7 +478,7 @@ export class ExecApiTool extends BaseTool {
         if (statusCode === 404) {
           helpMessage = 'Function not found - likely not deployed as API executable or function name incorrect';
           setupInstructions = [
-            '⚠️ REQUIRED: Deploy your functions before execution',
+            'REQUIRED: Deploy your functions before execution',
             '1. Create version: gas_version_create(scriptId="your-project", description="Latest changes")',
             '2. Deploy API: gas_deploy_create(scriptId="your-project", description="API deployment")',
             '3. Then retry: gas_run_api_exec(scriptId="your-project", functionName="yourFunction")',
@@ -775,7 +548,7 @@ export class ExecApiTool extends BaseTool {
                          error.code || 
                          500;
 
-      console.error(`❌ Non-GASApiError execution error - HTTP ${statusCode}:`, error.message);
+      console.error(`Non-GASApiError execution error - HTTP ${statusCode}:`, error.message);
 
       // Return structured error response for any error type
       return {
@@ -819,26 +592,26 @@ export class ExecApiTool extends BaseTool {
 /**
  * Execute functions via doGet() proxy pattern with JSON response handling and automatic deployment
  * 
- * ⚠️  AUTOMATIC DEPLOYMENT BEHAVIOR:
+ * AUTOMATIC DEPLOYMENT BEHAVIOR:
  * - AUTOMATICALLY CREATES fresh web app deployment by default when autoRedeploy=true
  * - Creates new version with latest code changes before deployment
  * - Creates new web app deployment for each execution to ensure latest code
  * - autoRedeploy=true (default): Always creates NEW VERSION + NEW DEPLOYMENT
  * - autoRedeploy=false: Uses existing deployment only (requires manual deployment)
  * 
- * ✅  AUTOMATIC SHIM CODE CREATION:
+ *  AUTOMATIC SHIM CODE CREATION:
  * - This tool AUTOMATICALLY creates __mcp_gas_run shim code if missing
  * - Provides dynamic code execution via Function constructor
  * - Enables execution of any JavaScript expression (e.g., fib(13), Math.PI * 2)
  * - Shim is added before deployment for zero-setup dynamic execution
  * 
- * ⚠️  WEB APP DEPLOYMENT BY DEFAULT:
+ * WEB APP DEPLOYMENT BY DEFAULT:
  * - Creates web app deployments by default for doGet() proxy pattern
  * - Web app deployments support HTTP-based function execution
  * - Uses 'MYSELF' access level for secure authenticated execution
  * - Automatically configures proper entry points and access controls
  * 
- * ⚠️  FUNCTION EXECUTION PATTERN:
+ * FUNCTION EXECUTION PATTERN:
  * - This tool calls doGet() which handles dynamic JavaScript execution
  * - The target function/expression is executed via Function constructor
  * - Supports both function calls and JavaScript expressions
@@ -859,7 +632,7 @@ export class ExecApiTool extends BaseTool {
  */
 export class ExecTool extends BaseTool {
   public name = 'exec';
-  public description = '🔧 ADVANCED: Execute JavaScript with explicit script ID. Use gas_run for normal workflow.';
+  public description = 'ADVANCED: Execute JavaScript with explicit script ID. Use gas_run for normal workflow.';
   
   public inputSchema = {
     type: 'object',
@@ -1020,8 +793,8 @@ export class ExecTool extends BaseTool {
         '3. Optional: Add code files with gas_write before execution'
       ],
       scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically, automatically captures Logger.log() output',
+        standalone: 'Full Support - Works identically',
+        containerBound: 'Full Support - Works identically, automatically captures Logger.log() output',
         notes: 'Execution works universally for both script types. This is the SOLUTION for debugging container-bound scripts.'
       },
       limitations: {
@@ -1132,7 +905,7 @@ export class ExecTool extends BaseTool {
       // First try: Use provided token or attempt to get from session (optimistic)
       accessToken = params.accessToken || await this.tryGetAuthToken();
 
-      // 🚀 PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
+      // PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
       return await this.executeOptimistic(scriptId, js_statement, accessToken || '', executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail);
     } catch (error: any) {
       // Check for authentication errors (401/403)
@@ -1190,7 +963,7 @@ export class ExecTool extends BaseTool {
           try {
             return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail);
           } catch (retryError: any) {
-            console.error(`🔄 [OPTIMISTIC RETRY FAILED] Proceeding with infrastructure setup: ${retryError.message}`);
+            console.error(`[OPTIMISTIC RETRY FAILED] Proceeding with infrastructure setup: ${retryError.message}`);
           }
         }
         
@@ -1211,8 +984,8 @@ export class ExecTool extends BaseTool {
         }
         
         // Set up infrastructure and retry
-        console.error(`🏗️ [INFRASTRUCTURE SETUP] Setting up deployment infrastructure...`);
-        await this.setupInfrastructure(scriptId, accessToken);
+        console.error(`[INFRASTRUCTURE SETUP] Setting up deployment infrastructure...`);
+        await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager);
         
         // NEW: Retry logic for deployment delays with test function validation
         return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout);
@@ -1242,7 +1015,7 @@ export class ExecTool extends BaseTool {
     const retryInterval = 2000; // 2 seconds between retries
     const startTime = Date.now();
 
-    console.error(`🔄 [DEPLOYMENT RETRY] Starting retry logic for potential deployment delay`);
+    console.error(`[DEPLOYMENT RETRY] Starting retry logic for potential deployment delay`);
     console.error(`   Script ID: ${scriptId}`);
     console.error(`   Max retry duration: ${maxRetryDuration}ms`);
     console.error(`   Retry interval: ${retryInterval}ms`);
@@ -1257,56 +1030,56 @@ export class ExecTool extends BaseTool {
         // Only retry for HTTP 500 errors (deployment not ready)
         if (statusCode === 500) {
           const elapsedTime = Date.now() - startTime;
-          console.error(`⚠️  [DEPLOYMENT RETRY] HTTP ${statusCode} error, testing deployment readiness`);
+          console.error(`[DEPLOYMENT RETRY] HTTP ${statusCode} error, testing deployment readiness`);
           console.error(`   Elapsed time: ${elapsedTime}ms`);
           console.error(`   Error: ${error.message}`);
           
           // Test if deployment is ready with a simple function that requests JSON
           try {
-            console.error(`🧪 [DEPLOYMENT TEST] Testing deployment with doGet function - requesting JSON response`);
+            console.error(`[DEPLOYMENT TEST] Testing deployment with doGet function - requesting JSON response`);
             await this.executeOptimisticWithJsonRequest(scriptId, 'new Date().toISOString()', accessToken, executionTimeout, responseTimeout);
-            console.error(`✅ [DEPLOYMENT TEST] Test function succeeded with HTTP 200, deployment is ready`);
+            console.error(`[DEPLOYMENT TEST] Test function succeeded with HTTP 200, deployment is ready`);
             
             // Deployment is ready, try the actual function one more time
             try {
               return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
             } catch (actualError: any) {
-              console.error(`❌ [DEPLOYMENT RETRY] Actual function still failed after test succeeded`);
+              console.error(`[DEPLOYMENT RETRY] Actual function still failed after test succeeded`);
               console.error(`   Error: ${actualError.message}`);
               throw actualError;
             }
           } catch (testError: any) {
             const testStatusCode = testError.statusCode || testError.response?.status;
-            console.error(`🧪 [DEPLOYMENT TEST] Test function result: HTTP ${testStatusCode} - ${testError.message}`);
+            console.error(`[DEPLOYMENT TEST] Test function result: HTTP ${testStatusCode} - ${testError.message}`);
             
             // If we got HTTP 200, consider it successful and retry original function
             if (testStatusCode === 200) {
-              console.error(`✅ [DEPLOYMENT TEST] HTTP 200 received, deployment is ready - retrying original function`);
+              console.error(`[DEPLOYMENT TEST] HTTP 200 received, deployment is ready - retrying original function`);
               try {
                 return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
               } catch (actualError: any) {
-                console.error(`❌ [DEPLOYMENT RETRY] Original function failed even after HTTP 200 test: ${actualError.message}`);
+                console.error(`[DEPLOYMENT RETRY] Original function failed even after HTTP 200 test: ${actualError.message}`);
                 throw actualError;
               }
             } else if (testStatusCode === 500) {
               // Still not ready, wait and retry
               if (Date.now() - startTime + retryInterval < maxRetryDuration) {
-                console.error(`⏳ [DEPLOYMENT RETRY] HTTP ${testStatusCode} - deployment not ready, waiting ${retryInterval}ms before retry`);
+                console.error(`[DEPLOYMENT RETRY] HTTP ${testStatusCode} - deployment not ready, waiting ${retryInterval}ms before retry`);
                 await new Promise(resolve => setTimeout(resolve, retryInterval));
                 continue;
               } else {
-                console.error(`⏰ [DEPLOYMENT RETRY] Timeout reached, deployment still returning HTTP ${testStatusCode}`);
+                console.error(`[DEPLOYMENT RETRY] Timeout reached, deployment still returning HTTP ${testStatusCode}`);
                 throw new Error(`Deployment timeout: Google Apps Script project not ready after ${maxRetryDuration}ms. Last error: ${error.message}`);
               }
             } else {
               // Different error, stop retrying
-              console.error(`❌ [DEPLOYMENT TEST] Test function failed with HTTP ${testStatusCode} error: ${testError.message}`);
+              console.error(`[DEPLOYMENT TEST] Test function failed with HTTP ${testStatusCode} error: ${testError.message}`);
               throw testError;
             }
           }
         } else {
           // Not a 500 error, don't retry
-          console.error(`❌ [DEPLOYMENT RETRY] HTTP ${statusCode} error - not retrying: ${error.message}`);
+          console.error(`[DEPLOYMENT RETRY] HTTP ${statusCode} error - not retrying: ${error.message}`);
           throw error;
         }
       }
@@ -1344,7 +1117,7 @@ export class ExecTool extends BaseTool {
         'Content-Type': 'application/json'
       };
       
-      // 🚀 PERFORMANCE OPTIMIZATION: Reduce logging for repeated calls
+      // PERFORMANCE OPTIMIZATION: Reduce logging for repeated calls
       const isFromCache = executionUrl.includes('cached'); // Simple heuristic
       const shouldVerboseLog = !isFromCache || process.env.MCP_GAS_VERBOSE_LOGGING === 'true';
       
@@ -1368,7 +1141,7 @@ export class ExecTool extends BaseTool {
           requestStart: new Date().toISOString()
         };
         
-        console.error(`🚀 [DEPLOYMENT_TEST ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+        console.error(`[DEPLOYMENT_TEST ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
       } else {
         console.error(`⚡ [DEPLOYMENT_TEST FAST] Executing: ${js_statement} on cached deployment`);
       }
@@ -1400,7 +1173,7 @@ export class ExecTool extends BaseTool {
         responseTime: new Date().toISOString()
       };
       
-      console.error(`📡 [DEPLOYMENT_TEST RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
+      console.error(`[DEPLOYMENT_TEST RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
       
       if (!response.ok) {
         let errorBody = '';
@@ -1423,7 +1196,7 @@ export class ExecTool extends BaseTool {
           bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`
         };
         
-        console.error(`❌ [DEPLOYMENT_TEST ERROR] HTTP ${response.status} error details:\n${JSON.stringify(errorDebugInfo, null, 2)}`);
+        console.error(`[DEPLOYMENT_TEST ERROR] HTTP ${response.status} error details:\n${JSON.stringify(errorDebugInfo, null, 2)}`);
         
         const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
         (error as any).statusCode = response.status;
@@ -1432,7 +1205,7 @@ export class ExecTool extends BaseTool {
       
       // If we reach here, we got HTTP 200 - deployment is ready
       clearTimeout(timeoutId);
-      console.error(`✅ [DEPLOYMENT_TEST SUCCESS] HTTP ${response.status} - Deployment is ready`);
+      console.error(`[DEPLOYMENT_TEST SUCCESS] HTTP ${response.status} - Deployment is ready`);
       
       return {
         status: 'deployment_ready',
@@ -1460,7 +1233,7 @@ export class ExecTool extends BaseTool {
   private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780, autoRedeploy: boolean = true, logFilter?: string, logTail?: number): Promise<any> {
     const startTime = Date.now();
     
-    // 🚀 PERFORMANCE OPTIMIZATION: Check cached deployment URL first
+    // PERFORMANCE OPTIMIZATION: Check cached deployment URL first
     let executionUrl: string | null = null;
     if (this.sessionAuthManager) {
       try {
@@ -1469,17 +1242,17 @@ export class ExecTool extends BaseTool {
           console.error(`⚡ [CACHE HIT] Using cached deployment URL for ${scriptId}: ${executionUrl}`);
         }
       } catch (cacheError: any) {
-        console.error(`⚠️ [CACHE] Failed to check cached URL: ${cacheError.message}`);
+        console.error(`[CACHE] Failed to check cached URL: ${cacheError.message}`);
       }
     }
     
     // If no cached URL, construct it (this is the expensive operation)
     if (!executionUrl) {
-      console.error(`🔄 [CACHE MISS] Constructing deployment URL for ${scriptId}...`);
+      console.error(`[CACHE MISS] Constructing deployment URL for ${scriptId}...`);
       const urlConstructionStart = Date.now();
       executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
       const urlConstructionTime = Date.now() - urlConstructionStart;
-      console.error(`🔧 [URL CONSTRUCTION] Completed in ${urlConstructionTime}ms`);
+      console.error(`[URL CONSTRUCTION] Completed in ${urlConstructionTime}ms`);
       
       // Cache the URL for future use
       if (this.sessionAuthManager && executionUrl) {
@@ -1487,7 +1260,7 @@ export class ExecTool extends BaseTool {
           await this.sessionAuthManager.setCachedDeploymentUrl(scriptId, executionUrl);
           console.error(`💾 [CACHE STORE] Deployment URL cached for future calls`);
         } catch (cacheError: any) {
-          console.error(`⚠️ [CACHE] Failed to store URL: ${cacheError.message}`);
+          console.error(`[CACHE] Failed to store URL: ${cacheError.message}`);
         }
       }
     }
@@ -1515,7 +1288,7 @@ export class ExecTool extends BaseTool {
         'Content-Type': 'application/json'
       };
       
-      // 🚀 PERFORMANCE OPTIMIZATION: Reduce logging for repeated calls
+      // PERFORMANCE OPTIMIZATION: Reduce logging for repeated calls
       const isFromCache = executionUrl.includes('cached'); // Simple heuristic
       const shouldVerboseLog = !isFromCache || process.env.MCP_GAS_VERBOSE_LOGGING === 'true';
       
@@ -1540,7 +1313,7 @@ export class ExecTool extends BaseTool {
           requestStart: new Date().toISOString()
         };
         
-        console.error(`🚀 [GAS_RUN ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
+        console.error(`[GAS_RUN ENHANCED DEBUG] Pre-request information:\n${JSON.stringify(debugInfo, null, 2)}`);
       } else {
         console.error(`⚡ [GAS_RUN FAST] Executing: ${js_statement} on cached deployment`);
       }
@@ -1574,7 +1347,7 @@ export class ExecTool extends BaseTool {
         responseTime: new Date().toISOString()
       };
       
-      console.error(`📡 [GAS_RUN RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
+      console.error(`[GAS_RUN RESPONSE] HTTP response details:\n${JSON.stringify(responseDebugInfo, null, 2)}`);
       
       // Check for 302/200/500 responses with non-JSON content (requires cookie auth)
       // BUT exclude responses that contain JavaScript execution errors 
@@ -1591,7 +1364,7 @@ export class ExecTool extends BaseTool {
                                  responseBodyCheck.includes('file "');
         
         if (isExecutionError) {
-          console.error(`❌ [EXECUTION ERROR] HTTP ${response.status} contains JavaScript error - returning error response instead of domain auth`);
+          console.error(`[EXECUTION ERROR] HTTP ${response.status} contains JavaScript error - returning error response instead of domain auth`);
           
           // Return execution error as structured response (don't trigger domain auth)
           return {
@@ -1622,14 +1395,14 @@ export class ExecTool extends BaseTool {
           };
         }
         
-        console.error(`🌐 [COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - calling gas_run_auth`);
-        
+        console.error(`[COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - calling gas_run_auth`);
+
         try {
-          // Call gas_run_auth to handle domain authorization
-          await this.gas_run_auth(scriptId, accessToken);
+          // Call performDomainAuth to handle domain authorization
+          await performDomainAuth(this.gasClient, scriptId, accessToken);
           
           // After cookie auth, try the request again
-          console.error(`🔄 [COOKIE AUTH] Retrying request after domain authorization`);
+          console.error(`[COOKIE AUTH] Retrying request after domain authorization`);
           const retryResponse = await fetch(finalUrl, {
             headers: requestHeaders,
             signal: abortController.signal,
@@ -1689,11 +1462,12 @@ export class ExecTool extends BaseTool {
             result: retryResult && typeof retryResult === 'object' && retryResult.result !== undefined ? retryResult.result : retryResult,
             logger_output: filteredOutput + metadata,
             executedAt: new Date().toISOString(),
-            cookieAuthUsed: true
+            cookieAuthUsed: true,
+            ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
           });
           
         } catch (authError: any) {
-          console.error(`⚠️ [COOKIE AUTH] Domain authorization failed: ${authError.message} - continuing without cookie auth`);
+          console.error(`[COOKIE AUTH] Domain authorization failed: ${authError.message} - continuing without cookie auth`);
           // Fall through to normal error handling
         }
       }
@@ -1730,7 +1504,7 @@ export class ExecTool extends BaseTool {
           bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`
         };
         
-        console.error(`❌ [GAS_RUN ERROR] HTTP ${response.status} error details:\n${JSON.stringify(errorDebugInfo, null, 2)}`);
+        console.error(`[GAS_RUN ERROR] HTTP ${response.status} error details:\n${JSON.stringify(errorDebugInfo, null, 2)}`);
         
         const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
         (error as any).statusCode = response.status;
@@ -1815,7 +1589,7 @@ export class ExecTool extends BaseTool {
             diagnosis: 'Web app returned HTML error page instead of JSON - likely deployment not ready'
           };
           
-          console.error(`🌐 [GAS_RUN HTML ERROR] HTTP ${response.status} - Web app returned HTML instead of JSON:\n${JSON.stringify(htmlErrorDebugInfo, null, 2)}`);
+          console.error(`[GAS_RUN HTML ERROR] HTTP ${response.status} - Web app returned HTML instead of JSON:\n${JSON.stringify(htmlErrorDebugInfo, null, 2)}`);
           
           const error = new Error('Web app returned HTML error page instead of JSON');
           (error as any).statusCode = 500; // Treat as deployment not ready - triggers retry logic
@@ -1839,7 +1613,7 @@ export class ExecTool extends BaseTool {
         bearerTokenSent: `Bearer ${accessToken.substring(0, 10)}...*** (CONFIRMED SENT)`
       };
       
-      console.error(`✅ [GAS_RUN SUCCESS] HTTP ${response.status} success details:\n${JSON.stringify(successDebugInfo, null, 2)}`);
+      console.error(`[GAS_RUN SUCCESS] HTTP ${response.status} success details:\n${JSON.stringify(successDebugInfo, null, 2)}`);
       
       // Handle structured response format {type: "data"|"exception", payload: ...}
       if (result && typeof result === 'object' && result.type) {
@@ -1859,7 +1633,8 @@ export class ExecTool extends BaseTool {
             js_statement,
             result: result.payload,
             logger_output: filteredOutput + metadata,
-            executedAt: new Date().toISOString()
+            executedAt: new Date().toISOString(),
+            ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
           });
         } else if (result.type === 'exception') {
           const error = new Error(result.payload.error.message);
@@ -1886,7 +1661,8 @@ export class ExecTool extends BaseTool {
         js_statement,
         result: result && typeof result === 'object' && result.result !== undefined ? result.result : result,
         logger_output: filteredOutput + metadata,
-        executedAt: new Date().toISOString()
+        executedAt: new Date().toISOString(),
+        ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
       });
     } catch (error: any) {
       const duration = Date.now() - startTime;
@@ -1939,7 +1715,7 @@ export class ExecTool extends BaseTool {
    * Makes a test request to the /dev endpoint and launches browser if cookie auth is needed
    */
   private async gas_run_auth(scriptId: string, accessToken: string): Promise<void> {
-    console.error(`🔐 [GAS_RUN_AUTH] Starting domain authorization for script: ${scriptId}`);
+    console.error(`[GAS_RUN_AUTH] Starting domain authorization for script: ${scriptId}`);
     
     try {
       // Get the base deployment URL
@@ -1948,7 +1724,7 @@ export class ExecTool extends BaseTool {
       // Ensure it ends with /dev for the test request
       const testUrl = baseUrl.replace('/exec', '/dev');
       
-      console.error(`🧪 [GAS_RUN_AUTH] Testing domain authorization with URL: ${testUrl}`);
+      console.error(`[GAS_RUN_AUTH] Testing domain authorization with URL: ${testUrl}`);
       
       // Make a test request without any func parameter
       const response = await fetch(testUrl, {
@@ -1963,11 +1739,11 @@ export class ExecTool extends BaseTool {
       
       const contentType = response.headers.get('content-type') || '';
       
-      console.error(`📡 [GAS_RUN_AUTH] Test response: HTTP ${response.status}, Content-Type: ${contentType}`);
+      console.error(`[GAS_RUN_AUTH] Test response: HTTP ${response.status}, Content-Type: ${contentType}`);
       
       // Check if we need cookie authentication
       if ((response.status === 302 || response.status === 200) && !contentType.includes('application/json')) {
-        console.error(`🌐 [GAS_RUN_AUTH] Cookie authentication required - launching browser and polling`);
+        console.error(`[GAS_RUN_AUTH] Cookie authentication required - launching browser and polling`);
         
         const authInfo = {
           httpStatus: `HTTP ${response.status} ${response.statusText}`,
@@ -1977,26 +1753,26 @@ export class ExecTool extends BaseTool {
           pollingStrategy: 'Will poll for JSON response with test function'
         };
         
-        console.error(`🔐 [GAS_RUN_AUTH] Browser authentication details:\n${JSON.stringify(authInfo, null, 2)}`);
+        console.error(`[GAS_RUN_AUTH] Browser authentication details:\n${JSON.stringify(authInfo, null, 2)}`);
         
         // Create browser URL with auth IDE action (shows IDE interface after auth)
         const browserUrl = `${response.url}${response.url.includes('?') ? '&' : '?'}_mcp_run=true&action=auth_ide`;
 
         // Launch browser with the auth IDE URL
-        console.error(`🚀 [GAS_RUN_AUTH] Opening browser for domain authorization: ${browserUrl}`);
+        console.error(`[GAS_RUN_AUTH] Opening browser for domain authorization: ${browserUrl}`);
         await open(browserUrl);
         
         // Poll for successful authorization
         await this.pollForDomainAuthorization(testUrl, accessToken);
         
       } else if (response.status === 200 && contentType.includes('application/json')) {
-        console.error(`✅ [GAS_RUN_AUTH] Domain already authorized - JSON response received`);
+        console.error(`[GAS_RUN_AUTH] Domain already authorized - JSON response received`);
       } else {
-        console.error(`⚠️ [GAS_RUN_AUTH] Unexpected response: HTTP ${response.status}, continuing anyway`);
+        console.error(`[GAS_RUN_AUTH] Unexpected response: HTTP ${response.status}, continuing anyway`);
       }
       
          } catch (error: any) {
-       console.error(`❌ [GAS_RUN_AUTH] Domain authorization test failed: ${error.message}`);
+       console.error(`[GAS_RUN_AUTH] Domain authorization test failed: ${error.message}`);
        throw new Error(`Domain authorization failed: ${error.message}`);
      }
    }
@@ -2014,7 +1790,7 @@ export class ExecTool extends BaseTool {
     // Poll with lightweight auth check action (no execution)
     const testUrl = `${baseUrl}?_mcp_run=true&action=auth_check&format=json`;
     
-    console.error(`🔄 [DOMAIN_AUTH_POLL] Starting authorization polling`);
+    console.error(`[DOMAIN_AUTH_POLL] Starting authorization polling`);
     console.error(`   Test URL: ${baseUrl}?action=auth_check&format=json`);
     console.error(`   Max duration: ${maxPollDuration}ms`);
     console.error(`   Poll interval: ${pollInterval}ms`);
@@ -2026,7 +1802,7 @@ export class ExecTool extends BaseTool {
       const elapsedTime = Date.now() - startTime;
       
       try {
-        console.error(`📡 [DOMAIN_AUTH_POLL] Poll #${pollCount} (${elapsedTime}ms elapsed)`);
+        console.error(`[DOMAIN_AUTH_POLL] Poll #${pollCount} (${elapsedTime}ms elapsed)`);
         
         const pollResponse = await fetch(testUrl, {
           headers: {
@@ -2040,7 +1816,7 @@ export class ExecTool extends BaseTool {
         
         const pollContentType = pollResponse.headers.get('content-type') || '';
         
-        console.error(`📡 [DOMAIN_AUTH_POLL] Poll #${pollCount} response: HTTP ${pollResponse.status}, Content-Type: ${pollContentType}`);
+        console.error(`[DOMAIN_AUTH_POLL] Poll #${pollCount} response: HTTP ${pollResponse.status}, Content-Type: ${pollContentType}`);
         
         // Check for successful JSON response
         if (pollResponse.status === 200 && pollContentType.includes('application/json')) {
@@ -2049,40 +1825,40 @@ export class ExecTool extends BaseTool {
             
             // Check for authorized status from auth_check action
             if (pollResult.status === 'authorized') {
-              console.error(`✅ [DOMAIN_AUTH_POLL] Success! Domain authorization completed in ${elapsedTime}ms`);
+              console.error(`[DOMAIN_AUTH_POLL] Success! Domain authorization completed in ${elapsedTime}ms`);
               console.error(`   Poll result: ${JSON.stringify(pollResult)}`);
               return;
             } else {
-              console.error(`⚠️ [DOMAIN_AUTH_POLL] Got JSON but unexpected result: ${JSON.stringify(pollResult)}`);
+              console.error(`[DOMAIN_AUTH_POLL] Got JSON but unexpected result: ${JSON.stringify(pollResult)}`);
             }
           } catch (jsonError) {
-            console.error(`⚠️ [DOMAIN_AUTH_POLL] Failed to parse JSON response: ${jsonError}`);
+            console.error(`[DOMAIN_AUTH_POLL] Failed to parse JSON response: ${jsonError}`);
           }
         } else if (pollResponse.status === 200) {
           // Got 200 but not JSON - still need auth
-          console.error(`⏳ [DOMAIN_AUTH_POLL] HTTP 200 but non-JSON (${pollContentType}) - auth still needed`);
+          console.error(`[DOMAIN_AUTH_POLL] HTTP 200 but non-JSON (${pollContentType}) - auth still needed`);
         } else if (pollResponse.status === 302) {
           // Still getting redirects - auth not complete
-          console.error(`⏳ [DOMAIN_AUTH_POLL] HTTP 302 redirect - auth still needed`);
+          console.error(`[DOMAIN_AUTH_POLL] HTTP 302 redirect - auth still needed`);
         } else {
           // Other status codes
-          console.error(`⚠️ [DOMAIN_AUTH_POLL] HTTP ${pollResponse.status} - continuing to poll`);
+          console.error(`[DOMAIN_AUTH_POLL] HTTP ${pollResponse.status} - continuing to poll`);
         }
         
       } catch (pollError: any) {
-        console.error(`⚠️ [DOMAIN_AUTH_POLL] Poll #${pollCount} failed: ${pollError.message}`);
+        console.error(`[DOMAIN_AUTH_POLL] Poll #${pollCount} failed: ${pollError.message}`);
       }
       
       // Wait before next poll (unless we're close to timeout)
       if (Date.now() - startTime + pollInterval < maxPollDuration) {
-        console.error(`⏳ [DOMAIN_AUTH_POLL] Waiting ${pollInterval}ms before next poll...`);
+        console.error(`[DOMAIN_AUTH_POLL] Waiting ${pollInterval}ms before next poll...`);
         await new Promise(resolve => setTimeout(resolve, pollInterval));
       }
     }
     
     // Timeout reached
     const finalElapsedTime = Date.now() - startTime;
-    console.error(`⏰ [DOMAIN_AUTH_POLL] Timeout reached after ${finalElapsedTime}ms (${pollCount} polls)`);
+    console.error(`[DOMAIN_AUTH_POLL] Timeout reached after ${finalElapsedTime}ms (${pollCount} polls)`);
     throw new Error(`Domain authorization timeout: No successful JSON response after ${finalElapsedTime}ms and ${pollCount} polling attempts`);
   }
 

@@ -63,7 +63,7 @@ class TokenCacheHelpers {
     } catch (error: any) {
       // Ignore EEXIST error
       if (error.code !== 'EEXIST') {
-        console.error(`❌ Failed to create token cache directory:`, error);
+        console.error(`Failed to create token cache directory:`, error);
       }
     }
   }
@@ -79,7 +79,7 @@ class TokenCacheHelpers {
 
       // Validate structure
       if (!session.tokens || !session.user || !session.tokens.expires_at) {
-        console.error(`⚠️ Invalid token cache structure for ${email}`);
+        console.error(`Invalid token cache structure for ${email}`);
         return null;
       }
 
@@ -94,7 +94,7 @@ class TokenCacheHelpers {
         // File doesn't exist - not an error
         return null;
       }
-      console.error(`❌ Error reading token cache for ${email}:`, error);
+      console.error(`Error reading token cache for ${email}:`, error);
       return null;
     }
   }
@@ -121,7 +121,7 @@ class TokenCacheHelpers {
       // Atomic rename
       await fs.rename(tempPath, cachePath);
 
-      console.error(`💾 Wrote token cache for ${email}`);
+      console.error(`Wrote token cache for ${email}`);
     } catch (error) {
       // Cleanup temp file on error
       try {
@@ -138,10 +138,10 @@ class TokenCacheHelpers {
     try {
       const cachePath = TokenCacheHelpers.getTokenCachePath(email);
       await fs.unlink(cachePath);
-      console.error(`🗑️ Deleted token cache for ${email}`);
+      console.error(`Deleted token cache for ${email}`);
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
-        console.error(`❌ Error deleting token cache for ${email}:`, error);
+        console.error(`Error deleting token cache for ${email}:`, error);
       }
     }
   }
@@ -155,7 +155,7 @@ class TokenCacheHelpers {
       const files = await fs.readdir(TOKEN_CACHE_DIR);
       return files.filter(f => f.endsWith('.json')).map(f => f.replace('.json', ''));
     } catch (error) {
-      console.error(`❌ Error listing token cache:`, error);
+      console.error(`Error listing token cache:`, error);
       return [];
     }
   }
@@ -173,19 +173,16 @@ export class SessionAuthManager {
   private sessionIdConfirmed: boolean = false;
 
   constructor(sessionId?: string) {
-    console.error(`🔧 SessionAuthManager (FILESYSTEM) constructor called with sessionId: ${sessionId || 'undefined'}`);
+    // Reduced logging - constructor is called on every tool execution
 
     if (sessionId) {
       // Explicit session ID provided - use it directly
       this.sessionId = sessionId;
       this.sessionIdConfirmed = true;
-      console.error(`🔒 Using specified session: ${this.sessionId}`);
     } else {
       // No session ID - generate temporary UUID, will check for existing sessions on first use
       this.sessionId = randomUUID();
       this.sessionIdConfirmed = false;
-      console.error(`🔍 No session ID provided, temporary ID assigned: ${this.sessionId}`);
-      console.error(`   Will auto-discover existing sessions from filesystem on first use...`);
     }
   }
 
@@ -195,12 +192,12 @@ export class SessionAuthManager {
    */
   private async refreshAccessToken(session: AuthSession): Promise<TokenInfo | null> {
     if (!session.tokens.refresh_token) {
-      console.error(`⚠️ No refresh token available for ${session.user.email}`);
+      console.error(`No refresh token available for ${session.user.email}`);
       return null;
     }
 
     try {
-      console.error(`🔄 Refreshing access token for ${session.user.email}...`);
+      console.error(`Refreshing access token for ${session.user.email}...`);
 
       // Use google-auth-library's refresh method
       const oauth2Client = new OAuth2Client(
@@ -228,12 +225,12 @@ export class SessionAuthManager {
         token_type: credentials.token_type || 'Bearer'
       };
 
-      console.error(`✅ Access token refreshed for ${session.user.email}`);
+      console.error(`Access token refreshed for ${session.user.email}`);
       console.error(`   New expiry: ${new Date(expiresAt).toISOString()}`);
 
       return newTokens;
     } catch (error: any) {
-      console.error(`❌ Token refresh failed for ${session.user.email}:`, error.message);
+      console.error(`Token refresh failed for ${session.user.email}:`, error.message);
 
       // If refresh fails, delete cache (refresh_token might be revoked)
       await TokenCacheHelpers.deleteTokenCache(session.user.email);
@@ -248,17 +245,17 @@ export class SessionAuthManager {
    */
   private async findExistingValidSession(): Promise<string | null> {
     try {
-      console.error(`🔍 Searching filesystem token cache...`);
+      console.error(`Searching filesystem token cache...`);
 
       const emails = await TokenCacheHelpers.listCachedEmails();
-      console.error(`💾 Found ${emails.length} cached token files`);
+      console.error(`Found ${emails.length} cached token files`);
 
       for (const email of emails) {
         const session = await TokenCacheHelpers.readTokenCache(email);
 
         if (!session) continue;
 
-        console.error(`📄 Checking ${email}...`);
+        console.error(`Checking ${email}...`);
         console.error(`   Expires at: ${new Date(session.tokens.expires_at).toISOString()}`);
 
         const currentTime = Date.now();
@@ -267,7 +264,7 @@ export class SessionAuthManager {
 
         if (isValid) {
           // Token is still valid
-          console.error(`✅ Found valid session for ${email}`);
+          console.error(`Found valid session for ${email}`);
 
           // Update lastUsed timestamp
           session.lastUsed = currentTime;
@@ -276,7 +273,7 @@ export class SessionAuthManager {
           return session.sessionId;
         } else if (session.tokens.refresh_token) {
           // Token expired but we have refresh_token
-          console.error(`🔄 Token expired for ${email}, attempting refresh...`);
+          console.error(`Token expired for ${email}, attempting refresh...`);
 
           const newTokens = await this.refreshAccessToken(session);
           if (newTokens) {
@@ -285,20 +282,20 @@ export class SessionAuthManager {
             session.lastUsed = currentTime;
             await TokenCacheHelpers.writeTokenCache(email, session);
 
-            console.error(`✅ Refreshed and using session for ${email}`);
+            console.error(`Refreshed and using session for ${email}`);
             return session.sessionId;
           } else {
-            console.error(`❌ Refresh failed for ${email}`);
+            console.error(`Refresh failed for ${email}`);
           }
         } else {
-          console.error(`⏰ Session expired for ${email} (no refresh token)`);
+          console.error(`Session expired for ${email} (no refresh token)`);
         }
       }
 
-      console.error(`❌ No valid sessions found in cache`);
+      console.error(`No valid sessions found in cache`);
       return null;
     } catch (error) {
-      console.error(`❌ Error searching token cache:`, error);
+      console.error(`Error searching token cache:`, error);
       return null;
     }
   }
@@ -324,7 +321,7 @@ export class SessionAuthManager {
     };
 
     await TokenCacheHelpers.writeTokenCache(user.email, authSession);
-    console.error(`✅ Stored session ${this.sessionId} for ${user.email} in filesystem cache`);
+    console.error(`Stored session ${this.sessionId} for ${user.email} in filesystem cache`);
   }
 
   /**
@@ -350,14 +347,14 @@ export class SessionAuthManager {
   private async ensureSessionIdConfirmed(): Promise<void> {
     if (this.sessionIdConfirmed) return;
 
-    console.error(`🔍 Lazy session discovery: checking filesystem for existing sessions...`);
+    console.error(`Lazy session discovery: checking filesystem for existing sessions...`);
     const existingSessionId = await this.findExistingValidSession();
 
     if (existingSessionId) {
-      console.error(`✅ Found existing session: ${existingSessionId}`);
+      console.error(`Found existing session: ${existingSessionId}`);
       this.sessionId = existingSessionId;
     } else {
-      console.error(`ℹ️  No existing session found, using new session: ${this.sessionId}`);
+      console.error(` No existing session found, using new session: ${this.sessionId}`);
     }
 
     this.sessionIdConfirmed = true;
@@ -386,7 +383,7 @@ export class SessionAuthManager {
    * Force reload authentication session from filesystem
    */
   public async reloadAuthSession(): Promise<void> {
-    console.error(`🔄 Reload session ${this.sessionId} from filesystem`);
+    console.error(`Reload session ${this.sessionId} from filesystem`);
     // Nothing to do - next getAuthSession() will read from filesystem
   }
 
@@ -419,7 +416,7 @@ export class SessionAuthManager {
 
     // Auto-delete expired tokens without refresh_token
     if (!tokenValid && !authSession.tokens.refresh_token) {
-      console.error(`🗑️  Auto-deleting expired session tokens for ${this.sessionId}`);
+      console.error(` Auto-deleting expired session tokens for ${this.sessionId}`);
       await TokenCacheHelpers.deleteTokenCache(authSession.user.email);
       return false;
     }
@@ -435,7 +432,7 @@ export class SessionAuthManager {
     const startTime = Date.now();
     const checkInterval = 100; // Check every 100ms
 
-    console.error(`⏳ Waiting for session ${this.sessionId} to be ready...`);
+    console.error(`Waiting for session ${this.sessionId} to be ready...`);
 
     while (Date.now() - startTime < timeoutMs) {
       const authSession = await this.findSessionById(this.sessionId);
@@ -444,7 +441,7 @@ export class SessionAuthManager {
         // Double-check token validity
         const tokenValid = this.isTokenValidInternal(authSession);
         if (tokenValid) {
-          console.error(`✅ Session ${this.sessionId} is ready and authenticated as ${authSession.user.email}`);
+          console.error(`Session ${this.sessionId} is ready and authenticated as ${authSession.user.email}`);
           return true;
         }
       }
@@ -453,7 +450,7 @@ export class SessionAuthManager {
       await new Promise(resolve => setTimeout(resolve, checkInterval));
     }
 
-    console.error(`⚠️ Session ${this.sessionId} readiness timeout after ${timeoutMs}ms`);
+    console.error(`Session ${this.sessionId} readiness timeout after ${timeoutMs}ms`);
     return false;
   }
 
@@ -472,7 +469,7 @@ export class SessionAuthManager {
 
     // Try to refresh if expired
     if (!isValid && authSession.tokens.refresh_token) {
-      console.error(`⏰ Session ${this.sessionId} token expired, attempting refresh...`);
+      console.error(`Session ${this.sessionId} token expired, attempting refresh...`);
       const newTokens = await this.refreshAccessToken(authSession);
       if (newTokens) {
         authSession.tokens = newTokens;
@@ -483,7 +480,7 @@ export class SessionAuthManager {
 
     // Auto-cleanup expired sessions without refresh_token
     if (!isValid && !authSession.tokens.refresh_token) {
-      console.error(`⏰ Session ${this.sessionId} token expired at ${new Date(authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
+      console.error(`Session ${this.sessionId} token expired at ${new Date(authSession.tokens.expires_at).toISOString()}, auto-cleaning up`);
       await TokenCacheHelpers.deleteTokenCache(authSession.user.email);
     }
 
@@ -505,7 +502,7 @@ export class SessionAuthManager {
     if (!this.isTokenValidInternal(authSession)) {
       // Try to refresh if we have refresh_token
       if (authSession.tokens.refresh_token) {
-        console.error(`🔄 Token expired for session ${this.sessionId}, attempting refresh...`);
+        console.error(`Token expired for session ${this.sessionId}, attempting refresh...`);
         const newTokens = await this.refreshAccessToken(authSession);
         if (newTokens) {
           authSession.tokens = newTokens;
@@ -514,7 +511,7 @@ export class SessionAuthManager {
         }
       }
 
-      console.error(`🗑️  Token expired for session ${this.sessionId}, removing session`);
+      console.error(` Token expired for session ${this.sessionId}, removing session`);
       await TokenCacheHelpers.deleteTokenCache(authSession.user.email);
       return null;
     }
@@ -540,7 +537,7 @@ export class SessionAuthManager {
       authSession.tokens = tokens;
       authSession.lastUsed = Date.now();
       await TokenCacheHelpers.writeTokenCache(authSession.user.email, authSession);
-      console.error(`✅ Updated tokens for session ${this.sessionId}`);
+      console.error(`Updated tokens for session ${this.sessionId}`);
     }
   }
 
@@ -559,7 +556,7 @@ export class SessionAuthManager {
     const authSession = await this.findSessionById(this.sessionId);
     if (authSession) {
       await TokenCacheHelpers.deleteTokenCache(authSession.user.email);
-      console.error(`✅ Cleared session ${this.sessionId} from filesystem`);
+      console.error(`Cleared session ${this.sessionId} from filesystem`);
     }
   }
 
@@ -645,7 +642,7 @@ export class SessionAuthManager {
 
         // Clean up sessions older than 30 days
         if (currentTime - session.lastUsed > thirtyDaysMs) {
-          console.error(`🗑️  Removing old session for ${email} (last used: ${new Date(session.lastUsed).toISOString()})`);
+          console.error(` Removing old session for ${email} (last used: ${new Date(session.lastUsed).toISOString()})`);
           await TokenCacheHelpers.deleteTokenCache(email);
           cleaned++;
           continue;
@@ -653,16 +650,16 @@ export class SessionAuthManager {
 
         // Clean up expired tokens without refresh_token
         if (!session.tokens.refresh_token && currentTime > session.tokens.expires_at) {
-          console.error(`🗑️  Removing expired session for ${email} (no refresh token)`);
+          console.error(` Removing expired session for ${email} (no refresh token)`);
           await TokenCacheHelpers.deleteTokenCache(email);
           cleaned++;
         }
       }
 
-      console.error(`🧹 Cleaned up ${cleaned} expired sessions from filesystem`);
+      console.error(`Cleaned up ${cleaned} expired sessions from filesystem`);
       return cleaned;
     } catch (error) {
-      console.error(`❌ Error during cleanup:`, error);
+      console.error(`Error during cleanup:`, error);
       return cleaned;
     }
   }
@@ -679,7 +676,7 @@ export class SessionAuthManager {
       count++;
     }
 
-    console.error(`🗑️  Cleared ${count} sessions from filesystem`);
+    console.error(` Cleared ${count} sessions from filesystem`);
     return count;
   }
 
@@ -695,7 +692,7 @@ export class SessionAuthManager {
       }
       authSession.deploymentUrls.set(scriptId, gasRunUrl);
       await TokenCacheHelpers.writeTokenCache(authSession.user.email, authSession);
-      console.error(`✅ Cached deployment URL for ${scriptId}: ${gasRunUrl}`);
+      console.error(`Cached deployment URL for ${scriptId}: ${gasRunUrl}`);
     }
   }
 
@@ -721,7 +718,7 @@ export class SessionAuthManager {
     if (authSession) {
       authSession.deploymentUrls = new Map();
       await TokenCacheHelpers.writeTokenCache(authSession.user.email, authSession);
-      console.error(`✅ Cleared cached deployment URLs for session ${this.sessionId}`);
+      console.error(`Cleared cached deployment URLs for session ${this.sessionId}`);
     }
   }
 

@@ -86,11 +86,13 @@ export const mochaHooks = {
     } else {
         console.log('🔑 No valid authentication found. Starting interactive OAuth flow...');
         console.log('⚠️ Please complete authentication in the browser that will open.');
-        
+
           try {
+        console.log('📋 Step 1: Starting OAuth flow with browser...');
         const authResult = await globalAuthState.auth!.startInteractiveAuthWithBrowser();
         console.log(`🔗 OAuth URL: ${authResult.authUrl}`);
-        
+
+        console.log('📋 Step 2: Polling for authentication completion...');
         const authCompleted = await globalAuthState.auth!.waitForAuth(120000); // 2 minutes
         
         if (!authCompleted) {

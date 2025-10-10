@@ -1,646 +1,773 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
+  <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gas Debugger Console</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
     :root {
-      --bg-primary: #202124;
-      --bg-secondary: #292a2d;
-      --bg-tertiary: #35363a;
-      --text-primary: #e8eaed;
-      --text-secondary: #9aa0a6;
-      --border: #3c4043;
-      --accent: #8ab4f8;
-      --success: #81c995;
-      --error: #f28b82;
-      --warning: #fdd663;
-      --google-blue: #8ab4f8;
-      --google-grey-100: #3c4043;
-      --google-grey-200: #5f6368;
-      --google-grey-700: #9aa0a6;
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-tertiary: #2d2d30;
+      --border: #3e3e42;
+      --text-primary: #cccccc;
+      --text-secondary: #969696;
+      --accent: #007acc;
+      --success: #89d185;
+      --warning: #d7ba7d;
+      --error: #f48771;
+      --info: #75beff;
     }
 
     * {
+      box-sizing: border-box;
       margin: 0;
       padding: 0;
-      box-sizing: border-box;
     }
 
     body {
-      font-family: 'Google Sans', 'Roboto', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       background: var(--bg-primary);
       color: var(--text-primary);
-      height: 100vh;
+      line-height: 1.6;
       overflow: hidden;
+      height: 100vh;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 16px;
+      gap: 12px;
     }
 
     .header {
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 20px;
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
     }
 
     .header h1 {
       font-size: 18px;
-      font-weight: 400;
-      margin: 0;
-      color: var(--text-primary);
-    }
-
-    .header .bi {
+      font-weight: 600;
       color: var(--accent);
     }
 
-    .main-content {
+    .header .status {
       display: flex;
-      height: calc(100vh - 49px);
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .main-content {
+      flex: 1;
+      display: flex;
+      gap: 12px;
+      min-height: 0;
       overflow: hidden;
-      gap: 0;
-      position: relative;
     }
 
     .panel {
-      background: var(--bg-primary);
-      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
       overflow: hidden;
       position: relative;
-      transition: width 0.3s ease;
-    }
-
-    .panel.left {
-      width: 300px;
-      min-width: 48px;
-    }
-
-    .panel.right {
-      width: 350px;
-      min-width: 48px;
-      border-right: none;
-    }
-
-    .panel.collapsed {
-      width: 48px !important;
-    }
-
-    .panel.collapsed .panel-content {
-      display: none;
-    }
-
-    .panel.collapsed .panel-header span {
-      display: none;
-    }
-
-    .console-panel {
-      flex: 1;
-      border-right: 1px solid var(--border);
-      overflow: hidden;
-    }
-
-    .resize-handle {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 4px;
-      cursor: col-resize;
-      z-index: 10;
-      background: transparent;
-      transition: background 0.2s;
-    }
-
-    .resize-handle:hover {
-      background: var(--google-blue);
-    }
-
-    .resize-handle.left {
-      right: 0;
-    }
-
-    .resize-handle.right {
-      left: 0;
     }
 
     .panel-header {
-      background: var(--bg-secondary);
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: background 0.2s;
-      flex-shrink: 0;
-      height: 44px;
-    }
-
-    .panel-header:hover {
+      padding: 10px 14px;
       background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border);
+      cursor: move;
+      user-select: none;
     }
 
-    .collapse-btn {
-      background: none;
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .panel-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .panel-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .panel-btn:hover {
+      background: var(--bg-primary);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .toggle-panel-arrow {
+      background: transparent;
       border: none;
       color: var(--text-secondary);
+      font-size: 16px;
       cursor: pointer;
+      transition: transform 0.2s ease;
       padding: 4px;
-      border-radius: 4px;
-      transition: all 0.2s;
-      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
 
-    .collapse-btn:hover {
-      background: var(--google-grey-200);
-      color: var(--google-blue);
+    .toggle-panel-arrow:hover {
+      color: var(--accent);
+    }
+
+    .panel.collapsed .toggle-panel-arrow {
+      transform: rotate(-90deg);
     }
 
     .panel-content {
       flex: 1;
       overflow-y: auto;
       padding: 12px;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 13px;
+      line-height: 1.5;
     }
 
-    .console-output {
-      font-family: 'Monaco', 'Menlo', monospace;
-      font-size: 13px;
-      line-height: 1.6;
-      color: var(--text-primary);
-      padding: 12px;
-      background: var(--bg-primary);
-      overflow-y: auto;
-      height: calc(100% - 120px);
+    .output-panel {
+      flex: 1;
+      min-width: 400px;
+    }
+
+    .context-panel {
+      width: 320px;
+      min-width: 250px;
+    }
+
+    .resizer {
+      width: 8px;
+      background: transparent;
+      cursor: col-resize;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .resizer:hover {
+      background: var(--accent);
+      opacity: 0.3;
+    }
+
+    .resizer:active {
+      background: var(--accent);
+      opacity: 0.5;
     }
 
     .output-line {
-      margin-bottom: 8px;
-      white-space: pre-wrap;
-      word-wrap: break-word;
+      padding: 6px 10px;
+      border-left: 3px solid transparent;
+      margin: 2px 0;
+      border-radius: 3px;
+      font-size: 12px;
     }
 
-    .output-result {
-      color: var(--success);
+    .output-line.success {
+      border-left-color: var(--success);
+      background: rgba(137, 209, 133, 0.1);
     }
 
-    .output-error {
-      color: var(--error);
+    .output-line.error {
+      border-left-color: var(--error);
+      background: rgba(244, 135, 113, 0.1);
     }
 
-    .output-info {
+    .output-line.warning {
+      border-left-color: var(--warning);
+      background: rgba(215, 186, 125, 0.1);
+    }
+
+    .output-line.info {
+      border-left-color: var(--info);
+      background: rgba(117, 190, 255, 0.1);
+    }
+
+    .output-line .timestamp {
       color: var(--text-secondary);
+      font-size: 11px;
+      margin-right: 8px;
     }
 
-    .output-warning {
-      color: var(--warning);
+    .execution-time {
+      color: var(--text-secondary);
+      font-size: 10px;
+      margin-left: 8px;
+      font-style: italic;
     }
 
-    .command-input {
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border);
+    .server-logs {
+      margin-top: 4px;
+      margin-left: 20px;
+      border-left: 2px solid var(--border);
+      padding-left: 8px;
+      font-size: 11px;
+    }
+
+    .server-logs-header {
+      cursor: pointer;
+      user-select: none;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 0;
+      font-weight: 500;
+    }
+
+    .server-logs-header:hover {
+      color: var(--accent);
+    }
+
+    .server-logs-arrow {
+      display: inline-block;
+      transition: transform 0.2s ease;
+      font-size: 10px;
+    }
+
+    .server-logs.collapsed .server-logs-arrow {
+      transform: rotate(-90deg);
+    }
+
+    .server-logs-content {
+      margin-top: 4px;
+      padding: 6px 8px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 10px;
+      line-height: 1.4;
+    }
+
+    .server-logs.collapsed .server-logs-content {
+      display: none;
+    }
+
+    .input-container {
       padding: 12px;
+      background: var(--bg-tertiary);
+      border-top: 1px solid var(--border);
+    }
+
+    .input-wrapper {
       display: flex;
       gap: 8px;
       align-items: center;
     }
 
-    .command-input input {
+    .input-field {
       flex: 1;
-      background: var(--bg-tertiary);
+      background: var(--bg-primary);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 12px;
       color: var(--text-primary);
-      font-family: 'Monaco', 'Menlo', monospace;
+      padding: 10px 12px;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
       font-size: 13px;
+      border-radius: 4px;
+      outline: none;
+      transition: border-color 0.2s;
     }
 
-    .command-input input:focus {
-      outline: none;
+    .input-field:focus {
       border-color: var(--accent);
     }
 
-    .command-input button {
+    .execute-btn {
       background: var(--accent);
+      color: white;
       border: none;
-      border-radius: 6px;
-      padding: 8px 16px;
-      color: var(--bg-primary);
-      font-weight: 500;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 4px;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
+      white-space: nowrap;
     }
 
-    .command-input button:hover {
-      opacity: 0.9;
+    .execute-btn:hover {
+      background: #005a9e;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0, 122, 204, 0.3);
     }
 
-    .context-item {
-      background: var(--bg-secondary);
-      border-radius: 6px;
-      padding: 12px;
-      margin-bottom: 8px;
+    .execute-btn:active {
+      transform: translateY(0);
     }
 
-    .context-item-header {
+    .context-section {
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .context-section:last-child {
+      border-bottom: none;
+    }
+
+    .context-section h3 {
       font-size: 12px;
-      color: var(--text-secondary);
-      margin-bottom: 6px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 8px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-    }
-
-    .context-item-value {
-      font-size: 13px;
-      color: var(--text-primary);
-      font-family: 'Monaco', 'Menlo', monospace;
-    }
-
-    ::-webkit-scrollbar {
-      width: 8px;
-      height: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: var(--bg-primary);
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: var(--bg-tertiary);
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: var(--border);
-    }
-
-    .debug-logs {
-      margin-top: 4px;
-      padding: 8px;
-      background: var(--bg-secondary);
-      border-radius: 4px;
-      font-size: 11px;
-      color: var(--text-secondary);
-      display: none;
-      max-height: 500px;
-      overflow-y: auto;
-      transition: all 0.3s ease;
-    }
-
-    .debug-logs.show {
-      display: block;
-    }
-
-    .state-tree {
-      font-family: 'Monaco', 'Menlo', monospace;
-      font-size: 12px;
-    }
-
-    .state-item {
-      padding: 4px 8px;
-      margin-bottom: 2px;
-      border-radius: 4px;
       cursor: pointer;
-      transition: background 0.2s;
+      user-select: none;
       display: flex;
       align-items: center;
       gap: 6px;
     }
 
-    .state-item:hover {
-      background: var(--bg-tertiary);
+    .context-section h3:hover {
+      color: var(--text-primary);
     }
 
-    .state-item-key {
-      color: var(--google-blue);
-      font-weight: 500;
-    }
-
-    .state-item-value {
-      color: var(--text-secondary);
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .state-item-type {
-      color: var(--text-secondary);
-      opacity: 0.6;
-      font-size: 10px;
-    }
-
-    .state-children {
-      margin-left: 16px;
-      border-left: 1px solid var(--border);
-      padding-left: 8px;
-      margin-top: 4px;
-      display: none;
-    }
-
-    .state-children.show {
-      display: block;
-    }
-
-    .state-item .bi-chevron-right {
-      font-size: 10px;
-      transition: transform 0.2s;
-    }
-
-    .state-item.expanded .bi-chevron-right {
+    .expand-icon {
+      display: inline-block;
+      font-size: 12px;
+      transition: transform 0.2s ease;
       transform: rotate(90deg);
     }
 
-    /* Tab Styles */
+    .context-section.collapsed .expand-icon {
+      transform: rotate(0deg);
+    }
+
+    .context-section.collapsed .context-section-content {
+      display: none;
+    }
+
+    .context-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 8px;
+      margin: 4px 0;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .context-item .key {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .context-item .value {
+      color: var(--text-primary);
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .scroll-hint {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .scroll-hint.visible {
+      opacity: 1;
+    }
+
+    .panel-content::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .panel-content::-webkit-scrollbar-track {
+      background: var(--bg-primary);
+    }
+
+    .panel-content::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 5px;
+    }
+
+    .panel-content::-webkit-scrollbar-thumb:hover {
+      background: var(--accent);
+    }
+
+    .collapsed {
+      height: 48px;
+    }
+
+    .collapsed .panel-content {
+      display: none;
+    }
+
     .nav-tabs {
+      display: flex;
+      list-style: none;
+      padding: 0;
+      margin: 0;
       border-bottom: 1px solid var(--border);
-      margin-bottom: 0;
-      padding: 0 12px;
+      background: var(--bg-tertiary);
+      overflow-x: auto;
+      flex-wrap: nowrap;
+    }
+
+    .nav-tabs .nav-item {
+      margin: 0;
     }
 
     .nav-tabs .nav-link {
+      display: block;
+      padding: 10px 16px;
+      text-decoration: none;
       color: var(--text-secondary);
-      background: transparent;
-      border: none;
       border-bottom: 2px solid transparent;
-      padding: 8px 16px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
       transition: all 0.2s;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .nav-tabs .nav-link:hover {
       color: var(--text-primary);
-      border-bottom-color: var(--google-grey-200);
+      background: rgba(255, 255, 255, 0.05);
     }
 
     .nav-tabs .nav-link.active {
       color: var(--accent);
-      background: transparent;
       border-bottom-color: var(--accent);
     }
 
     .tab-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
-
-    .tab-pane {
       display: none;
     }
 
-    .tab-pane.active {
+    .tab-content.active {
       display: block;
     }
 
-    /* Process History Styles */
-    .process-list {
-      font-family: 'Monaco', 'Menlo', monospace;
+    .info-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
       font-size: 12px;
     }
 
-    .process-item {
-      background: var(--bg-secondary);
-      border-radius: 6px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: background 0.2s;
+    .info-label {
+      color: var(--text-secondary);
+      font-weight: 600;
     }
 
-    .process-item:hover {
+    .info-value {
+      color: var(--text-primary);
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+
+    .status-indicator.healthy {
+      background: var(--success);
+    }
+
+    .status-indicator.warning {
+      background: var(--warning);
+    }
+
+    .status-indicator.error {
+      background: var(--error);
+    }
+
+    .trigger-item, .process-item {
       background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 8px;
     }
 
-    .process-item-header {
+    .trigger-header, .process-header {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 4px;
+      margin-bottom: 8px;
     }
 
-    .process-status-icon {
-      font-size: 14px;
+    .trigger-function, .process-function {
+      font-weight: 600;
+      color: var(--accent);
     }
 
-    .process-status-icon.success {
+    .trigger-type, .process-status {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      background: var(--bg-primary);
+    }
+
+    .process-status.COMPLETED {
       color: var(--success);
     }
 
-    .process-status-icon.error {
+    .process-status.FAILED {
       color: var(--error);
     }
 
-    .process-command {
-      flex: 1;
-      color: var(--text-primary);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .process-status.RUNNING {
+      color: var(--info);
     }
 
-    .process-time {
-      color: var(--text-secondary);
-      font-size: 10px;
-    }
-
-    .process-details {
-      display: none;
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
-      color: var(--text-secondary);
+    .log-viewer {
+      max-height: 300px;
+      overflow-y: auto;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px;
       font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-all;
     }
 
-    .process-item.expanded .process-details {
-      display: block;
+    @media (max-width: 768px) {
+      .main-content {
+        flex-direction: column;
+      }
+
+      .context-panel {
+        width: 100%;
+        max-height: 300px;
+      }
+
+      .resizer {
+        width: 100%;
+        height: 8px;
+        cursor: row-resize;
+      }
+
+      .header {
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+      }
+
+      .header .status {
+        flex-direction: column;
+        gap: 4px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <i class="bi bi-terminal-fill"></i>
-    <h1>Gas Debugger Console</h1>
-  </div>
-
-  <div class="main-content">
-    <div class="panel left" id="leftPanel">
-      <div class="resize-handle left"></div>
-      <div class="panel-header">
-        <span>Client State</span>
-        <button class="collapse-btn" onclick="togglePanel('leftPanel')">
-          <i class="bi bi-chevron-left"></i>
-        </button>
-      </div>
-      <div class="panel-content">
-        <div id="clientStateTree" class="state-tree"></div>
+  <div class="container">
+    <div class="header">
+      <h1>Gas Debugger Console</h1>
+      <div class="status">
+        <span>Script ID: <strong id="scriptId" title="Click to copy" style="cursor: pointer;">Loading...</strong></span>
+        <span>User: <strong id="userEmail">Loading...</strong></span>
+        <button class="panel-btn" id="openEditorBtn" style="margin-left: 16px;">Open in Editor</button>
       </div>
     </div>
 
-    <div class="panel console-panel">
-      <div class="panel-header">Console Output</div>
-      <div class="console-output" id="consoleOutput">
-        <div class="output-line output-info">Gas Debugger Console initialized.</div>
-        <div class="output-line output-info">Type a command and press Enter or click Execute.</div>
+    <div class="main-content">
+      <div class="panel context-panel">
+        <div class="panel-header">
+          <span class="panel-title">Context</span>
+          <div class="panel-actions">
+            <button class="toggle-panel-arrow toggle-panel" title="Collapse panel">▼</button>
+          </div>
+        </div>
+        <div class="panel-content">
+          <ul class="nav-tabs">
+            <li class="nav-item">
+              <a class="nav-link active" href="#" data-tab="contextTab">Context</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#" data-tab="loggerTab">Logger</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#" data-tab="deploymentTab">Deployment</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#" data-tab="triggersTab">Triggers</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#" data-tab="processesTab">Processes</a>
+            </li>
+          </ul>
+
+          <div id="contextTab" class="tab-content active">
+            <div class="context-section">
+              <h3>
+                <span class="expand-icon">▶</span>Client State
+                <button class="panel-btn" id="clearClientState" style="margin-left: auto; font-size: 10px; padding: 2px 8px;" title="Clear all client state">✕ Clear</button>
+              </h3>
+              <div class="context-section-content">
+                <div id="clientState" class="empty-state">No variables stored</div>
+              </div>
+            </div>
+
+            <div class="context-section collapsed">
+              <h3><span class="expand-icon">▶</span>Session Info</h3>
+              <div class="context-section-content">
+                <div id="sessionInfo">
+                  <div class="context-item">
+                    <span class="key">Timezone</span>
+                    <span class="value" id="timezone">-</span>
+                  </div>
+                  <div class="context-item">
+                    <span class="key">Locale</span>
+                    <span class="value" id="locale">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="context-section collapsed">
+              <h3>
+                <span class="expand-icon">▶</span>Script Properties
+                <button class="panel-btn" id="refreshScriptProps" style="margin-left: auto; font-size: 10px; padding: 2px 8px;" title="Refresh script properties">↻</button>
+                <button class="panel-btn" id="addScriptProp" style="font-size: 10px; padding: 2px 8px;" title="Add new property">+</button>
+              </h3>
+              <div class="context-section-content">
+                <div id="scriptProps" class="empty-state">Loading...</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="loggerTab" class="tab-content">
+            <div class="context-section">
+              <h3><span class="expand-icon">▶</span>Recent Logs</h3>
+              <div class="context-section-content">
+                <div id="recentLogs" class="log-viewer">No recent logs</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="deploymentTab" class="tab-content">
+            <div class="context-section">
+              <h3><span class="expand-icon">▶</span>Deployment Info</h3>
+              <div class="context-section-content">
+                <div class="info-grid">
+                  <span class="info-label">Web App URL:</span>
+                  <span class="info-value" id="deploymentUrl">N/A</span>
+
+                  <span class="info-label">Health:</span>
+                  <span class="info-value">
+                    <span class="status-indicator healthy" id="deploymentHealth"></span>
+                    <span id="deploymentHealthText">Active</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="triggersTab" class="tab-content">
+            <div class="context-section">
+              <h3><span class="expand-icon">▶</span>Active Triggers</h3>
+              <div class="context-section-content">
+                <div id="triggersList" class="empty-state">Click to load triggers...</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="processesTab" class="tab-content">
+            <div class="context-section">
+              <h3>
+                <span class="expand-icon">▶</span>Recent Processes
+                <button class="panel-btn" id="refreshProcesses" style="margin-left: auto; font-size: 10px; padding: 2px 8px;" title="Refresh processes">↻</button>
+              </h3>
+              <div class="context-section-content">
+                <div id="processesList" class="empty-state">Click to load processes...</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="command-input">
-        <input type="text" id="commandInput" placeholder="Type JavaScript code (use run(...) to call server functions)">
-        <button onclick="executeCommand()">
-          <i class="bi bi-play-fill"></i>
-        </button>
-        <button onclick="clearClientState()" style="background: var(--warning); padding: 8px 12px;" title="Clear client state">
-          <i class="bi bi-arrow-counterclockwise"></i>
-        </button>
-      </div>
-    </div>
 
-    <div class="panel right" id="rightPanel">
-      <div class="resize-handle right"></div>
-      <div class="panel-header">
-        <span>Inspector</span>
-        <button class="collapse-btn" onclick="togglePanel('rightPanel')">
-          <i class="bi bi-chevron-right"></i>
-        </button>
-      </div>
-      <div class="panel-content" style="display: flex; flex-direction: column; padding: 0;">
-        <ul class="nav nav-tabs">
-          <li class="nav-item">
-            <a class="nav-link active" href="#" onclick="switchTab(event, 'contextTab')">Context</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#" onclick="switchTab(event, 'loggerTab')">Logger</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#" onclick="switchTab(event, 'deploymentTab')">Deployment</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#" onclick="switchTab(event, 'triggersTab')">Triggers</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="#" onclick="switchTab(event, 'processesTab')">Processes</a>
-          </li>
-        </ul>
-        <div class="tab-content">
-          <div id="contextTab" class="tab-pane active">
-            <div class="context-item" style="margin-bottom: 8px;">
-              <button onclick="runQuickTest()" style="width: 100%; background: var(--accent); border: none; border-radius: 4px; padding: 6px 10px; color: var(--bg-primary); font-weight: 400; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: opacity 0.2s; font-size: 12px;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
-                <i class="bi bi-lightning-fill" style="font-size: 11px;"></i> Run Quick Test
-              </button>
-            </div>
-            <div class="context-item">
-              <div class="context-item-header">Project</div>
-              <div class="context-item-value">fibonacci-sidebar-test</div>
-            </div>
-            <div class="context-item">
-              <div class="context-item-header">Script ID</div>
-              <div class="context-item-value">10Jfa2s9ilvmRGcZxpd9rEPNhNM-ZaxsK4jSRPphQRyGHwobnbO3k9mv2</div>
-            </div>
-            <div class="context-item">
-              <div class="context-item-header">Status</div>
-              <div class="context-item-value" style="color: var(--success);">
-                <i class="bi bi-check-circle-fill"></i> Ready
-              </div>
-            </div>
-            <div class="context-item">
-              <button onclick="openScriptEditor()" style="width: 100%; background: var(--accent); border: none; border-radius: 6px; padding: 8px 12px; color: var(--bg-primary); font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                <i class="bi bi-code-slash"></i> Open Script Editor
-              </button>
-            </div>
+      <div class="resizer" id="resizer"></div>
+
+      <div class="panel output-panel">
+        <div class="panel-header">
+          <span class="panel-title">Output</span>
+          <div class="panel-actions">
+            <button class="panel-btn clear-output">Clear</button>
+            <button class="toggle-panel-arrow toggle-panel" title="Collapse panel">▼</button>
           </div>
-          <div id="loggerTab" class="tab-pane">
-            <div class="context-item">
-              <div class="context-item-header">Filter Pattern (Regex)</div>
-              <input type="text" id="logFilterPattern"
-                     placeholder="ERROR|WARN|INFO"
-                     style="width: 100%; background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary); padding: 6px; border-radius: 4px; font-size: 12px;">
-            </div>
-
-            <div class="context-item">
-              <div class="context-item-header">Show Last N Lines: <span id="tailValue">All</span></div>
-              <input type="range" id="logTailSlider" min="0" max="500" value="0" step="10"
-                     oninput="document.getElementById('tailValue').textContent = this.value == 0 ? 'All' : this.value"
-                     style="width: 100%;">
-            </div>
-
-            <div class="context-item">
-              <button onclick="setLogFilter('ERROR|WARN')" style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; margin-right: 4px;">Errors Only</button>
-              <button onclick="setLogFilter('^\\[.*\\]')" style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; margin-right: 4px;">Bracketed</button>
-              <button onclick="setLogFilter('')" style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px;">Clear Filter</button>
-            </div>
-
-            <div class="context-item">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px;">
-                <input type="checkbox" id="autoScrollLogs" checked>
-                <span>Auto-scroll to new logs</span>
-              </label>
-            </div>
-          </div>
-
-          <div id="deploymentTab" class="tab-pane">
-            <div class="context-item" id="deploymentInfo">
-              <div class="context-item-header">Current Deployment</div>
-              <div id="deploymentUrl" class="context-item-value" style="word-break: break-all; cursor: pointer; color: var(--accent);"
-                   onclick="if(this.textContent && !this.textContent.includes('Loading')) window.open(this.textContent, '_blank')">
-                Loading...
-              </div>
-            </div>
-
-            <div class="context-item" style="display: flex; gap: 8px;">
-              <button onclick="copyDeploymentUrl()" style="flex: 1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <i class="bi bi-clipboard"></i> Copy URL
-              </button>
-              <button onclick="openDeployment()" style="flex: 1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <i class="bi bi-box-arrow-up-right"></i> Open
-              </button>
-              <button onclick="refreshDeployment()" style="flex: 1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <i class="bi bi-arrow-clockwise"></i> Refresh
-              </button>
-            </div>
-
-            <div class="context-item">
-              <div class="context-item-header">Type</div>
-              <span id="deploymentType" style="display: inline-block; padding: 4px 8px; background: var(--bg-tertiary); border-radius: 4px; font-size: 11px; color: var(--accent);">WEB_APP</span>
-            </div>
-
-            <div class="context-item">
-              <div class="context-item-header">Status</div>
-              <span id="deploymentHealth" style="color: var(--success); font-size: 14px;">●</span>
-              <span id="deploymentHealthText" style="margin-left: 6px; font-size: 12px;">Healthy</span>
-            </div>
-          </div>
-
-          <div id="triggersTab" class="tab-pane">
-            <div id="triggersList" class="context-item" style="max-height: 400px; overflow-y: auto;">
-              <div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">
-                Click "Load Triggers" to view installable triggers
-              </div>
-            </div>
-
-            <div class="context-item">
-              <button onclick="loadTriggers()" style="width: 100%; padding: 8px; background: var(--accent); border: none; border-radius: 4px; color: var(--bg-primary); font-weight: 500; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <i class="bi bi-arrow-clockwise"></i> Load Triggers
-              </button>
-            </div>
-          </div>
-
-          <div id="processesTab" class="tab-pane">
-            <div id="processList" class="process-list">
-              <div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">
-                No processes yet. Run commands to see history.
-              </div>
-            </div>
+        </div>
+        <div class="panel-content" id="output">
+          <div class="empty-state">Execute code to see output here</div>
+        </div>
+        <div class="scroll-hint" id="scrollHint">New output</div>
+        <div class="input-container">
+          <div class="input-wrapper">
+            <input
+              type="text"
+              class="input-field"
+              id="codeInput"
+              placeholder="Enter JavaScript code or use run(<javascript>) to execute server-side code..."
+            >
+            <button class="execute-btn">Execute</button>
           </div>
         </div>
       </div>
@@ -648,730 +775,969 @@
   </div>
 
   <script>
-    const consoleOutput = document.getElementById('consoleOutput');
-    const commandInput = document.getElementById('commandInput');
-
     // Command history management
-    let commandHistory = [];
-    let historyIndex = -1;
-
-    // Process history
-    let processHistory = [];
-
-    // Client state management
-    let clientState = {
-      run: function(jsCode) {
-        const startTime = Date.now();
-        return new Promise((resolve, reject) => {
-          google.script.run
-            .withSuccessHandler(function(data) {
-              const clientTime = Date.now() - startTime;
-
-              // Display detailed execution info
-              const infoLine = document.createElement('div');
-              infoLine.className = 'output-line';
-              infoLine.style.fontSize = '11px';
-              infoLine.style.color = 'var(--text-secondary)';
-
-              let infoText = '';
-              if (data.execution_time_ms !== undefined) {
-                let timeStr;
-                if (data.execution_time_ms < 1000) {
-                  timeStr = data.execution_time_ms + 'ms';
-                } else {
-                  timeStr = (data.execution_time_ms / 1000).toFixed(2) + 's';
-                }
-                infoText += '⏱️  Server: ' + timeStr + ' | Client: ' + clientTime + 'ms';
-              }
-
-              if (infoText) {
-                infoLine.textContent = infoText;
-                consoleOutput.appendChild(infoLine);
-              }
-
-              // Display logger output if present
-              if (data.logger_output && data.logger_output.trim()) {
-                const logId = 'debug-logs-' + Date.now();
-
-                // Apply client-side filtering
-                let filteredLogs = data.logger_output;
-                const filterPattern = document.getElementById('logFilterPattern')?.value;
-                const tailLines = parseInt(document.getElementById('logTailSlider')?.value) || 0;
-
-                if (filterPattern) {
-                  try {
-                    const regex = new RegExp(filterPattern, 'i');
-                    const lines = filteredLogs.split('\n');
-                    filteredLogs = lines.filter(line => regex.test(line)).join('\n');
-                  } catch (e) {
-                    // Invalid regex - show unfiltered
-                  }
-                }
-
-                if (tailLines > 0) {
-                  const lines = filteredLogs.split('\n');
-                  if (lines.length > tailLines) {
-                    filteredLogs = lines.slice(-tailLines).join('\n');
-                  }
-                }
-
-                const logCount = filteredLogs.split('\n').filter(line => line.trim()).length;
-
-                const metaContainer = document.createElement('div');
-                metaContainer.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-top: 4px;';
-
-                const expander = document.createElement('span');
-                expander.style.cssText = 'color: var(--google-blue); cursor: pointer; font-size: 11px; display: flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; background: var(--google-grey-100); transition: all 0.2s;';
-                expander.innerHTML = '<i class="bi bi-chevron-right" style="font-size: 10px;"></i> Logs (' + logCount + ')';
-                expander.onclick = function() { toggleDebugLogs(logId, expander); };
-
-                metaContainer.appendChild(expander);
-
-                const debugLogs = document.createElement('div');
-                debugLogs.id = logId;
-                debugLogs.className = 'debug-logs';
-                debugLogs.textContent = filteredLogs;
-
-                const resultLine = document.createElement('div');
-                resultLine.className = 'output-line';
-                resultLine.appendChild(metaContainer);
-                resultLine.appendChild(debugLogs);
-                consoleOutput.appendChild(resultLine);
-              }
-
-              // Auto-scroll if enabled
-              const autoScroll = document.getElementById('autoScrollLogs')?.checked !== false;
-              if (autoScroll) {
-                consoleOutput.scrollTop = consoleOutput.scrollHeight;
-              }
-
-              if (data.status === 'success' || data.success) {
-                resolve(data.result);
-              } else {
-                reject(new Error(data.error || data.message || 'Unknown error'));
-              }
-            })
-            .withFailureHandler(reject)
-            .invoke(jsCode);
-        });
+    window.commandHistory = {
+      commands: [],
+      currentIndex: -1,
+      add(command) {
+        if (command && command.trim()) {
+          this.commands.push(command);
+          this.currentIndex = this.commands.length;
+        }
+      },
+      getPrevious() {
+        if (this.commands.length === 0) return '';
+        if (this.currentIndex > 0) {
+          this.currentIndex--;
+        }
+        return this.commands[this.currentIndex] || '';
+      },
+      getNext() {
+        if (this.commands.length === 0) return '';
+        if (this.currentIndex < this.commands.length - 1) {
+          this.currentIndex++;
+          return this.commands[this.currentIndex];
+        } else {
+          this.currentIndex = this.commands.length;
+          return '';
+        }
       }
     };
 
-    function clearClientState() {
-      const preservedRun = clientState.run;
-      clientState = { run: preservedRun };
-      addOutput('Client state cleared', 'info');
-      updateClientStateDisplay();
-    }
-
-    function updateClientStateDisplay() {
-      const container = document.getElementById('clientStateTree');
-      if (!container) return;
-
-      // Get all keys except 'run' function
-      const keys = Object.keys(clientState).filter(key => key !== 'run');
-
-      if (keys.length === 0) {
-        container.innerHTML = '<div style="color: var(--text-secondary); font-size: 11px; padding: 8px;">No variables stored</div>';
-        return;
-      }
-
-      // Incremental update: detect changes
-      const existingItems = {};
-      container.querySelectorAll('.state-item').forEach(item => {
-        const key = item.dataset.key;
-        if (key) existingItems[key] = item;
-      });
-
-      keys.forEach(key => {
-        const value = clientState[key];
-        const existingItem = existingItems[key];
-
-        if (existingItem) {
-          // Check if value changed
-          const currentValue = getValuePreview(value);
-          const displayedValue = existingItem.querySelector('.state-item-value').textContent;
-          if (currentValue !== displayedValue) {
-            // Update existing item
-            updateStateItem(existingItem, key, value);
-          }
-          delete existingItems[key];
-        } else {
-          // Add new item
-          renderStateItem(container, key, value, 0);
-        }
-      });
-
-      // Remove deleted items
-      Object.values(existingItems).forEach(item => {
-        const childrenContainer = item.nextElementSibling;
-        if (childrenContainer && childrenContainer.classList.contains('state-children')) {
-          childrenContainer.remove();
-        }
-        item.remove();
-      });
-    }
-
-    function getValuePreview(value) {
-      const type = typeof value;
-      const isArray = Array.isArray(value);
-
-      if (isArray) {
-        return `Array(${value.length})`;
-      } else if (type === 'object' && value !== null) {
-        const objKeys = Object.keys(value);
-        return `{ ${objKeys.slice(0, 2).join(', ')}${objKeys.length > 2 ? '...' : ''} }`;
-      } else if (type === 'string') {
-        return '"' + (value.length > 30 ? value.substring(0, 30) + '...' : value) + '"';
-      } else {
-        return String(value);
-      }
-    }
-
-    function updateStateItem(item, key, value) {
-      const valueSpan = item.querySelector('.state-item-value');
-      valueSpan.textContent = getValuePreview(value);
-
-      // Update tooltip
-      const type = typeof value;
-      const isArray = Array.isArray(value);
-      let tooltipValue;
-      if (isArray || (type === 'object' && value !== null)) {
-        tooltipValue = JSON.stringify(value, null, 2);
-      } else if (type === 'string') {
-        tooltipValue = value;
-      } else {
-        tooltipValue = String(value);
-      }
-      const displayType = isArray ? 'array' : type;
-      item.title = `${key}: ${tooltipValue} (type: ${displayType})`;
-    }
-
-    function renderStateItem(container, key, value, depth) {
-      const item = document.createElement('div');
-      item.className = 'state-item';
-      item.dataset.key = key;
-
-      const type = typeof value;
-      const isObject = type === 'object' && value !== null;
-      const isArray = Array.isArray(value);
-
-      // Create tooltip with full value and type
-      let tooltipValue;
-      if (isArray || isObject) {
-        tooltipValue = JSON.stringify(value, null, 2);
-      } else if (type === 'string') {
-        tooltipValue = value;
-      } else {
-        tooltipValue = String(value);
-      }
-      const displayType = isArray ? 'array' : type;
-      item.title = `${key}: ${tooltipValue} (type: ${displayType})`;
-
-      // Add chevron for expandable items
-      if (isObject) {
-        const chevron = document.createElement('i');
-        chevron.className = 'bi bi-chevron-right';
-        item.appendChild(chevron);
-      } else {
-        // Spacer for alignment
-        const spacer = document.createElement('span');
-        spacer.style.width = '14px';
-        spacer.style.display = 'inline-block';
-        item.appendChild(spacer);
-      }
-
-      // Key
-      const keySpan = document.createElement('span');
-      keySpan.className = 'state-item-key';
-      keySpan.textContent = key;
-      item.appendChild(keySpan);
-
-      // Value preview
-      const valueSpan = document.createElement('span');
-      valueSpan.className = 'state-item-value';
-      valueSpan.textContent = getValuePreview(value);
-      item.appendChild(valueSpan);
-
-      // Type indicator
-      const typeSpan = document.createElement('span');
-      typeSpan.className = 'state-item-type';
-      typeSpan.textContent = displayType;
-      item.appendChild(typeSpan);
-
-      container.appendChild(item);
-
-      // Add children container for objects/arrays
-      if (isObject) {
-        const childrenContainer = document.createElement('div');
-        childrenContainer.className = 'state-children';
-        container.appendChild(childrenContainer);
-
-        // Toggle expand/collapse
-        item.onclick = function(e) {
-          e.stopPropagation();
-          item.classList.toggle('expanded');
-          childrenContainer.classList.toggle('show');
-
-          // Render children on first expand
-          if (childrenContainer.classList.contains('show') && childrenContainer.innerHTML === '') {
-            if (isArray) {
-              value.forEach((item, index) => {
-                renderStateItem(childrenContainer, `[${index}]`, item, depth + 1);
-              });
-            } else {
-              Object.keys(value).forEach(childKey => {
-                renderStateItem(childrenContainer, childKey, value[childKey], depth + 1);
-              });
-            }
-          }
-        };
-      }
-    }
-
-    function addOutput(message, type = 'info') {
-      const line = document.createElement('div');
-      line.className = `output-line output-${type}`;
-      line.textContent = message;
-      consoleOutput.appendChild(line);
-      consoleOutput.scrollTop = consoleOutput.scrollHeight;
-    }
-
-    function executeCommand() {
-      const command = commandInput.value.trim();
-      if (!command) return;
-
-      // Add to history
-      commandHistory.push(command);
-      historyIndex = commandHistory.length;
-
-      addOutput('> ' + command, 'info');
-
-      const startTime = Date.now();
-
-      // Clear input
-      commandInput.value = '';
-
-      // Execute in context with clientState
-      // Parse the command to detect variable assignments
-      try {
-        // Check if this is a simple assignment (e.g., "x = 5" or "const y = 10")
-        const assignmentMatch = command.match(/^(?:const|let|var)?\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(.+)$/);
-        
-        let wrappedCode;
-        if (assignmentMatch && !command.includes('function') && !command.includes('=>')) {
-          // This is a simple assignment - store it in clientState
-          const varName = assignmentMatch[1];
-          const varValue = assignmentMatch[2];
-          
-          // Check if the assignment involves run() - needs special async handling
-          if (varValue.includes('run(')) {
-            // Async assignment: wait for promise to resolve, then store result
-            wrappedCode = `(async function() {
-              const run = clientState.run;
-              const value = await ${varValue};
-              clientState.${varName} = value;
-              return value;
-            })()`;
-          } else {
-            // Sync assignment: store immediately
-            wrappedCode = `(async function() {
-              const run = clientState.run;
-              const value = ${varValue};
-              clientState.${varName} = value;
-              return value;
-            })()`;
-          }
-        } else {
-          // Regular expression - execute with clientState context using with statement
-          wrappedCode = `(async function() {
-            const run = clientState.run;
-            with (clientState) {
-              return ${command};
-            }
-          })()`;
-        }
-
-        const result = eval(wrappedCode);
-
-        // Handle promises from run() calls
-        if (result && typeof result.then === 'function') {
-          const executingLine = document.createElement('div');
-          executingLine.className = 'output-line';
-          executingLine.innerHTML = '<span class="output-info"><i class="bi bi-hourglass-split"></i> Executing...</span>';
-          executingLine.id = 'executing-indicator';
-          consoleOutput.appendChild(executingLine);
-          consoleOutput.scrollTop = consoleOutput.scrollHeight;
-
-          result.then(value => {
-            const indicator = document.getElementById('executing-indicator');
-            if (indicator) indicator.remove();
-            const execTime = Date.now() - startTime;
-            addOutput('✓ ' + JSON.stringify(value, null, 2), 'result');
-            addProcessToHistory(command, 'success', value, execTime);
-            updateClientStateDisplay();
-          }).catch(err => {
-            const indicator = document.getElementById('executing-indicator');
-            if (indicator) indicator.remove();
-            const execTime = Date.now() - startTime;
-            addOutput('✗ Error: ' + err.message, 'error');
-            addProcessToHistory(command, 'error', err.message, execTime);
-            updateClientStateDisplay();
-          });
-        } else {
-          const execTime = Date.now() - startTime;
-          addOutput('✓ ' + JSON.stringify(result, null, 2), 'result');
-          addProcessToHistory(command, 'success', result, execTime);
-        }
-      } catch (error) {
-        const execTime = Date.now() - startTime;
-        addOutput('✗ Error: ' + error.message, 'error');
-        addProcessToHistory(command, 'error', error.message, execTime);
-      }
-
-      // Update client state display after any command
-      updateClientStateDisplay();
-    }
-
-    function addProcessToHistory(command, status, result, execTime) {
-      const timestamp = new Date().toLocaleTimeString();
-      const process = {
-        command,
-        status,
-        result,
-        execTime,
-        timestamp
-      };
-
-      processHistory.unshift(process);
-
-      // Keep only last 50 processes
-      if (processHistory.length > 50) {
-        processHistory = processHistory.slice(0, 50);
-      }
-
-      updateProcessList();
-    }
-
-    function updateProcessList() {
-      const processList = document.getElementById('processList');
-      if (!processList) return;
-
-      if (processHistory.length === 0) {
-        processList.innerHTML = '<div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">No processes yet. Run commands to see history.</div>';
-        return;
-      }
-
-      processList.innerHTML = '';
-
-      processHistory.forEach((process, index) => {
-        const item = document.createElement('div');
-        item.className = 'process-item';
-
-        const header = document.createElement('div');
-        header.className = 'process-item-header';
-
-        const icon = document.createElement('i');
-        icon.className = `bi ${process.status === 'success' ? 'bi-check-circle-fill' : 'bi-x-circle-fill'} process-status-icon ${process.status}`;
-        header.appendChild(icon);
-
-        const commandSpan = document.createElement('span');
-        commandSpan.className = 'process-command';
-        commandSpan.textContent = process.command;
-        header.appendChild(commandSpan);
-
-        const timeSpan = document.createElement('span');
-        timeSpan.className = 'process-time';
-        timeSpan.textContent = process.execTime + 'ms';
-        header.appendChild(timeSpan);
-
-        item.appendChild(header);
-
-        const details = document.createElement('div');
-        details.className = 'process-details';
-        details.innerHTML = `<div><strong>Time:</strong> ${process.timestamp}</div><div><strong>Result:</strong> ${typeof process.result === 'string' ? process.result : JSON.stringify(process.result, null, 2)}</div>`;
-        item.appendChild(details);
-
-        item.onclick = function() {
-          item.classList.toggle('expanded');
-        };
-
-        processList.appendChild(item);
-      });
-    }
-
-    function toggleDebugLogs(id, expanderElement) {
-      const logs = document.getElementById(id);
-      const icon = expanderElement.querySelector('i');
-
-      if (logs.classList.contains('show')) {
-        logs.classList.remove('show');
-        icon.className = 'bi bi-chevron-right';
-        expanderElement.style.background = 'var(--google-grey-100)';
-      } else {
-        logs.classList.add('show');
-        icon.className = 'bi bi-chevron-down';
-        expanderElement.style.background = 'var(--google-grey-200)';
-      }
-    }
-
-    function togglePanel(panelId) {
-      const panel = document.getElementById(panelId);
-      const btn = panel.querySelector('.collapse-btn i');
-
-      panel.classList.toggle('collapsed');
-
-      if (panel.classList.contains('collapsed')) {
-        btn.className = panelId === 'leftPanel' ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
-      } else {
-        btn.className = panelId === 'leftPanel' ? 'bi bi-chevron-left' : 'bi bi-chevron-right';
-      }
-
-      localStorage.setItem('panel-' + panelId + '-collapsed', panel.classList.contains('collapsed'));
-    }
-
-    function switchTab(event, tabId) {
-      event.preventDefault();
-
-      // Remove active from all tabs and panes
-      document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
-      document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
-
-      // Add active to clicked tab and corresponding pane
-      event.target.classList.add('active');
-      document.getElementById(tabId).classList.add('active');
-    }
-
-    // Logger Filter Functions
-    function setLogFilter(pattern) {
-      document.getElementById('logFilterPattern').value = pattern;
-      addOutput('Log filter set to: ' + (pattern || '(none)'), 'info');
-    }
-
-    // Deployment Functions
-    async function loadDeploymentInfo() {
-      const urlElement = document.getElementById('deploymentUrl');
-      const typeElement = document.getElementById('deploymentType');
-      const healthElement = document.getElementById('deploymentHealth');
-      const healthTextElement = document.getElementById('deploymentHealthText');
-
-      try {
-        urlElement.textContent = 'Loading...';
-
-        // Get deployment URL using ScriptApp
-        const url = await clientState.run(`ScriptApp.getService().getUrl()`);
-
-        urlElement.textContent = url;
-        typeElement.textContent = 'WEB_APP';
-        healthElement.style.color = 'var(--success)';
-        healthTextElement.textContent = 'Healthy';
-
-        addOutput('Deployment info loaded', 'info');
-      } catch (error) {
-        urlElement.textContent = 'Error loading deployment';
-        urlElement.style.color = 'var(--error)';
-        healthElement.style.color = 'var(--error)';
-        healthTextElement.textContent = 'Error';
-        addOutput('Deployment load error: ' + error.message, 'error');
-      }
-    }
-
-    function copyDeploymentUrl() {
-      const urlText = document.getElementById('deploymentUrl').textContent;
-      if (urlText && !urlText.includes('Loading') && !urlText.includes('Error')) {
-        navigator.clipboard.writeText(urlText).then(() => {
-          addOutput('Deployment URL copied to clipboard', 'info');
-        }).catch(err => {
-          addOutput('Failed to copy URL: ' + err.message, 'error');
-        });
-      }
-    }
-
-    function openDeployment() {
-      const urlText = document.getElementById('deploymentUrl').textContent;
-      if (urlText && !urlText.includes('Loading') && !urlText.includes('Error')) {
-        window.open(urlText, '_blank');
-      }
-    }
-
-    function refreshDeployment() {
-      loadDeploymentInfo();
-    }
-
-    // Triggers Functions
-    async function loadTriggers() {
-      const listContainer = document.getElementById('triggersList');
-      listContainer.innerHTML = '<div style="color: var(--text-secondary); padding: 8px; font-size: 11px;">Loading triggers...</div>';
-
-      try {
-        const result = await clientState.run(`
-          const triggers = ScriptApp.getProjectTriggers();
-          const result = triggers.map(t => ({
-            uniqueId: t.getUniqueId(),
-            handlerFunction: t.getHandlerFunction(),
-            triggerSource: t.getTriggerSource().toString(),
-            eventType: t.getEventType() ? t.getEventType().toString() : null
-          }));
-          JSON.stringify(result);
-        `);
-
-        const triggers = JSON.parse(result);
-
-        if (triggers.length === 0) {
-          listContainer.innerHTML = '<div style="color: var(--text-secondary); font-size: 11px; padding: 8px; text-align: center;">No triggers found</div>';
-          addOutput('No triggers found in project', 'info');
+    // GLOBAL clientState object accessible from console
+    window.clientState = {
+      storage: {},
+      set: (key, value) => {
+        clientState.storage[key] = value;
+        window.UI?.updateClientState();
+        window.UI?.addOutput(`Set ${key} = ${JSON.stringify(value)}`, 'success');
+        return value;
+      },
+      get: key => clientState.storage[key],
+      delete: key => {
+        delete clientState.storage[key];
+        window.UI?.updateClientState();
+        window.UI?.addOutput(`Deleted ${key}`, 'info');
+      },
+      clear: () => {
+        clientState.storage = {};
+        window.UI?.updateClientState();
+        window.UI?.addOutput('Cleared all client state', 'info');
+      },
+      run: statement => new Promise((resolve, reject) => {
+        const startTime = performance.now();
+
+        if (typeof google === 'undefined' || !google.script?.run) {
+          const clientTime = (performance.now() - startTime).toFixed(2);
+          window.UI?.addOutput(
+            `⚠️ Server execution not available in /dev mode. Deploy as web app to use run().`,
+            'warning',
+            `client: ${clientTime}ms`
+          );
+          reject(new Error('google.script.run not available in /dev mode'));
           return;
         }
 
-        listContainer.innerHTML = triggers.map(t => `
-          <div class="trigger-card" style="background: var(--bg-secondary); padding: 10px; border-radius: 4px; margin-bottom: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="color: var(--accent); font-weight: 500; font-size: 12px;">
-                  ${t.handlerFunction}
+        try {
+          google.script.run
+            .withSuccessHandler(response => {
+              const clientTime = (performance.now() - startTime).toFixed(2);
+              
+              // Extract result and logger_output from response
+              // The response structure depends on what invoke() returns
+              let result = response;
+              let serverLogs = null;
+              
+              // Check if response has logger_output (from full response object)
+              if (response && typeof response === 'object' && 'logger_output' in response) {
+                result = response.result;
+                serverLogs = response.logger_output;
+              }
+              
+              window.UI?.addOutput(
+                `Result: ${JSON.stringify(result)}`,
+                'success',
+                `client: ${clientTime}ms`,
+                serverLogs
+              );
+              
+              // Auto-refresh Processes tab if it's currently active
+              if ($('.nav-link[data-tab="processesTab"]').hasClass('active')) {
+                window.DataLoader?.loadProcesses();
+              }
+              
+              resolve(result);
+            })
+            .withFailureHandler(error => {
+              const clientTime = (performance.now() - startTime).toFixed(2);
+              window.UI?.addOutput(
+                `Error: ${error.message}`,
+                'error',
+                `client: ${clientTime}ms`
+              );
+              reject(error);
+            })
+            .invoke(statement);
+        } catch (error) {
+          const clientTime = (performance.now() - startTime).toFixed(2);
+          window.UI?.addOutput(
+            `⚠️ Server execution not available in /dev mode. Deploy as web app to use run().`,
+            'warning',
+            `client: ${clientTime}ms`
+          );
+          reject(new Error('google.script.run not available in /dev mode'));
+        }
+      })
+    };
+
+    $(() => {
+      // ES6 UI Manager with execution time tracking
+      window.UI = {
+        escapeHtml(text) {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+        },
+
+        addOutput(message, type = 'info', executionTime = null, serverLogs = null) {
+          const $output = $('#output');
+          $output.find('.empty-state').remove();
+
+          const timestamp = new Date().toLocaleTimeString();
+          const escapedMessage = this.escapeHtml(String(message));
+          const timeInfo = executionTime ? `<span class="execution-time">${executionTime}</span>` : '';
+
+          const $line = $('<div>').addClass(`output-line ${type}`).html(`
+            <span class="timestamp">[${timestamp}]</span>
+            <span>${type.charAt(0).toUpperCase() + type.slice(1)}: ${escapedMessage}</span>
+            ${timeInfo}
+          `);
+
+          // Add collapsible server logs if present
+          if (serverLogs && serverLogs.trim()) {
+            const escapedLogs = this.escapeHtml(String(serverLogs));
+            const $logsSection = $('<div>').addClass('server-logs collapsed').html(`
+              <div class="server-logs-header">
+                <span class="server-logs-arrow">▼</span>
+                <span>Server Logs</span>
+              </div>
+              <div class="server-logs-content">${escapedLogs}</div>
+            `);
+
+            // Add click handler for toggle
+            $logsSection.find('.server-logs-header').on('click', function() {
+              $(this).closest('.server-logs').toggleClass('collapsed');
+            });
+
+            $line.append($logsSection);
+          }
+
+          $output.append($line);
+
+          const output = $output[0];
+          const isScrolledToBottom = output.scrollHeight - output.clientHeight <= output.scrollTop + 50;
+
+          if (isScrolledToBottom) {
+            output.scrollTop = output.scrollHeight;
+          } else {
+            window.UI.showScrollHint();
+          }
+        },
+
+        showScrollHint() {
+          $('#scrollHint').addClass('visible').delay(3000).queue(function() {
+            $(this).removeClass('visible').dequeue();
+          });
+        },
+
+        clearOutput() {
+          $('#output').html('<div class="empty-state">Output cleared</div>');
+        },
+
+        renderNestedValue(value, depth = 0, maxDepth = 10, seen = new WeakSet()) {
+          const indent = depth * 12; // 12px indentation per level
+          const type = Array.isArray(value) ? 'array' : typeof value;
+          const typeColor = {
+            string: '#ce9178',
+            number: '#b5cea8',
+            boolean: '#569cd6',
+            object: '#4ec9b0',
+            array: '#4ec9b0',
+            function: '#dcdcaa',
+            undefined: '#808080',
+            null: '#808080'
+          }[type] || '#cccccc';
+
+          // Check for max depth
+          if (depth > maxDepth) {
+            return `<span class="value" style="color: var(--warning);">[Max Depth Reached]</span>`;
+          }
+
+          // Primitives - no expansion
+          if (value === null || value === undefined || typeof value !== 'object') {
+            const displayValue = value === null ? 'null' : value === undefined ? 'undefined' : String(value);
+            const escapedValue = this.escapeHtml(displayValue);
+            return `<span class="value" style="color: ${typeColor};">${escapedValue}</span>`;
+          }
+
+          // Check for circular references
+          if (seen.has(value)) {
+            return `<span class="value" style="color: var(--warning);">[Circular Reference]</span>`;
+          }
+          seen.add(value);
+
+          // Objects and Arrays - with expansion
+          const isArray = Array.isArray(value);
+          const entries = isArray ? value.map((v, i) => [i, v]) : Object.entries(value);
+          const preview = isArray ? `Array(${entries.length})` : `Object{${entries.length}}`;
+
+          if (entries.length === 0) {
+            return `<span class="value" style="color: ${typeColor};">${isArray ? '[]' : '{}'}</span>`;
+          }
+
+          const uniqueId = 'var_' + Math.random().toString(36).substr(2, 9);
+
+          let html = `
+            <div style="margin-left: ${indent}px;">
+              <div style="cursor: pointer; user-select: none;" class="expandable-header" data-target="${uniqueId}">
+                <span class="expand-arrow" style="display: inline-block; transition: transform 0.2s; font-size: 10px;">▼</span>
+                <span style="color: ${typeColor};">${preview}</span>
+              </div>
+              <div id="${uniqueId}" class="expandable-content" style="margin-left: 12px;">
+          `;
+
+          entries.forEach(([key, val]) => {
+            const keyDisplay = isArray ? `[${key}]` : key;
+            const escapedKey = this.escapeHtml(String(keyDisplay));
+            html += `
+              <div style="margin: 2px 0;">
+                <span class="key" style="color: var(--text-secondary); font-size: 11px;">${escapedKey}: </span>
+                ${this.renderNestedValue(val, depth + 1, maxDepth, seen)}
+              </div>
+            `;
+          });
+
+          html += `
+              </div>
+            </div>
+          `;
+
+          return html;
+        },
+
+        updateClientState() {
+          const keys = Object.keys(clientState.storage);
+          const $stateDiv = $('#clientState');
+
+          if (keys.length === 0) {
+            $stateDiv.html('<div class="empty-state">No variables stored</div>');
+            return;
+          }
+
+          const html = keys.map(key => {
+            const value = clientState.storage[key];
+            const type = Array.isArray(value) ? 'array' : typeof value;
+            const typeColor = {
+              string: '#ce9178',
+              number: '#b5cea8',
+              boolean: '#569cd6',
+              object: '#4ec9b0',
+              array: '#4ec9b0',
+              function: '#dcdcaa',
+              undefined: '#808080'
+            }[type] || '#cccccc';
+
+            const escapedKey = this.escapeHtml(String(key));
+            const escapedType = this.escapeHtml(String(type));
+
+            return `
+              <div class="context-item" style="display: block; padding: 8px;">
+                <div>
+                  <span class="key">${escapedKey} <span style="color: ${typeColor}; font-size: 10px; font-style: italic;">(${escapedType})</span></span>
                 </div>
-                <div style="color: var(--text-secondary); font-size: 11px; margin-top: 2px;">
-                  ${t.triggerSource}${t.eventType ? ' → ' + t.eventType : ''}
+                <div style="margin-top: 4px;">
+                  ${this.renderNestedValue(value, 0)}
                 </div>
               </div>
-              <button onclick="deleteTrigger('${t.uniqueId}')"
-                      style="background: var(--error); border: none; border-radius: 4px; padding: 4px 8px; color: white; cursor: pointer; font-size: 11px;">
-                <i class="bi bi-trash"></i>
-              </button>
-            </div>
-          </div>
-        `).join('');
+            `;
+          }).join('');
 
-        addOutput(`Loaded ${triggers.length} trigger(s)`, 'info');
-      } catch (error) {
-        listContainer.innerHTML = `<div style="color: var(--error); padding: 8px; font-size: 11px;">Error: ${error.message}</div>`;
-        addOutput('Triggers load error: ' + error.message, 'error');
-      }
-    }
+          $stateDiv.html(html);
 
-    async function deleteTrigger(triggerId) {
-      if (!confirm('Delete this trigger? This action cannot be undone.')) {
-        return;
-      }
+          // Attach click handlers for expandable items
+          $('.expandable-header').on('click', function() {
+            const $this = $(this);
+            const targetId = $this.data('target');
+            const $content = $(`#${targetId}`);
+            const $arrow = $this.find('.expand-arrow');
 
-      try {
-        await clientState.run(`
-          const triggers = ScriptApp.getProjectTriggers();
-          const trigger = triggers.find(t => t.getUniqueId() === '${triggerId}');
-          if (trigger) {
-            ScriptApp.deleteTrigger(trigger);
-            'Trigger deleted';
-          } else {
-            throw new Error('Trigger not found');
-          }
-        `);
+            $content.slideToggle(200);
+            $arrow.css('transform', $content.is(':visible') ? 'rotate(0deg)' : 'rotate(-90deg)');
+          });
+        },
 
-        addOutput('Trigger deleted successfully', 'info');
-        loadTriggers(); // Refresh list
-      } catch (error) {
-        addOutput('Delete failed: ' + error.message, 'error');
-      }
-    }
+        switchTab(tabId) {
+          $('.nav-link').removeClass('active');
+          $(`.nav-link[data-tab="${tabId}"]`).addClass('active');
+          $('.tab-content').removeClass('active');
+          $(`#${tabId}`).addClass('active');
 
-    // Panel resizing
-    function initResize() {
-      const handles = document.querySelectorAll('.resize-handle');
+          const loaders = {
+            loggerTab: window.DataLoader.loadRecentLogs,
+            deploymentTab: window.DataLoader.loadDeploymentInfo,
+            triggersTab: window.DataLoader.loadTriggers,
+            processesTab: window.DataLoader.loadProcesses
+          };
 
-      handles.forEach(handle => {
-        let isResizing = false;
-        let startX = 0;
-        let startWidth = 0;
-        let panel = null;
+          loaders[tabId]?.();
+        },
 
-        handle.addEventListener('mousedown', function(e) {
-          isResizing = true;
-          panel = handle.parentElement;
-          startX = e.clientX;
-          startWidth = panel.offsetWidth;
+        togglePanel($btn) {
+          const $panel = $btn.closest('.panel');
+          const isCollapsed = $panel.toggleClass('collapsed').hasClass('collapsed');
+          $btn.attr('title', isCollapsed ? 'Expand panel' : 'Collapse panel');
+          localStorage.setItem($panel.attr('class'), isCollapsed ? 'collapsed' : 'expanded');
+        },
 
-          document.body.style.cursor = 'col-resize';
-          document.body.style.userSelect = 'none';
-
-          e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', function(e) {
-          if (!isResizing) return;
-
-          const isLeft = handle.classList.contains('left');
-          const delta = isLeft ? (e.clientX - startX) : (startX - e.clientX);
-          const newWidth = startWidth + delta;
-
-          if (newWidth >= 200 && newWidth <= 800) {
-            panel.style.width = newWidth + 'px';
-          }
-        });
-
-        document.addEventListener('mouseup', function() {
-          if (isResizing) {
-            isResizing = false;
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-
-            if (panel) {
-              localStorage.setItem('panel-' + panel.id + '-width', panel.style.width);
+        restorePanelStates() {
+          $('.panel').each((_, panel) => {
+            const $panel = $(panel);
+            if (localStorage.getItem($panel.attr('class')) === 'collapsed') {
+              $panel.addClass('collapsed');
+              $panel.find('.toggle-panel').text('Expand');
             }
+          });
+        }
+      };
+
+      // ES6 Data Loader
+      window.DataLoader = {
+        loadRecentLogs() {
+          const $logs = $('#recentLogs').html('<div class="loading"></div>');
+
+          if (typeof google === 'undefined' || !google.script?.run) {
+            $logs.html('Not available (google.script.run not loaded)');
+            return;
           }
-        });
-      });
-    }
 
-    function restorePanelStates() {
-      ['leftPanel', 'rightPanel'].forEach(panelId => {
-        const collapsed = localStorage.getItem('panel-' + panelId + '-collapsed') === 'true';
-        if (collapsed) {
-          togglePanel(panelId);
+          clientState.run('getFormattedLogs()')
+            .then(logEntries => {
+              if (!logEntries || logEntries.length === 0) {
+                $logs.html('<div class="empty-state">No logs available</div>');
+                return;
+              }
+
+              const tableRows = logEntries.map(entry => {
+                const escapedTimestamp = entry.timestamp ? window.UI.escapeHtml(String(entry.timestamp)) : '';
+                const escapedMessage = window.UI.escapeHtml(String(entry.message || ''));
+
+                if (entry.timestamp) {
+                  return `<tr><td style="color: var(--text-secondary); font-size: 10px; white-space: nowrap;">${escapedTimestamp}</td><td>${escapedMessage}</td></tr>`;
+                }
+                return `<tr><td colspan="2">${escapedMessage}</td></tr>`;
+              }).join('');
+
+              $logs.html(`
+                <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                  <tbody>
+                    ${tableRows}
+                  </tbody>
+                </table>
+              `);
+            })
+            .catch(error => {
+              const escapedError = window.UI.escapeHtml(String(error.message || 'Unknown error'));
+              $logs.html(`<div class="empty-state">Error loading logs: ${escapedError}</div>`);
+            });
+        },
+
+        loadDeploymentInfo() {
+          const $url = $('#deploymentUrl');
+
+          if (typeof google === 'undefined' || !google.script?.run) {
+            $url.text('Not available (google.script.run not loaded)').css('color', 'var(--text-secondary)');
+            return;
+          }
+
+          $url.text('Loading...');
+
+          clientState.run('ScriptApp.getService().getUrl()')
+            .then(url => {
+              if (url) {
+                const escapedUrl = window.UI.escapeHtml(String(url));
+
+                // Add debugging URL hints - append parameters to existing URL
+                const debugUrl = `${url}${url.includes('?') ? '&' : '?'}_mcp_run=true&action=auth_ide`;
+                const escapedDebugUrl = window.UI.escapeHtml(String(debugUrl));
+
+                // Determine current mode based on URL
+                const currentMode = window.location.href.includes('?_mcp_run=true&action=auth_ide') || window.location.href.includes('?ui=debugger')
+                  ? 'DEBUG'
+                  : window.location.href.includes('?_mcp_run=true&func=')
+                  ? 'API'
+                  : 'PRODUCTION';
+
+                $url.html(`
+                  <div style="margin-bottom: 8px;">
+                    <div style="font-size: 10px; color: var(--text-secondary); margin-bottom: 4px;">Base URL:</div>
+                    <a href="${escapedUrl}" target="_blank" style="color: var(--accent); font-size: 11px; word-break: break-all;">${escapedUrl}</a>
+                  </div>
+                  <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                    <div style="font-size: 10px; color: var(--text-secondary); margin-bottom: 6px;">Access Modes:</div>
+                    <div style="font-size: 11px; line-height: 1.8;">
+                      <div ${currentMode === 'DEBUG' ? 'style="background: rgba(0, 122, 204, 0.1); padding: 4px; border-radius: 3px;"' : ''}>
+                        <strong style="color: var(--info);">DEBUG:</strong>
+                        <a href="${escapedDebugUrl}" target="_blank" style="color: var(--accent); text-decoration: none;">
+                          ?_mcp_run=true&action=auth_ide
+                        </a>
+                        ${currentMode === 'DEBUG' ? '<span style="color: var(--success); margin-left: 8px;">← Current</span>' : ''}
+                      </div>
+                      <div style="margin-top: 4px;" ${currentMode === 'API' ? 'style="background: rgba(0, 122, 204, 0.1); padding: 4px; border-radius: 3px;"' : ''}>
+                        <strong style="color: var(--warning);">API:</strong>
+                        <span style="color: var(--text-secondary);">?_mcp_run=true&func=yourCode</span>
+                        ${currentMode === 'API' ? '<span style="color: var(--success); margin-left: 8px;">← Current</span>' : ''}
+                      </div>
+                      <div style="margin-top: 4px;" ${currentMode === 'PRODUCTION' ? 'style="background: rgba(0, 122, 204, 0.1); padding: 4px; border-radius: 3px;"' : ''}>
+                        <strong style="color: var(--success);">PROD:</strong>
+                        <span style="color: var(--text-secondary);">No parameters (landing page)</span>
+                        ${currentMode === 'PRODUCTION' ? '<span style="color: var(--success); margin-left: 8px;">← Current</span>' : ''}
+                      </div>
+                      <div style="margin-top: 4px;">
+                        <strong style="color: var(--text-secondary);">LEGACY:</strong>
+                        <span style="color: var(--text-secondary);">?ui=debugger (bypasses auth)</span>
+                      </div>
+                    </div>
+                  </div>
+                `);
+              } else {
+                $url.text('Not deployed');
+              }
+            })
+            .catch(error => {
+              const escapedError = window.UI.escapeHtml(String(error.message || 'Unknown error'));
+              $url.text(`Error: ${escapedError}`);
+              $('#deploymentHealth').removeClass('healthy').addClass('error');
+              $('#deploymentHealthText').text('Error');
+            });
+        },
+
+        loadTriggers() {
+          const $triggers = $('#triggersList').html('<div class="loading"></div>');
+
+          if (typeof google === 'undefined' || !google.script?.run) {
+            $triggers.html('Not available (google.script.run not loaded)');
+            return;
+          }
+
+          clientState.run('ScriptApp.getProjectTriggers().map(t => ({ functionName: t.getHandlerFunction(), triggerSource: t.getTriggerSource().toString(), eventType: t.getEventType().toString() }))')
+            .then(triggers => {
+              if (triggers?.length) {
+                const html = triggers.map(({functionName, eventType, triggerSource}) => {
+                  const escapedFunctionName = window.UI.escapeHtml(String(functionName || ''));
+                  const escapedEventType = window.UI.escapeHtml(String(eventType || ''));
+                  const escapedTriggerSource = window.UI.escapeHtml(String(triggerSource || ''));
+
+                  return `
+                    <div class="trigger-item">
+                      <div class="trigger-header">
+                        <span class="trigger-function">${escapedFunctionName}</span>
+                        <span class="trigger-type">${escapedEventType}</span>
+                      </div>
+                      <div style="font-size: 11px; color: var(--text-secondary);">
+                        Source: ${escapedTriggerSource}
+                      </div>
+                    </div>
+                  `;
+                }).join('');
+                $triggers.html(html);
+              } else {
+                $triggers.html('<div class="empty-state">No triggers found</div>');
+              }
+            })
+            .catch(error => {
+              const escapedError = window.UI.escapeHtml(String(error.message || 'Unknown error'));
+              $triggers.html(`<div class="empty-state">Error loading triggers: ${escapedError}</div>`);
+            });
+        },
+
+        loadProcesses() {
+          const $processes = $('#processesList').html('<div class="loading"></div>');
+
+          if (typeof google === 'undefined' || !google.script?.run) {
+            $processes.html('Not available (google.script.run not loaded)');
+            return;
+          }
+
+          clientState.run(`
+            try {
+              const logs = Logger.getLog();
+              const lines = logs.split('\n').filter(line => line.trim());
+              const processes = [];
+              
+              // Parse log lines to extract process information
+              let currentProcess = null;
+              for (let i = 0; i < Math.min(lines.length, 50); i++) {
+                const line = lines[i];
+                
+                // Look for execution patterns
+                if (line.includes('[LOAD] Loading module:') || line.includes('Executing:')) {
+                  const match = line.match(/(?:Loading module:|Executing:)\s+(\S+)/);
+                  if (match) {
+                    currentProcess = {
+                      functionName: match[1],
+                      status: 'COMPLETED',
+                      timestamp: line.substring(0, 24),
+                      duration: 'N/A'
+                    };
+                    processes.push(currentProcess);
+                  }
+                } else if (line.includes('[OK]') && currentProcess) {
+                  currentProcess.status = 'COMPLETED';
+                } else if (line.includes('Error') || line.includes('[ERROR]')) {
+                  if (currentProcess) {
+                    currentProcess.status = 'FAILED';
+                  }
+                }
+              }
+              
+              return processes.slice(-10).reverse();
+            } catch(e) {
+              Logger.log('Error parsing processes: ' + e.toString());
+              return [];
+            }
+          `)
+            .then(processes => {
+              if (processes?.length) {
+                const html = processes.map(({functionName = 'Unknown', status, timestamp = '', duration = 'N/A'}) => {
+                  const escapedFunctionName = window.UI.escapeHtml(String(functionName));
+                  const escapedStatus = window.UI.escapeHtml(String(status || ''));
+                  const escapedTimestamp = window.UI.escapeHtml(String(timestamp));
+                  const escapedDuration = window.UI.escapeHtml(String(duration));
+
+                  return `
+                    <div class="process-item">
+                      <div class="process-header">
+                        <span class="process-function">${escapedFunctionName}</span>
+                        <span class="process-status ${status}">${escapedStatus}</span>
+                      </div>
+                      <div style="font-size: 11px; color: var(--text-secondary);">
+                        ${timestamp ? `Time: ${escapedTimestamp}<br>` : ''}Duration: ${escapedDuration}
+                      </div>
+                    </div>
+                  `;
+                }).join('');
+                $processes.html(html);
+              } else {
+                $processes.html('<div class="empty-state">No recent processes found in logs</div>');
+              }
+            })
+            .catch(error => {
+              const escapedError = window.UI.escapeHtml(String(error.message || 'Unknown error'));
+              $processes.html(`<div class="empty-state">Error loading processes: ${escapedError}</div>`);
+            });
         }
+      };
 
-        const width = localStorage.getItem('panel-' + panelId + '-width');
-        if (width) {
-          document.getElementById(panelId).style.width = width;
+      // ES6 Script Properties Manager
+      window.ScriptPropertiesManager = {
+        load() {
+          const $props = $('#scriptProps').html('<div class="loading"></div>');
+
+          if (typeof google === 'undefined' || !google.script?.run) {
+            $props.html('<div class="empty-state">Not available (google.script.run not loaded)</div>');
+            return;
+          }
+
+          clientState.run('JSON.stringify(PropertiesService.getScriptProperties().getProperties())')
+            .then(propsJson => {
+              const parsed = JSON.parse(propsJson);
+              const keys = Object.keys(parsed);
+
+              if (keys.length === 0) {
+                $props.html('<div class="empty-state">No properties set</div>');
+                return;
+              }
+
+              const html = keys.map(key => {
+                const escapedKey = window.UI.escapeHtml(key);
+                const escapedValue = window.UI.escapeHtml(String(parsed[key]));
+                const safeDataKey = key.replace(/"/g, '&quot;');
+                const safeDataValue = String(parsed[key]).replace(/"/g, '&quot;');
+
+                return `
+                  <div class="context-item" style="position: relative; padding-right: 60px;">
+                    <div style="flex: 1;">
+                      <div><span class="key">${escapedKey}</span></div>
+                      <div><span class="value" style="word-break: break-word;">${escapedValue}</span></div>
+                    </div>
+                    <div style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: flex; gap: 4px;">
+                      <button class="panel-btn edit-prop" data-key="${safeDataKey}" data-value="${safeDataValue}" style="font-size: 10px; padding: 2px 6px;" title="Edit property">✎</button>
+                      <button class="panel-btn delete-prop" data-key="${safeDataKey}" style="font-size: 10px; padding: 2px 6px;" title="Delete property">✕</button>
+                    </div>
+                  </div>
+                `;
+              }).join('');
+
+              $props.html(html);
+
+              // Wire up edit/delete handlers
+              $('.edit-prop').on('click', function(e) {
+                e.stopPropagation();
+                const key = $(this).data('key');
+                const value = $(this).data('value');
+                window.ScriptPropertiesManager.edit(key, value);
+              });
+
+              $('.delete-prop').on('click', function(e) {
+                e.stopPropagation();
+                const key = $(this).data('key');
+                window.ScriptPropertiesManager.delete(key);
+              });
+            })
+            .catch(error => {
+              const escapedError = window.UI.escapeHtml(String(error.message || 'Unknown error'));
+              $props.html(`<div class="empty-state">Error loading properties: ${escapedError}</div>`);
+            });
+        },
+
+        add() {
+          const key = prompt('Enter property name:');
+          if (!key || !key.trim()) return;
+
+          const value = prompt('Enter property value:');
+          if (value === null) return;
+
+          const escapedKey = key.trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          const escapedValue = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+          clientState.run(`PropertiesService.getScriptProperties().setProperty("${escapedKey}", "${escapedValue}")`)
+            .then(() => {
+              window.UI.addOutput(`Added property: ${key.trim()} = ${value}`, 'success');
+              window.ScriptPropertiesManager.load();
+            })
+            .catch(error => {
+              window.UI.addOutput(`Error adding property: ${error.message}`, 'error');
+            });
+        },
+
+        edit(key, currentValue) {
+          const newValue = prompt(`Edit property "${key}":\n\nCurrent value: ${currentValue}\n\nEnter new value:`, currentValue);
+          if (newValue === null || newValue === currentValue) return;
+
+          const escapedKey = key.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          const escapedValue = newValue.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+          clientState.run(`PropertiesService.getScriptProperties().setProperty("${escapedKey}", "${escapedValue}")`)
+            .then(() => {
+              window.UI.addOutput(`Updated property: ${key} = ${newValue}`, 'success');
+              window.ScriptPropertiesManager.load();
+            })
+            .catch(error => {
+              window.UI.addOutput(`Error updating property: ${error.message}`, 'error');
+            });
+        },
+
+        delete(key) {
+          if (!confirm(`Delete property "${key}"?`)) return;
+
+          const escapedKey = key.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+          clientState.run(`PropertiesService.getScriptProperties().deleteProperty("${escapedKey}")`)
+            .then(() => {
+              window.UI.addOutput(`Deleted property: ${key}`, 'success');
+              window.ScriptPropertiesManager.load();
+            })
+            .catch(error => {
+              window.UI.addOutput(`Error deleting property: ${error.message}`, 'error');
+            });
         }
-      });
-    }
+      };
 
-    commandInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
-        executeCommand();
-      } else if (e.key === 'ArrowUp') {
+      // ES6 Code Executor with timing
+      window.CodeExecutor = {
+        async execute() {
+          const $input = $('#codeInput');
+          const code = $input.val().trim();
+
+          if (!code) return;
+
+          const startTime = performance.now();
+          window.UI.addOutput(`Executing: ${code}`, 'info');
+
+          try {
+            // Check for simple assignment like "x = value" and convert to clientState.set
+            const assignmentMatch = code.match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(.+)$/);
+            let actualCode = code;
+            let isAssignment = false;
+            let varName = null;
+            
+            if (assignmentMatch && !code.includes('clientState.')) {
+              varName = assignmentMatch[1];
+              const value = assignmentMatch[2];
+              actualCode = value; // Don't auto-set, evaluate first
+              isAssignment = true;
+            }
+            
+            // Make run() and clientState available in execution scope
+            const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+            const fn = new AsyncFunction('clientState', 'run', `return ${actualCode}`);
+            const rawResult = await fn(clientState, clientState.run);
+            
+            // Extract result and logger_output from response
+            let result = rawResult;
+            let serverLogs = null;
+            
+            // Check if this is a full response object from invoke()
+            if (rawResult && typeof rawResult === 'object' && 'result' in rawResult) {
+              result = rawResult.result;
+              serverLogs = rawResult.logger_output;
+            }
+
+            const clientTime = (performance.now() - startTime).toFixed(2);
+
+            // If it was an assignment, store it after successful evaluation
+            if (isAssignment && varName) {
+              clientState.storage[varName] = result;
+              window.UI.updateClientState();
+              window.UI.addOutput(`Set ${varName} = ${JSON.stringify(result)}`, 'success');
+            }
+
+            if (result !== undefined) {
+              const displayResult = typeof result === 'object'
+                ? JSON.stringify(result, null, 2)
+                : String(result);
+              window.UI.addOutput(displayResult, 'success', `client: ${clientTime}ms`);
+            } else {
+              window.UI.addOutput('(undefined)', 'success', `client: ${clientTime}ms`);
+            }
+            
+            // Update client state display after execution
+            window.UI.updateClientState();
+          } catch (error) {
+            const clientTime = (performance.now() - startTime).toFixed(2);
+            window.UI.addOutput(error.message, 'error', `client: ${clientTime}ms`);
+          }
+
+          // Add to command history
+          window.commandHistory.add(code);
+          
+          $input.val('');
+        }
+      };
+
+      // ES6 Resize Handler
+      const ResizeHandler = {
+        init() {
+          const $resizer = $('#resizer');
+          const $leftPanel = $('.context-panel');
+          const $container = $('.main-content');
+          let isResizing = false;
+
+          $resizer.on('mousedown', () => {
+            isResizing = true;
+            $('body').css({ cursor: 'col-resize', userSelect: 'none' });
+          });
+
+          $(document).on('mousemove', e => {
+            if (!isResizing) return;
+
+            const containerRect = $container[0].getBoundingClientRect();
+            const newWidth = e.clientX - containerRect.left;
+
+            if (newWidth >= 250 && newWidth <= containerRect.width - 400) {
+              $leftPanel.css('width', `${newWidth}px`);
+            }
+          });
+
+          $(document).on('mouseup', () => {
+            if (isResizing) {
+              isResizing = false;
+              $('body').css({ cursor: '', userSelect: '' });
+            }
+          });
+        }
+      };
+
+      // Event Handlers
+      $('.nav-link').on('click', e => {
         e.preventDefault();
-        if (historyIndex > 0) {
-          historyIndex--;
-          commandInput.value = commandHistory[historyIndex];
+        window.UI.switchTab($(e.target).data('tab'));
+      });
+
+      $('.toggle-panel').on('click', function() {
+        window.UI.togglePanel($(this));
+      });
+
+      $('.clear-output').on('click', window.UI.clearOutput);
+
+      $('.execute-btn').on('click', window.CodeExecutor.execute);
+
+      $('#codeInput').on('keydown', e => {
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          const prev = window.commandHistory.getPrevious();
+          $('#codeInput').val(prev);
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const next = window.commandHistory.getNext();
+          $('#codeInput').val(next);
         }
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (historyIndex < commandHistory.length - 1) {
-          historyIndex++;
-          commandInput.value = commandHistory[historyIndex];
-        } else {
-          historyIndex = commandHistory.length;
-          commandInput.value = '';
+      });
+
+      $('#codeInput').on('keypress', e => {
+        if (e.key === 'Enter') window.CodeExecutor.execute();
+      });
+
+      // Collapsible sections
+      $('.context-section h3').on('click', function(e) {
+        // Don't collapse if clicking buttons
+        if ($(e.target).is('#refreshProcesses, #clearClientState') || 
+            $(e.target).closest('#refreshProcesses, #clearClientState').length) {
+          return;
         }
+        $(this).closest('.context-section').toggleClass('collapsed');
+      });
+
+      // Refresh Processes button handler
+      $('#refreshProcesses').on('click', function(e) {
+        e.stopPropagation();
+        window.DataLoader?.loadProcesses();
+      });
+
+      // Clear Client State button handler
+      $('#clearClientState').on('click', function(e) {
+        e.stopPropagation();
+        if (confirm('Clear all client state variables?')) {
+          clientState.clear();
+        }
+      });
+
+      // Script Properties button handlers
+      $('#refreshScriptProps').on('click', function(e) {
+        e.stopPropagation();
+        window.ScriptPropertiesManager?.load();
+      });
+
+      $('#addScriptProp').on('click', function(e) {
+        e.stopPropagation();
+        window.ScriptPropertiesManager?.add();
+      });
+
+      // Load session info and script properties on startup
+      const loadInitialContext = async () => {
+        if (typeof google === 'undefined' || !google.script?.run) {
+          $('#timezone').text('Not available');
+          $('#locale').text('Not available');
+          $('#scriptProps').html('<div class="empty-state">Not available (google.script.run not loaded)</div>');
+          return;
+        }
+
+        // Load timezone
+        try {
+          const timezone = await clientState.run('Session.getScriptTimeZone()');
+          $('#timezone').text(timezone || 'Unknown');
+        } catch (e) {
+          $('#timezone').text('Error loading');
+        }
+
+        // Load locale
+        try {
+          const locale = await clientState.run('Session.getActiveUserLocale()');
+          $('#locale').text(locale || 'Unknown');
+        } catch (e) {
+          $('#locale').text('Error loading');
+        }
+
+        // Load script properties
+        try {
+          const props = await clientState.run('JSON.stringify(PropertiesService.getScriptProperties().getProperties())');
+          const parsed = JSON.parse(props);
+          const keys = Object.keys(parsed);
+          
+          if (keys.length === 0) {
+            $('#scriptProps').html('<div class="empty-state">No properties set</div>');
+          } else {
+            const html = keys.map(key => `
+              <div class="context-item" title="${key}\n\nValue:\n${parsed[key]}">
+                <span class="key">${key}</span>
+                <span class="value">${parsed[key]}</span>
+              </div>
+            `).join('');
+            $('#scriptProps').html(html);
+          }
+        } catch (e) {
+          $('#scriptProps').html('<div class="empty-state">Error loading properties</div>');
+        }
+
+        // Load Script ID and User Email
+        try {
+          const scriptId = await clientState.run('ScriptApp.getScriptId()');
+          $('#scriptId').text(scriptId || 'N/A');
+        } catch (e) {
+          $('#scriptId').text('N/A');
+        }
+
+        try {
+          const email = await clientState.run('Session.getActiveUser().getEmail()');
+          $('#userEmail').text(email || 'N/A');
+        } catch (e) {
+          $('#userEmail').text('N/A');
+        }
+      };
+
+      // Initialize
+      ResizeHandler.init();
+      window.UI.restorePanelStates();
+      window.UI.updateClientState();
+
+      // Check google.script.run availability
+      if (typeof google === 'undefined' || !google.script?.run) {
+        $('#deploymentUrl').text('Not available (google.script.run not loaded)').css('color', 'var(--text-secondary)');
+        $('#deploymentHealth').css('color', 'var(--text-secondary)');
+        $('#deploymentHealthText').text('N/A');
+      } else {
+        // Load context info if google.script.run is available
+        setTimeout(loadInitialContext, 1000);
       }
+
+      // Open in Editor button handler
+      $('#openEditorBtn').on('click', async () => {
+        const scriptId = $('#scriptId').text();
+        if (scriptId && scriptId !== 'Loading...' && scriptId !== 'N/A') {
+          window.open(`https://script.google.com/d/${scriptId}/edit`, '_blank');
+        } else {
+          window.UI.addOutput('Script ID not available yet', 'warning');
+        }
+      });
+
+      // Click-to-copy Script ID handler
+      $('#scriptId').on('click', async function() {
+        const scriptId = $(this).text();
+        if (scriptId && scriptId !== 'Loading...' && scriptId !== 'N/A') {
+          try {
+            await navigator.clipboard.writeText(scriptId);
+            window.UI.addOutput('Script ID copied to clipboard', 'success');
+            
+            // Visual feedback
+            const originalText = $(this).text();
+            $(this).text('Copied!');
+            setTimeout(() => {
+              $(this).text(originalText);
+            }, 1000);
+          } catch (error) {
+            window.UI.addOutput('Failed to copy Script ID', 'error');
+          }
+        }
+      });
+
+      // Initial messages
+      window.UI.addOutput('Gas Debugger Console initialized', 'success');
+      window.UI.addOutput('Type JavaScript code in the input below and press Enter to execute', 'info');
+      window.UI.addOutput('Use run(<javascript>) to execute server-side code', 'info');
+      window.UI.addOutput('Use clientState.set("varName", value) to store variables', 'info');
+      window.UI.addOutput('clientState object is globally accessible from browser console', 'info');
+      window.UI.addOutput('Authorization may be required on first execution', 'warning');
     });
-
-    function openScriptEditor() {
-      const scriptId = '10Jfa2s9ilvmRGcZxpd9rEPNhNM-ZaxsK4jSRPphQRyGHwobnbO3k9mv2';
-      window.open('https://script.google.com/d/' + scriptId + '/edit', '_blank');
-    }
-
-    function runQuickTest() {
-      commandInput.value = '2 + 2';
-      executeCommand();
-    }
-
-    initResize();
-    restorePanelStates();
-    updateClientStateDisplay();
-
-    // Load deployment info on startup
-    loadDeploymentInfo();
   </script>
 </body>
 </html>
