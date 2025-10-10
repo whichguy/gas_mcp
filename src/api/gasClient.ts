@@ -1547,44 +1547,50 @@ export class GASClient {
    * with OAuth Bearer token authentication.
    */
   constructGasRunUrlFromWebApp(webAppUrl: string): string {
-    console.error(`🔧 [URL_CONVERSION] Converting web app URL: ${webAppUrl}`);
-    
+    console.error(`🔧 [URL_CONVERSION] Converting web app URL for Bearer token compatibility: ${webAppUrl}`);
+
     try {
       const url = new URL(webAppUrl);
-      
+
       // Extract deployment ID from the URL path
       // Path formats:
-      // Domain-specific: /a/macros/[DOMAIN]/s/[DEPLOYMENT_ID]/exec
-      // Standard:        /macros/s/[DEPLOYMENT_ID]/exec
+      // Domain-specific: /a/macros/[DOMAIN]/s/[DEPLOYMENT_ID]/exec (or /dev)
+      // Standard:        /macros/s/[DEPLOYMENT_ID]/exec (or /dev)
       const pathMatch = url.pathname.match(/\/(?:a\/macros\/[^\/]+\/)?s\/([^\/]+)\/(?:exec|dev)$/);
-      
+
       if (!pathMatch) {
         console.error(`⚠️ [URL_CONVERSION] Unexpected URL format, returning as-is: ${webAppUrl}`);
         return webAppUrl;
       }
-      
+
       const deploymentId = pathMatch[1];
-      
+
       // Construct standard format URL that works with Bearer token authentication
+      // Note: Both HEAD (/dev) and versioned (/exec) deployments exist for web apps
+      // This conversion converts to /dev for HEAD deployment access
       const standardUrl = `https://script.google.com/macros/s/${deploymentId}/dev`;
-      
+
+      const isDomainSpecific = webAppUrl.includes('/a/macros/');
       const conversionInfo = {
         originalUrl: webAppUrl,
         convertedUrl: standardUrl,
         deploymentId: deploymentId,
-        conversionType: webAppUrl.includes('/a/macros/') ? 'Domain-specific → Standard' : 'Standard → Standard',
+        conversionType: isDomainSpecific ? 'Domain-specific → Standard (Bearer token compatible)' : 'Standard → Standard (HEAD deployment)',
         authenticationCompatible: true,
-        bearerTokenSupported: true
+        bearerTokenSupported: true,
+        note: isDomainSpecific
+          ? 'Domain-specific URLs work for Workspace users, standard URLs work with Bearer tokens'
+          : 'Standard format URL for HEAD deployment access'
       };
-      
+
       console.error(`✅ [URL_CONVERSION] Conversion details:\n${JSON.stringify(conversionInfo, null, 2)}`);
-      
+
       return standardUrl;
-      
+
     } catch (error: any) {
       console.error(`❌ [URL_CONVERSION] Failed to parse URL: ${error.message}`);
       console.error(`🔧 [URL_CONVERSION] Falling back to simple /exec → /dev replacement`);
-      
+
       // Fallback: simple replacement
       if (webAppUrl.includes('/exec')) {
         return webAppUrl.replace('/exec', '/dev');
