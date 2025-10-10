@@ -19,6 +19,7 @@
 export { CatTool } from './CatTool.js';
 export { WriteTool } from './WriteTool.js';
 export { LsTool } from './LsTool.js';
+export { FileStatusTool } from './FileStatusTool.js';
 export { RawCatTool } from './RawCatTool.js';
 export { RmTool } from './RmTool.js';
 export { RawWriteTool } from './RawWriteTool.js';
@@ -26,7 +27,7 @@ export { MvTool } from './MvTool.js';
 export { CpTool } from './CpTool.js';
 export { RawCpTool } from './RawCpTool.js';
 
-// All 9 filesystem tools successfully extracted from the monolith
+// All 10 filesystem tools successfully extracted from the monolith
 // This index provides backward-compatible imports for all completed tools
 
 // Re-export shared types and schemas for convenience

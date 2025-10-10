@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getBaseName, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
 import { translateFilesForDisplay } from '../../utils/virtualFileTranslation.js';
@@ -45,6 +46,12 @@ export class LsTool extends BaseFileSystemTool {
       wildcardMode: {
         ...WILDCARD_MODE_SCHEMA
       },
+      checksums: {
+        type: 'boolean',
+        description: 'Include Git-compatible SHA-1 checksums for file contents (matches git hash-object output). When enabled, adds "gitSha1" field to each file item.',
+        default: false,
+        examples: [true, false]
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -68,9 +75,17 @@ export class LsTool extends BaseFileSystemTool {
         'List project files: ls({scriptId: "1abc2def..."})',
         'List with pattern: ls({scriptId: "1abc2def...", path: "*.gs"})',
         'List subfolder: ls({scriptId: "1abc2def...", path: "utils/*"})',
-        'List detailed: ls({scriptId: "1abc2def...", detailed: true})'
+        'List detailed: ls({scriptId: "1abc2def...", detailed: true})',
+        'List with checksums: ls({scriptId: "1abc2def...", checksums: true})',
+        'List with checksums and details: ls({scriptId: "1abc2def...", detailed: true, checksums: true})'
       ],
-      virtualFiles: 'Dotfiles like .gitignore appear with their virtual names, not GAS storage names'
+      virtualFiles: 'Dotfiles like .gitignore appear with their virtual names, not GAS storage names',
+      checksums: {
+        whenToUse: 'Enable checksums to verify file integrity, detect changes without downloading, or compare with local Git files',
+        format: 'Git-compatible SHA-1 using blob format: sha1("blob " + size + "\\0" + content)',
+        verification: 'Matches output of: git hash-object <file>',
+        integration: 'Use with git_sync tools to detect GAS ↔ Git divergence without downloading files'
+      }
     }
   };
 
@@ -82,6 +97,7 @@ export class LsTool extends BaseFileSystemTool {
     const detailed = params.detailed !== false;
     const recursive = params.recursive !== false;
     const wildcardMode = params.wildcardMode || 'auto';
+    const checksums = params.checksums === true;
 
     // Use hybrid resolution to get scriptId and clean path
     let finalScriptId: string;
@@ -105,7 +121,7 @@ export class LsTool extends BaseFileSystemTool {
     if (!finalScriptId) {
       return await this.listProjects(detailed, accessToken);
     } else {
-      return await this.listProjectFiles(finalScriptId, cleanPath, detailed, recursive, wildcardMode, accessToken);
+      return await this.listProjectFiles(finalScriptId, cleanPath, detailed, recursive, wildcardMode, checksums, accessToken);
     }
   }
 
@@ -128,12 +144,31 @@ export class LsTool extends BaseFileSystemTool {
     };
   }
 
+  /**
+   * Compute Git-compatible SHA-1 checksum for file content
+   *
+   * Uses Git's blob format: sha1("blob " + <size> + "\0" + <content>)
+   * This matches the output of `git hash-object <file>`
+   *
+   * @param content - File content as string
+   * @returns Git-compatible SHA-1 hash as hex string
+   */
+  private computeGitSha1(content: string): string {
+    const size = Buffer.byteLength(content, 'utf8');
+    const header = `blob ${size}\0`;
+    return createHash('sha1')
+      .update(header)
+      .update(content, 'utf8')
+      .digest('hex');
+  }
+
   private async listProjectFiles(
     scriptId: string,
     directory: string,
     detailed: boolean,
     recursive: boolean,
     wildcardMode: string,
+    checksums: boolean,
     accessToken?: string
   ): Promise<any> {
     const files = await this.gasClient.getProjectContent(scriptId, accessToken);
@@ -182,6 +217,9 @@ export class LsTool extends BaseFileSystemTool {
         updateTime: file.updateTime || null,
         lastModifyUser: file.lastModifyUser || null,
         actualName: file.virtualFile ? file.name : undefined
+      }),
+      ...(checksums && {
+        gitSha1: this.computeGitSha1(file.source || '')
       })
     }));
 

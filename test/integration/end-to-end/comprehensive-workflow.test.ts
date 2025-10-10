@@ -17,7 +17,7 @@ describe('Comprehensive MCP-GAS Workflow Test', () => {
       this.skip(); // Skip if global auth failed or not available
     }
     client = globalAuthState.client;
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     gas = new GASTestHelper(client);
     
     console.log('\n🚀 Starting Comprehensive Workflow Test with Global Auth');

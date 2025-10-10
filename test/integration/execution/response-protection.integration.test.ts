@@ -11,11 +11,11 @@ describe('Response Protection Integration Tests', () => {
   let testProjects: string[] = [];
 
   before(function() {
-    if (!globalAuthState.client) {
+    if (!globalAuthState.client || !globalAuthState.auth) {
       this.skip();
     }
     client = globalAuthState.client!;
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     gas = new GASTestHelper(client);
     console.log('Using shared global MCP client for response protection integration tests');
   });

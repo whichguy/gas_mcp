@@ -43,15 +43,12 @@ export const mochaHooks = {
       console.warn('⚠️  Could not allocate dedicated port, using default');
     }
 
-    // 2. Cleanup old sessions
-    console.log('🧹 Clearing old test sessions...');
+    // 2. DON'T clear sessions - we want to reuse valid cached tokens
+    console.log('🔍 Checking for existing authentication sessions...');
     const sessionsDir = '.sessions';
     if (fs.existsSync(sessionsDir)) {
       const files = fs.readdirSync(sessionsDir);
-      for (const file of files) {
-        fs.unlinkSync(path.join(sessionsDir, file));
-      }
-      console.log(`🗑️  Deleted ${files.length} session files.`);
+      console.log(`📁 Found ${files.length} cached session file(s) - will check validity`);
     }
 
     // 3. Create a single client for all tests with isolated resources

@@ -19,11 +19,11 @@ describe('Auth + List Projects Integration Test', () => {
   let auth: AuthTestHelper;
 
   before(function() {
-    if (!globalAuthState.client) {
+    if (!globalAuthState.client || !globalAuthState.auth) {
       this.skip(); // Skip if global client not available
     }
     client = globalAuthState.client!;
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     console.log('🔗 Using shared global MCP client');
   });
 

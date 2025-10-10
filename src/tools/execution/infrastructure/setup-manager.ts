@@ -11,7 +11,7 @@
 import { GASClient, GASFile } from '../../../api/gasClient.js';
 import { SessionAuthManager } from '../../../auth/sessionManager.js';
 import { CodeGenerator } from '../../../utils/codeGeneration.js';
-import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from '../../deployments.js';
+import { getSuccessHtmlTemplate, getErrorHtmlTemplate, verifyInfrastructureFile } from '../../deployments.js';
 import { ensureManifestEntryPoints } from '../utilities/manifest-config.js';
 
 /**
@@ -92,11 +92,63 @@ export async function setupInfrastructure(
         'Update shim file'
       );
       console.error('Execution shim created successfully');
+
+      // BEST-EFFORT SHA VERIFICATION: Verify after creation (warn but don't block execution)
+      console.error('🔍 [GAS_RUN] Verifying execution infrastructure integrity (best-effort)...');
+      try {
+        const verification = await verifyInfrastructureFile(
+          scriptId,
+          '__mcp_gas_run',
+          sessionAuthManager,
+          accessToken
+        );
+
+        if (verification.verified) {
+          console.error(`✅ [GAS_RUN] Execution infrastructure verified (SHA: ${verification.actualSHA})`);
+        } else {
+          // WARNING ONLY - don't block execution
+          console.error(`⚠️  [GAS_RUN] Execution infrastructure SHA mismatch (non-blocking warning):`);
+          console.error(`   - Expected SHA: ${verification.expectedSHA}`);
+          console.error(`   - Actual SHA: ${verification.actualSHA}`);
+          console.error(`   - Error: ${verification.error || 'SHA mismatch detected'}`);
+          console.error(`   ℹ️  Execution will continue - this is informational only`);
+        }
+      } catch (verifyError: any) {
+        // BEST-EFFORT: Log but don't fail
+        console.error(`⚠️  [GAS_RUN] Infrastructure verification failed (non-blocking): ${verifyError.message}`);
+        console.error(`   ℹ️  Execution will continue - verification is best-effort only`);
+      }
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
         throw new Error(`Setup failed: Unable to create execution shim - ${error.message}`);
       }
       throw error;
+    }
+  } else {
+    // BEST-EFFORT SHA VERIFICATION: Verify existing infrastructure (warn but don't block)
+    console.error('🔍 [GAS_RUN] Verifying existing execution infrastructure (best-effort)...');
+    try {
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        '__mcp_gas_run',
+        sessionAuthManager,
+        accessToken
+      );
+
+      if (verification.verified) {
+        console.error(`✅ [GAS_RUN] Execution infrastructure verified (SHA: ${verification.actualSHA})`);
+      } else {
+        // WARNING ONLY - don't block execution
+        console.error(`⚠️  [GAS_RUN] Execution infrastructure SHA mismatch (non-blocking warning):`);
+        console.error(`   - Expected SHA: ${verification.expectedSHA}`);
+        console.error(`   - Actual SHA: ${verification.actualSHA}`);
+        console.error(`   - Error: ${verification.error || 'SHA mismatch detected'}`);
+        console.error(`   ℹ️  Execution will continue - this is informational only`);
+      }
+    } catch (verifyError: any) {
+      // BEST-EFFORT: Log but don't fail
+      console.error(`⚠️  [GAS_RUN] Infrastructure verification failed (non-blocking): ${verifyError.message}`);
+      console.error(`   ℹ️  Execution will continue - verification is best-effort only`);
     }
   }
 

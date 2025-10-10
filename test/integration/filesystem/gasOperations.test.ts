@@ -11,11 +11,11 @@ describe('MCP Server Google Apps Script Operations', () => {
 
   before(function() {
     // Use the shared global client to avoid multiple server processes
-    if (!globalAuthState.client) {
+    if (!globalAuthState.client || !globalAuthState.auth) {
       this.skip(); // Skip if global client not available
     }
     client = globalAuthState.client!; // Non-null assertion since we checked above
-    auth = new AuthTestHelper(client);
+    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     gas = new GASTestHelper(client);
     console.log('🔗 Using shared global MCP client for GAS operations tests');
   });

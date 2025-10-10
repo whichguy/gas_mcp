@@ -28,7 +28,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       // Create a new client for this test
       const { createTestClient } = await import('../../helpers/mcpClient.js');
       client = await createTestClient();
-      auth = new AuthTestHelper(client);
+      auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     }
     
     // Test that auth infrastructure works (can check status and start auth)
@@ -51,7 +51,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       expect(client.isConnected()).to.be.true;
@@ -88,7 +88,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       const promises = [
@@ -114,7 +114,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       // Test auth status checking (works regardless of current auth state)
@@ -182,7 +182,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       // Test invalid tool name
@@ -216,7 +216,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       const restrictions = [
@@ -255,7 +255,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       // Test unauthenticated access by temporarily logging out if needed
@@ -303,7 +303,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       const result = await client.callTool('auth', { mode: 'status' });
@@ -331,7 +331,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
 
       // Make many concurrent requests to test rate limiting
@@ -367,7 +367,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       const authStart = await auth.startInteractiveAuth();
@@ -398,7 +398,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       if (!client) {
         const { createTestClient } = await import('../../helpers/mcpClient.js');
         client = await createTestClient();
-        auth = new AuthTestHelper(client);
+        auth = globalAuthState.auth!;  // Reuse global auth with sessionId
       }
       
       // The auth URL should not contain obvious placeholder values

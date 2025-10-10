@@ -285,7 +285,7 @@ NODE_ENV = "production"
 
 ## 📦 What's Included
 
-### 🛠️ 46 Specialized Tools
+### 🛠️ 50 Specialized Tools
 
 <table>
 <tr>
@@ -585,7 +585,7 @@ cat ~/.claude/claude_desktop_config.json | jq '.mcpServers.gas'
 ```
 mcp_gas/
 ├── src/                     # TypeScript source code
-│   ├── tools/              # All 46 MCP tools
+│   ├── tools/              # All 50 MCP tools
 │   ├── auth/               # OAuth authentication
 │   ├── api/                # Google Apps Script API client
 │   └── server/             # MCP server implementation
@@ -628,7 +628,7 @@ npm run test:security      # Security validation
 The MCP GAS Server uses a layered architecture:
 
 1. **MCP Protocol Layer**: Handles communication with AI assistants
-2. **Tool Layer**: 46 specialized tools for GAS operations
+2. **Tool Layer**: 50 specialized tools for GAS operations
 3. **Authentication Layer**: OAuth 2.0 PKCE flow with token management
 4. **API Client Layer**: Google Apps Script API v1 client with rate limiting
 5. **File System Layer**: Local caching and synchronization
