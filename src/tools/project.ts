@@ -346,7 +346,7 @@ export class ProjectMetricsTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have valid scriptId from gas_project_create or gas_ls',
         '3. Project must have had some execution history'
       ],
@@ -356,7 +356,7 @@ export class ProjectMetricsTool extends BaseTool {
         deployment: 'project_metrics({scriptId: "...", metricsFilter: {deploymentId: "..."}}) - Specific deployment metrics'
       },
       errorHandling: {
-        'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
+        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
         'ScriptNotFound': 'Verify scriptId is correct and accessible',
         'NoMetricsData': 'Project may not have sufficient execution history for metrics'
       },

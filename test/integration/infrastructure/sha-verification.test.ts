@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { describe, it, before, after } from 'mocha';
-import { MCPTestClient } from '../../helpers/mcpClient.js';
+import { InProcessTestClient } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 /**
@@ -14,7 +14,7 @@ import { globalAuthState } from '../../setup/globalAuth.js';
 describe('SHA Verification Integration Tests', function() {
   this.timeout(300000); // 5 minute timeout for integration tests
 
-  let client: MCPTestClient;
+  let client: InProcessTestClient;
   let testProjectId: string;
 
   before(function() {

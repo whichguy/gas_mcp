@@ -156,7 +156,7 @@ export class RunTool extends BaseTool {
       whenToUse: 'Use for normal JavaScript execution with automatic deployment handling.',
       workflow: 'Provide explicit script ID: gas_run({scriptId: "1arGk_0LU7E...", js_statement: "Math.sqrt(16)"}) for inline code or gas_run({scriptId: "1arGk_0LU7E...", js_statement: "require(\\"Calculator\\").add(5, 3)"}) for functions from files.',
       prerequisites: [
-        'gas_auth - Authenticate with gas_auth({mode: "start"}) before first execution',
+        'auth - Authenticate with auth({mode: "start"}) before first execution',
         'Project exists - Use project_create to create new or project_list to find existing'
       ],
       nextSteps: [
@@ -175,7 +175,7 @@ export class RunTool extends BaseTool {
           reason: 'Project missing execution framework - common for scripts not created via project_create'
         },
         'Authentication required': {
-          action: 'gas_auth({mode: "start"}) - Re-authenticate session',
+          action: 'auth({mode: "start"}) - Re-authenticate session',
           reason: 'OAuth token expired or not authenticated'
         },
         'Execution timeout': {
@@ -375,7 +375,7 @@ export class ExecApiTool extends BaseTool {
       
       if (!accessToken) {
         throw new AuthenticationError(
-          `Authentication required for gas_run_api_exec operation. Use gas_auth(mode="start") to authenticate and retry.`
+          `Authentication required for gas_run_api_exec operation. Use auth(mode="start") to authenticate and retry.`
         );
       }
       console.error(`Executing function: ${functionName} in script: ${scriptId}`);
@@ -436,7 +436,7 @@ export class ExecApiTool extends BaseTool {
         };
 
         const authError = new AuthenticationError(
-          `Authentication required for gas_run_api_exec operation (HTTP ${authStatusCode}). Use gas_auth(mode="start") to authenticate and retry.`
+          `Authentication required for gas_run_api_exec operation (HTTP ${authStatusCode}). Use auth(mode="start") to authenticate and retry.`
         );
         
         // Add HTTP response details to error data
@@ -447,12 +447,12 @@ export class ExecApiTool extends BaseTool {
           scriptId,
           httpResponse: httpDetails,
           instructions: [
-            'Use gas_auth with mode="start" to begin authentication',
+            'Use auth with mode="start" to begin authentication',
             'Complete the OAuth flow in your browser',
             'Then retry your gas_run_api_exec request'
           ],
-          command: 'gas_auth({"mode": "start"})',
-          statusCheck: 'gas_auth({"mode": "status"})'
+          command: 'auth({"mode": "start"})',
+          statusCheck: 'auth({"mode": "status"})'
         };
         
         throw authError;
@@ -496,13 +496,13 @@ export class ExecApiTool extends BaseTool {
             '2. Check that you have sufficient OAuth scopes:',
             '   - https://www.googleapis.com/auth/script.scriptapp (required)',
             '   - Additional scopes based on script functionality',
-            '3. Re-authenticate with updated scopes: gas_auth(mode="logout") then gas_auth(mode="start")',
+            '3. Re-authenticate with updated scopes: auth(mode="logout") then auth(mode="start")',
             '4. Verify the script project is deployed for API use'
           ];
         } else if (statusCode === 401) {
           helpMessage = 'Authentication required or token expired';
           setupInstructions = [
-            '1. Re-authenticate: gas_auth(mode="logout") then gas_auth(mode="start")',
+            '1. Re-authenticate: auth(mode="logout") then auth(mode="start")',
             '2. Ensure you have the required OAuth scopes for script execution'
           ];
         }
@@ -788,7 +788,7 @@ export class ExecTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Ensure authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Ensure authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have a project: gas_project_create or get existing scriptId from gas_ls',
         '3. Optional: Add code files with gas_write before execution'
       ],
@@ -811,7 +811,7 @@ export class ExecTool extends BaseTool {
         dataProcessing: 'gas_run({scriptId: "...", js_statement: "[1,2,3].map(x => x * 2).join(\',\')"})'
       },
       errorHandling: {
-        'AuthenticationError': 'Run gas_auth to authenticate first',
+        'AuthenticationError': 'Run auth to authenticate first',
         'ScriptNotFound': 'Verify scriptId is correct and accessible',
         'SyntaxError': 'Check JavaScript syntax in js_statement',
         'RuntimeError': 'Check if required functions/services are available in project'
@@ -922,7 +922,7 @@ export class ExecTool extends BaseTool {
         };
 
         const authError = new AuthenticationError(
-          `Authentication required for gas_run operation (HTTP ${statusCode}). Use gas_auth(mode="start") to authenticate and retry.`
+          `Authentication required for gas_run operation (HTTP ${statusCode}). Use auth(mode="start") to authenticate and retry.`
         );
         
         // Add HTTP response details to error data
@@ -933,12 +933,12 @@ export class ExecTool extends BaseTool {
           scriptId,
           httpResponse: httpDetails,
           instructions: [
-            'Use gas_auth with mode="start" to begin authentication',
+            'Use auth with mode="start" to begin authentication',
             'Complete the OAuth flow in your browser',
             'Then retry your gas_run request'
           ],
-          command: 'gas_auth({"mode": "start"})',
-          statusCheck: 'gas_auth({"mode": "status"})'
+          command: 'auth({"mode": "start"})',
+          statusCheck: 'auth({"mode": "status"})'
         };
         
         throw authError;
@@ -949,7 +949,7 @@ export class ExecTool extends BaseTool {
         // For infrastructure setup, we definitely need authentication
         if (!accessToken) {
           throw new AuthenticationError(
-            `Authentication required for infrastructure setup. Use gas_auth(mode="start") to authenticate first.`
+            `Authentication required for infrastructure setup. Use auth(mode="start") to authenticate first.`
           );
         }
         

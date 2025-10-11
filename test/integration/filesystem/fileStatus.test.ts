@@ -1,13 +1,13 @@
 import { expect } from 'chai';
 import { describe, it, before, after, beforeEach } from 'mocha';
 import { createHash } from 'crypto';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 describe('MCP Server File Status and Checksum Integration', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
 
   before(function() {
@@ -17,7 +17,7 @@ describe('MCP Server File Status and Checksum Integration', () => {
     }
     client = globalAuthState.client!;
     auth = globalAuthState.auth!;  // Reuse global auth with sessionId
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
     console.log('🔗 Using shared global MCP client and auth session for file status tests');
   });
 

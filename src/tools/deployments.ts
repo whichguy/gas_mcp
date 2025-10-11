@@ -1018,7 +1018,7 @@ export class ProjectCreateTool extends BaseTool {
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation. LLM TYPICAL: Omit this - tool uses session authentication from gas_auth.',
+        description: 'Access token for stateless operation. LLM TYPICAL: Omit this - tool uses session authentication from auth.',
         pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
         llmHints: {
           typical: 'Usually omitted - tool uses session authentication',
@@ -1030,7 +1030,7 @@ export class ProjectCreateTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       typicalSequence: [
-        '1. Authenticate: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authenticate: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Create project: project_create({title: "My Project", localName: "my-project"})',
         '3. Project automatically added to local config for easy reference',
         '4. Use gas_project_set({project: "my-project"}) to start working',
@@ -1068,7 +1068,7 @@ export class ProjectCreateTool extends BaseTool {
         deployment: 'version_create + deploy_create - Deploy to production'
       },
       errorHandling: {
-        'AuthenticationError': 'Run gas_auth to authenticate first',
+        'AuthenticationError': 'Run auth to authenticate first',
         'PermissionError': 'Check Google Drive permissions and API access',
         'QuotaExceeded': 'You may have reached project creation limits'
       }
@@ -1298,7 +1298,7 @@ export class ProjectInitTool extends BaseTool {
         'When require() or module.exports are not working in a project'
       ],
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have valid scriptId from existing project (use gas_ls to find projects)'
       ],
       scriptTypeCompatibility: {

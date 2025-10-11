@@ -6,9 +6,9 @@
  *
  * To run this test:
  * 1. Clear token cache: rm -rf .auth/tokens/*
- * 2. Run: gas_auth({mode: "start"})
+ * 2. Run: auth({mode: "start"})
  * 3. Complete OAuth flow in browser
- * 4. Run: gas_auth({mode: "status"}) - verify authenticated
+ * 4. Run: auth({mode: "status"}) - verify authenticated
  * 5. Run: gas_ls({scriptId: "..."}) - verify API call works
  * 6. Check: ls -la .auth/tokens/ - verify token file created with 600 permissions
  * 7. Check: cat .auth/tokens/*.json | jq - verify token structure
@@ -45,7 +45,7 @@ describe('Manual Auth Flow Verification', () => {
 
     if (tokenFiles.length === 0) {
       console.log('⚠️  No token files found - run authentication first');
-      console.log('   1. gas_auth({mode: "start"})');
+      console.log('   1. auth({mode: "start"})');
       console.log('   2. Complete OAuth in browser');
       console.log('   3. Re-run this test');
       this.skip();

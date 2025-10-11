@@ -76,7 +76,7 @@ export class LogsListTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have valid scriptId from gas_project_create or gas_ls',
         '3. ⚠️ Script MUST be standalone with standard GCP project - container-bound scripts NOT supported'
       ],
@@ -199,7 +199,7 @@ export class LogsGetTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have processId from logs_list or process_list',
         '3. ⚠️ Script MUST be standalone with standard GCP project - container-bound scripts NOT supported'
       ],

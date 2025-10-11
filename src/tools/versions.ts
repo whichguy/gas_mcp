@@ -30,7 +30,7 @@ export class VersionGetTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have valid scriptId from gas_project_create or gas_ls',
         '3. Version must exist (use version_list to see available versions)'
       ],
@@ -50,7 +50,7 @@ export class VersionGetTool extends BaseTool {
         deployment: 'version_get to verify version before deployment'
       },
       errorHandling: {
-        'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
+        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
         'ScriptNotFound': 'Verify scriptId is correct and accessible',
         'VersionNotFound': 'Version number may not exist, use version_list to see available versions'
       },
@@ -120,7 +120,7 @@ export class VersionListTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have valid scriptId from gas_project_create or gas_ls'
       ],
       scriptTypeCompatibility: {
@@ -139,7 +139,7 @@ export class VersionListTool extends BaseTool {
         comparison: 'version_list to identify versions for comparison'
       },
       errorHandling: {
-        'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
+        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
         'ScriptNotFound': 'Verify scriptId is correct and accessible',
         'NoVersions': 'Project may not have any saved versions yet (use gas_version_create)'
       },

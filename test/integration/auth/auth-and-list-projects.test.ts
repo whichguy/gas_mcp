@@ -9,14 +9,14 @@
 
 import { expect } from 'chai';
 import { describe, it, before } from 'mocha';
-import { MCPTestClient, AuthTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 
 describe('Auth + List Projects Integration Test', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
 
   before(function() {
     if (!globalAuthState.client || !globalAuthState.auth) {

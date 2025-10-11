@@ -1,12 +1,12 @@
 import { expect } from 'chai';
 import { describe, it, before, after, beforeEach } from 'mocha';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 describe('MCP Server Google Apps Script Operations', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
 
   before(function() {
@@ -16,7 +16,7 @@ describe('MCP Server Google Apps Script Operations', () => {
     }
     client = globalAuthState.client!; // Non-null assertion since we checked above
     auth = globalAuthState.auth!;  // Reuse global auth with sessionId
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
     console.log('🔗 Using shared global MCP client for GAS operations tests');
   });
 
@@ -415,7 +415,7 @@ describe('MCP Server Google Apps Script Operations', () => {
       
       if (!authenticated) {
         console.log('⚠️  No authentication available - running infrastructure tests');
-        console.log('ℹ️  To enable full integration tests, authenticate first using gas_auth');
+        console.log('ℹ️  To enable full integration tests, authenticate first using auth');
       } else {
         console.log(`✅ Authentication available: ${authStatus.user?.email || 'User'}`);
         console.log('Running full integration tests...\n');

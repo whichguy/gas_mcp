@@ -9,7 +9,7 @@ export const TEST_TIMEOUTS = {
   /**
    * QUICK (15 seconds)
    * Use for: Auth status checks, simple API queries
-   * Examples: gas_auth status, isAuthenticated()
+   * Examples: auth status, isAuthenticated()
    */
   QUICK: 15000,
 

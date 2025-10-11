@@ -366,7 +366,7 @@ describe('AuthTool', () => {
       expect(result.status).to.equal('not_authenticated');
       expect(result.authenticated).to.be.false;
       expect(result.tokenValid).to.be.false;
-      expect(result.instructions).to.include('gas_auth(mode="start")');
+      expect(result.instructions).to.include('auth(mode="start")');
     });
 
     it('should return authenticated status', async () => {

@@ -165,8 +165,8 @@ export class GASErrorHandler {
       '   • Google API error: ' + (errorDetails.googleErrorCode || 'Unknown'),
       '',
       '🛠️ SOLUTIONS:',
-      '   1. Run gas_auth(mode="logout") to clear current session',
-      '   2. Run gas_auth(mode="start") to re-authenticate',
+      '   1. Run auth(mode="logout") to clear current session',
+      '   2. Run auth(mode="start") to re-authenticate',
       '   3. Ensure you have the required OAuth scopes',
       '   4. Check that your credentials are properly configured'
     ];

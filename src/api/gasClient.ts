@@ -555,7 +555,7 @@ export class GASClient {
       if (error.message?.includes('invalid_grant') || error.code === 'invalid_grant') {
         console.error(`🚨 [SECURITY] Refresh token is invalid/expired - user must re-authenticate`);
         console.error(`   Error type: invalid_grant (OAuth 2.0 error)`);
-        console.error(`   Action required: User must run gas_auth(mode="start") to re-authenticate`);
+        console.error(`   Action required: User must run auth(mode="start") to re-authenticate`);
         
         // Clear invalid refresh tokens from storage
         if (authManager === 'session' && this.getCurrentSessionManager) {

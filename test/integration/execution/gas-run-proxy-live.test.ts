@@ -1,12 +1,12 @@
 import { expect } from 'chai';
 import { describe, it, before, after } from 'mocha';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 describe('MCP gas_run_proxy Live Test - globalThis Pattern', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
 
   before(function() {
@@ -16,7 +16,7 @@ describe('MCP gas_run_proxy Live Test - globalThis Pattern', () => {
     }
     client = globalAuthState.client!; // Non-null assertion since we checked above
     auth = globalAuthState.auth!;  // Reuse global auth with sessionId
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
     console.log('🔗 Using shared global MCP client for gas run proxy live tests');
   });
 

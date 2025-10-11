@@ -20,8 +20,8 @@ export function loadOAuthConfigFromJson(): AuthConfig {
     client_id: '428972970708-m9hptmp3idakolt9tgk5m0qs13cgj2kk.apps.googleusercontent.com',
     type: 'uwp',
     redirect_uris: [
-      'http://127.0.0.1:3000/oauth/callback',
-      'http://localhost:3000/oauth/callback'
+      'http://127.0.0.1:3000/callback',
+      'http://localhost:3000/callback'
     ],
     scopes: [
       'https://www.googleapis.com/auth/script.projects',

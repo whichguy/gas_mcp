@@ -101,7 +101,7 @@ export class ProcessListTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed'
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed'
       ],
       useCases: {
         monitoring: 'process_list({pageSize: 50}) - Monitor all recent executions',
@@ -109,7 +109,7 @@ export class ProcessListTool extends BaseTool {
         analysis: 'process_list({userProcessFilter: {functionName: "myFunction"}}) - Analyze function performance'
       },
       errorHandling: {
-        'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
+        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
         'PermissionError': 'Check Google Cloud Console permissions for Apps Script API'
       }
     }
@@ -225,7 +225,7 @@ export class ProcessListScriptTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       prerequisites: [
-        '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed',
+        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
         '2. Have valid scriptId from gas_project_create or gas_ls'
       ],
       useCases: {
@@ -234,7 +234,7 @@ export class ProcessListScriptTool extends BaseTool {
         performance: 'process_list_script({scriptId: "...", scriptProcessFilter: {startTime: "2024-01-01T00:00:00Z"}}) - Performance analysis'
       },
       errorHandling: {
-        'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
+        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
         'ScriptNotFound': 'Verify scriptId is correct and accessible',
         'PermissionError': 'Check Google Cloud Console permissions for Apps Script API'
       }
