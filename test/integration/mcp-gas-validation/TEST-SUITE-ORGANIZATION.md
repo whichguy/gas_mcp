@@ -48,7 +48,7 @@ Tests project creation, information retrieval, and lifecycle management.
 - ✅ Project information (1 test)
   - Info completeness validation
 
-**Key Tools Tested**: `mcp__gas__project_create`, `mcp__gas__info`, `mcp__gas__project_list`
+**Key Tools Tested**: `project_create`, `info`, `project_list`
 
 ---
 
@@ -81,7 +81,7 @@ Tests all file CRUD operations, copying, moving, batch operations, and edge case
 - ✅ Concurrent operations (1 test)
   - Parallel file operations (10 files)
 
-**Key Tools Tested**: `mcp__gas__write`, `mcp__gas__cat`, `mcp__gas__ls`, `mcp__gas__rm`, `mcp__gas__cp`, `mcp__gas__mv`, `mcp__gas__reorder`
+**Key Tools Tested**: `write`, `cat`, `ls`, `rm`, `cp`, `mv`, `reorder`
 
 ---
 
@@ -118,7 +118,7 @@ Tests search, pattern matching, text processing, and fuzzy matching capabilities
 - ✅ Search performance (1 test)
   - Large project search (20+ files)
 
-**Key Tools Tested**: `mcp__gas__grep`, `mcp__gas__ripgrep`, `mcp__gas__sed`, `mcp__gas__find`, `mcp__gas__aider`
+**Key Tools Tested**: `grep`, `ripgrep`, `sed`, `find`, `aider`
 
 ---
 
@@ -158,7 +158,7 @@ Tests the complete CommonJS module system integration including wrapping, depend
   - Module not found errors
   - Syntax error handling
 
-**Key Tools Tested**: `mcp__gas__write` (with moduleOptions), `mcp__gas__cat`, `mcp__gas__raw_cat`, `mcp__gas__run`
+**Key Tools Tested**: `write` (with moduleOptions), `cat`, `raw_cat`, `exec`
 
 ---
 
@@ -196,29 +196,26 @@ Tests ad-hoc code execution via gas_run with expressions, GAS services, and erro
 - ✅ Rate limiting (1 test)
   - Concurrent execution requests
 
-**Key Tools Tested**: `mcp__gas__run`, `mcp__gas__exec`
+**Key Tools Tested**: `exec`, `run_api_exec`
 
 ---
 
-### 7. **deployment.test.ts** - Version Control and Deployment (9 tests)
+### 7. **deployment.test.ts** - Deployment Management (UPDATED)
 
-Tests version control, deployment creation, and deployment management.
+**NOTE**: This test suite needs updating to reflect the consolidated `deploy` tool.
 
-**Coverage**:
-- ✅ Version control (3 tests)
-  - Version creation
-  - Version listing
-  - Multiple version creation
-- ✅ Deployment management (4 tests)
-  - Deployment creation
-  - Deployment listing
-  - Configuration verification
-  - API executable deployment
-- ✅ Version history (2 tests)
-  - Change tracking
-  - Version descriptions
+**Current Tool**: `deploy` (consolidated deployment workflow)
+- Operations: `promote`, `rollback`, `status`, `reset`
+- Environments: `dev` (HEAD), `staging` (versioned), `prod` (versioned)
+- Three-environment model with version promotion workflow
 
-**Key Tools Tested**: `mcp__gas__version_create`, `mcp__gas__version_list`, `mcp__gas__deploy_create`, `mcp__gas__deploy_list`
+**Planned Coverage**:
+- ✅ Environment status checking (`operation: 'status'`)
+- ✅ Promotion workflow (`dev → staging → prod`)
+- ✅ Rollback operations (revert to previous versions)
+- ✅ Environment reset (recreate standard 3-env setup)
+
+**Old Tools (REMOVED)**: `gas_version_create`, `gas_version_list`, `gas_deploy_create`, `gas_deploy_list`
 
 ---
 
@@ -390,14 +387,7 @@ All test files follow consistent patterns:
    **Focus**: Test MCP tool behavior (`mcp__gas__git_*`), NOT git itself
    **Approach**: Verify MCP tools create correct files, handle parameters, return proper responses
 
-   **A. mcp__gas__git_init Tests** (5 tests)
-   - Tool creates .git/config.gs file in GAS project
-   - Tool accepts repository parameter (GitHub URL)
-   - Tool accepts optional localPath parameter
-   - Tool returns success response with configuration summary
-   - Tool fails gracefully with invalid scriptId
-
-   **B. mcp__gas__local_sync Tests** (7 tests)
+   **A. local_sync Tests** (7 tests)
    - Tool with direction="sync" pulls GAS files to local
    - Tool with direction="pull-only" only pulls (no push)
    - Tool with direction="push-only" pushes local to GAS (after pull)
@@ -406,19 +396,13 @@ All test files follow consistent patterns:
    - Tool fails gracefully without prior git_init
    - Tool respects forceOverwrite parameter
 
-   **C. mcp__gas__git_status Tests** (4 tests)
-   - Tool returns hasGitLink=true for initialized projects
-   - Tool returns hasGitLink=false for non-initialized projects
-   - Tool returns syncFolder path from .git/config.gs
-   - Tool returns repository URL from .git/config.gs
-
-   **D. mcp__gas__git_set_sync_folder Tests** (2 tests)
-   - Tool updates .git/config.gs with new localPath
-   - Tool returns updated configuration
-
-   **E. mcp__gas__git_get_sync_folder Tests** (2 tests)
-   - Tool reads localPath from .git/config.gs
-   - Tool returns null for non-initialized projects
+   **B. config (sync_folder management) Tests** (6 tests)
+   - Get sync_folder: Returns current path from .git/config.gs
+   - Set sync_folder: Updates .git/config.gs with new path
+   - Returns hasGitLink=true for projects with .git/config.gs breadcrumb
+   - Returns hasGitLink=false for non-initialized projects
+   - Returns syncFolder path from configuration
+   - Returns repository URL from configuration
 
    **Key Test Principles**:
    - **MCP Tool Validation Only**: Test tool parameters, responses, GAS file creation
