@@ -190,24 +190,18 @@ function validateResults() {
     }
 
     // STEP 6: DEPLOYMENT (if available)
-    console.log('\n📋 STEP 6: Deployment Creation');
-    
+    console.log('\n📋 STEP 6: Deployment Status Check');
+
     try {
-      const versionResult = await client.callAndParse('gas_version_create', {
+      const deployResult = await client.callAndParse('deploy', {
         scriptId: testProjectId,
-        description: 'MCP Test Version'
+        operation: 'status'
       });
-      
-      const deploymentResult = await client.callAndParse('gas_deploy_create', {
-        scriptId: testProjectId,
-        description: 'MCP Test Deployment',
-        versionNumber: versionResult.versionNumber
-      });
-      
-      console.log(`✅ Created deployment: ${deploymentResult.deploymentId}`);
-      
+
+      console.log(`✅ Deployment status retrieved: ${deployResult.environments?.length || 0} environments`);
+
     } catch (error: any) {
-      console.log('📋 Manual deployment process required');
+      console.log('📋 Deployment check skipped (not critical for workflow test)');
     }
 
     console.log('\n🎉 COMPREHENSIVE WORKFLOW COMPLETED!');

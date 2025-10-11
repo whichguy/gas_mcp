@@ -408,28 +408,11 @@ function getAPIData(action) {
       console.log(`📄 Created file: ${file.name}`);
     }
 
-    // Create deployment if specified
+    // Skip deployment creation - not required for test fixtures
+    // Deployment testing is handled by dedicated deployment tests
     let deploymentId: string | undefined;
     if (template.deploymentType) {
-      try {
-        // Create version first
-        const version = await context.client.callAndParse('gas_version_create', {
-          scriptId: projectId.scriptId,
-          description: `Test version for ${template.name}`
-        });
-
-        // Create deployment
-        const deployment = await context.client.callAndParse('gas_deploy_create', {
-          scriptId: projectId.scriptId,
-          entryPointType: template.deploymentType,
-          versionNumber: version.versionNumber
-        });
-
-        deploymentId = deployment.deploymentId;
-        console.log(`🚀 Created deployment: ${deploymentId}`);
-      } catch (error) {
-        console.warn(`⚠️  Could not create deployment:`, error);
-      }
+      console.log(`📦 Skipping deployment creation for test fixture (not required)...`);
     }
 
     console.log(`✅ Project ready: ${projectId.scriptId}`);
