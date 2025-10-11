@@ -52,11 +52,11 @@ npm run test:all-verify          # Run all verification tests
 
 ## Architecture Overview
 
-**MCP server:** AI ↔ GAS → 59 tools for create/manage/execute GAS projects
+**MCP server:** AI ↔ GAS → ~50 tools for create/manage/execute GAS projects
 
 **Session:** In-memory Map → lost on restart → re-auth required → no filesystem/locking (MCP half-duplex)
 
-**Flow:** MCP Client ↔ stdio ↔ mcpServer.ts → tools → gasClient.ts → GAS API v1
+**Flow:** MCP Client ↔ stdio ↔ mcpServer.ts → tools → gasClient.js → GAS API v1
 
 **Layers:**
 1. **Protocol** (index.ts → mcpServer.ts) → stdio + tool dispatch + error handling
@@ -64,12 +64,11 @@ npm run test:all-verify          # Run all verification tests
 3. **Auth** (src/auth/) → OAuth PKCE (oauthClient.ts) + session refresh (sessionManager.ts) + in-memory tokens
 4. **API** (gasClient.ts) → rate limit + retry + path parse + error transform
 
-**Removed Tools** (66 → 59): Eliminated 7 redundant/non-functional tools (~1,200 lines):
-- `bind_script` - Non-functional (GAS API doesn't support binding existing standalone scripts to containers)
-- `project_set`, `project_get`, `project_add` - Unused state management (all tools require explicit scriptId)
-- `project_metrics` - Niche monitoring tool (rarely needed)
-- `run` - Pure wrapper that delegated 100% to exec tool
-- `pull`, `push`, `status` - Redundant wrappers (cat/write already provide local caching via LocalFileManager)
+**Tool Consolidation** (Completed 2025-01-10):
+- Removed 7 redundant/low-level tools (~1,200 lines)
+- Eliminated: `bind_script`, `project_set`, `project_get`, `project_add`, `project_metrics`, `run`, `pull`, `push`, `status`
+- Replaced with: Unified `deploy` tool (promote/rollback/status/reset operations)
+- Result: Cleaner API surface, fewer integration points, simplified workflows
 
 ### Core Capabilities
 
@@ -110,6 +109,21 @@ npm run test:all-verify          # Run all verification tests
 **Integration:** Compare with `git hash-object` → detect changes → selective sync → build optimization
 **Performance:** checksums=false (default, fast) | checksums=true (~50-100ms/file) | file_status (200 files max, 50 default)
 
+#### 5. Deployment & Version Control
+**Unified Tool:** deploy({operation, environment, scriptId}) → single interface for all deployment ops
+**Operations:**
+- `promote` → dev→staging (creates version) or staging→prod (updates deployment)
+- `rollback` → revert to previous tagged version (staging or prod)
+- `status` → view all 3 environments (dev/staging/prod)
+- `reset` → recreate 3 standard deployments
+
+**Environments:**
+- dev: Always HEAD (latest code, auto-updated)
+- staging: Versioned snapshots (promote from dev)
+- prod: Production versions (promote from staging)
+
+**Version Tags:** Automatic `[DEV]`, `[STAGING]`, `[PROD]` tags in descriptions
+
 ---
 
 ### Architectural Patterns
@@ -135,25 +149,27 @@ npm run test:all-verify          # Run all verification tests
 4. Standard git: git add/commit/push
 5. See docs/GIT_SYNC_WORKFLOWS.md for details
 
+**Git Refs Breadcrumbs:** `.git/refs/heads/main` and `.git/refs/remotes/origin/main` stored in GAS for repository connection tracking
+
 **NO AUTO-BOOTSTRAP:** .git/config.gs must exist in GAS before running local_sync
 
 ### Project Management + Errors
 
-**Management:** project_list (view projects) | project_create (infra setup) → gas-config.json stores → all tools require explicit scriptId
+**Management:** project_list (view projects) | project_create (infra setup with 3 deployments) → gas-config.json stores → all tools require explicit scriptId
 
 **Errors:** MCPGasError → ValidationError | AuthenticationError | FileOperationError | QuotaError | ApiError → MCP-compatible transform
 
-## Config + Tools (59 total)
+## Config + Tools
 
 **Config:** gas-config.json (OAuth + projects + envs + paths) | oauth-config.json (GCP credentials, desktop app) | .auth/ (session tokens, auto-refresh)
 
-**Smart Tools** (auto CommonJS): cat/write/cp (wrap/unwrap) + ls/rm/mv/mkdir (paths) + file_status (SHA checksums) + exec/info/reorder (exec/mgmt) + version_create/deploy_create + grep/find/ripgrep/sed (search)
+**Smart Tools** (auto CommonJS): cat/write/cp (wrap/unwrap) + ls/rm/mv/mkdir (paths) + file_status (SHA checksums) + exec/info/reorder (exec/mgmt) + grep/find/ripgrep/sed (search) + deploy (unified deployment)
 
 **Raw Tools** (exact content): raw_cat/raw_write/raw_cp (preserve wrappers) + raw_ls/raw_rm/raw_mv + raw_find/raw_grep/raw_ripgrep/raw_sed
 
-**Git Tools:** local_sync + config (sync_folder management) — NOTE: git_init removed, manual .git/config.gs creation required
+**Git Tools:** local_sync + config (sync_folder management) — Breadcrumb files: .git/config.gs + .git/refs/heads/main + .git/refs/remotes/origin/main
 
-**Project Tools:** project_list/project_create + auth (OAuth)
+**Project Tools:** project_list/project_create/project_init + auth (OAuth)
 
 **Design:** Flat architecture + smart (process) vs raw (preserve) + naming (mcp__gas__* vs mcp__gas__raw_*) + period prefix (.gitignore.gs) + unified paths (~/gas-repos/project-[scriptId]/)
 
@@ -165,6 +181,8 @@ npm run test:all-verify          # Run all verification tests
 
 **Tests:** unit (mock) + integration (real GAS API + auth) + system (MCP protocol) + security (validation) + verification (API schema) + performance (benchmarks) → mocha + chai + .mocharc.json (15s timeout) + globalAuth.ts
 
+**Test Organization:** Functional domain-based test files (project-lifecycle, file-operations, search-operations, module-system, code-execution, deployment, error-handling, performance) → See test/integration/mcp-gas-validation/TEST-SUITE-ORGANIZATION.md
+
 **Security:** OAuth (OS-secure storage) + PKCE (intercept prevention) + input validation + scriptId (25-60 alphanumeric) + path traversal prevention + array-based git (injection prevention)
 
 **Performance:** Local cache (reduce API) + incremental TS builds + concurrent asset copy + smart local-first + rate limiting (quota protection)
@@ -173,7 +191,7 @@ npm run test:all-verify          # Run all verification tests
 
 ## MCP Integration
 
-**Server:** MCP protocol → AI assistants (Claude) → 59 GAS tools
+**Server:** MCP protocol → AI assistants (Claude) → ~50 GAS tools
 
 **Claude Desktop Config** (`~/.claude_desktop_config.json`):
 ```json
@@ -182,4 +200,16 @@ npm run test:all-verify          # Run all verification tests
 
 **Files:** gas-config.json (projects + OAuth + paths) + oauth-config.json (GCP creds) + .auth/ (tokens)
 
-**Capabilities:** OAuth flow + file ops (CommonJS wrap) + cloud exec + git sync + project mgmt + deployment
+**Capabilities:** OAuth flow + file ops (CommonJS wrap) + cloud exec + git sync + project mgmt + unified deployment
+
+## Key Changes (January 2025)
+
+**Deployment Tool Consolidation:**
+- Old: `gas_version_create`, `gas_version_list`, `gas_version_get`, `gas_deploy_create`, `gas_deploy_list`, `gas_deploy_get_details`, `gas_deploy_delete`, `gas_deploy_update`
+- New: Single `deploy` tool with operations: promote/rollback/status/reset
+- Benefit: Simplified workflows, atomic operations, environment-aware management
+
+**Git Refs Support:**
+- Added `.git/refs/heads/main` and `.git/refs/remotes/origin/main` to GIT_FILE_MAP
+- Enables complete repository connection tracking in GAS projects
+- Plain text files (40-char SHA-1 hashes), no encoding needed

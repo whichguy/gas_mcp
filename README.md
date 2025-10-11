@@ -322,16 +322,14 @@ NODE_ENV = "production"
 <td>
 
 **🔀 Git Integration**
-- `git_init` - Initialize repo
-- `git_sync` - Sync changes
-- `git_status` - Check status
+- `local_sync` - Sync changes (pull→merge→push)
+- `config` - Manage sync folder
 
 </td>
 <td>
 
 **🚀 Deployment**
-- `deploy_create` - Deploy apps
-- `version_create` - Create versions
+- `deploy` - Unified deployment management (promote/rollback/status/reset)
 
 </td>
 <td>
@@ -369,11 +367,15 @@ NODE_ENV = "production"
 
 ### Git Workflow Integration
 ```javascript
-// Initialize git for a GAS project
-mcp__gas__git_init({ scriptId: "...", repository: "https://github.com/..." })
+// Set up .git/config.gs breadcrumb file first
+mcp__gas__write({
+  scriptId: "...",
+  path: ".git/config",
+  content: JSON.stringify({ repository: "https://github.com/...", localPath: "~/my-project" })
+})
 
 // Sync changes (always safe - pulls, merges, then pushes)
-mcp__gas__git_sync({ scriptId: "..." })
+mcp__gas__local_sync({ scriptId: "..." })
 
 // Standard git workflow works in sync folder
 cd ~/gas-repos/project-xxx
@@ -537,22 +539,25 @@ mcp__gas__cat({ scriptId: "...", path: "Calculator" })
 
 ### Git Integration
 ```javascript
-// Initialize git association with .git.gs marker
-mcp__gas__git_init({
+// Create .git/config.gs breadcrumb file
+mcp__gas__write({
   scriptId: "...",
-  repository: "https://github.com/owner/repo.git"
+  path: ".git/config",
+  content: JSON.stringify({
+    repository: "https://github.com/owner/repo.git",
+    localPath: "~/my-projects/gas-app"
+  })
 })
 
 // Safe pull-merge-push synchronization (ALWAYS pulls first)
-mcp__gas__git_sync({ scriptId: "..." })
+mcp__gas__local_sync({ scriptId: "..." })
 
-// Check git status and sync folder location
-mcp__gas__git_status({ scriptId: "..." })
-
-// Set local sync folder for git operations
-mcp__gas__config (action: set, type: sync_folder)({
+// Manage sync folder configuration
+mcp__gas__config({
+  operation: "set",
+  setting: "sync_folder",
   scriptId: "...",
-  localPath: "~/my-projects/gas-app"
+  value: "~/my-projects/gas-app"
 })
 ```
 
@@ -585,7 +590,7 @@ cat ~/.claude/claude_desktop_config.json | jq '.mcpServers.gas'
 ```
 mcp_gas/
 ├── src/                     # TypeScript source code
-│   ├── tools/              # All 50 MCP tools
+│   ├── tools/              # ~50 MCP tools
 │   ├── auth/               # OAuth authentication
 │   ├── api/                # Google Apps Script API client
 │   └── server/             # MCP server implementation
@@ -628,7 +633,7 @@ npm run test:security      # Security validation
 The MCP GAS Server uses a layered architecture:
 
 1. **MCP Protocol Layer**: Handles communication with AI assistants
-2. **Tool Layer**: 50 specialized tools for GAS operations
+2. **Tool Layer**: ~50 specialized tools for GAS operations
 3. **Authentication Layer**: OAuth 2.0 PKCE flow with token management
 4. **API Client Layer**: Google Apps Script API v1 client with rate limiting
 5. **File System Layer**: Local caching and synchronization
