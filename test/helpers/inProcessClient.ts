@@ -265,31 +265,29 @@ export class InProcessTestClient {
     }
 
     // Import and execute git tools
-    if (name === 'git_init' || name === 'git_sync' || name === 'git_status' ||
-        name === 'git_get_sync_folder' || name === 'git_set_sync_folder') {
-      const { GitInitTool, GitSyncTool, GitStatusTool, GitGetSyncFolderTool, GitSetSyncFolderTool } = await import('../../src/tools/gitSync.js');
-
-      let tool;
-      switch (name) {
-        case 'git_init':
-          tool = new GitInitTool(this.sessionManager);
-          break;
-        case 'git_sync':
-          tool = new GitSyncTool(this.sessionManager);
-          break;
-        case 'git_status':
-          tool = new GitStatusTool(this.sessionManager);
-          break;
-        case 'git_get_sync_folder':
-          tool = new GitGetSyncFolderTool(this.sessionManager);
-          break;
-        case 'git_set_sync_folder':
-          tool = new GitSetSyncFolderTool(this.sessionManager);
-          break;
-      }
+    if (name === 'local_sync') {
+      const { LocalSyncTool } = await import('../../src/tools/gitSync.js');
+      const tool = new LocalSyncTool(this.sessionManager);
 
       // Execute the tool (session manager is passed via constructor)
-      const result = await tool!.execute(args);
+      const result = await tool.execute(args);
+
+      // Return in MCP format
+      return {
+        content: [{
+          type: 'text',
+          text: typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+
+    // Import and execute config tool
+    if (name === 'config') {
+      const { ConfigTool } = await import('../../src/tools/config.js');
+      const tool = new ConfigTool(this.sessionManager);
+
+      // Execute the tool (session manager is passed via constructor)
+      const result = await tool.execute(args);
 
       // Return in MCP format
       return {
@@ -331,7 +329,7 @@ export class InProcessTestClient {
     }
 
     // For tools we haven't implemented, throw error
-    const supportedTools = ['auth', 'git_init', 'git_sync', 'git_status', 'git_get_sync_folder', 'git_set_sync_folder', 'cat', 'raw_cat', 'ls'];
+    const supportedTools = ['auth', 'gas_deploy', 'local_sync', 'config', 'cat', 'raw_cat', 'ls'];
     throw new Error(
       `Tool '${name}' not yet supported in direct execution mode.\n` +
       `Supported tools: ${supportedTools.join(', ')}\n` +
@@ -428,7 +426,7 @@ export class InProcessTestClient {
       { name: 'gas_cat', description: 'Read file contents' },
       { name: 'gas_write', description: 'Write file contents' },
       { name: 'gas_ls', description: 'List files in project' },
-      { name: 'gas_run', description: 'Execute code in GAS environment' }
+      { name: 'exec', description: 'Execute code in GAS environment' }
     ];
   }
 
@@ -540,11 +538,26 @@ export class InProcessGASTestHelper {
   }
 
   /**
-   * Create a test project
+   * Create a test project with CommonJS infrastructure
    */
   async createTestProject(name?: string): Promise<any> {
     const projectName = name || `Test Project ${Date.now()}`;
-    return await this.client.createProject(projectName);
+
+    // Import ProjectCreateTool which sets up CommonJS automatically
+    const { ProjectCreateTool } = await import('../../src/tools/deployments.js');
+    const projectCreateTool = new ProjectCreateTool(this.client.sessionManager);
+
+    // Create project with CommonJS infrastructure
+    const result = await projectCreateTool.execute({
+      title: projectName
+    });
+
+    // Parse result if it's a string
+    if (typeof result === 'string') {
+      return JSON.parse(result);
+    }
+
+    return result;
   }
 
   /**
@@ -555,12 +568,30 @@ export class InProcessGASTestHelper {
   }
 
   /**
-   * Write a test file
+   * Write a test file with CommonJS wrapping support
    */
   async writeTestFile(projectId: string, filename: string, content?: string): Promise<any> {
     const fileContent = content || `// Test file created at ${new Date().toISOString()}\nfunction testFunction() {\n  console.log('Hello from ${filename}');\n}`;
 
-    return await this.client.updateFile(projectId, filename, fileContent);
+    // Strip .gs extension if present - GAS stores files without extension
+    const gasFilename = filename.endsWith('.gs') ? filename.slice(0, -3) : filename;
+
+    // If content uses module.exports or exports, use WriteTool for CommonJS wrapping
+    if (fileContent.includes('module.exports') || fileContent.includes('exports.')) {
+      const { WriteTool } = await import('../../src/tools/filesystem/WriteTool.js');
+      const writeTool = new WriteTool(this.client.sessionManager);
+
+      const result = await writeTool.execute({
+        scriptId: projectId,
+        path: gasFilename,
+        content: fileContent
+      });
+
+      return result;
+    }
+
+    // For non-module files, use direct update
+    return await this.client.updateFile(projectId, gasFilename, fileContent);
   }
 
   /**
@@ -595,12 +626,34 @@ export class InProcessGASTestHelper {
   }
 
   /**
-   * Run a function in a project
+   * Run a function in a project using exec tool
+   * @param projectId The GAS project scriptId
+   * @param code JavaScript code/expression to execute
+   * @returns Execution result with status, result, and logger_output
    */
-  async runFunction(projectId: string, functionName: string, params?: any[]): Promise<any> {
-    const accessToken = await this.client.getAccessToken();
-    // This would require gas_run implementation which we haven't added to InProcessTestClient yet
-    throw new Error('runFunction() not yet implemented in InProcessGASTestHelper. Use client methods directly or gas_run tool.');
+  async runFunction(projectId: string, code: string): Promise<any> {
+    // Import ExecTool and execute it directly
+    const { ExecTool } = await import('../../src/tools/execution.js');
+    const execTool = new ExecTool(this.client.sessionManager);
+
+    // Execute the code with autoRedeploy enabled
+    const result = await execTool.execute({
+      scriptId: projectId,
+      js_statement: code,
+      autoRedeploy: true
+    });
+
+    // Parse result from string if needed
+    if (typeof result === 'string') {
+      try {
+        return JSON.parse(result);
+      } catch {
+        // If not JSON, return as object with the string
+        return { status: 'success', result: result };
+      }
+    }
+
+    return result;
   }
 
   /**

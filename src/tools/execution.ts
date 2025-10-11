@@ -20,284 +20,6 @@ import { setupInfrastructure } from './execution/infrastructure/setup-manager.js
 import { performDomainAuth } from './execution/auth/domain-auth.js';
 
 /**
- * Execute JavaScript in Google Apps Script with current project support (RECOMMENDED)
- * 
- * RECOMMENDED - Use for normal code execution
- * Automatically uses current project when set, otherwise requires explicit script ID
- */
-export class RunTool extends BaseTool {
-  public name = 'run';
-  public description = 'RECOMMENDED: Execute JavaScript using current project context or explicit script ID';
-  
-  public inputSchema = {
-    type: 'object',
-    properties: {
-      js_statement: {
-        type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. COMPREHENSIVE EXECUTION CAPABILITIES: (1) Run arbitrary JavaScript expressions and statements of unlimited length, (2) Execute existing functions from your project files using require("ModuleName").functionName() pattern, (3) Access ALL Google Apps Script services (DriveApp, SpreadsheetApp, GmailApp, etc.), (4) All Logger.log() output is automatically captured and returned. COMMONJS INTEGRATION: Use require("Utils").myFunction() to call functions from other project files - the CommonJS system resolves all dependencies automatically.',
-        minLength: 1,
-        examples: [
-          // Basic JavaScript and Math
-          'Math.PI * 2',
-          'new Date().toISOString()',
-          '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
-          'JSON.stringify({message: "Hello", timestamp: new Date()})',
-          
-          // Google Apps Script Services - Drive
-          'DriveApp.getRootFolder().getName()',
-          'DriveApp.getFiles().next().getName()',
-          'DriveApp.createFile("test.txt", "Hello World").getId()',
-          'DriveApp.getFilesByName("MyFile").hasNext()',
-          
-          // Google Apps Script Services - Spreadsheets
-          'SpreadsheetApp.create("My New Sheet").getId()',
-          'SpreadsheetApp.getActiveSheet().getRange("A1").setValue("Hello")',
-          'SpreadsheetApp.openById("your-sheet-id").getSheets().length',
-          
-          // Google Apps Script Services - Gmail
-          'GmailApp.getInboxThreads(0, 5).length',
-          'GmailApp.search("is:unread").length',
-          
-          // Google Apps Script Services - Calendar
-          'CalendarApp.getDefaultCalendar().getName()',
-          'CalendarApp.getAllCalendars().length',
-          
-          // Google Apps Script Services - Documents
-          'DocumentApp.create("New Doc").getId()',
-          
-          // Google Apps Script Services - Utilities
-          'Utilities.getUuid()',
-          'Utilities.base64Encode("Hello World")',
-          'Utilities.formatDate(new Date(), "GMT", "yyyy-MM-dd")',
-          
-          // Google Apps Script Services - Properties & Cache
-          'PropertiesService.getScriptProperties().getKeys().length',
-          'CacheService.getScriptCache().get("test")',
-          
-          // Google Apps Script Services - URL Fetch
-          'UrlFetchApp.fetch("https://api.github.com/zen").getContentText()',
-          
-          // Session and User Info
-          'Session.getActiveUser().getEmail()',
-          'Session.getTemporaryActiveUserKey()',
-          'Session.getScriptTimeZone()',
-          
-          // Execute functions from your project files via CommonJS require()
-          'require("Calculator").add(5, 3)',                    // Call add function from Calculator.js
-          'require("Utils").formatDate(new Date())',            // Call formatDate from Utils.js
-          'require("Database").getUserById(123)',               // Call getUserById from Database.js
-          'require("API").fetchWeatherData("New York")',        // Call fetchWeatherData from API.js
-          'require("MathLibrary").fibonacci(10)',               // Call fibonacci from MathLibrary.js
-          'const utils = require("Utils"); utils.processData([1,2,3,4,5])', // Store module reference
-          'const calc = require("Calculator"); calc.multiply(4, 6)',         // Chain multiple calls
-          
-          // Complex workflows combining project functions with GAS services
-          'const data = require("Utils").parseCSV("name,age\\nJohn,30"); SpreadsheetApp.create("Import").getActiveSheet().getRange(1,1,data.length,2).setValues(data)',
-          'const result = require("API").processPayment({amount: 100}); Logger.log("Payment result: " + JSON.stringify(result)); result.success',
-          
-          // Complex multi-line operations
-          'const sheet = SpreadsheetApp.create("Data Analysis"); const data = [[1,2,3],[4,5,6]]; sheet.getActiveSheet().getRange(1,1,2,3).setValues(data); return sheet.getId()',
-          
-          // Logger.log() output is automatically captured and returned
-          'Logger.log("Starting calculation..."); const result = 2 + 2; Logger.log("Result: " + result); result',
-          'Logger.log("Calling project function..."); const data = require("Utils").getData(); Logger.log("Retrieved " + data.length + " items"); data',
-          'Logger.log("Testing API integration"); const weather = require("API").getWeather("London"); Logger.log("Temperature: " + weather.temp); weather',
-          
-          // Error handling with comprehensive logging
-          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }',
-          'try { const user = require("Database").getUser(999); Logger.log("User found: " + user.name); return user; } catch(e) { Logger.log("User lookup failed: " + e.message); return null; }'
-        ]
-      },
-      ...SchemaFragments.scriptId,
-      autoRedeploy: {
-        type: 'boolean',
-        description: 'Enable automatic deployment infrastructure setup. FLEXIBLE OPTIONS: true (default) = auto-create deployments as needed, false = use existing deployments only, "force" = always create new deployment. Set to false for faster execution on pre-configured projects.',
-        default: true
-      },
-      executionTimeout: {
-        type: 'number',
-        description: 'Maximum execution timeout in seconds (default: 780 = 13 minutes). Set higher for long-running operations. Maximum: 3600 seconds (1 hour).',
-        default: 780,
-        minimum: 780,
-        maximum: 3600
-      },
-      responseTimeout: {
-        type: 'number', 
-        description: 'Maximum response reading timeout in seconds (default: 780 = 13 minutes). Set higher for large response payloads.',
-        default: 780,
-        minimum: 780,
-        maximum: 3600
-      },
-      workingDir: {
-        type: 'string',
-        description: 'Working directory (defaults to current directory)'
-      },
-      ...SchemaFragments.accessToken,
-      logFilter: {
-        type: 'string',
-        description: 'Optional regex pattern to filter logger_output lines (ripgrep-style). Only lines matching this pattern will be included. If not specified, all logger output is returned.',
-        examples: [
-          'ERROR|WARN',           // Show only error/warning lines
-          '^\\[.*\\]',             // Lines starting with brackets
-          'TODO|FIXME',           // Show TODO/FIXME comments
-          'result.*:',            // Lines with "result" followed by colon
-        ]
-      },
-      logTail: {
-        type: 'number',
-        description: 'Optional: Return only the last N lines of logger_output. Useful when logs are overwhelming. Applied after logFilter if both are specified.',
-        minimum: 1,
-        maximum: 10000,
-        examples: [10, 50, 100]
-      }
-    },
-    required: ['scriptId', 'js_statement'],
-    llmGuidance: {
-      whenToUse: 'Use for normal JavaScript execution with automatic deployment handling.',
-      workflow: 'Provide explicit script ID: gas_run({scriptId: "1arGk_0LU7E...", js_statement: "Math.sqrt(16)"}) for inline code or gas_run({scriptId: "1arGk_0LU7E...", js_statement: "require(\\"Calculator\\").add(5, 3)"}) for functions from files.',
-      prerequisites: [
-        'auth - Authenticate with auth({mode: "start"}) before first execution',
-        'Project exists - Use project_create to create new or project_list to find existing'
-      ],
-      nextSteps: [
-        'On SUCCESS: Check logger_output for debug info, consider version_create to snapshot working code',
-        'On FAILURE: Review error in response, check logger_output for stack traces',
-        'For testing changes: Run again after gas_write updates'
-      ],
-      alternatives: {
-        sameFeatures: 'gas_raw_run has identical functionality - both require explicit script IDs',
-        apiDeployments: 'exec_api - For functions deployed as API executables (requires prior deployment)',
-        interactiveDebug: 'Apps Script Editor - For step-by-step debugging with breakpoints'
-      },
-      errorRecovery: {
-        '__defineModule__ not defined': {
-          action: 'project_init({scriptId}) - Install CommonJS infrastructure',
-          reason: 'Project missing execution framework - common for scripts not created via project_create'
-        },
-        'Authentication required': {
-          action: 'auth({mode: "start"}) - Re-authenticate session',
-          reason: 'OAuth token expired or not authenticated'
-        },
-        'Execution timeout': {
-          action: 'Increase executionTimeout parameter (default 780s, max 3600s)',
-          reason: 'Long-running operations exceed timeout - adjust based on expected duration'
-        },
-        'Script not found': {
-          action: 'Verify scriptId with project_list or info tools',
-          reason: 'Invalid or inaccessible script ID'
-        }
-      },
-      scriptTypeCompatibility: {
-        standalone: 'Full Support - Works identically',
-        containerBound: 'Full Support - Works identically, automatically captures Logger.log() output',
-        notes: 'Execution works universally for both script types. This is the SOLUTION for debugging container-bound scripts.'
-      },
-      limitations: {
-        executionTime: 'Free tier: 6 minutes, Workspace: 30 minutes. Use executionTimeout parameter for long operations.',
-        requiresHeadDeployment: 'Automatically creates HEAD deployment (/dev URL) if needed',
-        memoryLimits: 'Subject to Google Apps Script memory quotas (varies by account type)'
-      },
-      executionCapabilities: {
-        arbitraryCode: 'Execute any JavaScript expressions, calculations, data processing of unlimited complexity',
-        projectFunctions: 'CALL YOUR PROJECT FUNCTIONS: Use require("Utils").myFunction() to execute functions from any file in your project',
-        commonJsIntegration: 'FULL MODULE SYSTEM: All dependencies resolved automatically, access to require(), module, exports throughout execution',
-        gasServices: 'ALL Google Apps Script services: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, and 20+ other services',
-        loggerCapture: 'ALL Logger.log() output automatically captured and returned - use for debugging, progress tracking, result logging',
-        logFiltering: 'Use logFilter for pattern-based filtering (ERROR|WARN), or logTail for last N lines (logTail: 50)',
-        overwhelmingLogs: 'When Logger.log() produces too much output, use logTail to see only recent lines or logFilter to find specific patterns'
-      },
-      executionPatterns: {
-        inlineCode: 'Direct execution: Math.PI * 2, new Date(), Session.getActiveUser().getEmail()',
-        builtinServices: 'Google Apps Script services: SpreadsheetApp.create(), DriveApp.getFiles()',
-        projectFunctions: 'Your project functions: require("Utils").formatDate(), require("Database").getUser(123)',
-        combinedWorkflows: 'Complex workflows: const data = require("API").getData(); SpreadsheetApp.create("Report").getActiveSheet().getRange(1,1,data.length,3).setValues(data)',
-        filterExamples: 'Common filters: "ERROR|WARN" (errors), "^\\[.*\\]" (bracketed lines), "result.*:" (result lines)'
-      }
-    },
-    responseSchema: {
-      type: 'object',
-      description: 'Response from gas_run execution with result and logger output',
-      properties: {
-        status: {
-          type: 'string',
-          enum: ['success', 'error'],
-          description: 'Execution status indicator'
-        },
-        result: {
-          description: 'The actual result of the JavaScript execution (any type)'
-        },
-        logger_output: {
-          type: 'string',
-          description: 'Logger output from console.log(), Logger.log(), and other logging. May include filter metadata if logFilter or logTail parameters were used. Includes module loading messages, debug output, and session logging.'
-        },
-        scriptId: {
-          type: 'string',
-          description: 'The Google Apps Script project ID that was executed'
-        },
-        js_statement: {
-          type: 'string',
-          description: 'The JavaScript statement that was executed'
-        },
-        executedAt: {
-          type: 'string',
-          format: 'date-time',
-          description: 'ISO timestamp of when the execution occurred'
-        },
-        error: {
-          type: 'object',
-          description: 'Error details (only present when status is "error")',
-          properties: {
-            type: { type: 'string', description: 'Error type/category' },
-            message: { type: 'string', description: 'Human-readable error message' },
-            originalError: { type: 'string', description: 'Original error message if available' }
-          }
-        }
-      },
-      required: ['status', 'result', 'logger_output', 'scriptId', 'js_statement', 'executedAt']
-    }
-  };
-
-  private gasClient: GASClient;
-
-  constructor(sessionAuthManager?: SessionAuthManager) {
-    super(sessionAuthManager);
-    this.gasClient = new GASClient();
-  }
-
-  async execute(params: any): Promise<any> {
-    const { LocalFileManager } = await import('../utils/localFileManager.js');
-    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
-    const js_statement = this.validate.string(params.js_statement, 'js_statement', 'JavaScript execution');
-    const autoRedeploy = params.autoRedeploy !== false;
-    const executionTimeout = Math.min(Math.max(params.executionTimeout || 780, 780), 3600); // 13m-1h range
-    const responseTimeout = Math.min(Math.max(params.responseTimeout || 780, 780), 3600); // 13m-1h range
-    const logFilter = params.logFilter; // Optional regex pattern for filtering logs
-    const logTail = params.logTail; // Optional number of lines to show from end
-
-    // Get auth token
-    const accessToken = await this.getAuthToken(params);
-
-    // Use script ID directly (no resolution needed)
-    const scriptId = params.scriptId;
-
-    // Create a raw tool instance to execute the actual logic
-    const rawTool = new ExecTool(this.sessionAuthManager);
-
-    return await rawTool.execute({
-      scriptId,
-      js_statement,
-      autoRedeploy,
-      executionTimeout,
-      responseTimeout,
-      accessToken,
-      logFilter,
-      logTail
-    });
-  }
-}
-
-
-/**
  * Execute functions in Google Apps Script projects via API executable
  * 
  * Requirements:
@@ -638,6 +360,18 @@ export class ExecTool extends BaseTool {
     type: 'object',
     properties: {
       ...SchemaFragments.scriptId,
+      environment: {
+        type: 'string',
+        enum: ['dev', 'staging', 'prod'],
+        description: 'Environment to execute code in (default: dev). dev: HEAD (always latest code), staging: Latest snapshot version, prod: Production deployed version.',
+        default: 'dev',
+        llmHints: {
+          dev: 'Executes on HEAD deployment - latest uncommitted code (default)',
+          staging: 'Executes on highest version number - latest snapshot',
+          prod: 'Executes on production deployment - stable version',
+          default: 'Defaults to dev if not specified'
+        }
+      },
       js_statement: {
         type: 'string',
         description: 'JavaScript statement to execute directly in Google Apps Script. COMPREHENSIVE EXECUTION CAPABILITIES: (1) Run arbitrary JavaScript expressions and statements of unlimited length, (2) Execute existing functions from your project files using require("ModuleName").functionName() pattern, (3) Access ALL Google Apps Script services (DriveApp, SpreadsheetApp, GmailApp, etc.), (4) All Logger.log() output is automatically captured and returned. COMMONJS INTEGRATION: Use require("Utils").myFunction() to call functions from other project files - the CommonJS system resolves all dependencies automatically.',
@@ -787,40 +521,12 @@ export class ExecTool extends BaseTool {
     required: ['scriptId', 'js_statement'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Ensure authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have a project: gas_project_create or get existing scriptId from gas_ls',
-        '3. Optional: Add code files with gas_write before execution'
-      ],
-      scriptTypeCompatibility: {
-        standalone: 'Full Support - Works identically',
-        containerBound: 'Full Support - Works identically, automatically captures Logger.log() output',
-        notes: 'Execution works universally for both script types. This is the SOLUTION for debugging container-bound scripts.'
-      },
-      limitations: {
-        executionTime: 'Free tier: 6 minutes, Workspace: 30 minutes. Use executionTimeout parameter for long operations.',
-        requiresHeadDeployment: 'Automatically creates HEAD deployment (/dev URL) if needed',
-        memoryLimits: 'Subject to Google Apps Script memory quotas (varies by account type)'
-      },
-      useCases: {
-        calculation: 'gas_run({scriptId: "...", js_statement: "Math.pow(2, 10)"})',
-        datetime: 'gas_run({scriptId: "...", js_statement: "new Date().toISOString()"})',
-        userInfo: 'gas_run({scriptId: "...", js_statement: "Session.getActiveUser().getEmail()"})',
-        customFunction: 'gas_run({scriptId: "...", js_statement: "require(\\"Calculator\\").add(5, 3)"})',
-        googleServices: 'gas_run({scriptId: "...", js_statement: "DriveApp.getRootFolder().getName()"})',
-        dataProcessing: 'gas_run({scriptId: "...", js_statement: "[1,2,3].map(x => x * 2).join(\',\')"})'
-      },
-      errorHandling: {
-        'AuthenticationError': 'Run auth to authenticate first',
-        'ScriptNotFound': 'Verify scriptId is correct and accessible',
-        'SyntaxError': 'Check JavaScript syntax in js_statement',
-        'RuntimeError': 'Check if required functions/services are available in project'
-      },
-      performance: {
-        firstRun: 'May take 3-5 seconds if autoRedeploy creates new deployment',
-        subsequentRuns: 'Typically 1-2 seconds for execution',
-        optimization: 'Complex operations benefit from being moved to project files'
-      }
+      prerequisites: ['auth: status→start if needed', 'project: create new | get scriptId via ls', 'optional: write files before exec'],
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support+Logger capture', notes: 'Universal solution - container-bound debug works'},
+      limitations: {executionTime: '6min free | 30min workspace (adjust executionTimeout)', requiresHeadDeployment: 'Auto-creates HEAD /dev URL', memoryLimits: 'GAS quotas (account-dependent)'},
+      useCases: {calc: 'Math.pow(2,10)', date: 'new Date().toISOString()', user: 'Session.getActiveUser().getEmail()', fn: 'require("Calculator").add(5,3)', svc: 'DriveApp.getRootFolder().getName()', data: '[1,2,3].map(x=>x*2).join(",")'},
+      errorHandling: {AuthenticationError: 'Run auth', ScriptNotFound: 'Verify scriptId', SyntaxError: 'Check js syntax', RuntimeError: 'Check functions/services exist'},
+      performance: {firstRun: '3-5s (deploy)', subsequentRuns: '1-2s', optimization: 'Complex ops→files'}
     },
     responseSchema: {
       type: 'object',
@@ -884,9 +590,60 @@ export class ExecTool extends BaseTool {
     }
   }
 
+  /**
+   * Environment tags for deployment identification (same as deployment.ts)
+   */
+  private readonly ENV_TAGS = {
+    dev: '[DEV]',
+    staging: '[STAGING]',
+    prod: '[PROD]'
+  } as const;
+
+  /**
+   * Find environment-specific deployment by description tag
+   */
+  private async findEnvironmentDeployment(
+    scriptId: string,
+    environment: 'dev' | 'staging' | 'prod',
+    accessToken: string
+  ): Promise<{ deploymentId: string; versionNumber: number | null; url: string | null } | null> {
+    try {
+      const deployments = await this.gasClient.listDeployments(scriptId, accessToken);
+      const envTag = this.ENV_TAGS[environment];
+
+      const deployment = deployments.find((d: any) => d.description?.includes(envTag));
+
+      if (!deployment) {
+        return null;
+      }
+
+      // Extract web app URL from deployment
+      let url: string | null = null;
+      if (deployment.entryPoints) {
+        const webAppEntry = deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+        url = webAppEntry?.webApp?.url || null;
+      }
+
+      return {
+        deploymentId: deployment.deploymentId,
+        versionNumber: deployment.versionNumber || null,
+        url
+      };
+    } catch (error: any) {
+      console.error(`[ENV LOOKUP] Failed to find ${environment} deployment: ${error.message}`);
+      return null;
+    }
+  }
+
   async execute(params: any): Promise<any> {
     // Optimistic approach: validate inputs first, then try without authentication
     const scriptId = this.validate.scriptId(params.scriptId, 'dynamic JS execution');
+    const environment = this.validate.enum(
+      params.environment || 'dev',
+      'environment',
+      ['dev', 'staging', 'prod'],
+      'code execution'
+    );
     const js_statement = this.validate.string(params.js_statement, 'JavaScript statement');
     const autoRedeploy = params.autoRedeploy !== false;
     const executionTimeout = Math.min(Math.max(params.executionTimeout || 780, 780), 3600); // 13m-1h range
@@ -900,13 +657,37 @@ export class ExecTool extends BaseTool {
 
     // Try operation first with provided access token (if any) or session auth
     let accessToken: string | null = null;
-    
+
     try {
       // First try: Use provided token or attempt to get from session (optimistic)
       accessToken = params.accessToken || await this.tryGetAuthToken();
 
+      // ENVIRONMENT-AWARE EXECUTION: Look up environment-specific deployment
+      let envDeployment = null;
+      if (accessToken) {
+        console.error(`[ENV EXECUTION] Looking up ${environment} deployment for execution...`);
+        envDeployment = await this.findEnvironmentDeployment(scriptId, environment, accessToken);
+
+        if (envDeployment) {
+          console.error(`[ENV EXECUTION] Found ${environment} deployment: ${envDeployment.deploymentId} (version: ${envDeployment.versionNumber || 'HEAD'})`);
+        } else {
+          console.error(`[ENV EXECUTION] No ${environment} deployment found, falling back to default behavior`);
+        }
+      }
+
       // PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
-      return await this.executeOptimistic(scriptId, js_statement, accessToken || '', executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail);
+      return await this.executeOptimistic(
+        scriptId,
+        js_statement,
+        accessToken || '',
+        executionTimeout,
+        responseTimeout,
+        autoRedeploy,
+        logFilter,
+        logTail,
+        environment,
+        envDeployment
+      );
     } catch (error: any) {
       // Check for authentication errors (401/403)
       const statusCode = error.statusCode || error.response?.status || error.data?.statusCode;
@@ -961,7 +742,7 @@ export class ExecTool extends BaseTool {
           console.error(`⚡ [OPTIMISTIC RETRY] Infrastructure exists (cached URL found), retrying without setup...`);
           // Try one more time before full infrastructure setup
           try {
-            return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail);
+            return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail, environment, null);
           } catch (retryError: any) {
             console.error(`[OPTIMISTIC RETRY FAILED] Proceeding with infrastructure setup: ${retryError.message}`);
           }
@@ -988,7 +769,7 @@ export class ExecTool extends BaseTool {
         await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager);
         
         // NEW: Retry logic for deployment delays with test function validation
-        return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout);
+        return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, logFilter, logTail, environment);
       }
       // Return structured error response with logger output if available
       return {
@@ -1010,7 +791,16 @@ export class ExecTool extends BaseTool {
    * Execute with retry logic for deployment delays
    * Tests with a simple function first, then retries the actual function
    */
-  private async executeWithDeploymentRetry(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780, logFilter?: string, logTail?: number): Promise<any> {
+  private async executeWithDeploymentRetry(
+    scriptId: string,
+    js_statement: string,
+    accessToken: string,
+    executionTimeout: number = 780,
+    responseTimeout: number = 780,
+    logFilter?: string,
+    logTail?: number,
+    environment: 'dev' | 'staging' | 'prod' = 'dev'
+  ): Promise<any> {
     const maxRetryDuration = 60000; // 60 seconds total
     const retryInterval = 2000; // 2 seconds between retries
     const startTime = Date.now();
@@ -1023,7 +813,7 @@ export class ExecTool extends BaseTool {
     while (Date.now() - startTime < maxRetryDuration) {
       try {
         // First try the actual function
-        return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
+        return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
       } catch (error: any) {
         const statusCode = error.statusCode || error.response?.status;
         
@@ -1042,7 +832,7 @@ export class ExecTool extends BaseTool {
             
             // Deployment is ready, try the actual function one more time
             try {
-              return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
+              return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
             } catch (actualError: any) {
               console.error(`[DEPLOYMENT RETRY] Actual function still failed after test succeeded`);
               console.error(`   Error: ${actualError.message}`);
@@ -1056,7 +846,7 @@ export class ExecTool extends BaseTool {
             if (testStatusCode === 200) {
               console.error(`[DEPLOYMENT TEST] HTTP 200 received, deployment is ready - retrying original function`);
               try {
-                return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail);
+                return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
               } catch (actualError: any) {
                 console.error(`[DEPLOYMENT RETRY] Original function failed even after HTTP 200 test: ${actualError.message}`);
                 throw actualError;
@@ -1230,37 +1020,56 @@ export class ExecTool extends BaseTool {
     return [404, 403, 500].includes(statusCode) || isHtmlError;
   }
 
-  private async executeOptimistic(scriptId: string, js_statement: string, accessToken: string, executionTimeout: number = 780, responseTimeout: number = 780, autoRedeploy: boolean = true, logFilter?: string, logTail?: number): Promise<any> {
+  private async executeOptimistic(
+    scriptId: string,
+    js_statement: string,
+    accessToken: string,
+    executionTimeout: number = 780,
+    responseTimeout: number = 780,
+    autoRedeploy: boolean = true,
+    logFilter?: string,
+    logTail?: number,
+    environment: 'dev' | 'staging' | 'prod' = 'dev',
+    envDeployment: { deploymentId: string; versionNumber: number | null; url: string | null } | null = null
+  ): Promise<any> {
     const startTime = Date.now();
-    
-    // PERFORMANCE OPTIMIZATION: Check cached deployment URL first
+
+    // ENVIRONMENT-AWARE URL: Use environment deployment URL if available
     let executionUrl: string | null = null;
-    if (this.sessionAuthManager) {
-      try {
-        executionUrl = await this.sessionAuthManager.getCachedDeploymentUrl(scriptId);
-        if (executionUrl) {
-          console.error(`⚡ [CACHE HIT] Using cached deployment URL for ${scriptId}: ${executionUrl}`);
-        }
-      } catch (cacheError: any) {
-        console.error(`[CACHE] Failed to check cached URL: ${cacheError.message}`);
-      }
-    }
-    
-    // If no cached URL, construct it (this is the expensive operation)
-    if (!executionUrl) {
-      console.error(`[CACHE MISS] Constructing deployment URL for ${scriptId}...`);
-      const urlConstructionStart = Date.now();
-      executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
-      const urlConstructionTime = Date.now() - urlConstructionStart;
-      console.error(`[URL CONSTRUCTION] Completed in ${urlConstructionTime}ms`);
-      
-      // Cache the URL for future use
-      if (this.sessionAuthManager && executionUrl) {
+
+    if (envDeployment && envDeployment.url) {
+      // Use the environment-specific deployment URL directly
+      executionUrl = envDeployment.url;
+      console.error(`🎯 [ENV URL] Using ${environment} deployment URL: ${executionUrl} (version: ${envDeployment.versionNumber || 'HEAD'})`);
+    } else {
+      // PERFORMANCE OPTIMIZATION: Check cached deployment URL first
+      if (this.sessionAuthManager) {
         try {
-          await this.sessionAuthManager.setCachedDeploymentUrl(scriptId, executionUrl);
-          console.error(`💾 [CACHE STORE] Deployment URL cached for future calls`);
+          executionUrl = await this.sessionAuthManager.getCachedDeploymentUrl(scriptId);
+          if (executionUrl) {
+            console.error(`⚡ [CACHE HIT] Using cached deployment URL for ${scriptId}: ${executionUrl}`);
+          }
         } catch (cacheError: any) {
-          console.error(`[CACHE] Failed to store URL: ${cacheError.message}`);
+          console.error(`[CACHE] Failed to check cached URL: ${cacheError.message}`);
+        }
+      }
+
+      // If no cached URL, construct it (this is the expensive operation)
+      if (!executionUrl) {
+        console.error(`[CACHE MISS] Constructing deployment URL for ${scriptId}...`);
+        const urlConstructionStart = Date.now();
+        executionUrl = await this.gasClient.constructGasRunUrl(scriptId, accessToken);
+        const urlConstructionTime = Date.now() - urlConstructionStart;
+        console.error(`[URL CONSTRUCTION] Completed in ${urlConstructionTime}ms`);
+
+        // Cache the URL for future use
+        if (this.sessionAuthManager && executionUrl) {
+          try {
+            await this.sessionAuthManager.setCachedDeploymentUrl(scriptId, executionUrl);
+            console.error(`💾 [CACHE STORE] Deployment URL cached for future calls`);
+          } catch (cacheError: any) {
+            console.error(`[CACHE] Failed to store URL: ${cacheError.message}`);
+          }
         }
       }
     }
@@ -1462,6 +1271,8 @@ export class ExecTool extends BaseTool {
             result: retryResult && typeof retryResult === 'object' && retryResult.result !== undefined ? retryResult.result : retryResult,
             logger_output: filteredOutput + metadata,
             executedAt: new Date().toISOString(),
+            environment: environment,
+            versionNumber: envDeployment?.versionNumber || null,
             cookieAuthUsed: true,
             ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
           });
@@ -1634,6 +1445,8 @@ export class ExecTool extends BaseTool {
             result: result.payload,
             logger_output: filteredOutput + metadata,
             executedAt: new Date().toISOString(),
+            environment: environment,
+            versionNumber: envDeployment?.versionNumber || null,
             ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
           });
         } else if (result.type === 'exception') {
@@ -1662,6 +1475,8 @@ export class ExecTool extends BaseTool {
         result: result && typeof result === 'object' && result.result !== undefined ? result.result : result,
         logger_output: filteredOutput + metadata,
         executedAt: new Date().toISOString(),
+        environment: environment,
+        versionNumber: envDeployment?.versionNumber || null,
         ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
       });
     } catch (error: any) {
