@@ -64,41 +64,41 @@ Local filesystem directories where:
 
 ## Tool Reference
 
-### Core Git Sync Tools (5 tools)
+### Core Git Sync Tools (2 tools - LOCAL-FIRST)
 
-1. **gas_git_init** - Initialize git association
-2. **gas_git_sync** - Bidirectional synchronization
-3. **gas_git_status** - Check association and sync state
-4. **gas_git_set_sync_folder** - Configure local sync location
-5. **gas_git_get_sync_folder** - Query sync location
+1. **local_sync** - Bidirectional synchronization (ALWAYS pull→merge→push)
+2. **config (action: get/set, type: sync_folder)** - Configure local sync location
 
-### gas_git_init
+**IMPORTANT:** `git_init` tool was removed. You must manually create `.git/config.gs` breadcrumb in GAS before using `local_sync`.
 
-Initialize Git association for a GAS project.
+### Manual Breadcrumb Creation (Required First Step)
+
+Before using local_sync, you MUST manually create `.git/config.gs` in your GAS project:
 
 ```typescript
-// Initialize with existing repo
-gas_git_init({
+// 1. Create .git/config.gs breadcrumb in GAS
+gas_write({
   scriptId: "1abc...",
-  repository: "https://github.com/user/repo.git",
-  branch: "main",
-  syncFolder: "/Users/user/gas-projects/my-project"
+  fileName: ".git/config.gs",
+  content: `[remote "origin"]
+\turl = https://github.com/user/repo.git
+[branch "main"]
+[sync]
+\tlocalPath = /Users/user/gas-projects/my-project`
 })
 
-// Response includes next steps
-{
-  success: true,
-  gitConfig: { ... },
-  syncFolder: "/Users/user/gas-projects/my-project",
-  recommendedNextSteps: [
-    "cd /Users/user/gas-projects/my-project",
-    "git clone https://github.com/user/repo.git .",
-    "gas_git_sync({ scriptId: '1abc...' })"
-  ]
-}
+// 2. Create local git repo
+// cd /Users/user/gas-projects/my-project
+// git init
+// git remote add origin https://github.com/user/repo.git
+
+// 3. Now you can use local_sync
+local_sync({
+  scriptId: "1abc..."
+})
 ```
 
-### gas_git_sync
+### local_sync (formerly local_sync)
 
 Perform safe pull-merge-push synchronization.
 
@@ -110,12 +110,12 @@ Perform safe pull-merge-push synchronization.
 
 ```typescript
 // Basic sync with defaults
-gas_git_sync({
+local_sync({
   scriptId: "1abc..."
 })
 
 // Advanced sync with options
-gas_git_sync({
+local_sync({
   scriptId: "1abc...",
   mergeStrategy: "theirs",  // ours|theirs|manual
   direction: "pull-only",   // sync|pull-only|push-only
@@ -141,23 +141,23 @@ gas_git_sync({
 }
 ```
 
-### gas_git_status
+### config (action: get, type: sync_folder) - Status Check
 
-Check Git association and sync status.
+Check Git association and sync folder status. **NOTE:** `config({action: "get", type: "sync_folder"})` tool was removed - use `config` instead.
 
 ```typescript
-gas_git_status({
+config({
+  action: "get",
+  type: "sync_folder",
   scriptId: "1abc..."
 })
 
-// Response shows association and differences
+// Response shows sync folder and git status
 {
-  hasGitAssociation: true,
-  gitConfig: { ... },
+  scriptId: "1abc...",
   syncFolder: "/Users/user/gas-projects/my-project",
-  localChanges: 3,
-  remoteChanges: 2,
-  conflicts: [],
+  exists: true,
+  isGitRepo: true,
   gitStatus: {
     branch: "main",
     ahead: 0,
@@ -167,8 +167,8 @@ gas_git_status({
     clean: false
   },
   recommendedNextSteps: [
-    "gas_git_sync({ scriptId: '1abc...' }) to synchronize",
-    "cd /Users/user/gas-projects/my-project && git status"
+    "cd /Users/user/gas-projects/my-project",
+    "git status"
   ]
 }
 ```
@@ -177,14 +177,14 @@ gas_git_status({
 - `ahead > 0`: Local commits need pushing → `git push`
 - `behind > 0`: Remote has new commits → `git pull`
 - `modified > 0`: Uncommitted changes → `git add && git commit`
-- `clean = true`: Ready for gas_git_sync
+- `clean = true`: Ready for local_sync
 
-### gas_git_set_sync_folder
+### gas_config (action: set, type: sync_folder)
 
 Set or update the sync folder for a project.
 
 ```typescript
-gas_git_set_sync_folder({
+gas_config (action: set, type: sync_folder)({
   scriptId: "1abc...",
   syncFolder: "/Users/user/new-location/project",
   moveExisting: true  // Physically move git repo
@@ -199,17 +199,17 @@ gas_git_set_sync_folder({
   recommendedNextSteps: [
     "cd /Users/user/new-location/project",
     "git remote -v  # Verify remotes preserved",
-    "gas_git_sync({ scriptId: '1abc...' })"
+    "local_sync({ scriptId: '1abc...' })"
   ]
 }
 ```
 
-### gas_git_get_sync_folder
+### gas_config (action: get, type: sync_folder)
 
 Query the sync folder for a project.
 
 ```typescript
-gas_git_get_sync_folder({
+gas_config (action: get, type: sync_folder)({
   scriptId: "1abc..."
 })
 
@@ -239,23 +239,27 @@ gh repo create owner/repo --public --clone           # GitHub CLI
 # OR
 mcp__github__create_repository({name: "repo"})       # GitHub MCP
 
-# 2. Initialize GAS-Git association
-gas_git_init({
+# 2. Manually create .git/config.gs breadcrumb in GAS
+gas_write({
   scriptId: "1abc...",
-  repository: "https://github.com/owner/repo.git",
-  branch: "main",
-  localPath: "~/projects/my-gas-app"
+  fileName: ".git/config.gs",
+  content: `[remote "origin"]
+\turl = https://github.com/owner/repo.git
+[branch "main"]
+[sync]
+\tlocalPath = ~/projects/my-gas-app`
 })
 
-# 3. Clone repository locally
+# 3. Create local git repo
 cd ~/projects
-git clone https://github.com/owner/repo.git my-gas-app
+mkdir my-gas-app && cd my-gas-app
+git init
+git remote add origin https://github.com/owner/repo.git
 
 # 4. Initial sync from GAS
-gas_git_sync({scriptId: "..."})  // Pulls GAS files to local
+local_sync({scriptId: "1abc..."})  // Pulls GAS files to local
 
 # 5. Commit and push
-cd ~/projects/my-gas-app
 git add -A
 git commit -m "Initial GAS project sync"
 git push -u origin main
@@ -264,18 +268,24 @@ git push -u origin main
 ### Workflow 2: Clone Existing Repo to GAS
 
 ```bash
-# 1. Initialize association
-gas_git_init({
+# 1. Manually create .git/config.gs breadcrumb
+gas_write({
   scriptId: "1abc...",
-  repository: "https://github.com/user/existing-repo.git"
+  fileName: ".git/config.gs",
+  content: `[remote "origin"]
+\turl = https://github.com/user/existing-repo.git
+[branch "main"]
+[sync]
+\tlocalPath = /Users/user/gas-projects/project-1abc`
 })
 
 # 2. Clone the repository
-cd /Users/user/gas-projects/project-1abc
-git clone https://github.com/user/existing-repo.git .
+cd /Users/user/gas-projects
+git clone https://github.com/user/existing-repo.git project-1abc
+cd project-1abc
 
 # 3. Sync to push to GAS
-gas_git_sync({scriptId: "1abc..."})
+local_sync({scriptId: "1abc..."})
 ```
 
 ### Workflow 3: Daily Development
@@ -284,13 +294,13 @@ gas_git_sync({scriptId: "1abc..."})
 // Morning: Pull latest changes
 cd ~/projects/my-gas-app
 git pull origin main                     // Get GitHub changes
-gas_git_sync({scriptId: "..."})         // Sync with GAS
+local_sync({scriptId: "..."})         // Sync with GAS
 
 // Work in GAS Editor...
 // Edit code in script.google.com
 
 // Evening: Sync back to git
-gas_git_sync({scriptId: "..."})         // Pull GAS changes
+local_sync({scriptId: "..."})         // Pull GAS changes
 git diff                                 // Review changes
 git add -A
 git commit -m "Feature: Added new functionality"
@@ -306,7 +316,7 @@ mcp__github__create_pull_request({...})
 
 ```bash
 # 1. Check current status
-gas_git_status({scriptId: "1abc..."})
+config({action: "get", type: "sync_folder", scriptId: "1abc..."})
 
 # 2. Create branch in sync folder
 cd /Users/user/gas-projects/project-1abc
@@ -316,7 +326,7 @@ git checkout -b feature/new-feature
 # ... edit files in GAS editor ...
 
 # 4. Sync to pull changes
-gas_git_sync({scriptId: "1abc..."})
+local_sync({scriptId: "1abc..."})
 
 # 5. Commit and push branch
 git add -A
@@ -339,7 +349,7 @@ mcp__github__create_pull_request({
 
 ```bash
 # 1. Attempt sync
-gas_git_sync({scriptId: "1abc..."})
+local_sync({scriptId: "1abc..."})
 # Returns: { conflicts: ["utils.js", "config.js"] }
 # Creates .git-gas/ folder with conflict files
 
@@ -351,7 +361,7 @@ vim config.js  # Edit conflicts
 
 # 3. Mark resolved and sync again
 git add utils.js config.js
-gas_git_sync({scriptId: "1abc...", mergeStrategy: "ours"})
+local_sync({scriptId: "1abc...", mergeStrategy: "ours"})
 
 # 4. Commit resolution
 git commit -m "Resolve merge conflicts"
@@ -362,7 +372,7 @@ git push
 
 ```typescript
 // Check project status
-gas_git_status({scriptId: "..."})       // Shows sync state
+config({action: "get", type: "sync_folder", scriptId: "..."})  // Shows sync state
 gh repo view --json defaultBranchRef    // Check GitHub
 mcp__github__get_repository({...})      // Detailed repo info
 
@@ -372,7 +382,7 @@ gh pr list                               // Open PRs
 mcp__github__list_pull_requests({...})  // PR details
 
 // Safe sync with conflict handling
-gas_git_sync({
+local_sync({
   scriptId: "...",
   mergeStrategy: "manual"               // Stop for manual resolution
 })
@@ -380,7 +390,7 @@ gas_git_sync({
 // After resolving conflicts
 git add -A
 git commit -m "Resolved merge conflicts"
-gas_git_sync({scriptId: "..."})         // Push resolved version
+local_sync({scriptId: "..."})         // Push resolved version
 ```
 
 ---
@@ -391,20 +401,20 @@ gas_git_sync({scriptId: "..."})         // Push resolved version
 
 **Standard Workflow:**
 ```bash
-git clone → gas_git_sync → git add/commit/push
+git clone → local_sync → git add/commit/push
 ```
 
 **Branch Management:**
 ```bash
-git checkout -b feature → develop → gas_git_sync
-git merge main → gas_git_sync → git push
+git checkout -b feature → develop → local_sync
+git merge main → local_sync → git push
 ```
 
 **Pre-sync Checks:**
 ```bash
 git status                     # Check local state
 git stash                      # Save uncommitted work
-gas_git_sync({scriptId: "..."})
+local_sync({scriptId: "..."})
 git diff                       # Review changes
 git add -A && git commit
 git push origin main
@@ -414,14 +424,14 @@ git push origin main
 
 **Repository Operations:**
 ```bash
-gh repo create → gas_git_init
+gh repo create → manually create .git/config.gs breadcrumb
 gh repo clone → sync folder setup
 ```
 
 **PR Workflow:**
 ```bash
-gas_git_sync → gh pr create
-gh pr merge → gas_git_sync
+local_sync → gh pr create
+gh pr merge → local_sync
 ```
 
 **Status Checks:**
@@ -434,12 +444,12 @@ gh run list  # Check workflows
 ### Integration with GitHub MCP Server
 
 **Repository Management:**
-- `mcp__github__create_repository` → `gas_git_init`
-- `mcp__github__get_repository` → `gas_git_status`
+- `mcp__github__create_repository` → manually create `.git/config.gs` breadcrumb
+- `mcp__github__get_repository` → `config({action: "get", type: "sync_folder"})`
 
 **Pull Request Workflow:**
-- `gas_git_sync` → `mcp__github__create_pull_request`
-- `mcp__github__list_pull_requests` → `gas_git_sync`
+- `local_sync` → `mcp__github__create_pull_request`
+- `mcp__github__list_pull_requests` → `local_sync`
 
 **File Comparison:**
 - `mcp__github__get_file_contents` ↔ GAS file contents
@@ -449,13 +459,13 @@ gh run list  # Check workflows
 
 ```typescript
 // 1. Check project state across all tools
-gas_git_status({scriptId: "..."})       // GAS sync state
+config({action: "get", type: "sync_folder"})({scriptId: "..."})       // GAS sync state
 git status                               // Local git state
 gh repo view                             // GitHub state
 mcp__github__get_repository({...})      // Detailed GitHub info
 
 // 2. Sync and review
-gas_git_sync({scriptId: "..."})
+local_sync({scriptId: "..."})
 git diff
 mcp__github__get_file_contents({...})  // Compare with GitHub
 
@@ -522,7 +532,7 @@ The sync system automatically handles special file transformations:
 
 ### 1. Always Check Status First
 ```typescript
-gas_git_status({scriptId: "..."})  // Before any operation
+config({action: "get", type: "sync_folder"})({scriptId: "..."})  // Before any operation
 git status                          // Local state
 gh repo view                        // Remote state
 ```
@@ -531,17 +541,17 @@ gh repo view                        // Remote state
 ```bash
 git add -A
 git commit -m "Save work before sync"
-gas_git_sync({scriptId: "..."})
+local_sync({scriptId: "..."})
 ```
 
 ### 3. Use Dry Run for Testing
 ```typescript
-gas_git_sync({scriptId: "...", dryRun: true})  // Preview changes
+local_sync({scriptId: "...", dryRun: true})  // Preview changes
 ```
 
 ### 4. Use Pull-Only for Safe Exploration
 ```typescript
-gas_git_sync({
+local_sync({
   scriptId: "...",
   direction: "pull-only"  // Safe exploration, no push
 })
@@ -563,13 +573,13 @@ jobs:
   sync:
     steps:
       - uses: actions/checkout@v2
-      - run: gas_git_sync({scriptId: "${{ secrets.GAS_SCRIPT_ID }}"})
+      - run: local_sync({scriptId: "${{ secrets.GAS_SCRIPT_ID }}"})
 ```
 
 ### 7. Use Branch Protection
 - Require PR reviews before merging to main
 - Run tests in CI before allowing merge
-- Use gas_git_sync in merge checks
+- Use local_sync in merge checks
 
 ---
 
@@ -579,20 +589,21 @@ jobs:
 
 | Issue | Solution |
 |-------|----------|
-| "No git association found" | Run `gas_git_init` first to create `.git.gs` file |
-| "Sync folder does not exist" | Check path with `gas_git_get_sync_folder` |
+| "No git association found" | Manually create `.git/config.gs` file in GAS using `gas_write` |
+| "No .git/config.gs breadcrumb found" | Create breadcrumb with `gas_write({fileName: ".git/config.gs", content: ...})` |
+| "Sync folder does not exist" | Check path with `config({action: "get", type: "sync_folder"})` |
 | "Merge conflicts detected" | Check `.git-gas/` folder for conflict files |
 | "Permission denied" | Check GAS permissions and OAuth scopes |
-| "Project not git-linked" | Run `gas_git_init` first |
-| "Behind remote" | Run `git pull` before `gas_git_sync` |
-| "Ahead of remote" | Run `git push` after `gas_git_sync` |
+| "Project not git-linked" | Create `.git/config.gs` breadcrumb first |
+| "Behind remote" | Run `git pull` before `local_sync` |
+| "Ahead of remote" | Run `git push` after `local_sync` |
 
 ### Error Handling & Recovery
 
 **Merge Conflicts:**
 ```bash
 # Conflict detected during sync
-gas_git_sync({scriptId: "..."})
+local_sync({scriptId: "..."})
 # → Creates .git-gas/ folder with conflict files
 
 # Manual resolution
@@ -602,20 +613,20 @@ git add .
 git commit -m "Resolved conflicts"
 
 # Retry sync
-gas_git_sync({scriptId: "..."})
+local_sync({scriptId: "..."})
 ```
 
 **Force Overwrite (Dangerous):**
 ```typescript
 // ⚠️ Take GAS version (lose local changes)
-gas_git_sync({
+local_sync({
   scriptId: "...",
   forceOverwrite: true,
   mergeStrategy: "theirs"
 })
 
 // ⚠️ Take local version (overwrite GAS)
-gas_git_sync({
+local_sync({
   scriptId: "...",
   forceOverwrite: true,
   mergeStrategy: "ours"
@@ -650,25 +661,29 @@ gas_git_sync({
 
 ## Multi-Project Support
 
-GAS projects can contain multiple git-enabled subprojects:
+GAS projects can contain multiple git-enabled subprojects by creating separate `.git/config.gs` files in different paths:
 
 ```typescript
-// Root project
-gas_git_init({
+// Root project - create .git/config.gs in root
+gas_write({
   scriptId: "...",
-  repository: "https://github.com/org/main.git",
-  projectPath: ""  // Root .git/
+  fileName: ".git/config.gs",
+  content: `[remote "origin"]
+\turl = https://github.com/org/main.git
+[branch "main"]`
 })
 
-// Subproject
-gas_git_init({
+// Subproject - create .git/config.gs in subdirectory
+gas_write({
   scriptId: "...",
-  repository: "https://github.com/org/library.git",
-  projectPath: "libs/shared"  // Creates libs/shared/.git/
+  fileName: "libs/shared/.git/config.gs",
+  content: `[remote "origin"]
+\turl = https://github.com/org/library.git
+[branch "main"]`
 })
 
 // Sync specific project
-gas_git_sync({
+local_sync({
   scriptId: "...",
   projectPath: "libs/shared"
 })

@@ -9,7 +9,7 @@ import { globalAuthState } from '../../setup/globalAuth.js';
  * Tests the three-tier verification strategy:
  * 1. project_create: Strict verification (fail on SHA mismatch)
  * 2. project_init: Configurable (warn when force=false, repair when force=true)
- * 3. gas_run: Best-effort (warn only, never block)
+ * 3. exec: Best-effort (warn only, never block)
  */
 describe('SHA Verification Integration Tests', function() {
   this.timeout(300000); // 5 minute timeout for integration tests
@@ -282,7 +282,7 @@ describe('SHA Verification Integration Tests', function() {
       // Corrupt the execution infrastructure
       console.log('🔧 Corrupting execution infrastructure...');
       await client.callTool('raw_write', {
-        path: `${execProjectId}/__mcp_gas_run`,
+        path: `${execProjectId}/__mcp_exec`,
         content: '// CORRUPTED EXECUTION INFRASTRUCTURE\nfunction badExec() { }',
         fileType: 'SERVER_JS',
         remoteOnly: true
@@ -331,7 +331,7 @@ describe('SHA Verification Integration Tests', function() {
 
       // Should reinstall
       expect(result).to.have.property('filesInstalled');
-      expect(result.filesInstalled).to.include('__mcp_gas_run');
+      expect(result.filesInstalled).to.include('__mcp_exec');
 
       // Should have no warnings
       expect(result.verificationWarnings.length).to.equal(0);
@@ -370,7 +370,7 @@ describe('SHA Verification Integration Tests', function() {
       });
 
       await client.callTool('raw_write', {
-        path: `${multiProjectId}/__mcp_gas_run`,
+        path: `${multiProjectId}/__mcp_exec`,
         content: '// CORRUPTED EXECUTION',
         fileType: 'SERVER_JS',
         remoteOnly: true
@@ -425,7 +425,7 @@ describe('SHA Verification Integration Tests', function() {
       // Should reinstall both files
       expect(result).to.have.property('filesInstalled');
       expect(result.filesInstalled).to.include('CommonJS');
-      expect(result.filesInstalled).to.include('__mcp_gas_run');
+      expect(result.filesInstalled).to.include('__mcp_exec');
 
       // Should have no warnings
       expect(result.verificationWarnings.length).to.equal(0);

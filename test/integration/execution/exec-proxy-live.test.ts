@@ -3,7 +3,7 @@ import { describe, it, before, after } from 'mocha';
 import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
-describe('MCP gas_run_proxy Live Test - globalThis Pattern', () => {
+describe('MCP exec_proxy Live Test - globalThis Pattern', () => {
   let client: InProcessTestClient;
   let auth: InProcessAuthHelper;
   let gas: InProcessGASTestHelper;
@@ -32,11 +32,11 @@ describe('MCP gas_run_proxy Live Test - globalThis Pattern', () => {
     // Note: Don't disconnect the shared global client here
   });
 
-  describe('gas_run_proxy with globalThis and auto-redeploy', () => {
+  describe('exec_proxy with globalThis and auto-redeploy', () => {
     it('should test complete workflow: setup → deploy → execute → validate known results', async function() {
       this.timeout(300000); // 5 minutes for complete test
 
-      console.log('\n🧪 Testing gas_run_proxy with globalThis pattern and auto-redeploy');
+      console.log('\n🧪 Testing exec_proxy with globalThis pattern and auto-redeploy');
 
       // STEP 1: AUTHENTICATION
       console.log('\n📋 STEP 1: Verify Authentication');
@@ -47,18 +47,18 @@ describe('MCP gas_run_proxy Live Test - globalThis Pattern', () => {
         
         // Test the tools are available
         const tools = await client.listTools();
-        const gasRunTool = tools.find(tool => tool.name === 'gas_run');
+        const gasRunTool = tools.find(tool => tool.name === 'exec');
         const gasProxySetupTool = tools.find(tool => tool.name === 'gas_proxy_setup');
         
         expect(gasRunTool).to.exist;
-        console.log('✅ gas_run tool available');
+        console.log('✅ exec tool available');
         
         expect(gasProxySetupTool).to.exist;
         console.log('✅ gas_proxy_setup tool available');
         
         // Test error handling without auth
         try {
-          await client.callTool('gas_run', {
+          await client.callTool('exec', {
             scriptId: 'test-script-id',
             code: 'function test() { return 42; }'
           });
@@ -68,7 +68,7 @@ describe('MCP gas_run_proxy Live Test - globalThis Pattern', () => {
           console.log('✅ Properly requires authentication');
         }
         
-        console.log('✅ gas_run infrastructure test completed');
+        console.log('✅ exec infrastructure test completed');
         console.log('ℹ️  Expected workflow: setup → deploy → execute → validate');
         console.log('ℹ️  Known test results: 15+27=42, 6×7=42, 5!=120, 2^10=1024');
         return;
@@ -87,7 +87,7 @@ describe('MCP gas_run_proxy Live Test - globalThis Pattern', () => {
         console.log(`✅ Created project: ${testProjectId}`);
       } catch (projectError: any) {
         console.log('⚠️  Could not create test project:', projectError.message);
-        console.log('✅ gas_run infrastructure test completed without live project');
+        console.log('✅ exec infrastructure test completed without live project');
         console.log('ℹ️  Would test: globalThis[functionName](...args) pattern');
         console.log('ℹ️  Would test: auto-redeploy and web app deployment');
         return;
@@ -218,12 +218,12 @@ function validateGlobalThisAccess() {
         console.log('✅ Created test functions with known results');
       } catch (writeError: any) {
         console.log('⚠️  Could not write test functions:', writeError.message);
-        console.log('✅ gas_run infrastructure test completed');
+        console.log('✅ exec infrastructure test completed');
         return;
       }
 
-      // STEP 5: TEST gas_run WITH AUTO-REDEPLOY
-      console.log('\n📋 STEP 5: Test gas_run with Auto-Redeploy');
+      // STEP 5: TEST exec WITH AUTO-REDEPLOY
+      console.log('\n📋 STEP 5: Test exec with Auto-Redeploy');
 
       try {
         // Test 1: Simple calculation (15 + 27 = 42)
@@ -234,7 +234,7 @@ function testSum() {
   return calculateKnownSum();
 }`;
 
-        const sumResult = await client.callAndParse('gas_run', {
+        const sumResult = await client.callAndParse('exec', {
           scriptId: testProjectId,
           code: sumTestCode,
           autoRedeploy: true
@@ -251,7 +251,7 @@ function testProduct() {
   return calculateKnownProduct();
 }`;
 
-        const productResult = await client.callAndParse('gas_run', {
+        const productResult = await client.callAndParse('exec', {
           scriptId: testProjectId,
           code: productTestCode,
           autoRedeploy: false // Test without redeploy since we just deployed
@@ -261,19 +261,19 @@ function testProduct() {
         console.log(`✅ Product test infrastructure working`);
 
         // Additional tests would continue here...
-        console.log('\n✅ gas_run with auto-redeploy pattern: WORKING');
+        console.log('\n✅ exec with auto-redeploy pattern: WORKING');
         console.log('✅ Auto-redeploy functionality: CONFIRMED');
         console.log('✅ Test function execution infrastructure: VERIFIED');
 
       } catch (proxyError: any) {
         console.log('⚠️  Execution failed:', proxyError.message);
-        console.log('✅ gas_run infrastructure test completed');
+        console.log('✅ exec infrastructure test completed');
         console.log('ℹ️  Infrastructure verified for function execution');
       }
     });
 
     it('should provide usage examples and patterns', () => {
-      console.log('\n📚 gas_run and gas_proxy_setup Usage Examples:');
+      console.log('\n📚 exec and gas_proxy_setup Usage Examples:');
       console.log('');
       console.log('```javascript');
       console.log('// 1. Set up proxy first');
@@ -283,15 +283,15 @@ function testProduct() {
       console.log('  overwrite: true');
       console.log('});');
       console.log('');
-      console.log('// 2. Execute functions with gas_run');
-      console.log('gas_run({');
+      console.log('// 2. Execute functions with exec');
+      console.log('exec({');
       console.log('  scriptId: "your-project-id",');
       console.log('  code: "function test() { return calculateSum(15, 27); }",');
       console.log('  autoRedeploy: true');
       console.log('});');
       console.log('');
       console.log('// 3. Function with complex parameters');
-      console.log('gas_run({');
+      console.log('exec({');
       console.log('  scriptId: "your-project-id",');
       console.log('  code: `');
       console.log('    function processData() {');
@@ -306,7 +306,7 @@ function testProduct() {
       console.log('');
       console.log('Key Features:');
       console.log('• gas_proxy_setup: Creates doGet() proxy infrastructure');
-      console.log('• gas_run: Executes functions with auto-redeploy');
+      console.log('• exec: Executes functions with auto-redeploy');
       console.log('• Auto-redeploy when files change');
       console.log('• Web App deployment for better doGet() support');
       console.log('• JSON responses with metadata');

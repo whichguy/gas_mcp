@@ -9,8 +9,7 @@ The MCP Gas server provides 5 core git synchronization tools that enable bidirec
 1. **git_init** - Initialize git association for a GAS project
 2. **git_sync** - Safe pull-merge-push synchronization workflow
 3. **git_status** - Check association and sync state
-4. **git_set_sync_folder** - Configure local sync folder location
-5. **git_get_sync_folder** - Query current sync folder location
+4. **config** - Configure and query settings (sync folder, etc.)
 
 ## Test Infrastructure
 

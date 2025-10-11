@@ -1029,49 +1029,13 @@ export class ProjectCreateTool extends BaseTool {
     required: ['title'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      typicalSequence: [
-        '1. Authenticate: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Create project: project_create({title: "My Project", localName: "my-project"})',
-        '3. Project automatically added to local config for easy reference',
-        '4. Use gas_project_set({project: "my-project"}) to start working',
-        '5. Add code: gas_write({path: "fileName", content: "..."}) - uses current project',
-        '6. Execute: gas_run({js_statement: "..."}) - uses current project'
-      ],
-      scriptTypeCompatibility: {
-        standalone: '✅ Creates standalone scripts (default behavior)',
-        containerBound: '⚠️  Cannot create container-bound scripts via API - use driveContainerTools or Apps Script UI',
-        notes: 'Creates standalone scripts only. For container-bound scripts, bind manually or use create_script tool.'
-      },
-      limitations: {
-        projectType: 'Only creates standalone scripts - cannot create container-bound scripts',
-        quotas: 'Subject to Google Apps Script project creation quotas (varies by account type)',
-        initialState: 'Creates project with CommonJS.js module system (2-param signature) automatically deployed - ready for code files'
-      },
-      returnValue: {
-        scriptId: 'Save this ID - required for direct API operations',
-        localName: 'Use this name with gas_project_set, gas_pull, gas_push, etc.',
-        webAppUrl: 'Initially null - created when first deployment is made',
-        driveUrl: 'Direct link to edit project in Apps Script editor'
-      },
-      nextSteps: [
-        'IMMEDIATE: Save scriptId from response - required for all operations',
-        'OPTIONAL: gas_project_set({project: "localName"}) to set as current project',
-        'ADD CODE: gas_write({scriptId, path: "fileName", content: "..."}) to add files',
-        'TEST CODE: gas_run({scriptId, js_statement: "..."}) to test execution',
-        'DEPLOY: deploy_create({scriptId}) for web app or API deployments'
-      ],
-      relatedTools: {
-        containerBoundAlternative: 'create_script - For creating container-bound scripts attached to Sheets/Docs/Forms',
-        projectManagement: 'project_list - List all configured projects, project_add - Add existing project to config',
-        codeManagement: 'gas_write - Add/update code files, gas_cat - Read existing files',
-        execution: 'gas_run - Execute JavaScript in the project',
-        deployment: 'version_create + deploy_create - Deploy to production'
-      },
-      errorHandling: {
-        'AuthenticationError': 'Run auth to authenticate first',
-        'PermissionError': 'Check Google Drive permissions and API access',
-        'QuotaExceeded': 'You may have reached project creation limits'
-      }
+      typicalSequence: ['1.auth→start if needed', '2.project_create({title,localName})', '3.auto-added to local config', '4.gas_project_set({project})→start working', '5.gas_write({path,content})→uses current', '6.gas_run({js_statement})→test exec'],
+      scriptTypeCompatibility: {standalone: 'Creates standalone (default)', containerBound: 'Cannot create container-bound via API→use driveContainerTools|UI', notes: 'Standalone only→container-bound: bind manually|create_script'},
+      limitations: {projectType: 'standalone only (no container-bound)', quotas: 'subject to GAS quota (varies)', initialState: 'CommonJS.js (2-param) auto-deployed→ready for code'},
+      returnValue: {scriptId: 'SAVE→required for all ops', localName: 'use with gas_project_set|pull|push', webAppUrl: 'null initially→created on first deploy', driveUrl: 'direct link→Apps Script editor'},
+      nextSteps: ['IMMEDIATE: save scriptId', 'OPTIONAL: gas_project_set({project:localName})', 'ADD CODE: gas_write({scriptId,path,content})', 'TEST: gas_run({scriptId,js_statement})', 'DEPLOY: deploy_create({scriptId})'],
+      relatedTools: {containerBoundAlternative: 'create_script→Sheets/Docs/Forms bound', projectManagement: 'project_list|project_add', codeManagement: 'gas_write|gas_cat', execution: 'gas_run', deployment: 'version_create+deploy_create'},
+      errorHandling: {AuthenticationError: 'auth→start first', PermissionError: 'check Drive perms+API access', QuotaExceeded: 'reached project creation limit'}
     }
   };
 
@@ -1106,25 +1070,9 @@ export class ProjectCreateTool extends BaseTool {
       // Create the CommonJS.js file
       const shimResult = await this.create0ShimFile(project.scriptId, accessToken);
 
-      // Initialize git for the project (following git sync pattern)
-      let gitInitResult: any = { success: false };
-      try {
-        const { GitInitTool } = await import('./gitSync.js');
-        const gitInitTool = new GitInitTool(this.sessionAuthManager);
-        
-        gitInitResult = await gitInitTool.execute({
-          scriptId: project.scriptId,
-          repository: params.repository || 'local',
-          branch: 'main',
-          includeReadme: true,
-          accessToken
-        });
-        console.error(`✅ [GAS_PROJECT_CREATE] Git initialized for project`);
-      } catch (error: any) {
-        console.error(`⚠️ [GAS_PROJECT_CREATE] Failed to initialize git: ${error.message}`);
-        gitInitResult.error = error.message;
-      }
-      
+      // Git initialization removed - users must manually create .git/config.gs breadcrumb
+      // See local_sync tool documentation for git workflow
+
       // Add to local configuration
       let localConfigResult = false;
       const localName = params.localName || this.generateLocalName(title);
@@ -1141,24 +1089,18 @@ export class ProjectCreateTool extends BaseTool {
         scriptId: project.scriptId,
         title: project.title,
         localName,
-        gitInitialized: gitInitResult.success,
-        gitSyncFolder: gitInitResult.syncFolder,
-        repository: gitInitResult.repository || params.repository || 'local',
         addedToLocalConfig: localConfigResult,
         createTime: project.createTime,
         updateTime: project.updateTime,
         parentId: project.parentId,
         shimCreated: shimResult.success,
-        instructions: `Project created with CommonJS module system. Git sync initialized at: ${gitInitResult.syncFolder || '~/gas-repos/project-' + project.scriptId}. Files will be automatically synced between GAS and local git repository.`
+        instructions: `Project created with CommonJS module system. For git sync, manually create .git/config.gs breadcrumb in GAS and use local_sync tool. See local_sync documentation for workflow.`
       };
 
       // Add debug info if there were errors
       if (!shimResult.success) {
         result.shimError = shimResult.error;
         result.shimDebug = shimResult.debug;
-      }
-      if (gitInitResult.error) {
-        result.gitInitError = gitInitResult.error;
       }
 
       return result;
@@ -1291,53 +1233,14 @@ export class ProjectInitTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      whenToUse: [
-        'When gas_run fails with "__defineModule__ is not defined"',
-        'When working with projects not created via project_create',
-        'When execution infrastructure is missing from existing projects',
-        'When require() or module.exports are not working in a project'
-      ],
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have valid scriptId from existing project (use gas_ls to find projects)'
-      ],
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'Infrastructure initialization works universally for both script types.'
-      },
-      shaVerification: {
-        algorithm: 'Git-compatible SHA-1 using blob format: sha1("blob " + size + "\\0" + content)',
-        forcefalse: 'Verifies files and warns on SHA mismatch without auto-repair (preserves existing files)',
-        forcetrue: 'Verifies files and auto-repairs SHA mismatches by reinstalling infrastructure',
-        warningLocation: 'Warnings appear in verificationWarnings array when force=false',
-        compatibility: 'SHA format matches git hash-object output for local verification'
-      },
-      limitations: {
-        existingFiles: 'By default preserves existing files - use force: true to overwrite',
-        manifestUpdates: 'Updates appsscript.json manifest with standard configuration',
-        noRollback: 'Partial installations possible if errors occur - check filesInstalled and errors in response'
-      },
-      useCases: {
-        basicInit: 'project_init({scriptId: "..."}) - Install all infrastructure',
-        commonJSOnly: 'project_init({scriptId: "...", includeExecutionInfrastructure: false}) - Only CommonJS',
-        executionOnly: 'project_init({scriptId: "...", includeCommonJS: false}) - Only execution infrastructure',
-        verifyOnly: 'project_init({scriptId: "...", force: false}) - Check SHA integrity, warn on mismatch (default)',
-        autoRepair: 'project_init({scriptId: "...", force: true}) - Auto-repair SHA mismatches by reinstalling'
-      },
-      returnValue: {
-        status: 'Initialization result (success/partial/failed)',
-        scriptId: 'The project ID that was initialized',
-        filesInstalled: 'List of files that were installed/updated',
-        filesSkipped: 'List of files that were skipped (already exist)',
-        verificationWarnings: 'SHA verification warnings when force=false and SHA mismatches detected',
-        errors: 'Any errors encountered during initialization'
-      },
-      nextSteps: [
-        'Test with gas_run({scriptId: "...", js_statement: "Math.PI * 2"})',
-        'Create modules with proper __defineModule__(_main) pattern',
-        'Use require("ModuleName") to import modules'
-      ]
+      whenToUse: ['gas_run fails "__defineModule__ not defined"|projects not via project_create|missing exec infra|require()/module.exports broken'],
+      prerequisites: ['1.auth→start if needed', '2.scriptId from existing (gas_ls)'],
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal infra init'},
+      shaVerification: {algorithm: 'Git SHA-1: sha1("blob "+size+"\\0"+content)', forcefalse: 'verify+warn on mismatch (no repair, preserves)', forcetrue: 'verify+auto-repair mismatch (reinstall)', warningLocation: 'verificationWarnings[] when force=false', compatibility: 'matches git hash-object'},
+      limitations: {existingFiles: 'default preserve→force:true overwrite', manifestUpdates: 'updates appsscript.json', noRollback: 'partial possible→check filesInstalled+errors'},
+      useCases: {basicInit: 'project_init({scriptId})', commonJSOnly: 'project_init({scriptId,includeExecutionInfrastructure:false})', executionOnly: 'project_init({scriptId,includeCommonJS:false})', verifyOnly: 'project_init({scriptId,force:false})→SHA check+warn', autoRepair: 'project_init({scriptId,force:true})→SHA auto-repair'},
+      returnValue: {status: 'success|partial|failed', scriptId: 'initialized project ID', filesInstalled: 'installed/updated list', filesSkipped: 'existing skipped list', verificationWarnings: 'SHA warnings (force=false+mismatch)', errors: 'error list'},
+      nextSteps: ['gas_run({scriptId,js_statement:"Math.PI*2"})', '__defineModule__(_main) pattern', 'require("ModuleName")']
     }
   };
 

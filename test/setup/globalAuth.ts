@@ -24,7 +24,7 @@ export const globalAuthState = GlobalAuthState.getInstance();
 
 export const mochaHooks = {
   async beforeAll(this: any) {
-    this.timeout(130000); // Long timeout for potential manual auth
+    this.timeout(600000); // 10 minutes timeout for OAuth + project creation
     console.log('\n🌟 ===== GLOBAL TEST SETUP: ONE SERVER, ONE AUTH =====');
 
     // 0. TERMINATE any background MCP servers to avoid conflicts

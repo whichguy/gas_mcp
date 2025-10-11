@@ -75,45 +75,12 @@ export class LogsListTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have valid scriptId from gas_project_create or gas_ls',
-        '3. ⚠️ Script MUST be standalone with standard GCP project - container-bound scripts NOT supported'
-      ],
-      limitations: {
-        containerBound: '❌ Container-bound scripts (attached to Sheets/Docs/Forms) do NOT have accessible Cloud Logging. Cloud Logging API rejects their parentId with "invalid resource name" error.',
-        solution: '✅ For container-bound scripts: Use gas_run which automatically captures Logger.log() output in logger_output field',
-        historicalOnly: 'This tool retrieves historical logs only - for real-time logging use gas_run'
-      },
-      alternatives: {
-        containerBoundLogging: {
-          tool: 'gas_run',
-          usage: 'gas_run({scriptId, js_statement: "Logger.log(\'debug\'); yourCode()"})',
-          benefit: 'Automatically captures ALL Logger.log() output in logger_output field',
-          why: 'Real-time logging works universally for both standalone AND container-bound scripts'
-        },
-        realtimeLogging: {
-          tool: 'gas_run',
-          usage: 'Wrap code with Logger.log() statements for debugging',
-          benefit: 'Immediate feedback without waiting for Cloud Logging propagation'
-        }
-      },
-      nextSteps: [
-        'On SUCCESS: Use logs_get({scriptId, processId}) to retrieve detailed logs for specific process',
-        'On FAILURE (container-bound): Switch to gas_run for real-time logging',
-        'For analysis: Use process_list to see broader execution trends'
-      ],
-      useCases: {
-        recentErrors: 'logs_list({scriptId: "...", functionName: "myFunc", minutes: 15, statusFilter: "FAILED"})',
-        debugging: 'logs_list({scriptId: "...", functionName: "processData", minutes: 30})',
-        monitoring: 'logs_list({scriptId: "...", minutes: 60, statusFilter: "ALL"})',
-        historical: 'logs_list({scriptId: "...", timeRange: {start: "2024-01-01T00:00:00Z", end: "2024-01-01T23:59:59Z"}})',
-        containerBoundAlternative: '⚠️ For container-bound scripts, use gas_run({scriptId: "...", js_statement: "Logger.log(\'debug\'); yourFunction()"}) instead'
-      },
-      performance: {
-        fast: 'Including functionName uses optimized Cloud Logging-first query',
-        fallback: 'Without functionName, uses Process API first (slower but comprehensive)'
-      }
+      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls', '3.standalone+GCP only (NOT container-bound)'],
+      limitations: {containerBound: 'Container-bound (Sheets/Docs/Forms)→Cloud Logging API rejects', solution: 'gas_run→auto-captures Logger.log() in logger_output', historicalOnly: 'historical logs only→gas_run for realtime'},
+      alternatives: {containerBoundLogging: {tool: 'gas_run', usage: 'gas_run({scriptId,js_statement:"Logger.log(\'debug\');yourCode()"})', benefit: 'auto-captures ALL Logger.log()', why: 'universal standalone+container-bound'}, realtimeLogging: {tool: 'gas_run', usage: 'wrap with Logger.log() for debug', benefit: 'immediate feedback (no Cloud Logging delay)'}},
+      nextSteps: ['SUCCESS→logs_get({scriptId,processId})→detailed logs', 'FAILURE (container-bound)→gas_run realtime', 'analysis→process_list for trends'],
+      useCases: {recentErrors: 'logs_list({scriptId:"...",functionName:"myFunc",minutes:15,statusFilter:"FAILED"})', debugging: 'logs_list({scriptId:"...",functionName:"processData",minutes:30})', monitoring: 'logs_list({scriptId:"...",minutes:60,statusFilter:"ALL"})', historical: 'logs_list({scriptId:"...",timeRange:{start:"2024-01-01T00:00:00Z",end:"2024-01-01T23:59:59Z"}})', containerBoundAlternative: 'container-bound→gas_run({scriptId:"...",js_statement:"Logger.log(\'debug\');yourFunction()"})'},
+      performance: {fast: 'functionName→Cloud Logging-first (optimized)', fallback: 'no functionName→Process API first (slower,comprehensive)'}
     }
   };
 
@@ -198,27 +165,10 @@ export class LogsGetTool extends BaseTool {
     required: ['scriptId', 'processId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have processId from logs_list or process_list',
-        '3. ⚠️ Script MUST be standalone with standard GCP project - container-bound scripts NOT supported'
-      ],
-      limitations: {
-        containerBound: '❌ Container-bound scripts (attached to Sheets/Docs/Forms) do NOT have accessible Cloud Logging. Cloud Logging API rejects their parentId with "invalid resource name" error.',
-        solution: '✅ For container-bound scripts: Use gas_run which automatically captures Logger.log() output in logger_output field',
-        historicalOnly: 'This tool retrieves historical logs only - for real-time logging use gas_run'
-      },
-      useCases: {
-        debugging: 'logs_get({scriptId: "...", processId: "..."}) - Get all logs for failed execution',
-        analysis: 'logs_get({scriptId: "...", processId: "...", includeMetadata: true}) - Full execution context',
-        logsOnly: 'logs_get({scriptId: "...", processId: "...", includeMetadata: false}) - Just console output',
-        containerBoundAlternative: '⚠️ For container-bound scripts, use gas_run({scriptId: "...", js_statement: "Logger.log(\'debug\'); yourFunction()"}) instead'
-      },
-      returnValue: {
-        logs: 'Array of log entries with timestamp, severity, message',
-        metadata: 'Process info (function, status, duration) if includeMetadata: true',
-        totalLogs: 'Total count of log entries retrieved'
-      }
+      prerequisites: ['1.auth→start if needed', '2.processId from logs_list|process_list', '3.standalone+GCP only (NOT container-bound)'],
+      limitations: {containerBound: 'Container-bound→Cloud Logging API rejects', solution: 'gas_run→auto-captures Logger.log()', historicalOnly: 'historical only→gas_run for realtime'},
+      useCases: {debugging: 'logs_get({scriptId:"...",processId:"..."})→all logs for failed exec', analysis: 'logs_get({scriptId:"...",processId:"...",includeMetadata:true})→full context', logsOnly: 'logs_get({scriptId:"...",processId:"...",includeMetadata:false})→console only', containerBoundAlternative: 'container-bound→gas_run({scriptId:"...",js_statement:"Logger.log(\'debug\');yourFunction()"})'},
+      returnValue: {logs: 'Array: timestamp,severity,message', metadata: 'Process: function,status,duration (if includeMetadata:true)', totalLogs: 'Total log entries count'}
     }
   };
 

@@ -31,37 +31,18 @@ export class RawWriteTool extends BaseFileSystemTool {
           'abc123def456.../models/User',
           'abc123def456.../appsscript'
         ],
-        llmHints: {
-          format: 'scriptId/filename (no extension)',
-          extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON',
-          organization: 'Use "/" in filename for logical organization (not real folders)',
-          specialFiles: 'appsscript.json MUST be in root: scriptId/appsscript (never scriptId/subfolder/appsscript)',
-          warning: 'This tool OVERWRITES the entire file - use write for safer merging',
-          autoDetection: 'File type detected from content: JavaScript, HTML, JSON'
-        }
+        llmHints: {format: 'scriptId/filename (no extension)', extensions: 'Tool automatically adds .gs for JavaScript, .html for HTML, .json for JSON', organization: 'Use "/" in filename for logical organization (not real folders)', specialFiles: 'appsscript.json MUST be in root: scriptId/appsscript (never scriptId/subfolder/appsscript)', warning: 'This tool OVERWRITES the entire file - use write for safer merging', autoDetection: 'File type detected from content: JavaScript, HTML, JSON'}
       },
       content: {
         ...CONTENT_SCHEMA,
         description: 'File content to write. ⚠️ WARNING: This content will COMPLETELY REPLACE the existing file. LLM FLEXIBILITY: Supports JavaScript/Apps Script, HTML, JSON. Content type automatically detected for proper file extension.',
-        llmHints: {
-          javascript: 'Apps Script functions, ES6+ syntax, Google services (SpreadsheetApp, etc.)',
-          html: 'HTML templates for web apps, can include CSS and JavaScript',
-          json: 'Configuration files like appsscript.json for project settings',
-          limits: 'File size limits enforced by Google Apps Script API',
-          encoding: 'UTF-8 encoding, supports international characters',
-          danger: 'This content will OVERWRITE the entire remote file - existing content will be lost'
-        }
+        llmHints: {javascript: 'Apps Script functions, ES6+ syntax, Google services (SpreadsheetApp, etc.)', html: 'HTML templates for web apps, can include CSS and JavaScript', json: 'Configuration files like appsscript.json for project settings', limits: 'File size limits enforced by Google Apps Script API', encoding: 'UTF-8 encoding, supports international characters', danger: 'This content will OVERWRITE the entire remote file - existing content will be lost'}
       },
       position: {
         type: 'number',
         description: 'File execution order position (0-based). LLM USE: Controls order in Apps Script editor and execution sequence. Lower numbers execute first.',
         minimum: 0,
-        llmHints: {
-          execution: 'Lower numbers execute first in Apps Script runtime',
-          organization: 'Use for dependencies: utilities first (0), main code later (1,2,3)',
-          optional: 'Omit to append at end of file list',
-          reordering: 'Use reorder tool to change position later'
-        }
+        llmHints: {execution: 'Lower numbers execute first in Apps Script runtime', organization: 'Use for dependencies: utilities first (0), main code later (1,2,3)', optional: 'Omit to append at end of file list', reordering: 'Use reorder tool to change position later'}
       },
       fileType: {
         ...FILE_TYPE_SCHEMA,
@@ -74,53 +55,13 @@ export class RawWriteTool extends BaseFileSystemTool {
     required: ['path', 'content', 'fileType'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Project exists: Have scriptId from project_create or ls',
-        '3. ⚠️ VERIFY: You intend to COMPLETELY OVERWRITE the target file'
-      ],
-      dangerWarning: {
-        behavior: 'This tool CLOBBERS (completely overwrites) remote files without merging',
-        consequence: 'Any existing content in the target file will be PERMANENTLY LOST',
-        recommendation: 'Use write instead for safe merging of local and remote content',
-        useCase: 'Only use raw_write when you explicitly intend to replace entire file contents'
-      },
-      saferAlternative: {
-        tool: 'write',
-        benefits: [
-          'Intelligent merging of local and remote file content',
-          'Preserves existing code while adding new content',
-          'Safer for collaborative development',
-          'Same path format but with merge protection'
-        ],
-        when: 'Use write for most file writing operations unless you specifically need to clobber files'
-      },
-      useCases: {
-        newFile: 'Creating completely new files from scratch',
-        replace: 'Intentionally replacing entire file contents',
-        bulk: 'Bulk operations where clobbering is intended',
-        config: 'Replacing configuration files like appsscript.json',
-        avoid: '⚠️ AVOID for: Updating existing files, collaborative editing, preserving content'
-      },
-      fileTypes: {
-        javascript: 'Content with functions → .gs file (SERVER_JS type)',
-        html: 'Content with HTML tags → .html file (HTML type)',
-        json: 'Content with JSON format → .json file (JSON type)'
-      },
-      bestPractices: [
-        '⚠️ CRITICAL: Only use when you intend to completely replace file contents',
-        'Consider write for safer merging operations',
-        'Use descriptive filenames that indicate purpose',
-        'Organize related functions in same file',
-        'Put utility functions in separate files at position 0',
-        'Use logical "/" paths for organization: utils/helpers, models/User'
-      ],
-      afterWriting: [
-        'Use run to execute functions from this file',
-        'Use cat to verify file was written correctly',
-        'Use ls to see file in project structure',
-        '⚠️ Verify that file clobbering was intentional'
-      ]
+      prerequisites: ['1.auth({mode:"status"})→auth({mode:"start"}) if needed', '2.project: create new|get scriptId via ls', '3.⚠️ VERIFY: You intend to COMPLETELY OVERWRITE the target file'],
+      dangerWarning: {behavior: 'This tool CLOBBERS (completely overwrites) remote files without merging', consequence: 'Any existing content in the target file will be PERMANENTLY LOST', recommendation: 'Use write instead for safe merging of local and remote content', useCase: 'Only use raw_write when you explicitly intend to replace entire file contents'},
+      saferAlternative: {tool: 'write', benefits: ['Intelligent merging of local and remote file content', 'Preserves existing code while adding new content', 'Safer for collaborative development', 'Same path format but with merge protection'], when: 'Use write for most file writing operations unless you specifically need to clobber files'},
+      useCases: {newFile: 'Creating completely new files from scratch', replace: 'Intentionally replacing entire file contents', bulk: 'Bulk operations where clobbering is intended', config: 'Replacing configuration files like appsscript.json', avoid: '⚠️ AVOID for: Updating existing files, collaborative editing, preserving content'},
+      fileTypes: {javascript: 'Content with functions → .gs file (SERVER_JS type)', html: 'Content with HTML tags → .html file (HTML type)', json: 'Content with JSON format → .json file (JSON type)'},
+      bestPractices: ['⚠️ CRITICAL: Only use when you intend to completely replace file contents', 'Consider write for safer merging operations', 'Use descriptive filenames that indicate purpose', 'Organize related functions in same file', 'Put utility functions in separate files at position 0', 'Use logical "/" paths for organization: utils/helpers, models/User'],
+      afterWriting: ['Use run to execute functions from this file', 'Use cat to verify file was written correctly', 'Use ls to see file in project structure', '⚠️ Verify that file clobbering was intentional']
     }
   };
 

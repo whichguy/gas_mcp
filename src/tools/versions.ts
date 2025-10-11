@@ -29,37 +29,12 @@ export class VersionGetTool extends BaseTool {
     required: ['scriptId', 'versionNumber'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have valid scriptId from gas_project_create or gas_ls',
-        '3. Version must exist (use version_list to see available versions)'
-      ],
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'Version management works universally for both script types.'
-      },
-      limitations: {
-        versionCreation: 'Versions are immutable snapshots - cannot be edited after creation',
-        versionLimit: 'Project version limit depends on account type (typically 50-100 versions)',
-        fileContentAccess: 'version_get returns metadata only - use gas_cat to read actual file contents'
-      },
-      useCases: {
-        codeReview: 'version_get({scriptId: "...", versionNumber: 5}) - Review specific version code',
-        comparison: 'version_get for multiple versions to compare changes',
-        deployment: 'version_get to verify version before deployment'
-      },
-      errorHandling: {
-        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
-        'ScriptNotFound': 'Verify scriptId is correct and accessible',
-        'VersionNotFound': 'Version number may not exist, use version_list to see available versions'
-      },
-      returnValue: {
-        versionNumber: 'The version number requested',
-        description: 'Version description/changelog',
-        createTime: 'When this version was created',
-        fileCount: 'Number of files in this version'
-      }
+      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls', '3.version exists (version_list)'],
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal version mgmt'},
+      limitations: {versionCreation: 'immutable snapshots→no edit after', versionLimit: 'account-dependent (50-100 typical)', fileContentAccess: 'metadata only→gas_cat for content'},
+      useCases: {codeReview: 'version_get({scriptId,versionNumber:5})', comparison: 'multiple version_get→compare', deployment: 'version_get→verify before deploy'},
+      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', VersionNotFound: 'version_list→see available'},
+      returnValue: {versionNumber: 'requested version num', description: 'version description/changelog', createTime: 'creation timestamp', fileCount: 'file count in version'}
     }
   };
 
@@ -119,39 +94,13 @@ export class VersionListTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have valid scriptId from gas_project_create or gas_ls'
-      ],
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'Version listing works universally for both script types.'
-      },
-      limitations: {
-        pagination: 'Returns up to pageSize versions per call - use pageToken for additional pages',
-        sortOrder: 'Versions returned in reverse chronological order (newest first)',
-        metadataOnly: 'Returns version metadata only - use version_get for detailed info'
-      },
-      useCases: {
-        history: 'version_list({scriptId: "..."}) - See complete version history',
-        deployment: 'version_list to select version for gas_deploy_create',
-        comparison: 'version_list to identify versions for comparison'
-      },
-      errorHandling: {
-        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
-        'ScriptNotFound': 'Verify scriptId is correct and accessible',
-        'NoVersions': 'Project may not have any saved versions yet (use gas_version_create)'
-      },
-      returnValue: {
-        versions: 'Array of version objects with version numbers and metadata',
-        totalCount: 'Total number of versions available',
-        nextPageToken: 'Token for next page if more versions exist'
-      },
-      nextSteps: [
-        'Use version_get to examine specific version details',
-        'Use gas_deploy_create with versionNumber to deploy specific version'
-      ]
+      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls'],
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal version listing'},
+      limitations: {pagination: 'pageSize per call→pageToken for more', sortOrder: 'reverse chronological (newest first)', metadataOnly: 'metadata only→version_get for detail'},
+      useCases: {history: 'version_list({scriptId})', deployment: 'version_list→select for deploy_create', comparison: 'version_list→identify versions→compare'},
+      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', NoVersions: 'no saved versions→gas_version_create'},
+      returnValue: {versions: 'Array: version objects+nums+metadata', totalCount: 'total versions count', nextPageToken: 'token if more exist'},
+      nextSteps: ['version_get→examine detail', 'gas_deploy_create with versionNumber→deploy']
     }
   };
 

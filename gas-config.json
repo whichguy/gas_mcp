@@ -73,9 +73,9 @@
       "description": "Created: 7/17/2025"
     },
     "module-test": {
-      "scriptId": "1k1qwjqZeKEtGlF9Vplk7NoOHVEDIjvi4D6qtK5chEFbSmQucooq8GoW_",
+      "scriptId": "1iiBCSC83QrCQkWdDvDKIvxTpcblBijiTBhAnNtq2-u8jEadzpoHxKz0C",
       "name": "module-test",
-      "description": "Created: 7/17/2025"
+      "description": "Created: 10/11/2025"
     },
     "module-validation": {
       "scriptId": "1cm2Zl0iT4zRYmn5COgVCfZYuQuJYkKGWfNiLfmY-bpdD1iGRGBlMmEfb",
@@ -83,9 +83,9 @@
       "description": "Created: 7/17/2025"
     },
     "logger-test": {
-      "scriptId": "1OJOknLb0bY6n8Z-vsdMi_o9ZHFPrCy4W7E7VoRF1fe2YR4mxezRfHkwH",
+      "scriptId": "1ToLqrtFi9wN6aL14Wi5lSscb1e97x2r0zAHhbF3sN9sygISbmOZuUUo0",
       "name": "logger-test",
-      "description": "Created: 7/17/2025"
+      "description": "Created: 10/11/2025"
     },
     "logger-test-fresh": {
       "scriptId": "1zoYXqGqYNpGWF1FHwmPrK8m8_cegWPZkzlZ5T6uUH86ahF-mqlLGxYUW",
@@ -388,9 +388,9 @@
       "description": "Created: 10/10/2025"
     },
     "no-git-project": {
-      "scriptId": "1iJGoY_Atp1IY3LDw8np9jiJwwYXbm3x4edGZP_PBlXI-zAW0-Y63qm5I",
+      "scriptId": "1mfChLQ4C-R-mp-ZWGJhNkLEj13a1VOKZ4iejr3FEaioFqGNiVHUfGTtw",
       "name": "no-git-project",
-      "description": "Created: 10/10/2025"
+      "description": "Created: 10/11/2025"
     },
     "sha-test-1760133390627": {
       "scriptId": "1rfnGAP3q-gbn-_eB2jzlkZcfcg0DA7pfV2YYmOFz3SuD9IGtZM11kdx3",
@@ -506,6 +506,66 @@
       "scriptId": "1CVHUZ3iGUOiAS9tTxFm6C03cEYfxnkY-YY1nuJNgSED79OdHzSMEHbT8",
       "name": "mcp-performance-test",
       "description": "Created: 10/10/2025"
+    },
+    "consolidated-test-project": {
+      "scriptId": "1RrVVPkh0Cmnsmn1q8q8gLomMgFfUQ2Oh91h-usQAWc2mJ2Z8e7fwG2LD",
+      "name": "consolidated-test-project",
+      "description": "Created: 10/11/2025"
+    },
+    "exec-test": {
+      "scriptId": "1CrXVqkkg3Hw-Uz-juku-GdwX7sjSqUjfbXBWfIQMs9kzS6W0L3TtmPS5",
+      "name": "exec-test",
+      "description": "Created: 10/11/2025"
+    },
+    "gas-services-test": {
+      "scriptId": "1L4glTbZyAOMp2ZkoGHt1sP9GAclpzca3ks249VO_bxPSGEQL8jCk7XMJ",
+      "name": "gas-services-test",
+      "description": "Created: 10/11/2025"
+    },
+    "complex-js-test": {
+      "scriptId": "1UvOaKAn3ThH7E1lropQnSoRyeqMA3n3iX-e-cH3h_PheB8mjHWW1g44r",
+      "name": "complex-js-test",
+      "description": "Created: 10/11/2025"
+    },
+    "file-ops-test": {
+      "scriptId": "1jEMt6WO6iyJZ6O8SfDmXaTLS4GSLt9GtiRW6x1ip0pSqb40061Djz1W5",
+      "name": "file-ops-test",
+      "description": "Created: 10/11/2025"
+    },
+    "real-gas-e2e-test-176021807938": {
+      "scriptId": "1jhIP5JveC9MOJRuCyDnD_nPb2zQZNfq0mXvoH7PARjD9NipyZ9CQI6vx",
+      "name": "real-gas-e2e-test-176021807938",
+      "description": "Created: 10/11/2025"
+    },
+    "real-gas-e2e-test-176021828148": {
+      "scriptId": "1iePAD9TtiCa6c4ZT51_wy5IYhKgPmrHgNoGyZOvK50Rh_zVoRhfyXQ-K",
+      "name": "real-gas-e2e-test-176021828148",
+      "description": "Created: 10/11/2025"
+    },
+    "real-gas-e2e-test-176021941131": {
+      "scriptId": "1YkQ7zmwBdECZ580ZjW0soGCFOadeLz39G4Rj8AkBa_c5UoYWKSY97KJW",
+      "name": "real-gas-e2e-test-176021941131",
+      "description": "Created: 10/11/2025"
+    },
+    "real-gas-e2e-test-176021961200": {
+      "scriptId": "1ww7NCyTT1p74R1B02yxj8J2sorf_aH7YoZIdBFANztjJRtgWMl0085xc",
+      "name": "real-gas-e2e-test-176021961200",
+      "description": "Created: 10/11/2025"
+    },
+    "real-gas-e2e-test-176021970750": {
+      "scriptId": "1e14RiWhPfsrbqKz5iO_zvfZzhmQivyBb09dvgzvbdySh4SCQ8xX_QpBn",
+      "name": "real-gas-e2e-test-176021970750",
+      "description": "Created: 10/11/2025"
+    },
+    "real-git-sync-test-17602207988": {
+      "scriptId": "1qcceHLLWm7Q_k-_tRUydMh1WBt8xeks1samlZjE7Y8zEFdHMXwxzlGnr",
+      "name": "real-git-sync-test-17602207988",
+      "description": "Created: 10/11/2025"
+    },
+    "real-git-sync-test-17602210414": {
+      "scriptId": "1736hj-iGlj-KWIKeR8aB55X9J8kYGdAACQLeTYhd-dIXZTe05mT80VEi",
+      "name": "real-git-sync-test-17602210414",
+      "description": "Created: 10/11/2025"
     }
   },
   "localRoot": {
@@ -515,7 +575,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-11T00:00:47.251Z"
+    "lastModified": "2025-10-11T22:18:49.012Z"
   },
   "debug": true,
   "currentProject": {

@@ -397,7 +397,7 @@ All test files follow consistent patterns:
    - Tool returns success response with configuration summary
    - Tool fails gracefully with invalid scriptId
 
-   **B. mcp__gas__git_sync Tests** (7 tests)
+   **B. mcp__gas__local_sync Tests** (7 tests)
    - Tool with direction="sync" pulls GAS files to local
    - Tool with direction="pull-only" only pulls (no push)
    - Tool with direction="push-only" pushes local to GAS (after pull)

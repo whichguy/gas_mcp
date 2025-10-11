@@ -23,7 +23,7 @@ export const TEST_TIMEOUTS = {
   /**
    * EXECUTION (60 seconds)
    * Use for: Code execution, module loading, require()
-   * Examples: gas_run, require("Module"), module dependencies
+   * Examples: exec, require("Module"), module dependencies
    */
   EXECUTION: 60000,
 

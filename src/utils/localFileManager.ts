@@ -79,17 +79,7 @@ export class LocalFileManager {
   private static readonly SUPPORTED_EXTENSIONS = ['.gs', '.js', '.html', '.json'];
 
   /**
-   * Get the project directory following git sync pattern
-   * Each project lives in ~/gas-repos/project-{scriptId}/
-   */
-  static getGitSyncProjectPath(scriptId: string): string {
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
-    const gasReposPath = path.resolve(homeDir, 'gas-repos');
-    return path.join(gasReposPath, `project-${scriptId}`);
-  }
-
-  /**
-   * Get the local root directory - now always uses git sync pattern
+   * Get the local root directory - now always uses local sync pattern (~/gas-repos)
    */
   static async getLocalRoot(workingDir?: string): Promise<string> {
     // Always use git sync pattern: ~/gas-repos

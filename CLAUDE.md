@@ -52,521 +52,134 @@ npm run test:all-verify          # Run all verification tests
 
 ## Architecture Overview
 
-This is a Model Context Protocol (MCP) server that bridges AI assistants with Google Apps Script (GAS). It provides 50 tools for creating, managing, and executing GAS projects through a unified interface.
+**MCP server:** AI ↔ GAS → 59 tools for create/manage/execute GAS projects
 
-### Session Management
-The server uses in-memory session management (`SessionAuthManager`) for handling multiple concurrent MCP clients. Sessions are stored in a global `Map` and are lost on server restart, requiring re-authentication. This simplified approach removes filesystem dependencies and complex locking since MCP is half-duplex.
+**Session:** In-memory Map → lost on restart → re-auth required → no filesystem/locking (MCP half-duplex)
 
-### Core Flow: MCP Client ↔ MCP Server ↔ Google Apps Script API
+**Flow:** MCP Client ↔ stdio ↔ mcpServer.ts → tools → gasClient.ts → GAS API v1
 
-1. **MCP Protocol Layer** (`src/server/mcpServer.ts`)
-   - Handles MCP protocol communication via stdio
-   - Registers and dispatches tool calls (all 50 tools imported and registered)
-   - Manages error responses and tool results
-   - Entry point: `src/index.ts` starts the server
+**Layers:**
+1. **Protocol** (index.ts → mcpServer.ts) → stdio + tool dispatch + error handling
+2. **Tools** (src/tools/) → BaseTool extends → validate + auth + execute → smart (cache) vs raw (direct API)
+3. **Auth** (src/auth/) → OAuth PKCE (oauthClient.ts) + session refresh (sessionManager.ts) + in-memory tokens
+4. **API** (gasClient.ts) → rate limit + retry + path parse + error transform
 
-2. **Tool Layer** (`src/tools/`)
-   - Each tool extends `BaseTool` (`src/tools/base.ts`) with standardized interface
-   - Tools handle parameter validation, authentication, and execution
-   - Smart tools (mcp__gas__*) provide enhanced functionality with local caching
-   - Raw tools (mcp__gas__raw_*) provide direct API access
-   - Specialized tools: filesystem.ts, execution.ts, deployments.ts, gitSync.ts, etc.
-
-3. **Authentication Layer** (`src/auth/`)
-   - OAuth 2.0 PKCE flow implementation (`oauthClient.ts`)
-   - Session-based token management with automatic refresh (`sessionManager.ts`)
-   - Auth state management (`authState.ts`)
-   - Token storage in memory (no filesystem persistence)
-
-4. **API Client Layer** (`src/api/gasClient.ts`)
-   - Google Apps Script API v1 client
-   - Rate limiting (`rateLimiter.ts`) and retry logic
-   - Path parsing utilities (`pathParser.ts`)
-   - Error transformation for MCP
+**Removed Tools** (66 → 59): Eliminated 7 redundant/non-functional tools (~1,200 lines):
+- `bind_script` - Non-functional (GAS API doesn't support binding existing standalone scripts to containers)
+- `project_set`, `project_get`, `project_add` - Unused state management (all tools require explicit scriptId)
+- `project_metrics` - Niche monitoring tool (rarely needed)
+- `run` - Pure wrapper that delegated 100% to exec tool
+- `pull`, `push`, `status` - Redundant wrappers (cat/write already provide local caching via LocalFileManager)
 
 ### Core Capabilities
 
-This MCP server provides three breakthrough capabilities for Google Apps Script development:
+#### 1. CommonJS Module System
+**Runtime:** require() + module.exports + exports → Node.js semantics in GAS
+**Tools:** cat/write auto-unwrap/wrap → edit clean code → execute with full module access
+**Pattern:** Calculator.js `module.exports = {add, multiply}` → Main.js `require('Calculator').add(5,6)`
+**Infra:** CommonJS.js handles resolution/caching → transparent to user
 
-#### 1. Full CommonJS Module System
+**Module Loading (gas_write moduleOptions):**
+- `loadNow: true` (eager) → _main() at startup → use for: doGet/doPost, onOpen/onEdit/onInstall triggers, __events__ registration
+- `loadNow: false` (lazy) → _main() on first require() → use for: utils, helpers, internal logic
+- `omit` (preserve) → reads existing setting (~200-500ms) | defaults lazy for new files → use for: updating existing, bulk ops (set explicit to skip lookup)
 
-Write GAS code exactly like Node.js with automatic module system support:
+**Response Enhancement (gas_write):**
+- Returns `local: {path, exists}` when file written locally
+- Returns `git: {associated, syncFolder}` when `.git/config.gs` breadcrumbs found
+- Git association signals local sync folder available for standard git commands
 
-**What You Get**:
-- `require('ModuleName')` - Import other modules with automatic dependency resolution
-- `module.exports = {...}` - Export functionality from your modules
-- `exports.func = ...` - Shorthand export syntax
-- Automatic wrapping/unwrapping - Write clean code, system handles module infrastructure
+#### 2. Ad-hoc Execution
+**Interface:** exec({scriptId, js_statement}) → cloud exec → no deploy
+**Scope:** Math/Date + all GAS services (DriveApp/SpreadsheetApp/GmailApp/etc) + require("Module") + Logger capture
+**Examples:**
+- `js_statement: "Math.PI * 2"` → instant math
+- `js_statement: "require('Utils').processData([1,2,3])"` → call your code
+- `js_statement: "SpreadsheetApp.create('Report').getId()"` → multi-step workflow
 
-**Example Usage**:
-```javascript
-// In Calculator.js - write clean user code
-function add(a, b) { return a + b; }
-function multiply(a, b) { return a * b; }
-module.exports = { add, multiply };
+#### 3. Unix Interface
+**Commands:** cat ls grep find sed ripgrep → familiar workflow → auto CommonJS handling
+**Duality:** regular tools (clean code) vs raw_* tools (system wrappers) → LLM chooses by tool name
+**Why separate:** Tool selection = explicit intent | Parameter flags = cognitive overhead
+**Pattern:** cat unwraps → edit clean → write wraps | raw_cat skips unwrap → see system code
+**Ripgrep:** ignoreCase | sort: path/modified | trim → 98% feature parity + enhancements
 
-// In Main.js - use require() naturally
-const calc = require('Calculator');
-const result = calc.add(5, calc.multiply(2, 3));  // Returns 11
-```
-
-**Behind the Scenes**: Tools like `gas_cat` show clean user code without wrappers. `gas_write` automatically wraps your code in `_main()` functions. `CommonJS.js` provides runtime module loading and caching.
-
-**Module Loading Control**: The `gas_write` tool supports optional `moduleOptions` parameter to control when modules load in the CommonJS system:
-
-```javascript
-// Eager loading (loadNow=true) - Module executes at script startup
-// Use for: Web app handlers (doGet/doPost), triggers (onOpen/onEdit/onInstall)
-gas_write({
-  scriptId: "...",
-  path: "WebApp",
-  content: "function doGet(e) { return HtmlService.createHtmlOutput('Hello'); }",
-  moduleOptions: { loadNow: true }  // Module._main() executes immediately at startup
-})
-
-// Lazy loading (loadNow=false) - Module executes on first require()
-// Use for: Utility modules that are only needed via require() calls
-gas_write({
-  scriptId: "...",
-  path: "Utils",
-  content: "function formatDate(date) { return Utilities.formatDate(date, 'GMT', 'yyyy-MM-dd'); }",
-  moduleOptions: { loadNow: false }  // Module._main() executes on first require("Utils")
-})
-
-// Preservation mode (omit moduleOptions) - RECOMMENDED for updates
-// Reads existing file and preserves current loadNow setting
-gas_write({
-  scriptId: "...",
-  path: "existing",
-  content: "// Updated code"
-  // No moduleOptions = preserves existing loadNow setting from remote file
-})
-
-// Default for new files (omit moduleOptions)
-// Creates lazy-loading module (equivalent to loadNow=false/null)
-gas_write({
-  scriptId: "...",
-  path: "Helper",
-  content: "function helper() {...}"
-  // No moduleOptions = default lazy loading (null) for new files
-})
-```
-
-**CommonJS Loading Behavior**:
-- `loadNow: true` = **Eager loading** - `module._main()` executes at script startup (similar to Webpack's "eager" mode)
-- `loadNow: false` or `null` = **Lazy loading** - `module._main()` executes on first `require()` call
-- Omitting `moduleOptions` = **Preservation mode** - Reads existing file setting (~200-500ms overhead) or uses default (lazy) for new files
-
-**When to use `loadNow: true`** (Eager Loading):
-- **Web app handlers**: `doGet()`, `doPost()` - Must be available when HTTP requests arrive
-- **Trigger functions**: `onOpen()`, `onEdit()`, `onInstall()` - Called automatically by Google Apps Script
-- **Event registrations**: Modules that export `__events__` object - Need immediate registration
-- **Global functions**: Any functions that need to be callable immediately without `require()`
-
-**When to use `loadNow: false`** (Explicit Lazy Loading):
-- **Utility libraries**: Helper functions and formatters
-- **Required modules**: Code only loaded via `require()` calls
-- **Internal logic**: Business logic modules used by other modules
-- **Performance optimization**: Large modules that are rarely used
-
-**When to omit `moduleOptions`** (RECOMMENDED):
-- **Updating existing files**: Preserves the current `loadNow` setting automatically
-- **New utility files**: Uses default lazy loading behavior
-- **Bulk operations**: Explicitly set `loadNow` to skip preservation API call overhead
-
-**Performance Note**: Omitting `moduleOptions` requires an API call (~200-500ms) to read the existing file. For bulk operations on multiple files, provide explicit `loadNow` values to skip this lookup.
-
-#### 2. Ad-hoc Code Execution
-
-Run any JavaScript expression instantly without deployment or wrapper functions:
-
-**What You Can Execute**:
-- Mathematical expressions: `Math.PI * 2`
-- Google Apps Script services: `DriveApp.getRootFolder().getName()`
-- Your project functions: `require("Utils").processData([1,2,3])`
-- Complex workflows: Multi-line operations with full GAS API access
-- Logger output automatically captured and returned
-
-**Example Usage**:
-```javascript
-// Execute one-liners instantly
-gas_run({scriptId: "...", js_statement: "new Date().toISOString()"})
-
-// Call your project functions
-gas_run({scriptId: "...", js_statement: "require('Calculator').fibonacci(10)"})
-
-// Complex data operations
-gas_run({scriptId: "...", js_statement: `
-  const data = require('API').fetchData();
-  const sheet = SpreadsheetApp.create('Report');
-  sheet.getActiveSheet().getRange(1,1,data.length,3).setValues(data);
-  return sheet.getId();
-`})
-```
-
-**Behind the Scenes**: The `gas_run` tool uses `__mcp_gas_run.js` execution infrastructure and deployment management to run code in Google's cloud environment without manual deployment steps.
-
-#### 3. Unix-inspired Command Interface
-
-Familiar commands for intuitive GAS project management (note: GAS uses filename prefixes, not real directories):
-
-**Core Commands**:
-- `gas_cat utils/helper` - Read file contents (unwraps CommonJS for editing)
-- `gas_ls utils/*` - List files matching pattern
-- `gas_grep "function.*test"` - Search code with regex
-- `gas_find {name: "*.test"}` - Find files by pattern
-- `gas_sed {pattern: "console\\.log", replacement: "Logger.log"}` - Find/replace
-- `gas_ripgrep` - High-performance multi-pattern search (98% ripgrep feature parity)
-
-**New Ripgrep Features** (Added 2025):
-- `ignoreCase: true` - Explicit case-insensitive search (ripgrep `-i`)
-- `sort: 'path' | 'modified'` - Result sorting (enhancement over ripgrep)
-- `trim: true` - Whitespace trimming (enhancement over ripgrep)
-
-**Example Workflows**:
-```bash
-# Find all TODO comments
-gas_grep {scriptId: "...", pattern: "TODO:|FIXME:"}
-
-# List all test files
-gas_find {scriptId: "...", name: "*test*"}
-
-# Replace all console.log with Logger.log
-gas_sed {scriptId: "...", pattern: "console\\.log", replacement: "Logger.log"}
-
-# Advanced ripgrep with new features
-gas_ripgrep {
-  scriptId: "...",
-  pattern: "TODO|FIXME|HACK",
-  ignoreCase: true,
-  sort: "path",
-  trim: true,
-  context: 2
-}
-```
-
-**Behind the Scenes**: Smart tools (cat, grep, sed) automatically unwrap CommonJS for clean editing. Raw variants (raw_cat, raw_grep) preserve exact content including system wrappers.
-
-#### 4. File Integrity and Git Integration
-
-Verify file integrity and detect changes without downloading entire file contents using Git-compatible SHA-1 checksums:
-
-**LS Tool with Checksums** (Quick verification):
-- `gas_ls` with `checksums: true` parameter adds Git SHA-1 to each file
-- Default behavior omits checksums for faster listing
-- Useful for quick file verification in large projects
-
-**File Status Tool** (Comprehensive analysis):
-- Dedicated tool for file verification and change detection
-- Supports multiple hash types: Git-compatible SHA-1, SHA-256, MD5
-- Pattern matching with wildcards for bulk operations
-- Rich metadata: lines, size, encoding, timestamps, modification user
-
-**Example Workflows**:
-```typescript
-// Quick verification during listing
-gas_ls({
-  scriptId: "...",
-  path: "*",
-  checksums: true  // Adds gitSha1 to each file
-})
-
-// Comprehensive file analysis
-gas_file_status({
-  scriptId: "...",
-  path: "utils/helper.gs",
-  hashTypes: ["git-sha1", "sha256", "md5"],  // Multiple hash algorithms
-  includeMetadata: true  // Lines, size, timestamps, user
-})
-
-// Pattern-based verification
-gas_file_status({
-  scriptId: "...",
-  path: "utils/*",  // Wildcard matching
-  hashTypes: ["git-sha1"]
-})
-
-// Detect file changes without downloading
-const status1 = gas_file_status({ scriptId: "...", path: "config.gs" });
-// ... make some changes ...
-const status2 = gas_file_status({ scriptId: "...", path: "config.gs" });
-// Compare status1.files[0].hashes['git-sha1'] vs status2.files[0].hashes['git-sha1']
-```
-
-**Git Integration Use Cases**:
-- **Change Detection**: Compare GAS files with local Git repository using `git hash-object`
-- **Integrity Verification**: Ensure files haven't changed since last sync
-- **Selective Downloads**: Only download files with SHA mismatches
-- **Build Optimization**: Skip unchanged files during deployment
-
-**Git SHA-1 Compatibility**:
-The Git-compatible SHA-1 uses the same blob format as `git hash-object`:
-```bash
-# Verify locally: the SHA-1 from gas_file_status should match
-echo -n "content" | git hash-object --stdin
-```
-
-Format: `sha1("blob " + <size> + "\0" + <content>)`
-
-**Performance Considerations**:
-- `gas_ls` with `checksums: false` (default) - Fastest for large directories
-- `gas_ls` with `checksums: true` - Adds ~50-100ms per file for checksum computation
-- `gas_file_status` - Best for detailed analysis of specific files or patterns
-- Supports up to 200 files per request (default 50)
+#### 4. File Integrity & Git
+**Checksums:** Git SHA-1 (`sha1("blob "+size+"\0"+content)`) + SHA-256 + MD5 → verify without download
+**Tools:** gas_ls({checksums:true}) quick | gas_file_status({hashTypes:["git-sha1"]}) detailed + metadata
+**Integration:** Compare with `git hash-object` → detect changes → selective sync → build optimization
+**Performance:** checksums=false (default, fast) | checksums=true (~50-100ms/file) | file_status (200 files max, 50 default)
 
 ---
 
-### Key Architectural Patterns
+### Architectural Patterns
 
-#### Tool Implementation Pattern
-Every tool follows this structure:
-```typescript
-export class GasTool extends BaseTool {
-  public name = 'mcp__gas__tool_name';  // Note: MCP naming with mcp__gas__ prefix
-  public description = 'User-facing description';
-  public inputSchema = {
-    type: 'object',
-    properties: { /* JSON Schema with validation */ },
-    required: ['fieldName'],
-    additionalProperties: false
-  };
+**Tool Pattern:** `class extends BaseTool` → name (mcp__gas__*) + description + inputSchema (JSON) → `execute()` → validate → getAuthToken → operation → formatSuccess | handleApiError
 
-  async execute(params: any): Promise<any> {
-    // 1. Validate input parameters
-    const validated = this.validate.scriptId(params.scriptId);
+**CommonJS Auto-wrap:** Write (wrap in _main) → Read (unwrap for editing) → Execute (CommonJS.js + __mcp_exec.js runtime) → __defineModule__(_main) registration
 
-    // 2. Get authentication token
-    const accessToken = await this.getAuthToken(params);
+**Virtual Files:** `.git` ↔ `.git.gs` | `.gitignore` ↔ `.gitignore.gs` | `.env` ↔ `.env.gs` → period prefix → bidirectional (fileTransformations.ts handles MD ↔ HTML too)
 
-    // 3. Perform operation with error handling
-    try {
-      const result = await this.gasClient.operation(validated, accessToken);
-      return this.formatSuccess(result);
-    } catch (error) {
-      throw GASErrorHandler.handleApiError(error);
-    }
-  }
-}
-```
+**Sync Layers:** Local cache (./src/) → Remote GAS → Git mirror (~/gas-repos/project-[scriptId]/) → smart tools check local first → auto-sync
 
-#### CommonJS Module System for GAS
-The server automatically manages a CommonJS-like module system for GAS:
-- **Write**: User code is wrapped in `_main()` function with module/exports/require
-- **Read**: Wrapper is removed to show clean user code
-- **Execute**: `CommonJS.js` and `__mcp_gas_run.js` provide runtime support
-- Files use `__defineModule__(_main)` pattern for module registration
+### Git Sync (2 tools, safe merge, LOCAL-FIRST)
 
-#### Virtual File Translation
-Dotfiles are automatically translated for GAS compatibility:
-- `.git` → `.git.gs` (stored as CommonJS module)
-- `.gitignore` → `.gitignore.gs`
-- `.env` → `.env.gs`
-- Translation happens transparently in both directions using period prefix
-- Handled by `src/utils/fileTransformations.ts` (also does Markdown ↔ HTML conversion)
+**Tools:** local_sync (ALWAYS pull→merge→push) → config (manage sync_folder and settings)
 
-#### Local/Remote Synchronization
-Three-layer file access pattern:
-1. **Local cache** (`./src/` or project directory)
-2. **Remote GAS** (Google Apps Script project)
-3. **Git mirror** (`~/gas-repos/project-[scriptId]/` for Git integration)
+**Concepts:** .git/config.gs breadcrumb (REQUIRED, manually created) + sync folders (LLM git commands) + pull-merge-push (never blind push) + auto-transforms (README.md ↔ .html, dotfiles)
 
-Smart tools check local first, then remote, with automatic sync. All projects use the standardized `~/gas-repos` pattern.
+**Workflow:**
+1. Manually create .git/config.gs in GAS using gas_write
+2. Create local git repo: git init && git remote add origin <url>
+3. Run local_sync({scriptId}) to sync files
+4. Standard git: git add/commit/push
+5. See docs/GIT_SYNC_WORKFLOWS.md for details
 
-### Git Sync Architecture (NEW)
+**NO AUTO-BOOTSTRAP:** .git/config.gs must exist in GAS before running local_sync
 
-Safe Git synchronization with separation of concerns:
+### Project Management + Errors
 
-#### Core Tools (5 total, replacing old 12 tools)
-- **gas_git_init** - Initialize git association with `.git.gs` marker file
-- **gas_git_sync** - Safe pull-merge-push synchronization (ALWAYS pulls first)
-- **gas_git_status** - Check git association and sync status
-- **gas_git_set_sync_folder** - Set local sync folder for git operations
-- **gas_git_get_sync_folder** - Query current sync folder location
+**Management:** project_list (view projects) | project_create (infra setup) → gas-config.json stores → all tools require explicit scriptId
 
-#### Key Concepts
-- **`.git.gs` file** - Self-documenting association marker in GAS project (uses period prefix)
-- **Sync Folders** - Local directories where LLMs run standard git commands (~/gas-repos pattern)
-- **Pull-Merge-Push** - Always pulls from GAS first, merges locally, pushes back
-- **File Transformations** - Automatic README.md ↔ README.html, dotfile handling with period prefix
+**Errors:** MCPGasError → ValidationError | AuthenticationError | FileOperationError | QuotaError | ApiError → MCP-compatible transform
 
-#### Recommended Workflow
-```typescript
-// 1. Initialize association
-mcp__gas__git_init({ scriptId: "...", repository: "https://github.com/..." })
+## Config + Tools (59 total)
 
-// 2. Clone in sync folder (LLM uses standard git)
-// cd /sync/folder && git clone ...
+**Config:** gas-config.json (OAuth + projects + envs + paths) | oauth-config.json (GCP credentials, desktop app) | .auth/ (session tokens, auto-refresh)
 
-// 3. Sync files (safe merge)
-mcp__gas__git_sync({ scriptId: "..." })  // ALWAYS pull-merge-push
+**Smart Tools** (auto CommonJS): cat/write/cp (wrap/unwrap) + ls/rm/mv/mkdir (paths) + file_status (SHA checksums) + exec/info/reorder (exec/mgmt) + version_create/deploy_create + grep/find/ripgrep/sed (search)
 
-// 4. Commit and push (standard git)
-// git add -A && git commit -m "..." && git push
-```
+**Raw Tools** (exact content): raw_cat/raw_write/raw_cp (preserve wrappers) + raw_ls/raw_rm/raw_mv + raw_find/raw_grep/raw_ripgrep/raw_sed
 
-See `docs/GIT_SYNC_WORKFLOWS.md` for complete documentation.
+**Git Tools:** local_sync + config (sync_folder management) — NOTE: git_init removed, manual .git/config.gs creation required
 
-### Project Context Management
+**Project Tools:** project_list/project_create + auth (OAuth)
 
-The server maintains project context for simplified operations:
-- **mcp__gas__project_set** - Set current project and auto-pull files
-- **mcp__gas__project_list** - List configured projects
-- **mcp__gas__project_create** - Create new projects with infrastructure setup
-- Current project stored in `gas-config.json`
-- Tools auto-resolve script IDs from current context
+**Design:** Flat architecture + smart (process) vs raw (preserve) + naming (mcp__gas__* vs mcp__gas__raw_*) + period prefix (.gitignore.gs) + unified paths (~/gas-repos/project-[scriptId]/)
 
-### Error Handling Hierarchy
+## Development
 
-```
-MCPGasError (base)
-├── ValidationError     - Parameter validation failures
-├── AuthenticationError - OAuth/token issues
-├── FileOperationError  - File access problems
-├── QuotaError         - API quota exceeded
-└── ApiError           - Google API errors
-```
+**New Tool:** src/tools/ extend BaseTool (base.ts) → name (mcp__gas__*) + description + inputSchema → execute (validate → auth → operation) → register in mcpServer.ts → tests (unit/integration/system/security)
 
-All errors are transformed to MCP-compatible format with helpful messages.
+**TypeScript:** .js imports (ESM) | named exports | type imports `import type` | kebab-case files + PascalCase classes | strict ES2022 | tsconfig.production.json (no maps/declarations)
 
-## Configuration Files
+**Tests:** unit (mock) + integration (real GAS API + auth) + system (MCP protocol) + security (validation) + verification (API schema) + performance (benchmarks) → mocha + chai + .mocharc.json (15s timeout) + globalAuth.ts
 
-- **gas-config.json** - Unified configuration
-  - OAuth settings
-  - Project definitions
-  - Environment mappings
-  - Local sync paths
+**Security:** OAuth (OS-secure storage) + PKCE (intercept prevention) + input validation + scriptId (25-60 alphanumeric) + path traversal prevention + array-based git (injection prevention)
 
-- **oauth-config.json** - OAuth 2.0 credentials (not in version control)
-  - Download from Google Cloud Console
-  - Desktop application type required
+**Performance:** Local cache (reduce API) + incremental TS builds + concurrent asset copy + smart local-first + rate limiting (quota protection)
 
-- **.auth/** - Session token storage
-  - Automatic token refresh
-  - Multiple session support
+**Debug:** `DEBUG=mcp:* | mcp:auth | mcp:execution | mcp:sync npm start`
 
-## Tool Architecture & Naming Conventions
+## MCP Integration
 
-### Tool Categories and Naming
-The MCP server provides 50 tools organized into logical categories:
+**Server:** MCP protocol → AI assistants (Claude) → 59 GAS tools
 
-#### Smart Tools (CommonJS Processing)
-- **mcp__gas__cat, mcp__gas__write, mcp__gas__cp** - Handle CommonJS wrapping/unwrapping automatically
-- **mcp__gas__ls, mcp__gas__rm, mcp__gas__mv, mcp__gas__mkdir** - Directory and file operations with smart path handling
-- **mcp__gas__file_status** - Comprehensive file verification with Git-compatible SHA-1, SHA-256, MD5 checksums
-- **mcp__gas__run, mcp__gas__info, mcp__gas__reorder** - Execution and project management
-- **mcp__gas__version_create, mcp__gas__deploy_create** - Deployment and versioning
-- **mcp__gas__grep, mcp__gas__find, mcp__gas__ripgrep, mcp__gas__sed** - Search and text processing tools
-
-#### Raw Tools (Exact Content Preservation)
-- **mcp__gas__raw_cat, mcp__gas__raw_write, mcp__gas__raw_cp** - Preserve exact content including CommonJS wrappers
-- **mcp__gas__raw_ls, mcp__gas__raw_rm, mcp__gas__raw_mv** - Low-level file operations
-- **mcp__gas__raw_find, mcp__gas__raw_grep, mcp__gas__raw_ripgrep, mcp__gas__raw_sed** - Raw search and processing tools
-
-#### Git Integration Tools
-- **mcp__gas__git_init, mcp__gas__git_sync, mcp__gas__git_status** - Core Git synchronization
-- **mcp__gas__git_set_sync_folder, mcp__gas__git_get_sync_folder** - Local sync management
-
-#### Project Management Tools
-- **mcp__gas__project_set, mcp__gas__project_list, mcp__gas__project_create** - Project context management
-- **mcp__gas__auth** - OAuth authentication workflow
-
-### Key Design Principles
-- **Flat Function Architecture**: Each tool is a separate function following MCP best practices
-- **Smart vs Raw**: Smart tools process CommonJS, raw tools preserve exact content
-- **Consistent Naming**: mcp__gas__[action] for smart tools, mcp__gas__raw_[action] for raw tools
-- **Period Prefix**: Dotfiles use actual periods (.gitignore.gs not _gitignore.gs)
-- **Unified Path Pattern**: All projects use ~/gas-repos/project-[scriptId]/ structure
-
-## Development Workflow
-
-### Adding a New Tool
-1. Create class in `src/tools/` extending `BaseTool` (located in `src/tools/base.ts`)
-2. Implement required properties: `name` (with `mcp__gas__` prefix), `description`, `inputSchema`
-3. Implement `execute(params)` method with validation and error handling
-4. Register in `src/server/mcpServer.ts` tool array
-5. Add tests in appropriate `test/` subdirectory (unit/integration/system/security)
-6. Update API documentation if needed
-
-
-### TypeScript Conventions
-- Use `.js` extensions in imports (required for ES modules)
-- Prefer named exports over default exports
-- Use type imports for types: `import type { TokenInfo } from './types.js'`
-- Files use kebab-case, classes/interfaces use PascalCase
-- Strict TypeScript configuration with ES2022 target
-- ESM modules with Node.js resolution
-- Production builds use `tsconfig.production.json` (no source maps/declarations)
-
-### Testing Approach
-- **Unit tests** (`test/unit/`) - Mock external dependencies, test individual modules
-- **Integration tests** (`test/integration/`) - Real GAS API tests, require authentication
-- **System tests** (`test/system/`) - MCP protocol compliance and server behavior
-- **Security tests** (`test/security/`) - Input validation and safety checks
-- **Verification tests** (`test/verification/`) - API schema compliance and tool validation
-- **Performance tests** (`test/performance/`) - Performance benchmarks and optimization validation
-- Use `mocha` test runner with `chai` assertions
-- Test configuration in `.mocharc.json` with 15s default timeout
-- Global auth setup in `test/setup/globalAuth.ts`
-
-## Security Considerations
-
-- OAuth tokens stored in OS-appropriate secure locations
-- PKCE flow prevents authorization code interception
-- Input validation on all parameters before API calls
-- Script IDs validated as 25-60 character alphanumeric
-- Path traversal prevention in file operations
-- Command injection prevention in Git operations (array-based execution)
-
-## Performance Optimizations
-
-- Local file caching reduces API calls
-- Incremental TypeScript compilation for faster builds
-- Concurrent asset copying in watch mode
-- Smart tools check local cache before remote
-- Rate limiting prevents quota exhaustion
-
-## Debug Logging
-
-Enable debug output with DEBUG environment variable:
-```bash
-DEBUG=mcp:* npm start           # All MCP logs
-DEBUG=mcp:auth npm start        # Auth logs only
-DEBUG=mcp:execution npm start   # Execution logs
-DEBUG=mcp:sync npm start        # Sync operations
-```
-
-## MCP GAS Server Integration
-
-This is an **MCP (Model Context Protocol) server** specifically designed to work with AI assistants like Claude. When integrated with an MCP client:
-
-### MCP Client Configuration
-
-**For Claude Desktop** (`~/.claude_desktop_config.json`):
+**Claude Desktop Config** (`~/.claude_desktop_config.json`):
 ```json
-{
-  "mcpServers": {
-    "gas": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp_gas/dist/src/index.js"],
-      "env": {
-        "NODE_ENV": "production"
-      }
-    }
-  }
-}
+{"mcpServers": {"gas": {"command": "node", "args": ["/path/to/mcp_gas/dist/src/index.js"], "env": {"NODE_ENV": "production"}}}}
 ```
 
-### Essential Configuration Files
+**Files:** gas-config.json (projects + OAuth + paths) + oauth-config.json (GCP creds) + .auth/ (tokens)
 
-- **gas-config.json** - Central configuration with project definitions, OAuth settings, and sync paths
-- **oauth-config.json** - Google OAuth 2.0 credentials (download from Google Cloud Console)
-- **.auth/** directory - Session token storage with automatic refresh
-
-### Working with MCP Gas Server
-
-When Claude Code connects to this server, it gains access to 50 Google Apps Script tools. The server handles:
-- OAuth authentication flow with Google
-- File operations with automatic CommonJS module wrapping
-- Real-time code execution in Google's cloud infrastructure
-- Git integration with safe synchronization workflows
-- Project management and deployment automation
+**Capabilities:** OAuth flow + file ops (CommonJS wrap) + cloud exec + git sync + project mgmt + deployment

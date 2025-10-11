@@ -2,14 +2,14 @@
  * Git Operations Validation Tests
  *
  * Tests git sync tools with real GAS projects and ThenRunLater repository:
- * - git_init: Initialize git association
- * - git_sync: Bidirectional synchronization (pull-merge-push pattern)
- * - git_status: Check association and sync state
- * - git_set_sync_folder: Configure sync location
- * - git_get_sync_folder: Query sync folder
+ * - Manual .git/config.gs breadcrumb creation (git_init tool removed)
+ * - local_sync: Bidirectional synchronization (pull-merge-push pattern)
+ * - config: Query and configure sync folder (action: get/set, type: sync_folder)
  *
  * Uses ThenRunLater project (~/src5/ThenRunLater) as test repository
  * with temporary sync folder to avoid affecting real repo.
+ *
+ * NOTE: git_init tool was removed - breadcrumbs must be created manually
  */
 
 import { expect } from 'chai';
@@ -142,172 +142,93 @@ describe('Git Operations Validation Tests', () => {
     }
   });
 
-  describe('Git Init - Association Initialization', () => {
-    it('should initialize git association with ThenRunLater repo', async function() {
+  describe('Manual Git Breadcrumb Creation', () => {
+    it('should manually create .git/config.gs breadcrumb in GAS', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
       expect(tempSyncFolder).to.not.be.null;
 
-      const result = await client.callAndParse('git_init', {
+      // Create git config content
+      const gitConfig = `[remote "origin"]
+\turl = ${REPO_URL}
+[branch "${REPO_BRANCH}"]
+[sync]
+\tlocalPath = ${tempSyncFolder}`;
+
+      // Write .git/config.gs to GAS using gas_write
+      const result = await client.callTool('gas_write', {
         scriptId: testProjectId,
-        repository: REPO_URL,
-        branch: REPO_BRANCH,
-        localPath: tempSyncFolder
+        fileName: '.git/config.gs',
+        content: gitConfig
       });
 
-      expect(result).to.have.property('success', true);
-      expect(result).to.have.property('gitConfig');
-      expect(result.gitConfig).to.have.property('repository', REPO_URL);
-      expect(result.gitConfig).to.have.property('branch', REPO_BRANCH);
-      expect(result.gitConfig).to.have.property('syncFolder', tempSyncFolder);
+      expect(result.content[0].text).to.include('success');
+      console.log('✅ Created .git/config.gs breadcrumb in GAS');
     });
 
-    it('should create .git.gs file in GAS project', async function() {
+    it('should read .git.gs file from GAS project', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      // Read .git.gs file
-      const result = await client.callTool('cat', {
+      // Read .git.gs file (note: .git → .git.gs transformation)
+      const result = await client.callTool('gas_cat', {
         scriptId: testProjectId,
-        path: '.git'
+        fileName: '.git/config.gs'
       });
 
       const content = result.content[0].text;
       expect(content).to.include(REPO_URL);
       expect(content).to.include(REPO_BRANCH);
       expect(content).to.include(tempSyncFolder!);
+      console.log('✅ Verified .git/config.gs content');
     });
 
-    it('should verify .git.gs is CommonJS module format', async function() {
+    it('should verify .git/config.gs is plain text (not CommonJS)', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('raw_cat', {
+      const result = await client.callTool('gas_raw_cat', {
         scriptId: testProjectId,
-        path: '.git.gs'
+        fileName: '.git/config.gs'
       });
 
       const rawContent = result.content[0].text;
-      expect(rawContent).to.include('function _main');
-      expect(rawContent).to.include('module.exports');
-    });
-
-    it('should fail gracefully with invalid repository URL', async function() {
-      this.timeout(TEST_TIMEOUTS.STANDARD);
-
-      try {
-        await client.callAndParse('git_init', {
-          scriptId: 'invalid-script-id',
-          repository: 'not-a-valid-url',
-          branch: 'main',
-          localPath: tempSyncFolder
-        });
-        expect.fail('Should have thrown an error');
-      } catch (error: any) {
-        expect(error.message).to.match(/invalid|error|failed/i);
-      }
+      // .git/config.gs should be plain text, NOT wrapped in CommonJS
+      expect(rawContent).to.include('[remote "origin"]');
+      expect(rawContent).to.include('url =');
+      console.log('✅ Verified .git/config.gs is plain text format');
     });
   });
 
-  describe('Git Get Sync Folder - Query Configuration', () => {
-    it('should return sync folder after initialization', async function() {
-      this.timeout(TEST_TIMEOUTS.STANDARD);
-      expect(testProjectId).to.not.be.null;
-
-      const result = await client.callAndParse('git_get_sync_folder', {
-        scriptId: testProjectId
-      });
-
-      expect(result).to.have.property('scriptId', testProjectId);
-      expect(result).to.have.property('syncFolder', tempSyncFolder);
-      expect(result).to.have.property('exists', true);
-    });
-
-    it('should detect if sync folder is a git repository', async function() {
-      this.timeout(TEST_TIMEOUTS.STANDARD);
-      expect(testProjectId).to.not.be.null;
-
-      const result = await client.callAndParse('git_get_sync_folder', {
-        scriptId: testProjectId
-      });
-
-      expect(result).to.have.property('isGitRepo');
-      // Initially false until we clone
-    });
-
-    it('should provide recommended next steps', async function() {
-      this.timeout(TEST_TIMEOUTS.STANDARD);
-      expect(testProjectId).to.not.be.null;
-
-      const result = await client.callAndParse('git_get_sync_folder', {
-        scriptId: testProjectId
-      });
-
-      expect(result).to.have.property('recommendedNextSteps');
-      expect(result.recommendedNextSteps).to.be.an('array');
-      expect(result.recommendedNextSteps.length).to.be.greaterThan(0);
-    });
-  });
-
-  describe('Git Status - Check Association State', () => {
-    it('should confirm git association exists', async function() {
-      this.timeout(TEST_TIMEOUTS.STANDARD);
-      expect(testProjectId).to.not.be.null;
-
-      const result = await client.callAndParse('git_status', {
-        scriptId: testProjectId
-      });
-
-      expect(result).to.have.property('hasGitAssociation', true);
-      expect(result).to.have.property('gitConfig');
-      expect(result.gitConfig).to.have.property('repository', REPO_URL);
-    });
-
-    it('should show sync folder in status', async function() {
-      this.timeout(TEST_TIMEOUTS.STANDARD);
-      expect(testProjectId).to.not.be.null;
-
-      const result = await client.callAndParse('git_status', {
-        scriptId: testProjectId
-      });
-
-      expect(result).to.have.property('syncFolder', tempSyncFolder);
-    });
-
-    it('should provide git status information', async function() {
-      this.timeout(TEST_TIMEOUTS.STANDARD);
-      expect(testProjectId).to.not.be.null;
-
-      const result = await client.callAndParse('git_status', {
-        scriptId: testProjectId
-      });
-
-      expect(result).to.have.property('gitStatus');
-      if (result.gitStatus) {
-        expect(result.gitStatus).to.have.property('branch');
-      }
-    });
-  });
-
-  describe('Git Sync - Clone and Initial Pull', () => {
+  describe('Git Sync - Initial Sync from Repository', () => {
     before(async function() {
       this.timeout(TEST_TIMEOUTS.EXTENDED);
 
       // Clone the ThenRunLater repository into temp sync folder
-      console.log(`📦 Cloning ${REPO_URL} to ${tempSyncFolder}...`);
+      // Note: git_init already created and initialized the folder, so we fetch instead
+      console.log(`📦 Fetching ${REPO_URL} into ${tempSyncFolder}...`);
       const { execSync } = await import('child_process');
-      execSync(`git clone ${REPO_URL} ${tempSyncFolder}`, {
+      try {
+        execSync(`git -C "${tempSyncFolder}" remote add origin ${REPO_URL}`, { stdio: 'inherit' });
+      } catch {
+        // Remote might already exist from git_init
+      }
+      execSync(`git -C "${tempSyncFolder}" fetch origin ${REPO_BRANCH}`, {
         stdio: 'inherit',
         timeout: 60000
       });
-      console.log('✅ Repository cloned successfully');
+      execSync(`git -C "${tempSyncFolder}" checkout -b ${REPO_BRANCH} origin/${REPO_BRANCH}`, {
+        stdio: 'inherit',
+        timeout: 60000
+      });
+      console.log('✅ Repository fetched and checked out successfully');
     });
 
     it('should perform initial sync from local to GAS', async function() {
       this.timeout(TEST_TIMEOUTS.EXTENDED);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callAndParse('git_sync', {
+      const result = await client.callAndParse('local_sync', {
         scriptId: testProjectId
       });
 
@@ -371,6 +292,50 @@ describe('Git Operations Validation Tests', () => {
     });
   });
 
+  describe('Config Get - Query Sync Folder Configuration', () => {
+    it('should return sync folder after sync', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callAndParse('config', {
+        action: 'get',
+        type: 'sync_folder',
+        scriptId: testProjectId
+      });
+
+      expect(result).to.have.property('syncFolder', tempSyncFolder);
+      expect(result).to.have.property('exists', true);
+    });
+
+    it('should detect sync folder as a git repository', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callAndParse('config', {
+        action: 'get',
+        type: 'sync_folder',
+        scriptId: testProjectId
+      });
+
+      expect(result).to.have.property('isGitRepo', true);
+      expect(result).to.have.property('gitStatus');
+    });
+
+    it('should provide recommended actions', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+
+      const result = await client.callAndParse('config', {
+        action: 'get',
+        type: 'sync_folder',
+        scriptId: testProjectId
+      });
+
+      expect(result).to.have.property('recommendedActions');
+      expect(result.recommendedActions).to.be.an('object');
+    });
+  });
+
   describe('Git Sync - Push Changes from GAS', () => {
     it('should modify file in GAS and sync back to local', async function() {
       this.timeout(TEST_TIMEOUTS.EXTENDED);
@@ -382,7 +347,7 @@ describe('Git Operations Validation Tests', () => {
       await gas.writeTestFile(testProjectId!, 'TestModification', testContent);
 
       // Sync changes back
-      const syncResult = await client.callAndParse('git_sync', {
+      const syncResult = await client.callAndParse('local_sync', {
         scriptId: testProjectId
       });
 
@@ -423,7 +388,7 @@ describe('Git Operations Validation Tests', () => {
       fs.writeFileSync(localFilePath, 'Local content');
 
       // Sync should merge both
-      const syncResult = await client.callAndParse('git_sync', {
+      const syncResult = await client.callAndParse('local_sync', {
         scriptId: testProjectId
       });
 
@@ -440,7 +405,7 @@ describe('Git Operations Validation Tests', () => {
     });
   });
 
-  describe('Git Set Sync Folder - Reconfigure Location', () => {
+  describe('Config Set - Update Sync Folder Configuration', () => {
     let newSyncFolder: string | null = null;
 
     before(function() {
@@ -459,9 +424,11 @@ describe('Git Operations Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
       expect(newSyncFolder).to.not.be.null;
 
-      const result = await client.callAndParse('git_set_sync_folder', {
+      const result = await client.callAndParse('config', {
+        action: 'set',
+        type: 'sync_folder',
         scriptId: testProjectId,
-        localPath: newSyncFolder
+        value: newSyncFolder
       });
 
       expect(result).to.have.property('success', true);
@@ -483,11 +450,13 @@ describe('Git Operations Validation Tests', () => {
       expect(content).to.not.include(tempSyncFolder!);
     });
 
-    it('should return new folder in subsequent get_sync_folder calls', async function() {
+    it('should return new folder in subsequent config get calls', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callAndParse('git_get_sync_folder', {
+      const result = await client.callAndParse('config', {
+        action: 'get',
+        type: 'sync_folder',
         scriptId: testProjectId
       });
 
@@ -500,7 +469,7 @@ describe('Git Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callAndParse('git_sync', {
+      const result = await client.callAndParse('local_sync', {
         scriptId: testProjectId,
         dryRun: true
       });
@@ -513,7 +482,7 @@ describe('Git Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.EXTENDED);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callAndParse('git_sync', {
+      const result = await client.callAndParse('local_sync', {
         scriptId: testProjectId,
         direction: 'pull-only'
       });
@@ -527,7 +496,7 @@ describe('Git Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.EXTENDED);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callAndParse('git_sync', {
+      const result = await client.callAndParse('local_sync', {
         scriptId: testProjectId,
         includeFiles: ['*.js'],
         dryRun: true
@@ -540,7 +509,7 @@ describe('Git Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.EXTENDED);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callAndParse('git_sync', {
+      const result = await client.callAndParse('local_sync', {
         scriptId: testProjectId,
         excludeFiles: ['test/*', '*.md'],
         dryRun: true
@@ -551,20 +520,21 @@ describe('Git Operations Validation Tests', () => {
   });
 
   describe('Error Handling and Edge Cases', () => {
-    it('should fail gracefully when syncing project without git association', async function() {
+    it('should fail gracefully when syncing project without .git/config.gs breadcrumb', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
 
-      // Create a project without git init
+      // Create a project without .git/config.gs breadcrumb
       const result = await gas.createTestProject('No-Git-Project');
       const noGitProjectId = result.scriptId;
 
       try {
-        await client.callAndParse('git_sync', {
+        await client.callAndParse('local_sync', {
           scriptId: noGitProjectId
         });
         expect.fail('Should have thrown an error');
       } catch (error: any) {
-        expect(error.message).to.match(/no git association|not initialized/i);
+        // Should mention breadcrumb requirement
+        expect(error.message).to.match(/\.git\/config\.gs|breadcrumb|not found/i);
       } finally {
         await gas.cleanupTestProject(noGitProjectId);
       }
@@ -575,24 +545,31 @@ describe('Git Operations Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       // Set non-existent sync folder
-      await client.callAndParse('git_set_sync_folder', {
+      await client.callAndParse('config', {
+        action: 'set',
+        type: 'sync_folder',
         scriptId: testProjectId,
-        syncFolder: '/nonexistent/folder/path'
+        value: '/nonexistent/folder/path'
       });
 
-      const statusResult = await client.callAndParse('git_status', {
+      const statusResult = await client.callAndParse('config', {
+        action: 'get',
+        type: 'sync_folder',
         scriptId: testProjectId
       });
 
       // Should report folder doesn't exist
       expect(statusResult.syncFolder).to.equal('/nonexistent/folder/path');
+      expect(statusResult.exists).to.be.false;
     });
 
     it('should provide helpful error for invalid scriptId', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
 
       try {
-        await client.callAndParse('git_status', {
+        await client.callAndParse('config', {
+          action: 'get',
+          type: 'sync_folder',
           scriptId: 'invalid-script-id-123'
         });
         expect.fail('Should have thrown an error');

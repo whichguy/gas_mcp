@@ -37,11 +37,11 @@ stateDiagram-v2
     S5_Conflicts: CONFLICTS_DETECTED
 
     S1_Fresh --> S2_Initialized: git_init
-    S2_Initialized --> S3_Synced: git_sync (first time)
+    S2_Initialized --> S3_Synced: local_sync (first time)
     S3_Synced --> S4_LocalModified: Local file edit
-    S3_Synced --> S3_Synced: git_sync (no changes)
-    S4_LocalModified --> S3_Synced: git_sync (no conflicts)
-    S4_LocalModified --> S5_Conflicts: git_sync (conflicts)
+    S3_Synced --> S3_Synced: local_sync (no changes)
+    S4_LocalModified --> S3_Synced: local_sync (no conflicts)
+    S4_LocalModified --> S5_Conflicts: local_sync (conflicts)
     S5_Conflicts --> S4_LocalModified: Resolve conflicts
     S4_LocalModified --> S4_LocalModified: More local edits
 
@@ -74,7 +74,7 @@ stateDiagram-v2
 
     note right of S5_Conflicts
         Verification:
-        - git_sync returns conflict status
+        - local_sync returns conflict status
         - .git-gas/ folder has conflict files
         - git_status.syncStatus.clean = false
     end note
@@ -90,10 +90,10 @@ flowchart TD
     CreateConfig --> ReturnSuccess1[Return success response]
     ReturnSuccess1 --> End([Done])
 
-    CheckConfig -->|NO - git_sync| ThrowError[Throw ValidationError:<br/>'Repository must have .git/config.gs']
+    CheckConfig -->|NO - local_sync| ThrowError[Throw ValidationError:<br/>'Repository must have .git/config.gs']
     ThrowError --> End
 
-    CheckConfig -->|YES - git_sync| ReadConfig[Read config from GAS]
+    CheckConfig -->|YES - local_sync| ReadConfig[Read config from GAS]
     ReadConfig --> CheckLocal{Local sync<br/>folder exists?}
 
     CheckLocal -->|NO| CreateFolder[Create sync folder<br/>mkdir -p]
@@ -275,7 +275,7 @@ expect(statusAfter.syncStatus).to.deep.equal({});  // No local repo yet
 - L_FOLDER_NO (no local sync folder yet)
 - SYNC_GAS_ONLY (files only in GAS)
 
-**Tool: `git_sync` (direction: "sync")**
+**Tool: `local_sync` (direction: "sync")**
 
 **Actions:**
 1. Reads config from `.git/config.gs`
@@ -302,7 +302,7 @@ const folderBefore = await client.callTool('mcp__gas__git_get_sync_folder', {scr
 expect(folderBefore.exists).to.be.false;
 
 // ACTION
-const syncResult = await client.callTool('mcp__gas__git_sync', {
+const syncResult = await client.callTool('mcp__gas__local_sync', {
   scriptId: testProjectId,
   direction: 'sync',
   autoCommit: true
@@ -343,7 +343,7 @@ expect(syncResult.pulledCount).to.equal(gasFileCount);
 - SYNC_BOTH_DIFFER (local has uncommitted changes)
 - GIT_DIRTY (uncommitted local changes)
 
-**Tool: `git_sync` (direction: "sync")**
+**Tool: `local_sync` (direction: "sync")**
 
 **Actions:**
 1. Pulls files from GAS
@@ -361,13 +361,13 @@ expect(syncResult.pulledCount).to.equal(gasFileCount);
 **Verification Pattern:**
 ```typescript
 // BEFORE - Create local modification
-// (Assume we've done git_sync once already, now modifying local file)
+// (Assume we've done local_sync once already, now modifying local file)
 const statusBefore = await client.callTool('mcp__gas__git_status', {scriptId});
 expect(statusBefore.syncStatus.modified).to.be.greaterThan(0);
 expect(statusBefore.syncStatus.clean).to.be.false;
 
 // ACTION
-const syncResult = await client.callTool('mcp__gas__git_sync', {
+const syncResult = await client.callTool('mcp__gas__local_sync', {
   scriptId: testProjectId,
   direction: 'sync',
   autoCommit: true
@@ -400,7 +400,7 @@ expect(folderInfo.gitStatus.clean).to.be.true;
 - SYNC_BOTH_DIFFER (conflicting changes)
 - GIT_DIRTY
 
-**Tool: `git_sync` (direction: "sync")**
+**Tool: `local_sync` (direction: "sync")**
 
 **Actions:**
 1. Pulls files from GAS
@@ -423,7 +423,7 @@ expect(statusBefore.syncStatus.clean).to.be.false;
 
 // ACTION
 try {
-  const syncResult = await client.callTool('mcp__gas__git_sync', {
+  const syncResult = await client.callTool('mcp__gas__local_sync', {
     scriptId: testProjectId,
     direction: 'sync',
     autoCommit: true
@@ -459,7 +459,7 @@ const folderInfo = await client.callTool('mcp__gas__git_get_sync_folder', {scrip
 - SYNC_BOTH_DIFFER
 - GIT_CLEAN
 
-**Tool: `git_sync` (direction: "pull-only")**
+**Tool: `local_sync` (direction: "pull-only")**
 
 **Actions:**
 1. Pulls files from GAS
@@ -478,7 +478,7 @@ const lsBefore = await client.callTool('mcp__gas__ls', {scriptId});
 const gasFilesBefore = lsBefore.content[0].text;
 
 // ACTION
-const syncResult = await client.callTool('mcp__gas__git_sync', {
+const syncResult = await client.callTool('mcp__gas__local_sync', {
   scriptId: testProjectId,
   direction: 'pull-only',
   autoCommit: true
@@ -510,7 +510,7 @@ expect(statusAfter.syncStatus.clean).to.be.true;
 - SYNC_BOTH_DIFFER
 - GIT_DIRTY
 
-**Tool: `git_sync` (direction: "push-only")**
+**Tool: `local_sync` (direction: "push-only")**
 
 **CRITICAL**: Even "push-only" ALWAYS pulls first for safety!
 
@@ -531,7 +531,7 @@ const lsBefore = await client.callTool('mcp__gas__ls', {scriptId});
 const gasFileCountBefore = (lsBefore.content[0].text.match(/\n/g) || []).length;
 
 // ACTION
-const syncResult = await client.callTool('mcp__gas__git_sync', {
+const syncResult = await client.callTool('mcp__gas__local_sync', {
   scriptId: testProjectId,
   direction: 'push-only',
   autoCommit: true
@@ -561,7 +561,7 @@ expect(statusAfter.syncStatus.clean).to.be.true;
 - L_FOLDER_NO
 - SYNC_NONE
 
-**Tool: `git_sync` (direction: "sync")**
+**Tool: `local_sync` (direction: "sync")**
 
 **Actions:**
 1. Creates sync folder and initializes git
@@ -584,7 +584,7 @@ const gasFileCount = (lsBefore.content[0].text.match(/\n/g) || []).length;
 expect(gasFileCount).to.be.lessThan(3);  // Only CommonJS and .git/config
 
 // ACTION
-const syncResult = await client.callTool('mcp__gas__git_sync', {
+const syncResult = await client.callTool('mcp__gas__local_sync', {
   scriptId: testProjectId,
   direction: 'sync',
   autoCommit: true
@@ -609,7 +609,7 @@ expect(folderAfter.isGitRepo).to.be.true;
 - G_FILES_YES
 - L_FOLDER_NO
 
-**Tool: `git_sync` (any direction)**
+**Tool: `local_sync` (any direction)**
 
 **Actions:**
 1. Attempts to read config from GAS
@@ -627,7 +627,7 @@ expect(statusBefore.hasGitLink).to.be.false;
 
 // ACTION
 try {
-  await client.callTool('mcp__gas__git_sync', {
+  await client.callTool('mcp__gas__local_sync', {
     scriptId: testProjectId,
     direction: 'sync'
   });
@@ -742,7 +742,7 @@ expect(folderAfter.isGitRepo).to.be.true;
 - **Local**: No change
 - **Verify**: gas_raw_cat .git/config, git_status.hasGitLink
 
-#### State 2 → State 3 (git_sync first time)
+#### State 2 → State 3 (local_sync first time)
 - **Action**: Creates folder, init git, pulls files, commits
 - **Transition**: L_FOLDER_NO → L_FOLDER_YES, L_GIT_NO → L_GIT_YES, L_FILES_NO → L_FILES_YES, SYNC_GAS_ONLY → SYNC_BOTH_MATCH
 - **Verify**: git_get_sync_folder.exists, git_status.syncStatus.clean
@@ -752,12 +752,12 @@ expect(folderAfter.isGitRepo).to.be.true;
 - **Transition**: SYNC_BOTH_MATCH → SYNC_BOTH_DIFFER, GIT_CLEAN → GIT_DIRTY
 - **Verify**: git_status.syncStatus.modified > 0
 
-#### State 4 → State 3 (git_sync with no conflicts)
+#### State 4 → State 3 (local_sync with no conflicts)
 - **Action**: Pulls GAS, merges, commits, pushes
 - **Transition**: SYNC_BOTH_DIFFER → SYNC_BOTH_MATCH, GIT_DIRTY → GIT_CLEAN
 - **Verify**: git_status.syncStatus.clean, sync result pushedCount > 0
 
-#### State 4 → State 5 (git_sync with conflicts)
+#### State 4 → State 5 (local_sync with conflicts)
 - **Action**: Attempts merge, detects conflicts
 - **Transition**: Remains in SYNC_BOTH_DIFFER, GIT_DIRTY remains
 - **Verify**: Sync result status = 'conflict', git_status.syncStatus.clean = false

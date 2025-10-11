@@ -37,216 +37,23 @@ const execAsync = promisify(exec);
 // Default sync folder base path
 const DEFAULT_SYNC_BASE = '~/gas-repos';
 
-/**
- * Initialize git association for a GAS project
- */
-export class GitInitTool extends BaseTool {
-  public name = 'git_init';
-  public description = 'Initialize git association for a GAS project by creating .git/config.gs configuration file in CommonJS format. Works alongside GitHub MCP server and standard git/gh commands for complete workflow integration.';
-  
-  public inputSchema = {
-    type: 'object',
-    properties: {
-      ...SchemaFragments.scriptId,
-      repository: {
-        type: 'string',
-        description: 'Git repository URL (can be obtained from GitHub MCP: mcp__github__search_repositories or gh repo view)',
-        examples: [
-          'https://github.com/owner/repo.git',
-          'git@github.com:owner/repo.git',
-          'https://gitlab.com/owner/repo.git',
-          'local' // For local-only projects without remote
-        ]
-      },
-      branch: {
-        type: 'string',
-        description: 'Git branch to track (check with: gh repo view --json defaultBranchRef or git branch -r)',
-        default: 'main',
-        examples: ['main', 'master', 'develop', 'feature/my-feature']
-      },
-      localPath: {
-        type: 'string',
-        description: 'Custom local sync folder for git operations (default: ~/gas-repos/project-{scriptId})',
-        examples: [
-          '~/projects/my-gas-project',
-          './gas-project',
-          '/absolute/path/to/project'
-        ]
-      },
-      syncPrefix: {
-        type: 'string',
-        description: 'Path prefix in git repo for GAS files (useful for monorepos)',
-        default: '',
-        examples: [
-          'src/gas',      // GAS files in src/gas/ subdirectory
-          'apps-script',  // GAS files in apps-script/ subdirectory
-          'backend/gas',  // Nested path for complex projects
-          ''              // GAS files at repo root (default)
-        ]
-      },
-      projectPath: {
-        type: 'string',
-        description: 'Path within GAS project for nested .git folders (supports multiple git projects in one GAS project)',
-        default: '',
-        examples: [
-          '',             // Root level .git/ folder
-          'subproject1',  // Creates subproject1/.git/config.gs
-          'libs/shared'   // Creates libs/shared/.git/config.gs
-        ]
-      },
-      includeReadme: {
-        type: 'boolean',
-        description: 'Convert and include README.md as README.html',
-        default: true
-      }
-    },
-    required: ['scriptId', 'repository'],
-    additionalProperties: false,
-    llmWorkflowGuide: {
-      prerequisites: [
-        'GAS project must exist (use gas_project_create if needed)',
-        'Git repository should exist (create with gh repo create or GitHub MCP)'
-      ],
-      typicalSequence: [
-        '1. Create repo: gh repo create owner/repo --public',
-        '2. Initialize: git_init({scriptId, repository})',
-        '3. Clone locally: cd ~/gas-repos && git clone <repository>',
-        '4. Sync files: git_sync({scriptId})',
-        '5. Work with standard git: git add, commit, push'
-      ],
-      interoperability: {
-        githubMcp: [
-          'mcp__github__search_repositories - Find existing repos',
-          'mcp__github__get_repository - Get repo details',
-          'mcp__github__create_repository - Create new repo',
-          'mcp__github__create_pull_request - After pushing changes'
-        ],
-        gitCommands: [
-          'git clone <repository> - Clone to local sync folder',
-          'git status - Check local changes',
-          'git add -A && git commit -m "msg" - Commit changes',
-          'git push origin <branch> - Push to GitHub'
-        ],
-        ghCommands: [
-          'gh repo create - Create new repository',
-          'gh repo clone - Clone repository',
-          'gh pr create - Create pull request',
-          'gh repo view --json defaultBranchRef - Check default branch'
-        ]
-      },
-      nextSteps: [
-        'git_sync - Synchronize files between GAS and local',
-        'git clone <repository> ~/gas-repos/project - Clone locally',
-        'gh repo view <repository> - Verify repo configuration'
-      ]
-    }
-  };
-
-  async execute(params: any): Promise<any> {
-    const scriptId = this.validate.scriptId(params.scriptId, 'git operation');
-    const repository = params.repository;
-    const branch = params.branch || 'main';
-    const syncPrefix = params.syncPrefix || '';
-    const projectPath = params.projectPath || ''; // Support nested projects
-    
-    // Determine local sync folder
-    const localPath = params.localPath || 
-      path.join(this.expandPath(DEFAULT_SYNC_BASE), `project-${scriptId}`);
-    const expandedPath = this.expandPath(localPath);
-    
-    // Get auth token
-    const accessToken = await this.getAuthToken(params);
-    const gitProjectManager = new GitProjectManager();
-    
-    try {
-      // Create local sync folder if it doesn't exist
-      await fs.mkdir(expandedPath, { recursive: true });
-      
-      // Initialize git repo if needed
-      if (!await this.isGitRepo(expandedPath)) {
-        await execFileAsync('git', ['init'], { cwd: expandedPath });
-        await execFileAsync('git', ['checkout', '-b', branch], { cwd: expandedPath });
-        
-        // Add remote if it's a real URL
-        if (repository !== 'local' && repository.includes('://')) {
-          await execFileAsync('git', ['remote', 'add', 'origin', repository], { cwd: expandedPath });
-        }
-      }
-      
-      // Create .git/config in GAS project using native INI format
-      await gitProjectManager.initGitConfig(
-        scriptId,
-        accessToken,
-        projectPath,
-        repository,
-        branch,
-        expandedPath
-      );
-      
-      // Also create a local .git/config copy for reference
-      const localGitPath = path.join(expandedPath, '.git-gas');
-      await fs.mkdir(localGitPath, { recursive: true });
-      
-      const config = await gitProjectManager.getProjectConfig(scriptId, accessToken, projectPath);
-      if (config) {
-        const iniContent = serializeINI(config);
-        await fs.writeFile(path.join(localGitPath, 'config'), iniContent);
-      }
-      
-      return {
-        success: true,
-        syncFolder: expandedPath,
-        gitConfigCreated: true,
-        projectPath: projectPath || '(root)',
-        repository: repository,
-        branch: branch,
-        gitFilePath: projectPath ? `${projectPath}/.git/config.gs` : '.git/config.gs',
-        recommendedActions: {
-          primary: 'Sync existing files between local and GAS',
-          alternatives: [
-            'Pull latest from GitHub first',
-            'Configure git remote if needed',
-            'Add .git/info/exclude.gs for local exclusions'
-          ],
-          gitCommands: repository !== 'local' ? [
-            `git -C "${expandedPath}" fetch origin ${branch}`,
-            `git -C "${expandedPath}" pull origin ${branch}`
-          ] : [],
-          gasCommands: [
-            `git_sync({scriptId: '${scriptId}', projectPath: '${projectPath}'})`
-          ]
-        }
-      };
-    } catch (error: any) {
-      throw new FileOperationError('initialize', scriptId, error.message || 'Failed to initialize git association');
-    }
-  }
-  
-  private expandPath(filePath: string): string {
-    if (!filePath) return '';
-    if (filePath.startsWith('~/')) {
-      return path.join(os.homedir(), filePath.slice(2));
-    }
-    return path.resolve(filePath);
-  }
-  
-  private async isGitRepo(dir: string): Promise<boolean> {
-    try {
-      await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd: dir });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
+// git_init tool removed - user must manually create .git/config.gs breadcrumb in GAS
 
 /**
- * Safe merge-based synchronization - ALWAYS pulls before pushing
+ * Sync entire GAS project to local filesystem with git-aware organization
+ *
+ * REQUIRES: .git/config.gs breadcrumb must already exist in GAS project
+ *
+ * WORKFLOW:
+ * 1. Manually create .git/config.gs in GAS with git metadata
+ * 2. Create local git repo: git init && git remote add origin <url>
+ * 3. Run local_sync: Syncs files between GAS and local
+ * 4. Standard git: git add, commit, push
  */
-export class GitSyncTool extends BaseTool {
-  public name = 'git_sync';
-  public description = 'Safe merge-based synchronization - ALWAYS pulls from GAS, merges locally, then pushes back. Critical bridge between GAS editing and git version control. Works with standard git workflow and GitHub MCP for complete development cycle.';
-  
+export class LocalSyncTool extends BaseTool {
+  public name = 'local_sync';
+  public description = 'Sync GAS project with local git repo. REQUIRES .git/config.gs breadcrumb in GAS. ALWAYS pulls from GAS first, merges intelligently, then pushes back. Does NOT auto-create breadcrumbs.';
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -316,57 +123,40 @@ export class GitSyncTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        'Project must have .git/config.gs file (use git_init first)',
-        'Local git repo will be created automatically if needed',
-        'Git must be installed on the system'
-      ],
+      conceptualModel: ['.git/config.gs breadcrumb REQUIRED in GAS', 'Breadcrumbs mark folders+metadata', 'Multi-repo: multiple .git/ folders supported', 'NO auto-bootstrap: manual setup required'],
+      prerequisites: ['.git/config.gs exists in GAS', 'Local git repo (git init + remote)', 'Git installed', 'GAS project exists'],
       typicalWorkflow: [
-        '1. Edit in GAS editor or locally',
-        '2. Run git_sync({scriptId}) to merge changes',
-        '3. Resolve any conflicts if they occur',
-        '4. Commit: git add -A && git commit -m "Synced with GAS"',
-        '5. Push to GitHub: git push origin main',
-        '6. Create PR if needed: gh pr create'
+        '1. Manually create .git/config.gs in GAS (use gas_write)',
+        '2. mkdir ~/gas-repos/project-{scriptId} && cd there',
+        '3. git init && git remote add origin <url>',
+        '4. local_sync({scriptId})→syncs files',
+        '5. git add -A && git commit -m "Initial sync"',
+        '6. git push origin main',
+        '7. Make changes (local OR GAS)',
+        '8. local_sync({scriptId})→intelligent merge+sync'
       ],
       useCases: {
-        afterGasEdit: 'git_sync({scriptId}) - Pull GAS changes to local',
-        beforeDeploy: 'git_sync({scriptId, direction: "push-only"}) - Push local to GAS',
-        regularSync: 'git_sync({scriptId}) - Full bidirectional sync',
-        pullOnly: 'git_sync({scriptId, direction: "pull-only"}) - Update local only',
-        forceOverwrite: 'git_sync({scriptId, forceOverwrite: true}) - ⚠️ DANGEROUS'
+        firstTime: 'Create .git/config.gs → git init+remote → local_sync',
+        afterGasEdit: 'local_sync({scriptId})→pull+merge',
+        beforeDeploy: 'local_sync({scriptId,direction:"push-only"})',
+        fullSync: 'local_sync({scriptId})',
+        pullOnly: 'local_sync({scriptId,direction:"pull-only"})',
+        forceOverwrite: 'local_sync({scriptId,forceOverwrite:true})→⚠️ DANGEROUS'
       },
       interoperability: {
-        beforeSync: [
-          'git status - Check local uncommitted changes',
-          'git stash - Save local changes temporarily',
-          'gh repo sync - Pull latest from GitHub'
-        ],
-        afterSync: [
-          'git diff - Review merged changes',
-          'git add -A && git commit -m "msg" - Commit merged result',
-          'git push origin branch - Push to GitHub',
-          'gh pr create - Create pull request'
-        ],
-        githubMcp: [
-          'mcp__github__get_file_contents - Compare with GitHub version',
-          'mcp__github__create_pull_request - After pushing synced changes',
-          'mcp__github__list_commits - Review commit history'
-        ]
+        beforeSync: ['git status→check uncommitted', 'git stash→save temp', 'gh repo sync→pull GitHub'],
+        afterSync: ['git diff→review', 'git add -A && commit', 'git push origin branch', 'gh pr create'],
+        githubMcp: ['get_file_contents→compare', 'create_pull_request→after push', 'list_commits→history']
       },
       criticalBehavior: [
-        '⚠️ ALWAYS pulls ALL files from GAS first (never blind push)',
-        '✅ Merges intelligently with local changes using git merge-file',
-        '🔒 Only pushes back to GAS if merge succeeds without conflicts',
-        '🛑 Stops for manual resolution if conflicts detected',
-        '📁 Creates .git-gas/ folder with merge artifacts for debugging'
+        '🚫 NO AUTO-BOOTSTRAP: .git/config.gs must exist in GAS',
+        '⚠️ ALWAYS pull ALL from GAS first (never blind)',
+        '✅ Merge intelligently (git merge-file)',
+        '🔒 Push→GAS only if merge succeeds',
+        '🛑 Stop→manual if conflicts',
+        '📁 .git-gas/ folder→merge artifacts'
       ],
-      conflictResolution: [
-        'Conflicts are saved in .git-gas/ folder',
-        'Use git merge-tool or manually edit conflicts',
-        'Run git_sync again after resolving',
-        'Or use forceOverwrite: true to take one version (dangerous)'
-      ]
+      conflictResolution: ['Conflicts→.git-gas/ folder', 'git merge-tool | manual edit', 'local_sync again after resolve', 'forceOverwrite:true→take one (dangerous)']
     }
   };
 
@@ -377,25 +167,29 @@ export class GitSyncTool extends BaseTool {
     const mergeStrategy = params.mergeStrategy || 'merge';
     const forceOverwrite = params.forceOverwrite === true;
     const projectPath = params.projectPath || '';
-    
+
     const accessToken = await this.getAuthToken(params);
     const gasClient = new GASClient();
     const gitProjectManager = new GitProjectManager();
-    
+
     try {
       // If specific projectPath provided (including empty string for root), sync just that repo
       if (projectPath !== undefined && params.projectPath !== undefined) {
         return await this.syncSingleRepo(
-          scriptId, projectPath, direction, autoCommit, 
-          mergeStrategy, forceOverwrite, gasClient, 
+          scriptId, projectPath, direction, autoCommit,
+          mergeStrategy, forceOverwrite, gasClient,
           accessToken, params.transformOptions
         );
       }
-      
+
       // Otherwise, sync ALL repos in the project
       const projects = await gitProjectManager.listGitProjects(scriptId, accessToken);
       if (projects.length === 0) {
-        throw new ValidationError('git-link', scriptId, 'Project must have .git/config.gs file(s) - run git_init first');
+        throw new ValidationError('git-link', scriptId,
+          'No .git/config.gs breadcrumb found in GAS project.\n' +
+          'You must manually create .git/config.gs in GAS first.\n' +
+          'Example: gas_write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo\\n[branch \\"main\\"]"})'
+        );
       }
       
       console.error(`🔄 Found ${projects.length} git repositories in project`);
@@ -441,7 +235,7 @@ export class GitSyncTool extends BaseTool {
           primary: 'Review and resolve failures in individual repositories',
           commands: results
             .filter(r => !r.success)
-            .map(r => `git_sync({scriptId: '${scriptId}', projectPath: '${r.projectPath === '(root)' ? '' : r.projectPath}'})`)
+            .map(r => `local_sync({scriptId: '${scriptId}', projectPath: '${r.projectPath === '(root)' ? '' : r.projectPath}'})`)
         } : undefined
       };
       
@@ -462,13 +256,19 @@ export class GitSyncTool extends BaseTool {
     transformOptions?: any
   ): Promise<any> {
     const gitProjectManager = new GitProjectManager();
-    
+
     // Get git configuration for this specific repo
     const gitConfig = await gitProjectManager.getProjectConfig(scriptId, accessToken, projectPath);
+
+    // REQUIRE breadcrumb - no auto-bootstrap
     if (!gitConfig) {
-      throw new ValidationError('git-link', `${projectPath || 'root'}`, 'Repository must have .git/config.gs file');
+      throw new ValidationError('git-link', `${projectPath || 'root'}`,
+        `No .git/config.gs breadcrumb found in GAS project at path: ${projectPath || 'root'}.\n` +
+        'You must manually create .git/config.gs in GAS first.\n' +
+        'Example: gas_write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo\\n[branch \\"main\\"]"})'
+      );
     }
-    
+
     // Transform config to expected format
     const config = {
       repository: gitConfig.remote?.origin?.url || '',
@@ -477,7 +277,7 @@ export class GitSyncTool extends BaseTool {
       lastSync: (gitConfig as any).sync?.lastSync,
       projectPath: projectPath
     };
-    
+
     const syncFolder = this.expandPath(config.localPath);
     
     // Ensure sync folder exists and is a git repo
@@ -1150,7 +950,7 @@ export class GitSyncTool extends BaseTool {
           '# Edit files to resolve conflict markers',
           `git -C "${syncFolder}" add .`,
           `git -C "${syncFolder}" commit -m "Resolved conflicts"`,
-          `git_sync({scriptId: '...'})`
+          `local_sync({scriptId: '...'})`
         ]
       }
     };
@@ -1174,545 +974,3 @@ export class GitSyncTool extends BaseTool {
   }
 }
 
-/**
- * Check git association and sync status
- */
-export class GitStatusTool extends BaseTool {
-  public name = 'git_status';
-  public description = 'Check git association and sync status for a GAS project. Shows local repo state, remote tracking, and recommends next actions. Integrates with git status and GitHub MCP for complete repository visibility.';
-  
-  public inputSchema = {
-    type: 'object',
-    properties: {
-      ...SchemaFragments.scriptId,
-      projectPath: {
-        type: 'string',
-        description: 'Optional: Check specific nested project within GAS',
-        default: '',
-        examples: ['', 'subproject1', 'libs/shared']
-      }
-    },
-    required: ['scriptId'],
-    additionalProperties: false,
-    llmWorkflowGuide: {
-      typicalSequence: [
-        '1. git_status({scriptId}) - Check if project is git-linked',
-        '2. If not linked: git_init({scriptId, repository})',
-        '3. If linked: Review sync status and recommendations',
-        '4. Follow recommended git/gh commands for next steps'
-      ],
-      returnValue: {
-        hasGitLink: 'boolean - true if .git/config.gs exists',
-        repository: 'Git repository URL from config',
-        localRepo: 'Path to local git repository',
-        branch: 'Current git branch',
-        projects: 'Array of all git-enabled projects in GAS',
-        syncStatus: {
-          exists: 'boolean - local repo exists',
-          branch: 'Current local branch',
-          ahead: 'Number of commits ahead of remote',
-          behind: 'Number of commits behind remote',
-          modified: 'Number of modified files',
-          untracked: 'Number of untracked files',
-          clean: 'boolean - working directory clean'
-        },
-        recommendedActions: 'Context-specific next steps'
-      },
-      interoperability: {
-        relatedGitCommands: [
-          'git status - Check local repository state',
-          'git log --oneline -5 - Review recent commits',
-          'git remote -v - Check remote configuration',
-          'git branch -vv - Show tracking branches'
-        ],
-        relatedGhCommands: [
-          'gh repo view - Check GitHub repository info',
-          'gh pr list - View open pull requests',
-          'gh run list - Check workflow runs'
-        ],
-        relatedGithubMcp: [
-          'mcp__github__get_repository - Get detailed repo info',
-          'mcp__github__list_branches - View all branches',
-          'mcp__github__list_commits - Review commit history',
-          'mcp__github__get_pull_request - Check PR status'
-        ]
-      },
-      statusInterpretation: {
-        'ahead > 0': 'Local has commits not pushed to GitHub - use: git push',
-        'behind > 0': 'GitHub has commits not pulled locally - use: git pull',
-        'modified > 0': 'Local changes need committing - use: git add && git commit',
-        'untracked > 0': 'New files need adding - use: git add',
-        'clean = true': 'Everything synced and committed - ready for git_sync'
-      }
-    }
-  };
-
-  async execute(params: any): Promise<any> {
-    const scriptId = this.validate.scriptId(params.scriptId, 'git operation');
-    const accessToken = await this.getAuthToken(params);
-    const gitProjectManager = new GitProjectManager();
-    
-    try {
-      // Check for git config in any project
-      const projects = await gitProjectManager.listGitProjects(scriptId, accessToken);
-      
-      if (projects.length === 0) {
-        return {
-          hasGitLink: false,
-          message: 'Project is not git-linked. Use git_init to create association.',
-          recommendedActions: {
-            primary: 'Initialize git association',
-            gasCommands: [
-              `git_init({scriptId: '${scriptId}', repository: 'https://github.com/owner/repo.git'})`
-            ]
-          }
-        };
-      }
-      
-      // Get git config from the first project with one
-      const projectPath = projects[0] === '(root)' ? '' : projects[0];
-      const gitConfig = await gitProjectManager.getProjectConfig(scriptId, accessToken, projectPath);
-      
-      if (!gitConfig) {
-        throw new ValidationError('.git/config.gs', 'invalid-config', 'Valid git configuration');
-      }
-      
-      const repository = gitConfig.remote?.origin?.url || '';
-      const branch = Object.keys(gitConfig.branch || {})[0] || 'main';
-      const localPath = (gitConfig as any).sync?.localPath || `~/gas-repos/project-${scriptId}`;
-      const localRepo = this.expandPath(localPath);
-      
-      // Check local repo status
-      let gitStatus: any = {};
-      if (await this.isGitRepo(localRepo)) {
-        const branch = await this.getCurrentBranch(localRepo);
-        const status = await execFileAsync('git', ['status', '--porcelain'], { cwd: localRepo });
-        const modifiedFiles = status.stdout.split('\n').filter(line => line.trim()).length;
-        
-        // Check ahead/behind
-        let ahead = 0, behind = 0;
-        try {
-          const revList = await execFileAsync('git', ['rev-list', '--left-right', '--count', `origin/${branch}...HEAD`], { cwd: localRepo });
-          const counts = revList.stdout.trim().split('\t');
-          behind = parseInt(counts[0]) || 0;
-          ahead = parseInt(counts[1]) || 0;
-        } catch {
-          // No remote or not tracking
-        }
-        
-        gitStatus = {
-          branch: branch,
-          ahead: ahead,
-          behind: behind,
-          modified: modifiedFiles,
-          clean: modifiedFiles === 0
-        };
-      }
-      
-      const response: any = {
-        hasGitLink: true,
-        repository: repository,
-        localRepo: localRepo,
-        branch: branch,
-        lastSync: (gitConfig as any).sync?.lastSync?.timestamp,
-        syncStatus: gitStatus,
-        projects: projects  // Show all projects with git configs
-      };
-      
-      // Add recommended actions based on status
-      if (gitStatus.ahead > 0) {
-        response.recommendedActions = {
-          primary: 'Push local changes to GitHub',
-          alternatives: ['Sync changes to GAS first'],
-          gitCommands: [
-            `git -C "${localRepo}" push origin ${gitStatus.branch}`
-          ],
-          gasCommands: [
-            `git_sync({scriptId: '${scriptId}'})`
-          ]
-        };
-      } else if (gitStatus.behind > 0) {
-        response.recommendedActions = {
-          primary: 'Pull changes from GitHub',
-          gitCommands: [
-            `git -C "${localRepo}" pull origin ${gitStatus.branch}`
-          ],
-          gasCommands: [
-            `git_sync({scriptId: '${scriptId}'})`
-          ]
-        };
-      } else if (gitStatus.modified > 0) {
-        response.recommendedActions = {
-          primary: 'Commit local changes',
-          gitCommands: [
-            `git -C "${localRepo}" add -A`,
-            `git -C "${localRepo}" commit -m "Update"`
-          ]
-        };
-      } else {
-        response.recommendedActions = {
-          primary: 'Everything is in sync',
-          alternatives: ['Make changes and sync when ready']
-        };
-      }
-      
-      return response;
-      
-    } catch (error: any) {
-      throw new FileOperationError('status', scriptId, error.message || 'Failed to get git status');
-    }
-  }
-  
-  private expandPath(filePath: string): string {
-    if (!filePath) return '';
-    if (filePath.startsWith('~/')) {
-      return path.join(os.homedir(), filePath.slice(2));
-    }
-    return path.resolve(filePath);
-  }
-  
-  private async isGitRepo(dir: string): Promise<boolean> {
-    try {
-      await fs.access(dir);
-      await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd: dir });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  
-  private async getCurrentBranch(syncFolder: string): Promise<string> {
-    try {
-      const result = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: syncFolder });
-      return result.stdout.trim();
-    } catch {
-      return 'main';
-    }
-  }
-}
-
-/**
- * Set or update the local sync folder for a GAS project
- */
-export class GitSetSyncFolderTool extends BaseTool {
-  public name = 'git_set_sync_folder';
-  public description = 'Set or update the local sync folder for a GAS project. Allows relocating where git operations happen locally. Useful for organizing projects or moving to a different directory structure.';
-  
-  public inputSchema = {
-    type: 'object',
-    properties: {
-      ...SchemaFragments.scriptId,
-      localPath: {
-        type: 'string',
-        description: 'New local sync folder path where git operations will occur',
-        examples: [
-          '~/projects/my-gas-app',      // Home directory path
-          './gas-project',               // Relative to current directory
-          '/Users/me/dev/gas',          // Absolute path
-          '../sibling-folder/project'   // Relative path navigation
-        ]
-      },
-      moveExisting: {
-        type: 'boolean',
-        description: 'Physically move existing git repo to new location (preserves history)',
-        default: false,
-        examples: [
-          true,   // Move the entire git repo to new location
-          false   // Just update config, don't move files
-        ]
-      }
-    },
-    required: ['scriptId', 'localPath'],
-    additionalProperties: false,
-    llmWorkflowGuide: {
-      useCases: {
-        organize: 'git_set_sync_folder({scriptId, localPath: "~/organized/project", moveExisting: true})',
-        rename: 'git_set_sync_folder({scriptId, localPath: "./new-name", moveExisting: true})',
-        setup: 'git_set_sync_folder({scriptId, localPath: "~/my-projects/gas"})',
-        relocate: 'git_set_sync_folder({scriptId, localPath: "/new/disk/location", moveExisting: true})'
-      },
-      typicalWorkflow: [
-        '1. Check current location: git_get_sync_folder({scriptId})',
-        '2. Set new location: git_set_sync_folder({scriptId, localPath, moveExisting})',
-        '3. Verify move: git -C <newPath> status',
-        '4. Sync if needed: git_sync({scriptId})'
-      ],
-      interoperability: {
-        beforeMove: [
-          'git status - Ensure no uncommitted changes',
-          'git stash - Save any work in progress',
-          'pwd - Note current directory'
-        ],
-        afterMove: [
-          'cd <newPath> - Navigate to new location',
-          'git status - Verify repo moved correctly',
-          'git remote -v - Check remotes still configured',
-          'ls -la - Verify all files present'
-        ],
-        githubIntegration: [
-          'gh repo clone <repo> <newPath> - Alternative: clone fresh',
-          'gh repo view --json name,owner - Verify repo details'
-        ]
-      },
-      warnings: [
-        '⚠️ Ensure no uncommitted changes before moving',
-        '📁 moveExisting:true physically moves the git repo',
-        '🔗 Git remotes and history are preserved when moving',
-        '📝 Updates .git/config.gs in GAS to track new location'
-      ]
-    }
-  };
-
-  async execute(params: any): Promise<any> {
-    const scriptId = this.validate.scriptId(params.scriptId, 'git operation');
-    const newPath = this.expandPath(params.localPath);
-    const moveExisting = params.moveExisting === true;
-    
-    const accessToken = await this.getAuthToken(params);
-    const gasClient = new GASClient();
-    
-    try {
-      // Get current git config using GitProjectManager
-      const gitProjectManager = new GitProjectManager();
-      const config = await gitProjectManager.getProjectConfig(scriptId, accessToken, '');
-      
-      if (!config) {
-        throw new ValidationError('git-link', scriptId, 'Project must have .git/config.gs file - run git_init first');
-      }
-      
-      // Get paths from config
-      const oldPath = this.expandPath((config as any).sync?.localPath || '');
-      
-      // Move existing repo if requested
-      if (moveExisting && oldPath !== newPath) {
-        if (await this.pathExists(oldPath)) {
-          // Create parent directory
-          await fs.mkdir(path.dirname(newPath), { recursive: true });
-          // Move the directory
-          await fs.rename(oldPath, newPath);
-        }
-      } else if (!await this.pathExists(newPath)) {
-        // Create new directory
-        await fs.mkdir(newPath, { recursive: true });
-      }
-      
-      // Update git config in GAS
-      const updatedConfig = {
-        ...config,
-        sync: {
-          ...(config as any).sync,
-          localPath: params.localPath
-        }
-      };
-      
-      await gitProjectManager.saveGitFile(scriptId, accessToken, '', 'config', serializeINI(updatedConfig));
-      
-      return {
-        success: true,
-        oldPath: oldPath,
-        newPath: newPath,
-        moved: moveExisting && oldPath !== newPath,
-        recommendedActions: {
-          primary: 'Sync to ensure everything is connected',
-          gasCommands: [
-            `git_sync({scriptId: '${scriptId}'})`
-          ]
-        }
-      };
-      
-    } catch (error: any) {
-      throw new FileOperationError('set-sync-folder', scriptId, error.message || 'Failed to set sync folder');
-    }
-  }
-  
-  private expandPath(filePath: string): string {
-    if (!filePath) return '';
-    if (filePath.startsWith('~/')) {
-      return path.join(os.homedir(), filePath.slice(2));
-    }
-    return path.resolve(filePath);
-  }
-  
-  private async pathExists(filePath: string): Promise<boolean> {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
-
-/**
- * Query the current sync folder for a GAS project
- */
-export class GitGetSyncFolderTool extends BaseTool {
-  public name = 'git_get_sync_folder';
-  public description = 'Query the current sync folder location for a GAS project. Shows where git commands should be run locally. Essential for understanding the local/remote/GAS file structure.';
-  
-  public inputSchema = {
-    type: 'object',
-    properties: {
-      ...SchemaFragments.scriptId
-    },
-    required: ['scriptId'],
-    additionalProperties: false,
-    llmWorkflowGuide: {
-      purpose: 'Find where project is synced locally to run git commands',
-      typicalUsage: [
-        '1. git_get_sync_folder({scriptId}) - Find sync location',
-        '2. cd <syncFolder> - Navigate to the folder',
-        '3. git status - Check repository state',
-        '4. Standard git workflow: add, commit, push'
-      ],
-      returnValue: {
-        syncFolder: 'Absolute path to local sync folder',
-        exists: 'boolean - Whether folder currently exists',
-        isGitRepo: 'boolean - Whether it contains .git directory',
-        repository: 'Remote repository URL from config',
-        branch: 'Configured branch to track',
-        gitStatus: {
-          branch: 'Current local git branch',
-          clean: 'boolean - Working directory clean',
-          modified: 'Number of modified files',
-          untracked: 'Number of untracked files'
-        },
-        recommendedActions: 'Next steps based on current state'
-      },
-      interoperability: {
-        afterQuery: [
-          'cd <syncFolder> - Navigate to sync folder',
-          'git status - Check current state',
-          'git log --oneline -5 - Review recent commits',
-          'git remote -v - Verify remote configuration'
-        ],
-        withGithubMcp: [
-          'mcp__github__get_repository - Compare with remote state',
-          'mcp__github__list_commits - Review GitHub history',
-          'mcp__github__create_pull_request - After pushing changes'
-        ],
-        withGhCli: [
-          'gh repo clone <repository> <syncFolder> - Clone if not exists',
-          'gh pr list - Check pull requests',
-          'gh repo sync - Sync with upstream'
-        ]
-      },
-      troubleshooting: {
-        'exists: false': 'Folder doesn\'t exist - run git_sync to create',
-        'isGitRepo: false': 'Not a git repo - clone or init needed',
-        'no syncFolder': 'Project not git-linked - run git_init first'
-      }
-    }
-  };
-
-  async execute(params: any): Promise<any> {
-    const scriptId = this.validate.scriptId(params.scriptId, 'git operation');
-    const accessToken = await this.getAuthToken(params);
-    const gasClient = new GASClient();
-    
-    try {
-      // Get git config from GAS using GitProjectManager
-      const gitProjectManager = new GitProjectManager();
-      const projects = await gitProjectManager.listGitProjects(scriptId, accessToken);
-      
-      if (projects.length === 0) {
-        return {
-          hasGitLink: false,
-          message: 'Project is not git-linked',
-          recommendedActions: {
-            primary: 'Initialize git association first',
-            gasCommands: [
-              `git_init({scriptId: '${scriptId}', repository: 'https://github.com/owner/repo.git'})`
-            ]
-          }
-        };
-      }
-      
-      // Get config from the first project
-      const projectPath = projects[0] === '(root)' ? '' : projects[0];
-      const config = await gitProjectManager.getProjectConfig(scriptId, accessToken, projectPath);
-      
-      if (!config) {
-        throw new ValidationError('.git/config.gs', 'invalid', 'Valid git configuration');
-      }
-      
-      const gitConfig: any = {
-        repository: config.remote?.origin?.url || '',
-        branch: Object.keys(config.branch || {})[0] || 'main',
-        localPath: (config as any).sync?.localPath || `~/gas-repos/project-${scriptId}`
-      };
-      
-      const syncFolder = gitConfig.localPath ? this.expandPath(gitConfig.localPath) : '';
-      
-      const response: any = {
-        syncFolder: syncFolder,
-        exists: await this.pathExists(syncFolder),
-        isGitRepo: false,
-        gitStatus: null
-      };
-      
-      // Check git status if it's a repo
-      if (response.exists && await this.isGitRepo(syncFolder)) {
-        response.isGitRepo = true;
-        
-        const branch = await this.getCurrentBranch(syncFolder);
-        const status = await execFileAsync('git', ['status', '--porcelain'], { cwd: syncFolder });
-        const clean = status.stdout.trim() === '';
-        
-        let remoteUrl = '';
-        try {
-          const remote = await execFileAsync('git', ['remote', 'get-url', 'origin'], { cwd: syncFolder });
-          remoteUrl = remote.stdout.trim();
-        } catch {
-          // No remote
-        }
-        
-        response.gitStatus = {
-          branch: branch,
-          clean: clean,
-          remoteUrl: remoteUrl
-        };
-      }
-      
-      return response;
-      
-    } catch (error: any) {
-      throw new FileOperationError('get-sync-folder', scriptId, error.message || 'Failed to get sync folder');
-    }
-  }
-  
-  private expandPath(filePath: string): string {
-    if (!filePath) return '';
-    if (filePath.startsWith('~/')) {
-      return path.join(os.homedir(), filePath.slice(2));
-    }
-    return path.resolve(filePath);
-  }
-  
-  private async pathExists(filePath: string): Promise<boolean> {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  
-  private async isGitRepo(dir: string): Promise<boolean> {
-    try {
-      await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd: dir });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  
-  private async getCurrentBranch(syncFolder: string): Promise<string> {
-    try {
-      const result = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: syncFolder });
-      return result.stdout.trim();
-    } catch {
-      return 'unknown';
-    }
-  }
-}

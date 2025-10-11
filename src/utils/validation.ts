@@ -49,7 +49,7 @@ export interface ValidationResult {
  * Centralized validation utility for MCP Gas Server parameters
  * 
  * **Replaces duplicate validation in:**
- * - `GASRunTool.validateExecutionParams()` - scriptId/functionName validation
+ * - `ExecTool.validateExecutionParams()` - scriptId/functionName validation
  * - `GASWriteTool.validateWriteParams()` - path/content validation
  * - `GASDeployCreateTool.validateDeploymentParams()` - deployment validation
  * - `GASProxySetupTool.validateProxyParams()` - URL/config validation

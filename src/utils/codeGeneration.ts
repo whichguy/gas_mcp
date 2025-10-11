@@ -4,7 +4,7 @@
  * 
  * This utility consolidates:
  * - GASClient.generateMcpGasRunClass() (87 lines) -> System with built-in execution
- * - GASRunTool.getProxyFunctionCode() (140 lines) -> Web app proxy
+ * - ExecTool.getProxyFunctionCode() (140 lines) -> Web app proxy
  * 
  * Architecture: Self-contained system with dynamic execution
  * - __mcp_gas_run: System shim ONLY - never modified after creation

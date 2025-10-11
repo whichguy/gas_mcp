@@ -48,16 +48,11 @@ export class CpTool extends BaseFileSystemTool {
     required: ['scriptId', 'from', 'to'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use to copy files with proper CommonJS module handling',
-      workflow: 'Copy within project: cp({scriptId: "...", from: "utils", to: "utils-backup"}),',
-      commonJsProcessing: 'Unwraps source module wrapper, applies new wrapper for destination with correct module name',
-      examples: [
-        'Copy within project: cp({scriptId: "1abc2def...", from: "utils", to: "utils-backup"})',
-        'Cross-project copy: cp({scriptId: "1abc2def...", from: "utils", to: "1xyz9abc.../utils"})',
-        'Copy to subfolder: cp({scriptId: "1abc2def...", from: "main", to: "archive/main-v1"})',
-        'Copy with rename: cp({scriptId: "1abc2def...", from: "Calculator", to: "CalcBackup"})'
-      ],
-      vsRawCp: 'Use raw_cp for bulk operations that need exact file preservation without CommonJS processing'
+      whenToUse: 'copy files + proper CommonJS handling',
+      workflow: 'cp({scriptId:"...",from:"utils",to:"utils-backup"})',
+      commonJsProcessing: 'unwraps source→rewraps dest with correct module name',
+      examples: ['within: cp({scriptId:"1abc2def...",from:"utils",to:"utils-backup"})', 'cross-project: cp({scriptId:"1abc2def...",from:"utils",to:"1xyz9abc.../utils"})', 'subfolder: cp({scriptId:"1abc2def...",from:"main",to:"archive/main-v1"})', 'rename: cp({scriptId:"1abc2def...",from:"Calculator",to:"CalcBackup"})'],
+      vsRawCp: 'raw_cp→bulk ops without CommonJS processing'
     }
   };
 

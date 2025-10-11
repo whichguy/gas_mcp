@@ -1,7 +1,7 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { BaseTool } from './base.js';
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
-import { RunTool } from './execution.js';
+import { ExecTool } from './execution.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
@@ -59,9 +59,9 @@ export class TriggerListTool extends BaseTool {
         })()
       `;
 
-      // Execute using gas_run
-      const gasRunTool = new RunTool(this.sessionAuthManager);
-      const runResult = await gasRunTool.execute({
+      // Execute using gas_exec
+      const gasExecTool = new ExecTool(this.sessionAuthManager);
+      const runResult = await gasExecTool.execute({
         scriptId,
         js_statement: jsStatement,
         accessToken
@@ -306,9 +306,9 @@ export class TriggerCreateTool extends BaseTool {
           throw new Error(`Unsupported trigger type: ${triggerType}`);
       }
 
-      // Execute using gas_run
-      const gasRunTool = new RunTool(this.sessionAuthManager);
-      const runResult = await gasRunTool.execute({
+      // Execute using gas_exec
+      const gasExecTool = new ExecTool(this.sessionAuthManager);
+      const runResult = await gasExecTool.execute({
         scriptId,
         js_statement: jsStatement,
         accessToken
@@ -872,9 +872,9 @@ export class TriggerDeleteTool extends BaseTool {
         `;
       }
 
-      // Execute using gas_run
-      const gasRunTool = new RunTool(this.sessionAuthManager);
-      const runResult = await gasRunTool.execute({
+      // Execute using gas_exec
+      const gasExecTool = new ExecTool(this.sessionAuthManager);
+      const runResult = await gasExecTool.execute({
         scriptId,
         js_statement: jsStatement,
         accessToken

@@ -96,41 +96,19 @@ export class RawEditTool extends BaseTool {
     required: ['path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use for editing raw file content including CommonJS wrappers. For user code editing, prefer gas_edit.',
-      contentDifference: 'gas_raw_edit operates on complete file content including _main() wrappers and __defineModule__ calls. gas_edit operates on clean user code.',
-      tokenSavings: 'Saves 95%+ output tokens vs gas_raw_write. Minimal response by default (~10 tokens vs thousands).',
-      examples: [
-        'Edit CommonJS wrapper: raw_edit({path: "abc123.../CommonJS", edits: [{oldText: "function _main(", newText: "function _mainWrapper("}]})',
-        'Edit system file: raw_edit({path: "abc123.../__mcp_gas_run", edits: [...]})'
-      ],
-      vsGasEdit: 'gas_edit unwraps CommonJS for editing, gas_raw_edit preserves exact content',
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support',
-        containerBound: '✅ Full Support',
-        notes: 'Raw editing works universally for both script types.'
-      }
+      whenToUse: 'Raw content (_main+__defineModule__) editing | system files | user code→prefer edit',
+      contentDifference: 'raw_edit: complete (_main+__defineModule__) | edit: clean user code',
+      tokenSavings: '95%+ vs raw_write (minimal ~10tok vs thousands)',
+      examples: ['CommonJS: path:"abc123.../CommonJS",edits:[{oldText:"function _main(",newText:"function _mainWrapper("}]', 'System: path:"abc123.../__mcp_gas_run",edits:[...]'],
+      vsGasEdit: 'edit: unwraps | raw_edit: preserves exact',
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal raw editing'}
     },
     llmHints: {
-      preferOver: {
-        gas_raw_write: 'When making small changes to system files - raw_edit saves 95%+ tokens by only outputting changed text',
-        gas_edit: 'When you need to modify CommonJS wrappers or system infrastructure - gas_edit unwraps content'
-      },
-      idealUseCases: [
-        'Editing CommonJS system files (CommonJS.js)',
-        'Modifying execution infrastructure (__mcp_gas_run.js)',
-        'Updating module wrappers (_main functions)',
-        'Fixing system-level bugs in infrastructure code',
-        'Patching auto-generated code that needs exact content preservation'
-      ],
-      avoidWhen: [
-        'Editing user code (use gas_edit instead - it unwraps CommonJS automatically)',
-        'Creating new system files (use gas_raw_write instead)',
-        'Refactoring entire system architecture (use gas_raw_write instead)',
-        'Normal application development (use gas_edit for user code)'
-      ],
-      responseOptimization: 'Response is minimal by default (~10 tokens). Use dryRun: true to see full diff before applying changes.',
-      tokenEconomics: 'Output tokens cost 5x input ($15/M vs $3/M for Claude Sonnet 4.5). Minimize response size for maximum cost savings.',
-      systemFileWarning: 'Only use for system files. For user code, use gas_edit which handles CommonJS automatically.'
+      preferOver: {gas_raw_write: 'small system changes→95%+ save (output only changed)', gas_edit: 'modify wrappers/infra→edit unwraps'},
+      idealUseCases: ['CommonJS system (CommonJS.js)', 'Exec infra (__mcp_gas_run.js)', 'Module wrappers (_main fns)', 'System bugs in infra', 'Auto-gen code (exact preservation)'],
+      avoidWhen: ['user code→edit (auto unwraps) | new system→raw_write | full refactor→raw_write | app dev→edit'],
+      responseOptimization: 'Default minimal (~10tok) | dryRun:true→full diff',
+      systemFileWarning: 'System files only | user code→edit (handles CommonJS auto)'
     }
   };
 

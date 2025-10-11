@@ -3,7 +3,7 @@ import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
-describe('Real gas_run Integration Tests', () => {
+describe('Real exec Integration Tests', () => {
   let client: InProcessTestClient;
   let auth: InProcessAuthHelper;
   let gas: InProcessGASTestHelper;
@@ -17,14 +17,14 @@ describe('Real gas_run Integration Tests', () => {
     client = globalAuthState.client!;
     auth = globalAuthState.auth!;  // Reuse global auth with sessionId
     gas = globalAuthState.gas!;
-    console.log('🔗 Using shared global MCP client for real gas_run integration tests');
+    console.log('🔗 Using shared global MCP client for real exec integration tests');
   });
 
   beforeEach(async function() {
     // Skip individual tests if not authenticated
     const authStatus = await auth.getAuthStatus();
     if (!authStatus.authenticated) {
-      console.log('⚠️  Authentication required for real gas_run integration - testing infrastructure only');
+      console.log('⚠️  Authentication required for real exec integration - testing infrastructure only');
       // Don't skip, but test infrastructure instead
     }
   });
@@ -42,14 +42,14 @@ describe('Real gas_run Integration Tests', () => {
   });
 
   after(async () => {
-    console.log('🧹 Real gas_run integration tests completed');
+    console.log('🧹 Real exec integration tests completed');
   });
 
-  describe('Real Script Execution with gas_run', () => {
-    it('should execute real Google Apps Script code with gas_run', async function() {
+  describe('Real Script Execution with exec', () => {
+    it('should execute real Google Apps Script code with exec', async function() {
       this.timeout(120000); // 2 minutes for real operations
 
-      console.log('\n🎯 Testing Real gas_run Execution');
+      console.log('\n🎯 Testing Real exec Execution');
 
       // Verify authentication first
       const authStatus = await auth.getAuthStatus();
@@ -58,13 +58,13 @@ describe('Real gas_run Integration Tests', () => {
         console.log('⚠️  No authentication - testing tool availability only');
         
         const tools = await client.listTools();
-        const gasRunTool = tools.find(tool => tool.name === 'gas_run');
+        const gasRunTool = tools.find(tool => tool.name === 'exec');
         expect(gasRunTool).to.exist;
-        console.log('✅ gas_run tool available');
+        console.log('✅ exec tool available');
         
         // Test error handling without auth
         try {
-          await client.callTool('gas_run', {
+          await client.callTool('exec', {
             scriptId: 'test-script-id',
             js_statement: '"hello"'
           });
@@ -76,13 +76,13 @@ describe('Real gas_run Integration Tests', () => {
           console.log('✅ Properly requires authentication');
         }
         
-        console.log('✅ gas_run infrastructure test completed');
+        console.log('✅ exec infrastructure test completed');
         return;
       }
 
       // STEP 1: Create real test project
       console.log('\n📋 STEP 1: Create Real Test Project');
-      const projectName = `Real gas_run Test ${Date.now()}`;
+      const projectName = `Real exec Test ${Date.now()}`;
       
       try {
         const project = await gas.createTestProject(projectName);
@@ -105,7 +105,7 @@ function testBasicCalculation() {
 
 function testStringManipulation() {
   return (new Function(\`{
-    const text = 'Hello MCP gas_run';
+    const text = 'Hello MCP exec';
     return {
       original: text,
       uppercase: text.toUpperCase(),
@@ -193,12 +193,12 @@ function testLATimezone() {
         await gas.writeTestFile(project.scriptId, 'realTests.gs', testCode);
         console.log('✅ Written real test functions with Function() trick');
 
-        // STEP 3: Test each function with gas_run
-        console.log('\n📋 STEP 3: Execute Real Tests with gas_run');
+        // STEP 3: Test each function with exec
+        console.log('\n📋 STEP 3: Execute Real Tests with exec');
 
         // Test 1: Basic calculation
         console.log('\n🧮 Test 1: Basic Calculation');
-        const calcResult = await client.callAndParse('gas_run', {
+        const calcResult = await client.callAndParse('exec', {
           scriptId: project.scriptId,
           js_statement: 'testBasicCalculation()',
           autoRedeploy: true
@@ -210,7 +210,7 @@ function testLATimezone() {
 
         // Test 2: String manipulation
         console.log('\n📝 Test 2: String Manipulation');
-        const stringResult = await client.callAndParse('gas_run', {
+        const stringResult = await client.callAndParse('exec', {
           scriptId: project.scriptId,
           js_statement: 'testStringManipulation()',
           autoRedeploy: true
@@ -222,7 +222,7 @@ function testLATimezone() {
 
         // Test 3: Array operations
         console.log('\n🔢 Test 3: Array Operations');
-        const arrayResult = await client.callAndParse('gas_run', {
+        const arrayResult = await client.callAndParse('exec', {
           scriptId: project.scriptId,
           js_statement: 'testArrayOperations()',
           autoRedeploy: true
@@ -234,7 +234,7 @@ function testLATimezone() {
 
         // Test 4: Date operations with timezone
         console.log('\n📅 Test 4: Date Operations with LA Timezone');
-        const dateResult = await client.callAndParse('gas_run', {
+        const dateResult = await client.callAndParse('exec', {
           scriptId: project.scriptId,
           js_statement: 'testLATimezone()',
           autoRedeploy: true
@@ -246,7 +246,7 @@ function testLATimezone() {
 
         // Test 5: Complex logic
         console.log('\n🧠 Test 5: Complex Logic');
-        const complexResult = await client.callAndParse('gas_run', {
+        const complexResult = await client.callAndParse('exec', {
           scriptId: project.scriptId,
           js_statement: 'testComplexLogic()',
           autoRedeploy: true
@@ -258,7 +258,7 @@ function testLATimezone() {
 
         // Test 6: Error handling
         console.log('\n🚨 Test 6: Error Handling');
-        const errorResult = await client.callAndParse('gas_run', {
+        const errorResult = await client.callAndParse('exec', {
           scriptId: project.scriptId,
           js_statement: 'testErrorHandling()',
           autoRedeploy: true
@@ -268,24 +268,24 @@ function testLATimezone() {
         expect(errorResult.result.success).to.be.true;
         console.log('✅ Real error handling: SUCCESS');
 
-        console.log('\n🎉 All Real gas_run Integration Tests: PASSED');
+        console.log('\n🎉 All Real exec Integration Tests: PASSED');
 
       } catch (projectError: any) {
         console.log('⚠️  Could not create test project:', projectError.message);
         
                  // Test infrastructure without real project
          const tools = await client.listTools();
-         const gasRunTool = tools.find(tool => tool.name === 'gas_run');
+         const gasRunTool = tools.find(tool => tool.name === 'exec');
          expect(gasRunTool).to.exist;
          expect(gasRunTool?.inputSchema?.properties?.scriptId).to.exist;
          expect(gasRunTool?.inputSchema?.properties?.js_statement).to.exist;
         
-        console.log('✅ gas_run tool schema validated');
+        console.log('✅ exec tool schema validated');
         console.log('✅ Infrastructure test completed (real project creation failed)');
       }
     });
 
-    it('should handle real error scenarios in gas_run', async function() {
+    it('should handle real error scenarios in exec', async function() {
       this.timeout(90000);
 
       console.log('\n🚨 Testing Real Error Scenarios');
@@ -297,7 +297,7 @@ function testLATimezone() {
         
         // Test various error scenarios
         try {
-          await client.callTool('gas_run', {
+          await client.callTool('exec', {
             scriptId: 'invalid-script-id',
             js_statement: '"test"'
           });
@@ -331,7 +331,7 @@ function testSyntaxError() {
       await gas.writeTestFile(project.scriptId, 'errorTest.gs', syntaxErrorCode);
 
       try {
-        const errorResult = await client.callAndParse('gas_run', {
+        const errorResult = await client.callAndParse('exec', {
           scriptId: project.scriptId,
           js_statement: 'testSyntaxError()',
           autoRedeploy: true
@@ -353,7 +353,7 @@ function testSyntaxError() {
     });
   });
 
-  describe('Real gas_run Advanced Features', () => {
+  describe('Real exec Advanced Features', () => {
     it('should handle real autoRedeploy functionality', async function() {
       this.timeout(120000);
 
@@ -365,7 +365,7 @@ function testSyntaxError() {
         console.log('⚠️  Testing autoRedeploy schema without authentication');
         
         const tools = await client.listTools();
-        const gasRunTool = tools.find(tool => tool.name === 'gas_run');
+        const gasRunTool = tools.find(tool => tool.name === 'exec');
         expect(gasRunTool?.inputSchema?.properties?.autoRedeploy).to.exist;
         console.log('✅ autoRedeploy parameter available in schema');
         return;
@@ -391,7 +391,7 @@ function dynamicTest() {
       await gas.writeTestFile(project.scriptId, 'autoRedeployTest.gs', initialCode);
 
       // Test 1: Initial execution
-      const result1 = await client.callAndParse('gas_run', {
+      const result1 = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'dynamicTest()',
         autoRedeploy: true
@@ -417,7 +417,7 @@ function dynamicTest() {
       await gas.writeTestFile(project.scriptId, 'autoRedeployTest.gs', updatedCode);
 
       // Test 2: Should pick up changes with autoRedeploy
-      const result2 = await client.callAndParse('gas_run', {
+      const result2 = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'dynamicTest()',
         autoRedeploy: true

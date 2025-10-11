@@ -89,45 +89,20 @@ export class EditTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use for token-efficient file edits. LLM outputs only changed text (~40 tokens) instead of entire file (~4500 tokens).',
-      tokenSavings: 'Saves 95%+ output tokens vs gas_write. For 4,567-token file with 25-token change: gas_write outputs 4,567 tokens ($0.068), gas_edit outputs ~10 tokens ($0.00015).',
-      examples: [
-        'Single edit: edit({scriptId: "...", path: "utils", edits: [{oldText: "const DEBUG = false", newText: "const DEBUG = true"}]})',
-        'Multi-edit: edit({scriptId: "...", path: "config", edits: [{oldText: "port: 3000", newText: "port: 8080"}, {oldText: "host: localhost", newText: "host: 0.0.0.0"}]})',
-        'Dry-run: edit({scriptId: "...", path: "main", edits: [...], dryRun: true})',
-        'Handle duplicates: edit({scriptId: "...", path: "test", edits: [{oldText: "assert(true)", newText: "expect(true)", index: 1}]})'
-      ],
-      vsGasWrite: 'gas_write requires entire file content (4,567 tokens), gas_edit requires only changed text (40 tokens)',
-      vsGasSed: 'gas_sed requires regex patterns, gas_edit uses exact strings (more reliable for LLMs)',
-      vsGasAider: 'gas_edit uses exact matching (simple, fast), gas_aider uses fuzzy matching (handles variations)',
-      commonJsIntegration: 'Automatically unwraps CommonJS for editing, re-wraps when writing. Edit clean user code, system handles module infrastructure.',
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support',
-        containerBound: '✅ Full Support',
-        notes: 'Token-efficient editing works universally for both script types.'
-      }
+      whenToUse: 'Token-efficient: LLM outputs only changed text (~40tok) vs full file (~4.5k tok)',
+      tokenSavings: '95%+ vs write (4.5k file+25tok change: write=4.5k | edit=~10tok)',
+      examples: ['Single: edits:[{oldText:"const DEBUG=false",newText:"const DEBUG=true"}]', 'Multi: edits:[{oldText:"port:3000",newText:"port:8080"},{oldText:"host:localhost",newText:"host:0.0.0.0"}]', 'Dry-run: dryRun:true', 'Duplicates: edits:[{oldText:"assert(true)",newText:"expect(true)",index:1}]'],
+      vsGasWrite: 'write: full file (4.5k tok) | edit: changed text (40 tok)',
+      vsGasSed: 'sed: regex patterns | edit: exact strings (more reliable)',
+      vsGasAider: 'edit: exact (simple,fast) | aider: fuzzy (handles variations)',
+      commonJsIntegration: 'Auto: unwrap→edit→rewrap | clean code→system handles infra',
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal token-efficient editing'}
     },
     llmHints: {
-      preferOver: {
-        gas_write: 'When making small changes to existing files - edit saves 95%+ tokens by only outputting changed text',
-        gas_sed: 'When you need exact string matching instead of regex patterns - more reliable and easier for LLMs',
-        gas_cat_then_write: 'Never read entire file then write it back - use edit for token efficiency'
-      },
-      idealUseCases: [
-        'Changing configuration values (debug flags, ports, URLs)',
-        'Updating function names or variable names',
-        'Modifying import/require statements',
-        'Fixing typos or small bugs',
-        'Multi-line edits in same file (up to 20 operations)'
-      ],
-      avoidWhen: [
-        'Creating new files (use gas_write instead)',
-        'Refactoring entire file structure (use gas_write instead)',
-        'Pattern-based replacements across many files (use gas_sed instead)',
-        'Need fuzzy matching for similar but not identical text (use gas_aider instead)'
-      ],
-      responseOptimization: 'Response is minimal by default (~10 tokens). Use dryRun: true to see full diff before applying changes.',
-      tokenEconomics: 'Output tokens cost 5x input ($15/M vs $3/M for Claude Sonnet 4.5). Minimize response size for maximum cost savings.'
+      preferOver: {gas_write: 'small changes→95%+ save (output only changed)', gas_sed: 'exact string vs regex (reliable)', gas_cat_then_write: 'never read+write back→edit for efficiency'},
+      idealUseCases: ['Config values (debug flags|ports|URLs)', 'Function/variable names', 'Import/require statements', 'Typos|small bugs', 'Multi-line same file (max 20 ops)'],
+      avoidWhen: ['new files→write | full refactor→write | multi-file patterns→sed | fuzzy match needed→aider'],
+      responseOptimization: 'Default minimal (~10tok) | dryRun:true→full diff'
     }
   };
 

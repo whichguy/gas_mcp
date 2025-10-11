@@ -100,18 +100,9 @@ export class ProcessListTool extends BaseTool {
     required: [],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed'
-      ],
-      useCases: {
-        monitoring: 'process_list({pageSize: 50}) - Monitor all recent executions',
-        debugging: 'process_list({userProcessFilter: {scriptId: "..."}}) - Debug specific script',
-        analysis: 'process_list({userProcessFilter: {functionName: "myFunction"}}) - Analyze function performance'
-      },
-      errorHandling: {
-        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
-        'PermissionError': 'Check Google Cloud Console permissions for Apps Script API'
-      }
+      prerequisites: ['1.auth→start if needed'],
+      useCases: {monitoring: 'process_list({pageSize:50})→all recent execs', debugging: 'process_list({userProcessFilter:{scriptId:"..."}})→specific script', analysis: 'process_list({userProcessFilter:{functionName:"myFunction"}})→fn performance'},
+      errorHandling: {AuthenticationError: 'auth→start first', PermissionError: 'check GCP Console→Apps Script API perms'}
     }
   };
 
@@ -224,20 +215,9 @@ export class ProcessListScriptTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have valid scriptId from gas_project_create or gas_ls'
-      ],
-      useCases: {
-        debugging: 'process_list_script({scriptId: "...", scriptProcessFilter: {functionName: "myFunction"}}) - Debug specific function',
-        monitoring: 'process_list_script({scriptId: "..."}) - Monitor all script executions',
-        performance: 'process_list_script({scriptId: "...", scriptProcessFilter: {startTime: "2024-01-01T00:00:00Z"}}) - Performance analysis'
-      },
-      errorHandling: {
-        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
-        'ScriptNotFound': 'Verify scriptId is correct and accessible',
-        'PermissionError': 'Check Google Cloud Console permissions for Apps Script API'
-      }
+      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls'],
+      useCases: {debugging: 'process_list_script({scriptId:"...",scriptProcessFilter:{functionName:"myFunction"}})→specific fn', monitoring: 'process_list_script({scriptId:"..."})→all execs', performance: 'process_list_script({scriptId:"...",scriptProcessFilter:{startTime:"2024-01-01T00:00:00Z"}})→analysis'},
+      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', PermissionError: 'check GCP Console→Apps Script API perms'}
     }
   };
 

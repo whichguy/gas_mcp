@@ -58,34 +58,13 @@ export class LsTool extends BaseFileSystemTool {
     },
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use to explore project structure and find files by pattern',
-      workflow: 'List all files: ls({scriptId: "..."}), with wildcards: ls({scriptId: "...", path: "*.test*"})',
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'File listing works universally for both script types. Shows virtual names for dotfiles.'
-      },
-      limitations: {
-        flatFileStructure: 'GAS has no real directories - uses filename prefixes like "utils/helper" to simulate folders',
-        wildcardPatterns: 'Supports * and ? wildcards, but pattern matching depends on wildcardMode setting',
-        virtualFileDisplay: 'Dotfiles (.gitignore, .git/config.gs) shown with virtual names, not GAS storage names'
-      },
-      examples: [
-        'List all projects: ls({})',
-        'List project files: ls({scriptId: "1abc2def..."})',
-        'List with pattern: ls({scriptId: "1abc2def...", path: "*.gs"})',
-        'List subfolder: ls({scriptId: "1abc2def...", path: "utils/*"})',
-        'List detailed: ls({scriptId: "1abc2def...", detailed: true})',
-        'List with checksums: ls({scriptId: "1abc2def...", checksums: true})',
-        'List with checksums and details: ls({scriptId: "1abc2def...", detailed: true, checksums: true})'
-      ],
-      virtualFiles: 'Dotfiles like .gitignore appear with their virtual names, not GAS storage names',
-      checksums: {
-        whenToUse: 'Enable checksums to verify file integrity, detect changes without downloading, or compare with local Git files',
-        format: 'Git-compatible SHA-1 using blob format: sha1("blob " + size + "\\0" + content)',
-        verification: 'Matches output of: git hash-object <file>',
-        integration: 'Use with git_sync tools to detect GAS ↔ Git divergence without downloading files'
-      }
+      whenToUse: 'explore structure+find by pattern',
+      workflow: 'ls({scriptId:"..."}) | ls({scriptId:"...",path:"*.test*"})',
+      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→shows virtual dotfile names'},
+      limitations: {flatFileStructure: 'no real dirs→filename prefixes ("utils/helper") simulate', wildcardPatterns: '*,? supported→matching by wildcardMode', virtualFileDisplay: 'dotfiles (.gitignore,.git/config.gs)→virtual not GAS names'},
+      examples: ['ls({})→all projects', 'ls({scriptId:"1abc2def..."})→files', 'ls({scriptId:"1abc2def...",path:"*.gs"})→pattern', 'ls({scriptId:"1abc2def...",path:"utils/*"})→subfolder', 'ls({scriptId:"1abc2def...",detailed:true})→detailed', 'ls({scriptId:"1abc2def...",checksums:true})→checksums', 'ls({scriptId:"1abc2def...",detailed:true,checksums:true})→both'],
+      virtualFiles: 'dotfiles (.gitignore)→virtual names not GAS storage',
+      checksums: {whenToUse: 'verify integrity|detect changes (no download)|compare with local Git', format: 'Git SHA-1: sha1("blob "+size+"\\0"+content)', verification: 'matches: git hash-object <file>', integration: 'local_sync tools→detect GAS↔Git diverge (no download)'}
     }
   };
 

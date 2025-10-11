@@ -83,7 +83,7 @@ gas_deps({scriptId: "..."})
 - **Automatically captures Logger.log() output for both types**
 
 ✅ **Git Integration** - Universal
-- git_init, git_sync, git_status, git_set_sync_folder, git_get_sync_folder
+- git_init, git_sync, config (sync_folder management)
 - Works with file API (script-type agnostic)
 
 ✅ **Local Sync** - Universal
@@ -404,7 +404,7 @@ gas_run({
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 
-### Git Integration (5 tools)
+### Git Integration (3 tools)
 
 All work identically for both script types.
 
@@ -419,14 +419,10 @@ All work identically for both script types.
 - Only pushes if merge succeeds
 - Stops for manual conflict resolution
 
-**`gas_git_status`** - Check sync status
-- Shows local repo state
-- Git tracking info
-- Recommended actions
-
-**`gas_git_set_sync_folder`** / **`gas_git_get_sync_folder`**
-- Manage local sync folder location
-- Can relocate projects
+**`config`** - Generic configuration management
+- Get/set sync_folder location
+- Manage MCP Gas settings
+- Can relocate projects with moveExisting option
 
 **Limitations:**
 - Requires local git installation

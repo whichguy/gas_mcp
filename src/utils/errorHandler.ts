@@ -40,7 +40,7 @@ export interface ErrorHandlingResult {
  * **Replaces duplicate error handling in:**
  * - `GASDeployCreateTool` - 403/404 permission handling
  * - `GASProxySetupTool` - permission and validation errors
- * - `GASRunTool` - execution and deployment errors
+ * - `ExecTool` - execution and deployment errors
  * - `GASWriteTool`, `GASCatTool`, etc. - file operation errors
  * 
  * **Provides consistent error responses** with:

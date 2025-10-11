@@ -89,141 +89,26 @@ export class AiderTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use when text might have formatting variations, whitespace differences, or you\'re uncertain of exact content. Fuzzy matching finds similar text even when not character-exact, making it ideal for editing code that may have been reformatted or copied from formatted output.',
-
-      howToUse: [
-        '1. Identify the approximate text you want to change (doesn\'t need to be exact)',
-        '2. Choose similarity threshold: 0.9+ (strict), 0.8 (default), 0.7 (permissive)',
-        '3. Use dryRun: true first to preview matches and verify correct text is found',
-        '4. Apply edits - tool will find best fuzzy match and replace it',
-        '5. Check response for editsApplied count to confirm success'
-      ],
-
-      whenNotToUse: [
-        '❌ When exact text is known → Use gas_edit instead (faster, more precise)',
-        '❌ For regex pattern matching → Use gas_sed for pattern-based replacements',
-        '❌ For new file creation → Use gas_write to create files from scratch',
-        '❌ When multiple occurrences need different replacements → Use gas_edit with index parameter',
-        '❌ For system file editing → Use gas_raw_aider for files with CommonJS wrappers'
-      ],
-
-      bestPractices: [
-        '✅ Always use dryRun: true first to verify fuzzy match finds correct text',
-        '✅ Start with default threshold (0.8) and adjust if needed',
-        '✅ Keep searchText specific enough to avoid false matches',
-        '✅ Include surrounding context in searchText for better matching',
-        '✅ Process one file at a time (single-file design)',
-        '✅ Use gas_sed for multi-file pattern replacements instead'
-      ],
-
-      tokenSavings: 'Saves 95%+ output tokens vs gas_write. Only outputs ~10 tokens by default: { success, editsApplied, filePath }',
-
-      examples: [
-        {
-          scenario: 'Basic fuzzy edit with whitespace variations',
-          code: 'gas_aider({scriptId: "...", path: "utils", edits: [{searchText: "function   test()", replaceText: "function testNew()"}]})'
-        },
-        {
-          scenario: 'Permissive threshold for significant formatting differences',
-          code: 'gas_aider({scriptId: "...", path: "config", edits: [{searchText: "debug=false", replaceText: "debug=true", similarityThreshold: 0.7}]})'
-        },
-        {
-          scenario: 'Preview matches before applying (recommended)',
-          code: 'gas_aider({scriptId: "...", path: "main", edits: [{searchText: "const oldVar", replaceText: "const newVar"}], dryRun: true})'
-        },
-        {
-          scenario: 'Multiple fuzzy edits in sequence',
-          code: 'gas_aider({scriptId: "...", path: "api", edits: [{searchText: "port:3000", replaceText: "port:8080"}, {searchText: "host:localhost", replaceText: "host:0.0.0.0"}]})'
-        }
-      ],
-
-      comparisonToOtherTools: {
-        vsGasEdit: '✅ Use aider when: Text has formatting variations, whitespace differences, uncertain of exact content\n❌ Use gas_edit when: Exact text is known for faster, more precise matching',
-
-        vsGasWrite: '✅ Use aider when: Making small changes to existing files (95%+ token savings - only outputs ~10 tokens)\n❌ Use gas_write when: Creating new files or major refactoring (outputs entire file ~4,500+ tokens)',
-
-        vsGasSed: '✅ Use aider when: Need flexible text matching without regex complexity, single-file edits\n❌ Use gas_sed when: Need regex patterns, multi-file replacements, pattern-based operations'
-      },
-
-      commonJsIntegration: 'Automatically unwraps CommonJS module wrappers for editing, re-wraps when writing. You edit clean user code - the system handles module infrastructure transparently.',
-
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'Fuzzy editing works universally for both script types with automatic CommonJS processing.'
-      }
+      whenToUse: 'Text: formatting variations | whitespace diff | uncertain exact → fuzzy match finds similar (not char-exact) → ideal for reformatted/copied code',
+      howToUse: ['ID approx text (not exact)', 'threshold: 0.9+ strict | 0.8 default | 0.7 permissive', 'dryRun first→verify match', 'apply→best fuzzy', 'check editsApplied count'],
+      whenNotToUse: ['exact known→edit (faster) | regex→sed | new file→write | multi-occur diff replace→edit+index | system files→raw_aider'],
+      bestPractices: ['dryRun first | default 0.8→adjust | specific searchText | context for matching | single-file | multi-file→sed'],
+      tokenSavings: '95%+ vs write (~10 tokens: {success,editsApplied,filePath})',
+      examples: [{scenario: 'whitespace var', code: 'edits:[{searchText:"function   test()",replaceText:"function testNew()"}]'}, {scenario: 'permissive 0.7', code: 'edits:[{searchText:"debug=false",replaceText:"debug=true",similarityThreshold:0.7}]'}, {scenario: 'preview', code: 'dryRun:true'}, {scenario: 'multi-edit', code: 'edits:[{searchText:"port:3000",replaceText:"port:8080"},{searchText:"host:localhost",replaceText:"host:0.0.0.0"}]'}],
+      comparisonToOtherTools: {vsGasEdit: 'aider: format var | whitespace | uncertain | edit: exact known→fast', vsGasWrite: 'aider: small changes (95%+ save, ~10tok) | write: new files | major refactor (~4.5k tok)', vsGasSed: 'aider: flexible no-regex | single-file | sed: regex | multi-file | patterns'},
+      commonJsIntegration: 'Auto: unwrap for edit → rewrap on write → clean user code → system handles infra',
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal fuzzy + auto CommonJS'}
     },
 
     llmHints: {
-      decisionTree: {
-        'Exact text known?': {
-          yes: '→ Use gas_edit (faster, more precise)',
-          no: '→ Use gas_aider (fuzzy matching)'
-        },
-        'Text has formatting variations?': {
-          yes: '→ Use gas_aider (handles whitespace/formatting differences)',
-          no: '→ Use gas_edit (exact matching sufficient)'
-        },
-        'Need regex patterns?': {
-          yes: '→ Use gas_sed (pattern-based replacement)',
-          no: '→ Use gas_aider or gas_edit (string matching)'
-        },
-        'Creating new file?': {
-          yes: '→ Use gas_write (file creation)',
-          no: '→ Use gas_aider/gas_edit (file editing)'
-        }
-      },
-
-      preferOver: {
-        gas_edit: 'When text might have whitespace/formatting variations or you\'re not sure of exact content. Aider uses fuzzy matching (80% similar by default), gas_edit requires 100% exact match.',
-        gas_write: 'When making small changes to existing files - aider saves 95%+ tokens by only outputting ~10 tokens (success, editsApplied, filePath) instead of entire file (~4,500 tokens)',
-        gas_sed: 'When you need flexible text matching without regex complexity. Aider finds similar text using Levenshtein distance, gas_sed uses regex patterns.'
-      },
-
-      idealUseCases: [
-        '✅ Editing code that may have been reformatted (whitespace/indentation changes)',
-        '✅ Updating text when exact content is uncertain but approximate text is known',
-        '✅ Replacing function calls that might have spacing/formatting variations',
-        '✅ Modifying code copied from formatted output (pretty-printed, minified, etc.)',
-        '✅ Handling text with inconsistent line endings (CRLF vs LF) or indentation (tabs vs spaces)',
-        '✅ Editing user code in CommonJS modules (automatic unwrap/wrap)'
-      ],
-
-      avoidWhen: [
-        '❌ Exact text is known → Use gas_edit for better performance and precision',
-        '❌ Need regex pattern matching → Use gas_sed for pattern-based replacements',
-        '❌ Creating new files → Use gas_write for file creation from scratch',
-        '❌ Multiple occurrences need different replacements → Use gas_edit with index parameter to target specific occurrence',
-        '❌ Need to edit system files with CommonJS wrappers → Use gas_raw_aider for raw content editing'
-      ],
-
-      similarityThresholdGuide: {
-        '0.95-1.0': '🔒 Very strict - Only whitespace/formatting differences (e.g., "function test()" vs "function  test()")',
-        '0.85-0.95': '⚖️  Strict - Minor variations (e.g., "const x = 1" vs "const x=1")',
-        '0.8-0.85': '✅ Default - Typical formatting variations (e.g., different indentation, line endings)',
-        '0.7-0.8': '🔓 Permissive - Moderate text differences (e.g., "getUserData()" vs "get_user_data()")',
-        '0.6-0.7': '⚠️  Very permissive - Significant differences (may match unintended text)',
-        'below 0.6': '❌ Too loose - High risk of false matches, not recommended'
-      },
-
-      algorithmDetails: {
-        matchingMethod: '5-phase fuzzy matching: (1) Exact match - instant, (2) Normalized exact match with position mapping - handles whitespace variations, (3) Length-based filtering, (4) Character-set filtering, (5) Full Levenshtein distance (last resort)',
-        normalization: 'Phase 2 uses position mapping to safely find matches in normalized space and convert back to original positions. Prevents data corruption while enabling fast whitespace-tolerant matching.',
-        windowSizes: 'Only 5 strategic window sizes (-10%, -5%, 0%, +5%, +10%) for fuzzy matching phase',
-        similarityScore: '1.0 - (editDistance / maxLength) where 1.0 = identical, 0.0 = completely different',
-        performance: 'Exact matches: <1ms (50% of cases). Normalized exact: <5ms (45% of cases). Fuzzy with filters: 50-500ms (4% of cases). Full fuzzy: 1-30s (1% of truly different text). Timeout: 180 seconds max.',
-        optimization: 'Phase 2 eliminates expensive Levenshtein for whitespace-only variations. Phases 3-4 filter out 90%+ of candidates before expensive similarity calculation. Coarse-then-fine search reduces position checks by 95%.'
-      },
-
-      responseOptimization: 'Response is minimal by default (~10 tokens: {success, editsApplied, filePath}). Use dryRun: true to see full details: matches found, similarity scores, and git-style diff.',
-
-      tokenEconomics: 'Output tokens cost 5x input ($15/M vs $3/M for Claude Sonnet 4.5). Aider minimizes output to ~10 tokens vs gas_write\'s ~4,500 tokens = 99.8% savings on output tokens.',
-
-      errorHandling: {
-        'No match found': 'Increase similarityThreshold (e.g., from 0.8 to 0.7) or make searchText more specific with surrounding context',
-        'Wrong text matched': 'Decrease similarityThreshold (e.g., from 0.8 to 0.9) or add more context to searchText to be more specific',
-        'Multiple matches': 'Add surrounding context to searchText to uniquely identify the intended match'
-      }
+      decisionTree: {'Exact text known?': {yes: 'edit (fast)', no: 'aider (fuzzy)'}, 'Text has formatting variations?': {yes: 'aider (handles whitespace/format)', no: 'edit (exact ok)'}, 'Need regex patterns?': {yes: 'sed (pattern replace)', no: 'aider|edit (string)'}, 'Creating new file?': {yes: 'write (create)', no: 'aider|edit'}},
+      preferOver: {gas_edit: 'whitespace/format var | uncertain→aider (80% fuzzy) vs edit (100% exact)', gas_write: 'small changes→aider (95%+ save: ~10tok vs ~4.5k)', gas_sed: 'flexible no-regex→Levenshtein vs sed regex'},
+      idealUseCases: ['reformatted code (whitespace/indent)', 'uncertain content→approx known', 'fn calls: spacing var', 'copied: formatted out (pretty/minified)', 'inconsistent: CRLF/LF | tabs/spaces', 'CommonJS user code (auto unwrap/wrap)'],
+      avoidWhen: ['exact→edit (better perf) | regex→sed | new files→write | multi-occur diff→edit+index | system files→raw_aider'],
+      similarityThresholdGuide: {'0.95-1.0': 'strict: whitespace only', '0.85-0.95': 'strict: minor (const x=1 vs x = 1)', '0.8-0.85': 'default: format var (indent/line endings)', '0.7-0.8': 'permissive: moderate (getUserData vs get_user_data)', '0.6-0.7': 'very permissive: significant diff (may false match)', 'below 0.6': 'too loose: high risk'},
+      algorithmDetails: {matchingMethod: '5-phase: (1)exact | (2)normalized+map whitespace | (3)length filter | (4)charset filter | (5)Levenshtein last', normalization: 'Phase 2: position map→normalized→orig→no corruption', windowSizes: '5 strategic: -10%|-5%|0%|+5%|+10%', similarityScore: '1-(editDist/maxLen)', optimization: 'Phase 2→skip Levenshtein | Phases 3-4→filter 90%+ | coarse→fine→95% fewer checks'},
+      responseOptimization: 'Default minimal (~10tok). dryRun→full: matches+similarity+diff',
+      errorHandling: {'No match found': 'increase threshold (0.8→0.7) | more specific searchText+context', 'Wrong text matched': 'decrease threshold (0.8→0.9) | add context', 'Multiple matches': 'add context→unique ID'}
     }
   };
 

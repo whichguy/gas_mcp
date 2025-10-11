@@ -50,21 +50,11 @@ export class RawCpTool extends BaseFileSystemTool {
     required: ['sourceScriptId', 'destinationScriptId'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use for bulk copying between projects without CommonJS processing',
-      workflow: 'Copy all files: raw_cp({sourceScriptId: "...", destinationScriptId: "..."}),',
-      preservesWrappers: 'Copies files exactly as they are, preserving all CommonJS wrappers and system code',
-      examples: [
-        'Copy all files: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc..."})',
-        'Copy specific files: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", includeFiles: ["Utils", "Config"]})',
-        'Exclude files: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", excludeFiles: ["Test", "Debug"]})',
-        'Overwrite mode: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", mergeStrategy: "overwrite-destination"})',
-        'Dry run: raw_cp({sourceScriptId: "1abc2def...", destinationScriptId: "1xyz9abc...", dryRun: true})'
-      ],
-      mergeStrategies: {
-        'preserve-destination': 'Keep existing files in destination (default)',
-        'overwrite-destination': 'Replace existing files with source versions',
-        'skip-conflicts': 'Only copy files that don\'t exist in destination'
-      }
+      whenToUse: 'bulk copy between projects without CommonJS processing',
+      workflow: 'raw_cp({sourceScriptId:"...",destinationScriptId:"..."})',
+      preservesWrappers: 'copies exact→preserves all wrappers+system code',
+      examples: ['all: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc..."})', 'specific: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",includeFiles:["Utils","Config"]})', 'exclude: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",excludeFiles:["Test","Debug"]})', 'overwrite: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",mergeStrategy:"overwrite-destination"})', 'dry run: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",dryRun:true})'],
+      mergeStrategies: {'preserve-destination': 'keep dest (default)', 'overwrite-destination': 'replace with source', 'skip-conflicts': 'only new files'}
     }
   };
 

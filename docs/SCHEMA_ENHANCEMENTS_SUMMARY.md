@@ -236,7 +236,7 @@ Progress tracking and benefits analysis
 
 **Git Integration (5 tools):**
 - git_init, git_sync, git_status
-- git_set_sync_folder, git_get_sync_folder
+- config (action: set, type: sync_folder), config (action: get, type: sync_folder)
 
 **Local Sync (7 tools):**
 - pull, push, status

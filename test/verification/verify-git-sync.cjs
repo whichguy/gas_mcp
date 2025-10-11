@@ -32,7 +32,7 @@ if (fs.existsSync(srcPath)) {
 
   // Test tool classes exist
   test('GitInitTool exists', content.includes('class GitInitTool'));
-  test('GitSyncTool exists', content.includes('class GitSyncTool'));
+  test('LocalSyncTool exists', content.includes('class LocalSyncTool'));
   test('GitStatusTool exists', content.includes('class GitStatusTool'));
   test('GitSetSyncFolderTool exists', content.includes('class GitSetSyncFolderTool'));
   test('GitGetSyncFolderTool exists', content.includes('class GitGetSyncFolderTool'));
@@ -50,7 +50,7 @@ if (fs.existsSync(serverPath)) {
   const serverContent = fs.readFileSync(serverPath, 'utf-8');
   test('Tools registered in MCP server',
     serverContent.includes('GitInitTool') &&
-    serverContent.includes('GitSyncTool') &&
+    serverContent.includes('LocalSyncTool') &&
     serverContent.includes('GitStatusTool')
   );
 }
@@ -67,7 +67,7 @@ if (failed === 0) {
   console.log('\n🎉 All git sync tools verified successfully!');
   console.log('\n📋 Available tools:');
   console.log('  • gas_git_init - Initialize git association');
-  console.log('  • gas_git_sync - Safe pull-merge-push workflow');
+  console.log('  • gas_local_sync - Safe pull-merge-push workflow');
   console.log('  • gas_git_status - Check git status and sync state');
   console.log('  • gas_git_set_sync_folder - Configure sync folder');
   console.log('  • gas_git_get_sync_folder - Query sync folder location');
