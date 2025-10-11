@@ -43,7 +43,9 @@ export const GIT_FILE_MAP: Record<string, string> = {
   '.git/packed-refs': '.git/packed-refs',
   '.git/FETCH_HEAD': '.git/FETCH_HEAD',
   '.git/ORIG_HEAD': '.git/ORIG_HEAD',
-  '.git/MERGE_HEAD': '.git/MERGE_HEAD'
+  '.git/MERGE_HEAD': '.git/MERGE_HEAD',
+  '.git/refs/heads/main': '.git/refs/heads/main',
+  '.git/refs/remotes/origin/main': '.git/refs/remotes/origin/main'
 };
 
 /**
