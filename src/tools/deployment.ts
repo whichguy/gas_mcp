@@ -454,21 +454,27 @@ export class DeployTool extends BaseTool {
 
     // Step 3: Now that new deployments are created successfully, delete old ones
     console.error('🗑️  Cleaning up old deployments...');
+    const deletionFailures: string[] = [];
+
     for (const deployment of existingDeployments) {
       try {
         await this.gasClient.deleteDeployment(scriptId, deployment.deploymentId, accessToken);
         console.error(`🗑️  Deleted old deployment: ${deployment.deploymentId}`);
       } catch (deleteError: any) {
-        // Log but don't fail - new deployments are already created
+        // Track failures - new deployments are already created so we don't fail the operation
+        deletionFailures.push(deployment.deploymentId);
         console.error(`⚠️  Failed to delete old deployment ${deployment.deploymentId}: ${deleteError.message}`);
       }
     }
 
-    console.error('✅ Reset complete - 3 standard deployments active');
+    const resetStatus = deletionFailures.length > 0 ? 'partial' : 'success';
+    console.error(resetStatus === 'success'
+      ? '✅ Reset complete - 3 standard deployments active'
+      : `⚠️  Reset partially complete - ${deletionFailures.length} old deployment(s) could not be deleted`);
 
-    return {
+    const response: any = {
       operation: 'reset',
-      status: 'success',
+      status: resetStatus,
       deployments: {
         dev: {
           deploymentId: devDeployment.deploymentId,
@@ -488,18 +494,30 @@ export class DeployTool extends BaseTool {
       },
       message: 'All deployments reset. Three standard deployments created (dev/staging/prod), all pointing to HEAD.'
     };
+
+    // Add warnings if deletion failed
+    if (deletionFailures.length > 0) {
+      response.warnings = [
+        `Failed to delete ${deletionFailures.length} old deployment(s). Manual cleanup may be required.`,
+        `Failed deployment IDs: ${deletionFailures.join(', ')}`,
+        `Run deploy({operation: "status", scriptId: "${scriptId}"}) to see all deployments`
+      ];
+    }
+
+    return response;
   }
 
   /**
    * Find environment deployments by description tags
+   * Uses startsWith to prevent tag collision (e.g., "[STAGING]" should not match "OLD[STAGING]")
    */
   private async findEnvironmentDeployments(scriptId: string, accessToken?: string): Promise<any> {
     const deployments = await this.gasClient.listDeployments(scriptId, accessToken);
 
     return {
-      dev: deployments.find((d: any) => d.description?.includes(ENV_TAGS.dev)),
-      staging: deployments.find((d: any) => d.description?.includes(ENV_TAGS.staging)),
-      prod: deployments.find((d: any) => d.description?.includes(ENV_TAGS.prod))
+      dev: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.dev)),
+      staging: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.staging)),
+      prod: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.prod))
     };
   }
 
