@@ -11,13 +11,12 @@ import { ArgumentTestHelper } from './helpers/argument-test-helper.js';
  *
  * Coverage:
  * - Git tools (2 tools: local_sync, config)
- * - Deployment tools (8 tools)
- * - Project list tool (1 tool)
- * - Version tools (2 tools)
+ * - Project management (1 tool: project_list)
  * - Process tools (2 tools)
  * - Log tools (2 tools)
  * - Trigger tools (3 tools)
  * - Advanced tools (context, summary, deps, tree)
+ * - Project info tools (info, reorder)
  *
  * Performance: ~5 minutes (vs 20+ minutes with per-test projects)
  */
@@ -143,129 +142,6 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
     });
   });
 
-  // ===== DEPLOYMENT TOOLS =====
-  describe('Deployment Tools', function() {
-    describe('gas_deploy_create', function() {
-      it('should accept minimal required arguments', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'deploy_create',
-          {
-            scriptId: sharedProjectId,
-            versionNumber: 1,
-            description: 'Test deployment'
-          },
-          'minimal deploy_create arguments'
-        );
-
-        expect(result).to.have.property('deploymentId');
-      });
-
-      it('should reject missing scriptId', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'deploy_create',
-          {
-            versionNumber: 1,
-            description: 'Test'
-          },
-          /scriptId|required/i,
-          'scriptId is required'
-        );
-      });
-
-      it('should reject invalid versionNumber type', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'deploy_create',
-          {
-            scriptId: sharedProjectId,
-            versionNumber: 'one',
-            description: 'Test'
-          },
-          /versionNumber|number|type/i,
-          'versionNumber must be number'
-        );
-      });
-    });
-
-    describe('gas_version_create', function() {
-      it('should accept minimal required arguments', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'version_create',
-          {
-            scriptId: sharedProjectId,
-            description: 'Test version'
-          },
-          'minimal version_create arguments'
-        );
-
-        expect(result).to.have.property('versionNumber');
-      });
-
-      it('should reject missing description', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'version_create',
-          {
-            scriptId: sharedProjectId
-          },
-          /description|required/i,
-          'description is required'
-        );
-      });
-    });
-
-    describe('gas_deploy_list', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'deploy_list',
-          { scriptId: sharedProjectId },
-          'list deployments'
-        );
-
-        expect(result).to.have.property('deployments');
-      });
-    });
-
-    describe('gas_deploy_get_details', function() {
-      it('should accept scriptId and deploymentId', async function() {
-        // First create a deployment
-        const deploy = await context.client.callAndParse('deploy_create', {
-          scriptId: sharedProjectId,
-          versionNumber: 1,
-          description: 'Test for details'
-        });
-
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'deploy_get_details',
-          {
-            scriptId: sharedProjectId,
-            deploymentId: deploy.deploymentId
-          },
-          'get deployment details'
-        );
-
-        expect(result).to.have.property('deploymentId');
-      });
-
-      it('should reject missing deploymentId', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'deploy_get_details',
-          {
-            scriptId: sharedProjectId
-          },
-          /deploymentId|required/i,
-          'deploymentId is required'
-        );
-      });
-    });
-  });
-
   // ===== PROJECT CONTEXT TOOLS =====
   // REMOVED: project_set, project_add, project_metrics (unused state management)
   describe('Project Context Tools', function() {
@@ -279,83 +155,6 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
         );
 
         expect(result).to.have.property('projects');
-      });
-    });
-  });
-
-  // ===== VERSION TOOLS =====
-  describe('Version Tools', function() {
-    describe('gas_version_list', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'version_list',
-          { scriptId: sharedProjectId },
-          'list versions'
-        );
-
-        expect(result).to.have.property('versions');
-      });
-
-      it('should accept with pageSize parameter', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'version_list',
-          {
-            scriptId: sharedProjectId,
-            pageSize: 10
-          },
-          'list versions with pageSize'
-        );
-
-        expect(result).to.have.property('versions');
-      });
-
-      it('should reject invalid pageSize type', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'version_list',
-          {
-            scriptId: sharedProjectId,
-            pageSize: 'ten'
-          },
-          /pageSize|number|type/i,
-          'pageSize must be number'
-        );
-      });
-    });
-
-    describe('gas_version_get', function() {
-      it('should accept scriptId and versionNumber', async function() {
-        // Create a version first
-        const version = await context.client.callAndParse('version_create', {
-          scriptId: sharedProjectId,
-          description: 'Test version for get'
-        });
-
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'version_get',
-          {
-            scriptId: sharedProjectId,
-            versionNumber: version.versionNumber
-          },
-          'get version details'
-        );
-
-        expect(result).to.have.property('versionNumber');
-      });
-
-      it('should reject missing versionNumber', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'version_get',
-          {
-            scriptId: sharedProjectId
-          },
-          /versionNumber|required/i,
-          'versionNumber is required'
-        );
       });
     });
   });
