@@ -10,14 +10,13 @@ import { ArgumentTestHelper } from './helpers/argument-test-helper.js';
  * using a SINGLE shared project to maximize performance.
  *
  * Coverage:
- * - Git tools (5 tools)
+ * - Git tools (2 tools: local_sync, config)
  * - Deployment tools (8 tools)
- * - Project context tools (4 tools)
+ * - Project list tool (1 tool)
  * - Version tools (2 tools)
  * - Process tools (2 tools)
  * - Log tools (2 tools)
  * - Trigger tools (3 tools)
- * - Local sync tools (3 tools)
  * - Advanced tools (context, summary, deps, tree)
  *
  * Performance: ~5 minutes (vs 20+ minutes with per-test projects)
@@ -79,121 +78,67 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   });
 
   // ===== GIT SYNC TOOLS =====
+  // NOTE: git_init tool was removed - users must manually create .git/config.gs breadcrumbs
   describe('Git Sync Tools', function() {
-    describe('gas_git_init', function() {
-      it('should accept minimal required arguments', async function() {
+    describe('gas_config - sync_folder get', function() {
+      it('should accept scriptId only for get action', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'git_init',
+          'config',
           {
-            scriptId: sharedProjectId,
-            repository: 'https://github.com/test/repo.git'
-          },
-          'minimal git_init arguments'
-        );
-
-        expect(result).to.have.property('success');
-      });
-
-      it('should reject missing scriptId', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'git_init',
-          {
-            repository: 'https://github.com/test/repo.git'
-          },
-          /scriptId|required/i,
-          'scriptId is required'
-        );
-      });
-
-      it('should reject missing repository', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'git_init',
-          {
+            action: 'get',
+            type: 'sync_folder',
             scriptId: sharedProjectId
           },
-          /repository|required/i,
-          'repository is required'
-        );
-      });
-
-      it('should reject invalid repository URL', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'git_init',
-          {
-            scriptId: sharedProjectId,
-            repository: 'not-a-url'
-          },
-          /repository|url|invalid/i,
-          'invalid repository URL'
-        );
-      });
-    });
-
-    describe('gas_git_status', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'git_status',
-          { scriptId: sharedProjectId },
-          'minimal git_status arguments'
-        );
-
-        expect(result).to.have.property('associated');
-      });
-
-      it('should reject missing scriptId', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'git_status',
-          {},
-          /scriptId|required/i,
-          'scriptId is required'
-        );
-      });
-    });
-
-    describe('gas_git_set_sync_folder', function() {
-      it('should accept valid sync folder path', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'git_set_sync_folder',
-          {
-            scriptId: sharedProjectId,
-            syncFolder: '/tmp/test-sync'
-          },
-          'set sync folder'
-        );
-
-        expect(result).to.have.property('success');
-      });
-
-      it('should reject missing syncFolder', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'git_set_sync_folder',
-          {
-            scriptId: sharedProjectId
-          },
-          /syncFolder|required/i,
-          'syncFolder is required'
-        );
-      });
-    });
-
-    describe('gas_git_get_sync_folder', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'git_get_sync_folder',
-          { scriptId: sharedProjectId },
-          'get sync folder'
+          'get sync folder config'
         );
 
         expect(result).to.have.property('syncFolder');
+      });
+    });
+
+    describe('gas_config - sync_folder set', function() {
+      it('should accept valid sync folder path for set action', async function() {
+        const result = await ArgumentTestHelper.expectSuccess(
+          context.client,
+          'config',
+          {
+            action: 'set',
+            type: 'sync_folder',
+            scriptId: sharedProjectId,
+            value: '/tmp/test-sync'
+          },
+          'set sync folder config'
+        );
+
+        expect(result).to.have.property('success');
+      });
+
+      it('should reject missing value for set action', async function() {
+        await ArgumentTestHelper.expectError(
+          context.client,
+          'config',
+          {
+            action: 'set',
+            type: 'sync_folder',
+            scriptId: sharedProjectId
+          },
+          /value|required/i,
+          'value is required for set action'
+        );
+      });
+
+      it('should reject missing action parameter', async function() {
+        await ArgumentTestHelper.expectError(
+          context.client,
+          'config',
+          {
+            type: 'sync_folder',
+            scriptId: sharedProjectId
+          },
+          /action|required/i,
+          'action is required'
+        );
       });
     });
   });
@@ -322,47 +267,8 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   });
 
   // ===== PROJECT CONTEXT TOOLS =====
+  // REMOVED: project_set, project_add, project_metrics (unused state management)
   describe('Project Context Tools', function() {
-    describe('gas_project_set', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'project_set',
-          { scriptId: sharedProjectId },
-          'set current project'
-        );
-
-        expect(result).to.have.property('success');
-      });
-
-      it('should accept with autoPull flag', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'project_set',
-          {
-            scriptId: sharedProjectId,
-            autoPull: false
-          },
-          'set project with autoPull=false'
-        );
-
-        expect(result).to.have.property('success');
-      });
-
-      it('should reject invalid autoPull type', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'project_set',
-          {
-            scriptId: sharedProjectId,
-            autoPull: 'yes'
-          },
-          /autoPull|boolean|type/i,
-          'autoPull must be boolean'
-        );
-      });
-    });
-
     describe('gas_project_list', function() {
       it('should accept no arguments', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
@@ -373,34 +279,6 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
         );
 
         expect(result).to.have.property('projects');
-      });
-    });
-
-    describe('gas_project_add', function() {
-      it('should accept scriptId and name', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'project_add',
-          {
-            scriptId: sharedProjectId,
-            name: 'test-project'
-          },
-          'add project to config'
-        );
-
-        expect(result).to.have.property('success');
-      });
-
-      it('should reject missing name', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'project_add',
-          {
-            scriptId: sharedProjectId
-          },
-          /name|required/i,
-          'name is required'
-        );
       });
     });
   });
@@ -726,87 +604,8 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   });
 
   // ===== LOCAL SYNC TOOLS =====
-  describe('Local Sync Tools', function() {
-    describe('gas_pull', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'pull',
-          { scriptId: sharedProjectId },
-          'pull files to local'
-        );
-
-        expect(result).to.have.property('filesPulled');
-      });
-
-      it('should accept with force flag', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'pull',
-          {
-            scriptId: sharedProjectId,
-            force: true
-          },
-          'pull with force=true'
-        );
-
-        expect(result).to.have.property('filesPulled');
-      });
-
-      it('should reject invalid force type', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'pull',
-          {
-            scriptId: sharedProjectId,
-            force: 'yes'
-          },
-          /force|boolean|type/i,
-          'force must be boolean'
-        );
-      });
-    });
-
-    describe('gas_push', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'push',
-          { scriptId: sharedProjectId },
-          'push files to remote'
-        );
-
-        expect(result).to.have.property('filesPushed');
-      });
-
-      it('should accept with dryRun flag', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'push',
-          {
-            scriptId: sharedProjectId,
-            dryRun: true
-          },
-          'push with dryRun=true'
-        );
-
-        expect(result).to.have.property('filesPushed');
-      });
-    });
-
-    describe('gas_status', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'status',
-          { scriptId: sharedProjectId },
-          'check sync status'
-        );
-
-        expect(result).to.have.property('status');
-      });
-    });
-  });
+  // REMOVED: pull, push, status tools (redundant with cat/write auto-sync)
+  // cat/write already provide local caching via LocalFileManager.copyRemoteToLocal()
 
   // ===== ADVANCED ANALYSIS TOOLS =====
   describe('Advanced Analysis Tools', function() {
@@ -933,18 +732,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_project_metrics', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'project_metrics',
-          { scriptId: sharedProjectId },
-          'get project metrics'
-        );
-
-        expect(result).to.have.property('metrics');
-      });
-    });
+    // REMOVED: gas_project_metrics (niche monitoring tool, rarely used)
 
     describe('gas_reorder', function() {
       it('should accept scriptId and fileIds', async function() {

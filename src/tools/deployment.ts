@@ -22,7 +22,7 @@ const ENV_TAGS = {
  * Consolidated deployment tool with environment-aware management
  */
 export class DeployTool extends BaseTool {
-  public name = 'gas_deploy';
+  public name = 'deploy';
   public description = 'Manage deployments across dev/staging/prod environments with version control and promotion workflow';
 
   public inputSchema = {
@@ -64,12 +64,12 @@ export class DeployTool extends BaseTool {
     required: ['operation', 'scriptId'],
     llmWorkflowGuide: {
       typicalSequence: [
-        '1. Create project with 3 deployments: gas_project({ action: "create" })',
+        '1. Create project with 3 deployments: project_create({ title: "My Project" })',
         '2. Develop on HEAD (dev auto-serves latest code)',
-        '3. Promote to staging: gas_deploy({ environment: "staging", operation: "promote", description: "v1.0" })',
+        '3. Promote to staging: deploy({ environment: "staging", operation: "promote", description: "v1.0" })',
         '4. Test staging deployment',
-        '5. Promote to prod: gas_deploy({ environment: "prod", operation: "promote" })',
-        '6. If issues: gas_deploy({ environment: "prod", operation: "rollback" })'
+        '5. Promote to prod: deploy({ environment: "prod", operation: "promote" })',
+        '6. If issues: deploy({ environment: "prod", operation: "rollback" })'
       ],
       environmentModel: {
         dev: 'Always HEAD (deployment.versionNumber = null, latest code)',
@@ -148,7 +148,7 @@ export class DeployTool extends BaseTool {
 
       // Step 2: Update staging deployment to new version
       if (!deployments.staging) {
-        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run gas_deploy({operation: "reset"}) to create deployments');
+        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run deploy({operation: "reset"}) to create deployments');
       }
 
       await this.gasClient.updateDeployment(
@@ -182,11 +182,11 @@ export class DeployTool extends BaseTool {
     } else {
       // Promote staging→prod: Update prod to staging version
       if (!deployments.staging) {
-        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run gas_deploy({operation: "reset"}) to create deployments');
+        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run deploy({operation: "reset"}) to create deployments');
       }
 
       if (!deployments.prod) {
-        throw new ValidationError('prod_deployment', 'not found', 'existing prod deployment - run gas_deploy({operation: "reset"}) to create deployments');
+        throw new ValidationError('prod_deployment', 'not found', 'existing prod deployment - run deploy({operation: "reset"}) to create deployments');
       }
 
       // Get staging version
@@ -256,7 +256,7 @@ export class DeployTool extends BaseTool {
       throw new ValidationError(
         `${environment}_deployment`,
         'not found',
-        `existing ${environment} deployment - run gas_deploy({operation: "reset"}) to create deployments`
+        `existing ${environment} deployment - run deploy({operation: "reset"}) to create deployments`
       );
     }
 

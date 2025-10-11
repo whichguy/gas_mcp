@@ -475,7 +475,7 @@ describe('MCP Server Google Apps Script Operations', () => {
           console.log('🔍 Testing project creation infrastructure...');
           
           const tools = await client.listTools();
-          const createTool = tools.find(tool => tool.name === 'gas_run');
+          const createTool = tools.find(tool => tool.name === 'exec');
           expect(createTool).to.exist;
           expect(createTool?.inputSchema?.properties?.scriptId).to.exist;
           console.log('✅ Project creation infrastructure available');
@@ -874,7 +874,7 @@ function getData() {
           console.log('🔍 Testing function execution infrastructure...');
           
           const tools = await client.listTools();
-          const runTool = tools.find(tool => tool.name === 'gas_run');
+          const runTool = tools.find(tool => tool.name === 'exec');
           expect(runTool).to.exist;
           expect(runTool?.inputSchema?.properties?.scriptId).to.exist;
           expect(runTool?.inputSchema?.properties?.js_statement).to.exist;
@@ -955,7 +955,7 @@ function getData() {
           console.log('🔍 Testing comprehensive workflow infrastructure...');
           
           const tools = await client.listTools();
-          const requiredTools = ['gas_write', 'gas_run', 'gas_reorder', 'gas_version_create', 'gas_deploy_create'];
+          const requiredTools = ['gas_write', 'exec', 'gas_reorder', 'gas_version_create', 'gas_deploy_create'];
           
           for (const toolName of requiredTools) {
             const tool = tools.find(t => t.name === toolName);
@@ -1423,7 +1423,7 @@ function testFullWorkflow() {
           console.log('🔍 Testing complex function execution infrastructure...');
           
           const tools = await client.listTools();
-          const runTool = tools.find(tool => tool.name === 'gas_run');
+          const runTool = tools.find(tool => tool.name === 'exec');
           expect(runTool).to.exist;
           expect(runTool?.inputSchema?.properties?.scriptId).to.exist;
           

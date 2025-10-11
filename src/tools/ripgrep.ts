@@ -1013,46 +1013,17 @@ export class RipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
-      fileSystem: 'GAS has no real directories. Files like "utils/helper" and "api/client" are single filenames with pseudo-directory prefixes.',
-
-      pathPatterns: 'Use path patterns like "utils/*" to filter by filename prefixes. The "*" matches the remaining part of the filename after the prefix.',
-
-      whenToUse: 'Use for advanced text search with multiple patterns, context control, and pseudo-directory filtering in GAS flat file structure.',
-
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'Advanced search works universally for both script types with full ripgrep-inspired features.'
-      },
-      limitations: {
-        maxCount: 'Hard limit of 1000 matches per file - use more specific patterns for files with many matches',
-        maxFiles: 'Hard limit of 500 files searched - use path parameter to narrow scope',
-        performance: 'Complex regex with multiline mode may be slow - profile with showStats: true if needed'
-      },
-
-      examples: [
-        'Multi-pattern search: {scriptId: "abc123...", patterns: ["function.*test", "describe.*spec"], smartCase: true}',
-        'Context search: {scriptId: "abc123...", pattern: "TODO", contextBefore: 2, contextAfter: 3}',
-        'Replace preview: {scriptId: "abc123...", pattern: "console\\.log", replace: "Logger.log"}',
-        'Utility functions: {scriptId: "abc123...", pattern: "function.*util", path: "utils/*"}',
-        'API errors: {scriptId: "abc123...", patterns: ["error", "exception"], path: "api/*", context: 2}',
-        'Root files only: {scriptId: "abc123...", pattern: "TODO", pseudoDepth: 0}',
-        'Config files: {scriptId: "abc123...", pattern: "config", path: "*config*"}',
-        'Performance stats: {scriptId: "abc123...", pattern: "slow.*operation", showStats: true}',
-        'Case-insensitive search: {scriptId: "abc123...", pattern: "todo", ignoreCase: true}',
-        'Sorted by path: {scriptId: "abc123...", pattern: "function", sort: "path"}',
-        'Trimmed output: {scriptId: "abc123...", pattern: "class.*\\\\{", trim: true}'
-      ],
-
-      fileSystemReality: 'Remember: GAS files are flat. "utils/helper.js" appears as filename "utils/helper" in the project, not as file "helper.js" in folder "utils".',
-
-      pathFilteringLogic: 'Path filtering works on complete filenames using prefix matching, not directory traversal.',
-
-      performance: 'Optimized for large codebases with multiple patterns. In-memory processing with regex caching and performance statistics.',
-
-      workflow: 'Advanced search → analyze results → generate replacements → apply manually using gas_write',
-
-      contentComparison: 'gas_ripgrep searches the same clean user code that gas_cat shows (unwrapped from CommonJS), while gas_raw_ripgrep searches complete file content including system wrappers.'
+      fileSystem: 'GAS flat: "utils/helper"|"api/client" = single filenames with pseudo-directory prefixes',
+      pathPatterns: 'path:"utils/*" → prefix filter | "*" matches remaining filename',
+      whenToUse: 'Advanced text search: multi-pattern | context | pseudo-directory filtering',
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal with full ripgrep features'},
+      limitations: {maxCount: '1000/file max→specific patterns', maxFiles: '500 max→path narrow', performance: 'Complex regex+multiline→profile showStats'},
+      examples: ['Multi-pattern: patterns:["fn.*test","describe.*spec"],smartCase:true', 'Context: pattern:"TODO",contextBefore:2,contextAfter:3', 'Replace preview: pattern:"console\\\\.log",replace:"Logger.log"', 'Util fns: pattern:"function.*util",path:"utils/*"', 'API errors: patterns:["error","exception"],path:"api/*",context:2', 'Root only: pattern:"TODO",pseudoDepth:0', 'Config: pattern:"config",path:"*config*"', 'Stats: pattern:"slow.*operation",showStats:true', 'Case-insensitive: pattern:"todo",ignoreCase:true', 'Sorted: pattern:"function",sort:"path"', 'Trimmed: pattern:"class.*\\\\{",trim:true'],
+      fileSystemReality: 'GAS flat: "utils/helper.js" = filename "utils/helper" NOT file in folder',
+      pathFilteringLogic: 'Prefix matching on complete filenames (not directory traversal)',
+      performance: 'Optimized: multi-pattern | in-memory | regex cache | performance stats',
+      workflow: 'Search→analyze→generate replacements→apply via gas_write',
+      contentComparison: 'ripgrep: clean code (gas_cat shows) | raw_ripgrep: full content+wrappers'
     }
   };
 
@@ -1499,23 +1470,11 @@ export class RawRipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
-      whenToUse: 'Use for system analysis, debugging CommonJS wrappers, or searching complete file content including system-generated code.',
-
-      contentDifference: 'gas_raw_ripgrep searches complete file content including CommonJS wrappers and system code, while gas_ripgrep searches only clean user code.',
-
-      examples: [
-        'Find wrapper issues: {scriptId: "abc123...", patterns: ["_main", "__defineModule__"], showStats: true}',
-        'System code analysis: {scriptId: "abc123...", pattern: "globalThis\\.__", multiline: true}',
-        'Wrapper debugging: {scriptId: "abc123...", pattern: "module\\s*=", context: 3}',
-        'Full content search: {scriptId: "abc123...", pattern: "CommonJS", path: "*", maxFiles: 200}',
-        'Case-insensitive wrapper search: {scriptId: "abc123...", pattern: "_main", ignoreCase: true}',
-        'Sorted system analysis: {scriptId: "abc123...", pattern: "require", sort: "path"}',
-        'Trimmed wrapper output: {scriptId: "abc123...", pattern: "function", trim: true}'
-      ],
-      
-      dataSource: 'Always makes direct API calls to retrieve complete file content including all system wrappers and infrastructure code.',
-      
-      performance: 'Direct API access with no local file caching. Includes full system wrapper content in search scope.'
+      whenToUse: 'System analysis | debug CommonJS wrappers | search complete file content+system code',
+      contentDifference: 'raw_ripgrep: complete (_main+__defineModule__+wrappers) | ripgrep: clean user code',
+      examples: ['Wrapper issues: patterns:["_main","__defineModule__"],showStats:true', 'System: pattern:"globalThis\\\\.__",multiline:true', 'Debug: pattern:"module\\\\s*=",context:3', 'Full: pattern:"CommonJS",path:"*",maxFiles:200', 'Case-insensitive: pattern:"_main",ignoreCase:true', 'Sorted: pattern:"require",sort:"path"', 'Trimmed: pattern:"function",trim:true'],
+      dataSource: 'Always direct API calls→complete file content+all wrappers+infra code',
+      performance: 'Direct API (no local cache) | full system wrapper content in scope'
     }
   };
 

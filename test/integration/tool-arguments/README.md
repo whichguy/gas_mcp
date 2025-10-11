@@ -17,7 +17,7 @@ These tests validate the **logical functionality and argument validation** of MC
 **Strategy**: Single shared project for ALL tests
 **Runtime**: ~5 minutes
 **Tools Covered**:
-- Git Sync (5 tools): git_init, git_status, git_sync, git_set_sync_folder, git_get_sync_folder
+- Git Sync (3 tools): git_init, local_sync, config (sync_folder get/set)
 - Deployment (8 tools): deploy_create, version_create, deploy_list, deploy_get_details, etc.
 - Project Context (4 tools): project_set, project_list, project_add, project_get
 - Versions (2 tools): version_list, version_get
@@ -99,7 +99,7 @@ npx mocha test/integration/tool-arguments/comprehensive-arguments.test.ts --grep
 | File Operations | 4 | file-operation-arguments.test.ts | 5min |
 | Execution | 2 | execution-arguments.test.ts | 5min |
 | Search Tools | 4 | search-arguments.test.ts | 5min |
-| Git Sync | 5 | comprehensive-arguments.test.ts | ~1min |
+| Git Sync | 3 | comprehensive-arguments.test.ts | ~1min |
 | Deployment | 8 | comprehensive-arguments.test.ts | ~1min |
 | Project Context | 4 | comprehensive-arguments.test.ts | ~30s |
 | Versions | 2 | comprehensive-arguments.test.ts | ~30s |

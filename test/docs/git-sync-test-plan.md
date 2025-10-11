@@ -87,7 +87,7 @@ assert(status.repository.includes('test-gas-git-sync'), 'Repository should be se
 await execAsync('cd ~/test-gas-repos && git clone https://github.com/USERNAME/test-gas-git-sync.git sync-test');
 
 // Sync from GAS to local
-await gas_git_sync({
+await gas_local_sync({
   scriptId,
   direction: "pull-only"
 });
@@ -121,7 +121,7 @@ await fs.writeFile('~/test-gas-repos/sync-test/TestModule.gs', `
 await execAsync('cd ~/test-gas-repos/sync-test && git add -A && git commit -m "Local update"');
 
 // Sync to GAS
-await gas_git_sync({
+await gas_local_sync({
   scriptId,
   direction: "push-only"
 });
@@ -156,7 +156,7 @@ await gas_write({
 });
 
 // Sync to local
-await gas_git_sync({
+await gas_local_sync({
   scriptId,
   direction: "pull-only"
 });
@@ -197,7 +197,7 @@ await fs.writeFile('~/test-gas-repos/sync-test/Config.gs', `
 `);
 
 // 3. Attempt sync
-const syncResult = await gas_git_sync({
+const syncResult = await gas_local_sync({
   scriptId,
   mergeStrategy: "manual"
 });
@@ -230,7 +230,7 @@ await fs.writeFile('~/test-gas-repos/sync-test/Config.gs', `
 await execAsync('cd ~/test-gas-repos/sync-test && git add Config.gs && git commit -m "Resolved conflicts"');
 
 // Retry sync
-await gas_git_sync({ scriptId });
+await gas_local_sync({ scriptId });
 
 // Verify resolution in both places
 const gasConfig = await gas_cat({ scriptId, path: "Config" });
@@ -260,7 +260,7 @@ function example() {
 `);
 
 // Sync to GAS
-await gas_git_sync({ scriptId });
+await gas_local_sync({ scriptId });
 
 // Verify transformation to HTML
 const readmeHtml = await gas_cat({ scriptId, path: "README" });
@@ -286,7 +286,7 @@ SECRET=do-not-expose
 `);
 
 // Sync to GAS
-await gas_git_sync({ scriptId });
+await gas_local_sync({ scriptId });
 
 // Verify in GAS
 const files = await gas_ls({ scriptId });
@@ -342,7 +342,7 @@ await gas_write({
 });
 
 // Sync only subproject
-await gas_git_sync({
+await gas_local_sync({
   scriptId,
   projectPath: "libs/shared"
 });
@@ -356,25 +356,35 @@ assert(subFiles.includes('SharedUtils.gs'), 'Subproject file should be synced');
 
 #### Test 6.1: Get Sync Folder
 ```typescript
-const folderInfo = await gas_git_get_sync_folder({ scriptId });
+const folderInfo = await gas_config({
+  action: 'get',
+  type: 'sync_folder',
+  scriptId
+});
 
 assert(folderInfo.syncFolder === path.resolve('~/test-gas-repos/sync-test'), 'Should return correct path');
 assert(folderInfo.exists === true, 'Folder should exist');
 assert(folderInfo.isGitRepo === true, 'Should be a git repo');
-assert(folderInfo.repository.includes('test-gas-git-sync'), 'Should have correct remote');
+assert(folderInfo.gitStatus, 'Should have git status');
 ```
 
 #### Test 6.2: Move Sync Folder
 ```typescript
 // Move to new location
-await gas_git_set_sync_folder({
+await gas_config({
+  action: 'set',
+  type: 'sync_folder',
   scriptId,
-  localPath: "~/test-gas-repos/moved-project",
+  value: "~/test-gas-repos/moved-project",
   moveExisting: true
 });
 
 // Verify move
-const newInfo = await gas_git_get_sync_folder({ scriptId });
+const newInfo = await gas_config({
+  action: 'get',
+  type: 'sync_folder',
+  scriptId
+});
 assert(newInfo.syncFolder.includes('moved-project'), 'Should be in new location');
 
 // Verify git still works
@@ -382,7 +392,7 @@ await execAsync('cd ~/test-gas-repos/moved-project && git status');
 await execAsync('cd ~/test-gas-repos/moved-project && git remote -v');
 
 // Sync should still work
-await gas_git_sync({ scriptId });
+await gas_local_sync({ scriptId });
 ```
 
 ### Phase 7: Integration Tests
@@ -406,7 +416,7 @@ await execAsync('cd ~/test-gas-repos/sync-test && git push origin main');
 await execAsync('cd ~/test-gas-repos/sync-test && gh pr create --title "Feature X" --body "New feature"');
 
 // Sync to GAS
-await gas_git_sync({ scriptId });
+await gas_local_sync({ scriptId });
 
 // Verify in GAS
 const gasFiles = await gas_ls({ scriptId });
@@ -448,7 +458,7 @@ const noGitProject = await gas_project_create({
 
 // Try sync without init
 try {
-  await gas_git_sync({ scriptId: noGitProject.scriptId });
+  await gas_local_sync({ scriptId: noGitProject.scriptId });
   assert(false, 'Should throw error');
 } catch (error) {
   assert(error.message.includes('git-linked'), 'Should indicate no git link');
@@ -491,7 +501,7 @@ await gas_write({
 
 // Time the sync
 const startTime = Date.now();
-await gas_git_sync({ scriptId });
+await gas_local_sync({ scriptId });
 const syncTime = Date.now() - startTime;
 
 console.log(`Large file sync took ${syncTime}ms`);

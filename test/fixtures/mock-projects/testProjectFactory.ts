@@ -452,7 +452,7 @@ function getAPIData(action) {
       try {
         console.log(`  Testing: ${testCase.description}`);
         
-        const result = await context.client.callAndParse('gas_run', {
+        const result = await context.client.callAndParse('exec', {
           scriptId: projectId,
           js_statement: testCase.function
         });

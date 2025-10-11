@@ -50,7 +50,7 @@ describe('MCP Tool: Execution - Argument Validation', function() {
     await context.cleanup();
   });
 
-  describe('gas_run: Valid Arguments', function() {
+  describe('exec: Valid Arguments', function() {
     it('should accept simple expression', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -188,7 +188,7 @@ describe('MCP Tool: Execution - Argument Validation', function() {
     });
   });
 
-  describe('gas_run: Invalid Arguments', function() {
+  describe('exec: Invalid Arguments', function() {
     it('should reject missing scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,
@@ -352,7 +352,7 @@ describe('MCP Tool: Execution - Argument Validation', function() {
     });
   });
 
-  describe('gas_run: Edge Cases', function() {
+  describe('exec: Edge Cases', function() {
     it('should handle very long js_statement', async function() {
       const longStatement = 'const arr = [' + Array(1000).fill('1').join(',') + ']; arr.length';
 

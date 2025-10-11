@@ -4,6 +4,7 @@ import { parsePath } from '../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { ProjectResolver } from '../utils/projectResolver.js';
 
 /**
  * Create logical file organization in Google Apps Script project
@@ -304,92 +305,43 @@ export class ReorderTool extends BaseTool {
 }
 
 /**
- * Get metrics data for scripts, such as number of executions and active users
+ * List all configured projects
  */
-export class ProjectMetricsTool extends BaseTool {
-  public name = 'project_metrics';
-  public description = 'Get metrics data for scripts, such as number of executions and active users. LLM USE: Analyze script performance and usage patterns.';
-  
+export class ProjectListTool extends BaseTool {
+  public name = 'project_list';
+  public description = 'List all configured projects';
+
   public inputSchema = {
     type: 'object',
     properties: {
-      ...SchemaFragments.scriptId,
-      metricsFilter: {
-        type: 'object',
-        description: 'Optional field containing filters to apply to the request. This limits the scope of the metrics returned to those specified in the filter.',
-        properties: {
-          deploymentId: {
-            type: 'string',
-            description: 'Optional field indicating a specific deployment to retrieve metrics from.'
-          }
-        },
-        llmHints: {
-          deployment: 'Use deploymentId to analyze specific deployment performance',
-          overall: 'Omit filter to get overall project metrics across all deployments'
-        }
-      },
-      metricsGranularity: {
-        type: 'string',
-        enum: ['UNSPECIFIED_GRANULARITY', 'WEEKLY', 'DAILY'],
-        description: 'Required field indicating what granularity of metrics are returned (default: WEEKLY). LLM RECOMMENDATION: Use DAILY for detailed analysis, WEEKLY for trends.',
-        default: 'WEEKLY',
-        llmHints: {
-          trends: 'Use WEEKLY for long-term trend analysis',
-          detailed: 'Use DAILY for detailed performance analysis over 7 days',
-          performance: 'WEEKLY provides better performance for large datasets',
-          unspecified: 'UNSPECIFIED_GRANULARITY is default but returns no metrics'
-        }
-      },
-      ...SchemaFragments.accessToken
-    },
-    required: ['scriptId'],
-    additionalProperties: false,
-    llmWorkflowGuide: {
-      prerequisites: [
-        '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed',
-        '2. Have valid scriptId from gas_project_create or gas_ls',
-        '3. Project must have had some execution history'
-      ],
-      useCases: {
-        performance: 'project_metrics({scriptId: "...", metricsGranularity: "DAILY"}) - Detailed performance analysis',
-        trends: 'project_metrics({scriptId: "...", metricsGranularity: "WEEKLY"}) - Long-term usage trends',
-        deployment: 'project_metrics({scriptId: "...", metricsFilter: {deploymentId: "..."}}) - Specific deployment metrics'
-      },
-      errorHandling: {
-        'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
-        'ScriptNotFound': 'Verify scriptId is correct and accessible',
-        'NoMetricsData': 'Project may not have sufficient execution history for metrics'
-      },
-      returnValue: {
-        activeUsers: 'Array of MetricsValue objects showing number of active users over time periods',
-        totalExecutions: 'Array of MetricsValue objects showing total execution counts over time periods',
-        failedExecutions: 'Array of MetricsValue objects showing failed execution counts over time periods',
-        metricsGranularity: 'The granularity level used for the metrics (WEEKLY or DAILY)',
-        scriptId: 'The script ID these metrics apply to'
-      }
+      ...SchemaFragments.workingDir
     }
   };
 
-  private gasClient: GASClient;
-
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);
-    this.gasClient = new GASClient();
   }
 
   async execute(params: any): Promise<any> {
-    const accessToken = await this.getAuthToken(params);
-    
-    const scriptId = this.validate.scriptId(params.scriptId, 'project metrics');
-    const metricsFilter = params.metricsFilter || undefined;
-    const metricsGranularity = params.metricsGranularity ? 
-      this.validate.enum(params.metricsGranularity, 'metricsGranularity', ['UNSPECIFIED_GRANULARITY', 'WEEKLY', 'DAILY'], 'project metrics') : 
-      'WEEKLY';
+    const { LocalFileManager } = await import('../utils/localFileManager.js');
+    const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
 
-    return await this.handleApiCall(
-      () => this.gasClient.getProjectMetrics(scriptId, metricsGranularity, metricsFilter, accessToken),
-      'get project metrics',
-      { scriptId, metricsGranularity, metricsFilter }
-    );
+    // Get projects using utility
+    const projects = await ProjectResolver.listProjects(workingDir);
+
+    // Get current project if set
+    let currentProject;
+    try {
+      currentProject = await ProjectResolver.getCurrentProject(workingDir);
+    } catch (error) {
+      currentProject = null;
+    }
+
+    return {
+      projects,
+      currentProject,
+      totalProjects: projects.length,
+      configPath: workingDir
+    };
   }
-} 
+}

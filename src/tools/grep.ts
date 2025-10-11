@@ -40,37 +40,18 @@ export class GrepTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     llmGuidance: {
-      alternatives: 'Use raw_grep when you need explicit project ID control or want to search system-generated content',
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'File searching works universally for both script types. Searches unwrapped user code for cleaner results.'
-      },
-      limitations: {
-        maxResults: 'Hard limit of 200 matches to prevent token overflow - use more specific patterns for large codebases',
-        maxFiles: 'Hard limit of 500 files searched - use path parameter to narrow scope',
-        regexPerformance: 'Complex regex patterns may be slow on large projects - prefer simpler patterns when possible'
-      },
-      nextSteps: [
-        'AFTER SEARCH: Use cat to read full context of matched files',
-        'TO MODIFY: Use sed for find/replace on matched patterns',
-        'TO UPDATE: Use write after manual code changes',
-        'TO VERIFY: Use gas_run to test modified code'
-      ],
-      relatedTools: {
-        preferred: '⚡ ripgrep - STRONGLY RECOMMENDED for all searches. Provides multi-pattern search, smart case, context control, and better performance than grep',
-        semanticSearch: 'context - For natural language queries instead of regex patterns',
-        fileDiscovery: 'find - For finding files by name/properties instead of content',
-        readFiles: 'cat - Read complete file content after finding matches',
-        editFiles: 'sed - Batch find/replace operations, write - Update individual files'
-      },
-      commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When searching files, the outer _main() wrapper is removed to show clean user code searches. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
-      editingWorkflow: 'Search results show unwrapped code for easy reading. The same unwrapped content is what cat shows for editing.',
-      moduleAccess: 'Your search will find require("ModuleName") calls, module.exports = {...} assignments, and exports.func = ... usage in clean user code without system wrapper noise.',
-      whenToUse: '⚠️ PREFER ripgrep FOR MOST SEARCHES - ripgrep provides multi-pattern search, smart case, and advanced features. Use grep only for simple single-pattern searches or when ripgrep features are not needed. Automatically handles CommonJS unwrapping for cleaner results.',
-      workflow: 'Searches through the clean user code that developers actually write and edit',
-      contentComparison: 'grep searches the same content that cat shows (unwrapped user code), while raw_grep searches the same content that raw_cat shows (full file including CommonJS wrappers)',
-      currentBehavior: 'Currently makes direct API calls like raw_grep, but may support local file access in the future'
+      alternatives: 'raw_grep→explicit project ID|search system content',
+      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→searches unwrapped user code'},
+      limitations: {maxResults: '200 limit→token overflow prevent (specific patterns)', maxFiles: '500 limit→path param narrow', regexPerformance: 'complex regex slow on large (prefer simple)'},
+      nextSteps: ['AFTER: cat→full context', 'MODIFY: sed→find/replace', 'UPDATE: write→changes', 'VERIFY: gas_run→test'],
+      relatedTools: {preferred: '⚡ ripgrep→RECOMMENDED (multi-pattern+smart case+context+performance)', semanticSearch: 'context→NL queries vs regex', fileDiscovery: 'find→name/properties vs content', readFiles: 'cat→complete after match', editFiles: 'sed→batch find/replace | write→individual'},
+      commonJsIntegration: 'SERVER_JS auto-integrated (CommonJS.js)→_main() wrapper removed→clean user code search (require()/module/exports available at exec)',
+      editingWorkflow: 'unwrapped results→cat shows same→editing ready',
+      moduleAccess: 'finds require("ModuleName")+module.exports+exports.func in clean code (no wrapper noise)',
+      whenToUse: '⚠️ PREFER ripgrep→multi-pattern+smart case+advanced | grep→simple single-pattern only (auto CommonJS unwrap)',
+      workflow: 'searches clean user code (dev write+edit)',
+      contentComparison: 'grep→cat content (unwrapped) | raw_grep→raw_cat content (full+wrappers)',
+      currentBehavior: 'direct API (like raw_grep) | may support local future'
     },
     properties: {
       pattern: {

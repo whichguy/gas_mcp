@@ -68,44 +68,19 @@ export class WriteTool extends BaseFileSystemTool {
     required: ['scriptId', 'path', 'content'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use for normal file writing with explicit scriptId parameter. Automatically uses atomic hook validation when git is available, otherwise falls back to remote-first workflow.',
-      workflow: 'Use with explicit scriptId: write({scriptId: "abc123...", path: "filename", content: "..."}). Git hook validation is automatic - no flags needed.',
-      alternatives: 'Use raw_write when you need single-destination writes or advanced file positioning',
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'File writing works universally for both script types. Automatically wraps user code with CommonJS module system.'
-      },
-      limitations: {
-        fileTypes: 'Only writes SERVER_JS (.gs), HTML (.html), and JSON (appsscript.json manifest only) files',
-        moduleWrapping: 'Automatically wraps user code with CommonJS _main() for SERVER_JS - use raw_write for files that need exact content',
-        gitHookDependency: 'Git hook validation only works if .git/ directory exists - otherwise falls back to remote-first workflow',
-        preservationOverhead: 'Omitting moduleOptions triggers ~200-500ms API call to preserve existing loadNow setting'
-      },
-      gitIntegration: 'When git repository exists: (1) Writes locally and runs git commit with hooks, (2) If hooks pass, syncs to remote, (3) If remote fails, reverts git commit. Without git: writes to remote first, then syncs locally.',
-      commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). This provides: (1) require() function for importing other modules, (2) module object for module metadata and exports, (3) exports object as shorthand for module.exports. Users write plain JavaScript - the module wrapper is transparent.',
-      moduleAccess: 'Code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
-      wrapperHandling: 'Any accidentally included _main() or __defineModule__ calls are automatically cleaned and replaced with proper CommonJS structure. Never manually add module wrappers.',
-      systemFiles: 'System files (CommonJS, __mcp_gas_run, appsscript) are never wrapped and provide the underlying infrastructure.',
-      examples: [
-        'Write JS module: write({scriptId: "1abc2def...", path: "utils", content: "function helper() {...}"})',
-        'Write with exports: write({scriptId: "1abc2def...", path: "api/client", content: "module.exports = {...}"})',
-        'Write HTML: write({scriptId: "1abc2def...", path: "sidebar", content: "<html>...", fileType: "HTML"})',
-        'Write config: write({scriptId: "1abc2def...", path: "appsscript", content: "{...}", fileType: "JSON"})',
-        'Local only: write({scriptId: "1abc2def...", path: "test", content: "...", localOnly: true})',
-        'Web app handler: write({scriptId: "1abc2def...", path: "WebApp", content: "function doGet(e) { return HtmlService.createHtmlOutput(\'Hello\'); }", moduleOptions: {loadNow: true}})',
-        'Trigger function: write({scriptId: "1abc2def...", path: "Triggers", content: "function onOpen() { SpreadsheetApp.getUi().createMenu(\'Menu\').addToUi(); }", moduleOptions: {loadNow: true}})',
-        'Utility module: write({scriptId: "1abc2def...", path: "Utils", content: "function formatDate(date) { return Utilities.formatDate(date, \'GMT\', \'yyyy-MM-dd\'); }", moduleOptions: {loadNow: false}})',
-        'Preserve existing: write({scriptId: "1abc2def...", path: "existing", content: "..."}) // Omit moduleOptions to preserve current loadNow and hoistedFunctions',
-        'Add hoisted function: write({scriptId: "1abc2def...", path: "SheetFuncs", content: "function ask(p,r){...}", moduleOptions: {hoistedFunctions: [{name: "ASK_CLAUDE", params: ["prompt","range"]}]}})',
-        'Remove hoisted functions: write({scriptId: "1abc2def...", path: "SheetFuncs", content: "...", moduleOptions: {hoistedFunctions: []}}) // Empty array removes all bridges'
-      ],
-      hoistedFunctionLifecycle: {
-        preservation: 'When moduleOptions is omitted, existing hoistedFunctions are preserved along with loadNow setting',
-        replacement: 'When moduleOptions.hoistedFunctions is provided with functions, replaces existing hoisted functions',
-        removal: 'When moduleOptions.hoistedFunctions is empty array [], removes all hoisted function bridges',
-        noCruft: 'Old hoisted functions are automatically cleaned up when replaced or removed - no orphaned bridges remain'
-      }
+      whenToUse: 'Normal file write + explicit scriptId → auto atomic hook validation (git exists) | fallback: remote-first',
+      workflow: 'write({scriptId:"abc123...",path:"filename",content:"..."}) → git hook validation auto (no flags)',
+      alternatives: 'raw_write: single-dest | advanced positioning',
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal + auto CommonJS wrap'},
+      limitations: {fileTypes: 'SERVER_JS(.gs) | HTML(.html) | JSON(appsscript only)', moduleWrapping: 'Auto wrap _main() for SERVER_JS → raw_write for exact', gitHookDependency: '.git/ exists→hook validation | else→remote-first', preservationOverhead: 'omit moduleOptions→~200-500ms preserve loadNow'},
+      gitIntegration: 'git exists: (1)local write+commit+hooks (2)hooks pass→remote sync (3)remote fail→revert commit | no git: remote first→local sync',
+      commonJsIntegration: 'All SERVER_JS→auto CommonJS: (1)require() import (2)module object (3)exports shorthand → plain JS→wrapper transparent',
+      moduleAccess: 'require("Mod") import | module.exports={...} export | exports.func=... shorthand → system: load/cache/resolve',
+      wrapperHandling: 'Accidental _main()|__defineModule__→auto clean+replace proper structure → never manual add',
+      systemFiles: 'CommonJS|__mcp_gas_run|appsscript never wrapped→underlying infra',
+      examples: ['JS: path:"utils",content:"<arbitrary JS>"', 'exports: content:"module.exports={...}"', 'HTML: path:"sidebar",fileType:"HTML"', 'config: path:"appsscript",fileType:"JSON"', 'local: localOnly:true', 'WebApp: content:"<web app handler>",moduleOptions:{loadNow:true}', 'Trigger: content:"<trigger function>",moduleOptions:{loadNow:true}', 'util: content:"<utility functions>",moduleOptions:{loadNow:false}', 'preserve: omit moduleOptions→preserve loadNow+hoisted', 'hoisted: moduleOptions:{hoistedFunctions:[{name:"FN",params:["p1","p2"]}]}', 'remove hoisted: moduleOptions:{hoistedFunctions:[]}'],
+      responseFormat: {basic: 'success:true + path + size', withLocal: 'local:{path,exists} if written locally', withGit: 'git:{associated,syncFolder} if .git.gs found', note: 'Response includes local file path and git association hint when .git.gs exists'},
+      hoistedFunctionLifecycle: {preservation: 'omit moduleOptions→preserve hoisted+loadNow', replacement: 'provide hoistedFunctions→replace', removal: 'hoistedFunctions:[]→remove all bridges', noCruft: 'auto cleanup old→no orphans'}
     }
   };
 
@@ -444,12 +419,62 @@ export class WriteTool extends BaseFileSystemTool {
       }
     }
 
-    // Return token-efficient results
-    return {
+    // Check for git association hints
+    let gitHints: any = undefined;
+    try {
+      const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      const gitConfigFiles = allFiles.filter((f: any) =>
+        f.name === '.git.gs' || f.name.endsWith('/.git.gs')
+      );
+
+      if (gitConfigFiles.length > 0) {
+        // Parse git configuration to provide hints
+        const hints: any[] = [];
+
+        for (const gitFile of gitConfigFiles) {
+          try {
+            const config = JSON.parse(gitFile.source || '{}');
+            const projectPath = gitFile.name === '.git.gs' ? '' : gitFile.name.replace('/.git.gs', '');
+            const localPath = config.local?.path || `~/gas-repos/project-${scriptId}`;
+
+            hints.push(localPath);
+          } catch (parseError) {
+            // Skip invalid git config files
+          }
+        }
+
+        if (hints.length > 0) {
+          gitHints = {
+            associated: true,
+            syncFolder: hints[0]  // Primary sync folder
+          };
+        }
+      }
+    } catch (gitCheckError) {
+      // Git hints are optional - continue without them
+    }
+
+    // Return token-efficient results with local and git hints
+    const result: any = {
       success: true,
       path: `${scriptId}/${filename}`,
       size: content.length
     };
+
+    // Add local file info if available
+    if (results.localFile && results.localFile.path) {
+      result.local = {
+        path: results.localFile.path,
+        exists: true
+      };
+    }
+
+    // Add git hints if available
+    if (gitHints) {
+      result.git = gitHints;
+    }
+
+    return result;
   }
 
   /**
@@ -570,11 +595,60 @@ export class WriteTool extends BaseFileSystemTool {
       }
     }
 
-    return {
+    // Check for git association hints
+    let gitHints: any = undefined;
+    try {
+      const allFiles = await this.gasClient.getProjectContent(scriptId, await this.getAuthToken(params));
+      const gitConfigFiles = allFiles.filter((f: any) =>
+        f.name === '.git.gs' || f.name.endsWith('/.git.gs')
+      );
+
+      if (gitConfigFiles.length > 0) {
+        // Parse git configuration to provide hints
+        const hints: any[] = [];
+
+        for (const gitFile of gitConfigFiles) {
+          try {
+            const config = JSON.parse(gitFile.source || '{}');
+            const projectPath = gitFile.name === '.git.gs' ? '' : gitFile.name.replace('/.git.gs', '');
+            const localPath = config.local?.path || `~/gas-repos/project-${scriptId}`;
+
+            hints.push(localPath);
+          } catch (parseError) {
+            // Skip invalid git config files
+          }
+        }
+
+        if (hints.length > 0) {
+          gitHints = {
+            associated: true,
+            syncFolder: hints[0]  // Primary sync folder
+          };
+        }
+      }
+    } catch (gitCheckError) {
+      // Git hints are optional - continue without them
+    }
+
+    // Build result with local and git hints
+    const result: any = {
       success: true,
       path: `${scriptId}/${filename}`,
       size: finalContent.length
     };
+
+    // Add local file info
+    result.local = {
+      path: filePath,
+      exists: true
+    };
+
+    // Add git hints if available
+    if (gitHints) {
+      result.git = gitHints;
+    }
+
+    return result;
   }
 
   /**

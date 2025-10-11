@@ -1,7 +1,7 @@
 /**
  * Code Execution Validation Tests
  *
- * Tests gas_run functionality with real GAS projects:
+ * Tests exec functionality with real GAS projects:
  * - Simple expression execution
  * - Logger.log output capture
  * - Function execution and return values
@@ -46,7 +46,7 @@ describe('Code Execution Validation Tests', () => {
   });
 
   describe('Basic Expression Execution', () => {
-    it('should execute simple expression with gas_run', async function() {
+    it('should execute simple expression with exec', async function() {
       this.timeout(TEST_TIMEOUTS.EXECUTION);
       expect(testProjectId).to.not.be.null;
 

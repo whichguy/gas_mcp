@@ -50,34 +50,17 @@ export class CatTool extends BaseFileSystemTool {
     required: ['scriptId', 'path'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use for normal file reading. Automatically handles local/remote logic.',
-      workflow: 'Use with explicit scriptId: cat({scriptId: "abc123...", path: "utils.gs"})',
-      alternatives: 'Use raw_cat only when you need explicit project ID control',
-      efficientAlternatives: {
-        searching: 'Use ripgrep or grep for searching within files - much faster than reading entire files',
-        editing: 'Use edit for token-efficient small changes, aider for fuzzy matching edits, or sed for pattern-based replacements',
-        whenToUseCat: 'Use cat only when you need to read the complete file content for understanding or major refactoring'
-      },
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'File reading works universally for both script types. Automatically unwraps CommonJS modules for clean editing.'
-      },
-      limitations: {
-        fileTypes: 'Only reads SERVER_JS (.gs), HTML (.html), and JSON (appsscript.json manifest only) files',
-        moduleWrapping: 'Automatically unwraps CommonJS _main() wrappers for editing - use raw_cat to see complete file with wrappers',
-        localCacheDependency: 'Prefers local ./src/ cache when available - use preferLocal: false to force remote read'
-      },
-      pathRequirement: 'Provide scriptId parameter and simple filename in path, or embed scriptId in path and leave scriptId parameter empty.',
-      commonJsIntegration: 'All SERVER_JS files are automatically integrated with the CommonJS module system (see CommonJS.js). When reading files, the outer _main() wrapper is removed to show clean user code for editing. The code still has access to require(), module, and exports when executed - these are provided by the CommonJS system.',
-      moduleAccess: 'Your code can use require("ModuleName") to import other user modules, module.exports = {...} to export functionality, and exports.func = ... as shorthand. The CommonJS system handles all module loading, caching, and dependency resolution.',
-      editingWorkflow: 'Files are unwrapped for editing convenience and will be automatically re-wrapped with CommonJS structure when saved via write.',
-      examples: [
-        'Read a module file: cat({scriptId: "1abc2def...", path: "Utils.gs"})',
-        'Read with embedded ID: cat({scriptId: "", path: "1abc2def.../Calculator.gs"})',
-        'Read HTML template: cat({scriptId: "1abc2def...", path: "sidebar.html"})',
-        'Read manifest: cat({scriptId: "1abc2def...", path: "appsscript.json"})'
-      ]
+      whenToUse: 'normal file read (auto local/remote)',
+      workflow: 'cat({scriptId:"abc123...",path:"utils.gs"})',
+      alternatives: 'raw_cat→explicit project ID control',
+      efficientAlternatives: {searching: 'ripgrep|grep→faster than full file read', editing: 'edit→token-efficient small | aider→fuzzy match | sed→pattern replace', whenToUseCat: 'complete file content for understanding|major refactor'},
+      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→auto-unwraps CommonJS for clean edit'},
+      limitations: {fileTypes: 'SERVER_JS (.gs)|HTML (.html)|JSON (appsscript.json only)', moduleWrapping: 'auto-unwraps _main()→raw_cat for complete+wrappers', localCacheDependency: 'prefers ./src/→preferLocal:false force remote'},
+      pathRequirement: 'scriptId param+filename OR embed scriptId in path',
+      commonJsIntegration: 'SERVER_JS auto-integrated (CommonJS.js)→_main() wrapper removed→clean code for edit (require()/module/exports available at exec)',
+      moduleAccess: 'require("ModuleName")|module.exports={...}|exports.func=... (CommonJS handles loading+caching+deps)',
+      editingWorkflow: 'unwrapped for edit→auto-rewrapped on write',
+      examples: ['module: cat({scriptId:"1abc2def...",path:"Utils.gs"})', 'embedded: cat({scriptId:"",path:"1abc2def.../Calculator.gs"})', 'HTML: cat({scriptId:"1abc2def...",path:"sidebar.html"})', 'manifest: cat({scriptId:"1abc2def...",path:"appsscript.json"})']
     }
   };
 

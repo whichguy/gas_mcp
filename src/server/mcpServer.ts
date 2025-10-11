@@ -262,9 +262,9 @@ export class MCPGasServer {
    * - `gas_project_list` - List all configured projects from gas-config.json
    *
    * ### Deployment & Project Creation (3 tools)
-   * - `gas_deploy` - 🎯 Consolidated deployment workflow across dev/staging/prod environments
-   * - `gas_project_create` - Create new GAS projects with infrastructure
-   * - `gas_project_init` - Initialize projects with standard configuration
+   * - `deploy` - 🎯 Consolidated deployment workflow across dev/staging/prod environments
+   * - `project_create` - Create new GAS projects with infrastructure
+   * - `project_init` - Initialize projects with standard configuration
    *
    * ### Process Management (2 tools)
    * - `gas_process_list` - List user processes

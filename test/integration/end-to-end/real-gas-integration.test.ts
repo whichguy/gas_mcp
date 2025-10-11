@@ -78,7 +78,7 @@ describe('Real Google Apps Script Integration Tests', () => {
         
         // Test the infrastructure and tools are available
         const tools = await client.listTools();
-        const requiredTools = ['gas_run', 'gas_write', 'gas_version_create', 'gas_deploy_create'];
+        const requiredTools = ['exec', 'gas_write', 'gas_version_create', 'gas_deploy_create'];
         
         for (const toolName of requiredTools) {
           const tool = tools.find(t => t.name === toolName);
@@ -253,7 +253,7 @@ function testSum() {
   return this['calculateSum'](15, 27);
 }`;
 
-      const sumResult = await client.callAndParse('gas_run', {
+      const sumResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         code: sumTestCode,
         autoRedeploy: true
@@ -269,7 +269,7 @@ function testArrayProcessing() {
   return this['processArray'](testArray);
 }`;
 
-      const arrayResult = await client.callAndParse('gas_run', {
+      const arrayResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         code: arrayTestCode,
         autoRedeploy: true
@@ -293,7 +293,7 @@ function testComplexCalculation() {
   }\`))();
 }`;
 
-      const complexResult = await client.callAndParse('gas_run', {
+      const complexResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         code: complexTestCode,
         autoRedeploy: true
@@ -318,7 +318,7 @@ function testComplexCalculation() {
         
         // Test error handling infrastructure
         const tools = await client.listTools();
-        const runTool = tools.find(tool => tool.name === 'gas_run');
+        const runTool = tools.find(tool => tool.name === 'exec');
         expect(runTool).to.exist;
         
         console.log('✅ Error handling infrastructure available');
@@ -362,7 +362,7 @@ function testErrors() {
   return testErrorRecovery();
 }`;
 
-      const errorResult = await client.callAndParse('gas_run', {
+      const errorResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         code: errorTestCode,
         autoRedeploy: true
@@ -436,7 +436,7 @@ function testErrors() {
         
         // Test deployment infrastructure
         const tools = await client.listTools();
-        const deploymentTools = ['gas_write', 'gas_run', 'gas_version_create', 'gas_deploy_create'];
+        const deploymentTools = ['gas_write', 'exec', 'gas_version_create', 'gas_deploy_create'];
         
         for (const toolName of deploymentTools) {
           const tool = tools.find(t => t.name === toolName);
@@ -444,7 +444,7 @@ function testErrors() {
         }
         
         console.log('✅ Complete deployment pipeline infrastructure available');
-        console.log('ℹ️  Tools: gas_write → gas_version_create → gas_deploy_create → gas_run');
+        console.log('ℹ️  Tools: gas_write → gas_version_create → gas_deploy_create → exec');
         console.log('ℹ️  Full pipeline testing requires authentication');
         return;
       }
@@ -551,7 +551,7 @@ function testPipeline() {
   return runAllTests();
 }`;
 
-      const pipelineResult = await client.callAndParse('gas_run', {
+      const pipelineResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         code: executionTestCode,
         autoRedeploy: true

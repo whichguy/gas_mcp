@@ -66,63 +66,16 @@ export class FileStatusTool extends BaseFileSystemTool {
     required: ['path'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Use to get SHA checksums, verify file integrity, detect changes without downloading, or compare with local Git files',
-      workflow: 'Single file: file_status({scriptId: "...", path: "utils.gs"}), Multiple files: file_status({scriptId: "...", path: "utils/*"})',
-      pathResolution: {
-        explicitScriptId: 'file_status({scriptId: "1abc...", path: "utils.gs"})',
-        embeddedScriptId: 'file_status({path: "1abc.../utils.gs"})',
-        wildcards: 'Supports * and ? wildcards: "utils/*", "*.test.gs", "*Controller*"',
-        pseudoDirectories: 'GAS uses filename prefixes for organization: "utils/helper" is a single filename, not a folder'
-      },
-      gitIntegration: {
-        purpose: 'Git-compatible SHA-1 enables efficient change detection without downloading files',
-        format: 'sha1("blob " + <size> + "\\0" + <content>) matches git hash-object output',
-        verification: 'Verify locally: echo -n "content" | git hash-object --stdin',
-        workflow: [
-          '1. Get file status with git-sha1 from GAS',
-          '2. Compare with local git hash-object output',
-          '3. Detect divergence without downloading entire file',
-          '4. Use with git_sync tools for synchronization'
-        ]
-      },
-      examples: [
-        'Single file with Git SHA-1: file_status({scriptId: "...", path: "utils.gs"})',
-        'Multiple files with pattern: file_status({scriptId: "...", path: "utils/*"})',
-        'All hashes: file_status({scriptId: "...", path: "utils.gs", hashTypes: ["git-sha1", "sha256", "md5"]})',
-        'Minimal metadata: file_status({scriptId: "...", path: "*.gs", includeMetadata: false})',
-        'Embedded script ID: file_status({path: "1abc.../utils/*"})'
-      ],
-      useCases: {
-        verification: 'Verify file hasn\'t changed since last sync',
-        gitComparison: 'Compare GAS files with local Git repository',
-        changeDetection: 'Detect which files changed without downloading all content',
-        integrity: 'Ensure file integrity during sync operations',
-        bulkStatus: 'Get status of multiple files matching pattern'
-      },
-      hashTypes: {
-        'git-sha1': 'Git-compatible SHA-1 using blob format (matches git hash-object)',
-        'sha256': 'SHA-256 cryptographic hash (64 hex characters)',
-        'md5': 'MD5 hash for legacy compatibility (32 hex characters)'
-      },
-      metadata: {
-        lines: 'Number of lines in file content',
-        size: 'File size in bytes',
-        encoding: 'Detected encoding (typically UTF-8)',
-        createTime: 'ISO 8601 timestamp of file creation',
-        updateTime: 'ISO 8601 timestamp of last modification',
-        lastModifyUser: 'User who last modified the file (name and email)'
-      },
-      performance: {
-        default: 'Processes up to 50 files by default',
-        maximum: 'Can process up to 200 files per request',
-        optimization: 'Use specific patterns to reduce file count',
-        recommendation: 'For large projects, use specific path patterns rather than wildcards'
-      },
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'File status works universally for both script types with Git-compatible checksums.'
-      }
+      whenToUse: 'SHA checksums|verify integrity|detect changes (no download)|compare with local Git',
+      workflow: 'file_status({scriptId:"...",path:"utils.gs"}) | file_status({scriptId:"...",path:"utils/*"})',
+      pathResolution: {explicitScriptId: 'file_status({scriptId:"1abc...",path:"utils.gs"})', embeddedScriptId: 'file_status({path:"1abc.../utils.gs"})', wildcards: '*,? wildcards: "utils/*","*.test.gs","*Controller*"', pseudoDirectories: 'GAS filename prefixes: "utils/helper"=single filename not folder'},
+      gitIntegration: {purpose: 'Git SHA-1→efficient change detect (no download)', format: 'sha1("blob "+<size>+"\\0"+<content>)→matches git hash-object', verification: 'echo -n "content"|git hash-object --stdin', workflow: ['1.file_status git-sha1 from GAS', '2.compare local git hash-object', '3.detect diverge (no download)', '4.local_sync tools sync']},
+      examples: ['file_status({scriptId:"...",path:"utils.gs"})', 'file_status({scriptId:"...",path:"utils/*"})', 'file_status({scriptId:"...",path:"utils.gs",hashTypes:["git-sha1","sha256","md5"]})', 'file_status({scriptId:"...",path:"*.gs",includeMetadata:false})', 'file_status({path:"1abc.../utils/*"})'],
+      useCases: {verification: "verify file unchanged since sync", gitComparison: 'GAS vs local Git repo', changeDetection: 'changed files (no download all)', integrity: 'integrity during sync', bulkStatus: 'multiple files by pattern'},
+      hashTypes: {'git-sha1': 'Git SHA-1 blob format→matches git hash-object', 'sha256': 'SHA-256 (64 hex)', 'md5': 'MD5 legacy (32 hex)'},
+      metadata: {lines: 'line count', size: 'bytes', encoding: 'detected (UTF-8 typical)', createTime: 'ISO 8601 create', updateTime: 'ISO 8601 modify', lastModifyUser: 'user name+email'},
+      performance: {default: '50 files default', maximum: '200 max per request', optimization: 'specific patterns→reduce count', recommendation: 'large projects→specific patterns not wildcards'},
+      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→Git checksums'}
     }
   };
 

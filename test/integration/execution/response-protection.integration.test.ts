@@ -33,7 +33,7 @@ describe('Response Protection Integration Tests', () => {
   });
 
   describe('estimateTokenCount', () => {
-    it('should estimate tokens for real gas_run responses', async function() {
+    it('should estimate tokens for real exec responses', async function() {
       this.timeout(60000);
 
       const authStatus = await auth.getAuthStatus();
@@ -78,7 +78,7 @@ function largeOutput() {
       await gas.writeTestFile(project.scriptId, 'tokenTest.gs', testCode);
 
       // Test small output
-      const smallResult = await client.callAndParse('gas_run', {
+      const smallResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'smallOutput()',
         autoRedeploy: true
@@ -93,7 +93,7 @@ function largeOutput() {
       console.log(`Small output: ${smallJson.length} chars → ${smallTokens} tokens`);
 
       // Test medium output
-      const mediumResult = await client.callAndParse('gas_run', {
+      const mediumResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'mediumOutput()',
         autoRedeploy: true
@@ -107,7 +107,7 @@ function largeOutput() {
       console.log(`Medium output: ${mediumJson.length} chars → ${mediumTokens} tokens`);
 
       // Test large output
-      const largeResult = await client.callAndParse('gas_run', {
+      const largeResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'largeOutput()',
         autoRedeploy: true
@@ -119,7 +119,7 @@ function largeOutput() {
       expect(largeTokens).to.be.greaterThan(mediumTokens);
       console.log(`Large output: ${largeJson.length} chars → ${largeTokens} tokens`);
 
-      console.log('Token estimation validated with real gas_run responses');
+      console.log('Token estimation validated with real exec responses');
     });
   });
 
@@ -155,7 +155,7 @@ function testLogging() {
       await gas.writeTestFile(project.scriptId, 'loggerTest.gs', testCode);
 
       // Execute and get logger output
-      const result = await client.callAndParse('gas_run', {
+      const result = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'testLogging()',
         autoRedeploy: true
@@ -194,7 +194,7 @@ function testLogging() {
       expect(combinedFiltered.metadata).to.include('last 1');
       console.log('Combined filter:', combinedFiltered.metadata.trim());
 
-      console.log('Logger output filtering validated with real gas_run output');
+      console.log('Logger output filtering validated with real exec output');
     });
   });
 
@@ -225,7 +225,7 @@ function normalOutput() {
       await gas.writeTestFile(project.scriptId, 'protectionTest.gs', testCode);
 
       // Execute
-      const result = await client.callAndParse('gas_run', {
+      const result = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'normalOutput()',
         autoRedeploy: true
@@ -277,7 +277,7 @@ function verboseLogging() {
       await gas.writeTestFile(project.scriptId, 'verboseTest.gs', testCode);
 
       // Execute - should generate large logger output
-      const result = await client.callAndParse('gas_run', {
+      const result = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'verboseLogging()',
         autoRedeploy: true
@@ -355,7 +355,7 @@ function complexExecution() {
       await gas.writeTestFile(project.scriptId, 'e2eTest.gs', testCode);
 
       // Execute
-      const rawResult = await client.callAndParse('gas_run', {
+      const rawResult = await client.callAndParse('exec', {
         scriptId: project.scriptId,
         js_statement: 'complexExecution()',
         autoRedeploy: true

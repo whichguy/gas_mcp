@@ -197,8 +197,8 @@ function complexTest(base, multiplier) {
         await gas.writeTestFile(newProject.scriptId, 'realDoGetProxy.gs', doGetProxyCode);
         console.log('✅ Created real doGet() proxy function with Function() trick');
 
-        // STEP 4: TEST REAL EXECUTION VIA gas_run
-        console.log('\n📋 STEP 4: Test Real Proxy Execution via gas_run');
+        // STEP 4: TEST REAL EXECUTION VIA exec
+        console.log('\n📋 STEP 4: Test Real Proxy Execution via exec');
 
         // Test 1: Default function
         console.log('\n🧮 Test 1: Default Function via doGet() Proxy');
@@ -207,7 +207,7 @@ function testDefault() {
   return defaultTest();
 }`;
 
-        const defaultResult = await client.callAndParse('gas_run', {
+        const defaultResult = await client.callAndParse('exec', {
           scriptId: newProject.scriptId,
           code: defaultTestCode,
           autoRedeploy: true
@@ -226,7 +226,7 @@ function testSumProxy() {
   return new Function(\`return \${functionCall}\`)();
 }`;
 
-        const sumResult = await client.callAndParse('gas_run', {
+        const sumResult = await client.callAndParse('exec', {
           scriptId: newProject.scriptId,
           code: sumTestCode,
           autoRedeploy: true
@@ -243,7 +243,7 @@ function testComplexProxy() {
   return complexTest(6, 7);
 }`;
 
-        const complexResult = await client.callAndParse('gas_run', {
+        const complexResult = await client.callAndParse('exec', {
           scriptId: newProject.scriptId,
           code: complexTestCode,
           autoRedeploy: true
@@ -262,7 +262,7 @@ function testDataProcessing() {
   return processData(testData);
 }`;
 
-        const dataResult = await client.callAndParse('gas_run', {
+        const dataResult = await client.callAndParse('exec', {
           scriptId: newProject.scriptId,
           code: dataTestCode,
           autoRedeploy: true

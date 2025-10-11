@@ -102,25 +102,12 @@ export class FindTool extends BaseTool {
     },
     required: ['scriptId'],
     llmGuidance: {
-      whenToUse: 'Use for finding files with user-friendly virtual names',
-      workflow: 'Similar to shell find command: gas_find({scriptId: "...", name: "*.test.gs"})',
-      alternatives: 'Use gas_raw_find to see actual GAS file names',
-      scriptTypeCompatibility: {
-        standalone: '✅ Full Support - Works identically',
-        containerBound: '✅ Full Support - Works identically',
-        notes: 'File finding works universally for both script types. Shows user-friendly virtual names.'
-      },
-      limitations: {
-        flatFileStructure: 'GAS has no real directories - uses filename prefixes for logical organization',
-        wildcardSupport: 'Supports *, ?, [abc] wildcards but patterns match complete filenames not directory paths',
-        virtualFileNames: 'Dotfiles shown with virtual names (.gitignore) not GAS storage names (.gitignore.gs)'
-      },
-      examples: [
-        'Find all test files: gas_find({scriptId: "...", name: "*test*.gs"})',
-        'Find config files: gas_find({scriptId: "...", name: ".git*"})',
-        'Find large files: gas_find({scriptId: "...", size: "+10k"})',
-        'List with details: gas_find({scriptId: "...", ls: true})'
-      ]
+      whenToUse: 'finding files→user-friendly virtual names',
+      workflow: 'shell find: gas_find({scriptId,name:"*.test.gs"})',
+      alternatives: 'gas_raw_find→actual GAS names',
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal→shows virtual names'},
+      limitations: {flatFileStructure: 'no real dirs→filename prefixes', wildcardSupport: '*,?,[abc]→match filenames not paths', virtualFileNames: 'dotfiles virtual (.gitignore) not GAS (.gitignore.gs)'},
+      examples: ['test files: gas_find({scriptId,name:"*test*.gs"})', 'config: gas_find({scriptId,name:".git*"})', 'large: gas_find({scriptId,size:"+10k"})', 'details: gas_find({scriptId,ls:true})']
     }
   };
 
@@ -376,13 +363,10 @@ export class RawFindTool extends BaseTool {
     },
     required: ['scriptId'],
     llmGuidance: {
-      whenToUse: 'Use when you need to see actual GAS file names without translation',
-      workflow: 'Similar to shell find command: gas_raw_find({scriptId: "...", name: ".git*"})',
-      alternatives: 'Use gas_find for user-friendly virtual file names',
-      examples: [
-        'Find dotfiles: gas_raw_find({scriptId: "...", name: ".git*"})',
-        'Find by actual name: gas_raw_find({scriptId: "...", name: ".gitignore.gs"})'
-      ]
+      whenToUse: 'actual GAS file names (no translation)',
+      workflow: 'shell find: gas_raw_find({scriptId,name:".git*"})',
+      alternatives: 'gas_find→user-friendly virtual names',
+      examples: ['dotfiles: gas_raw_find({scriptId,name:".git*"})', 'actual name: gas_raw_find({scriptId,name:".gitignore.gs"})']
     }
   };
 

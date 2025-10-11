@@ -550,7 +550,7 @@ mcp__gas__git_sync({ scriptId: "..." })
 mcp__gas__git_status({ scriptId: "..." })
 
 // Set local sync folder for git operations
-mcp__gas__git_set_sync_folder({
+mcp__gas__config (action: set, type: sync_folder)({
   scriptId: "...",
   localPath: "~/my-projects/gas-app"
 })
