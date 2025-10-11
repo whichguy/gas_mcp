@@ -953,10 +953,10 @@ function getData() {
         if (!authStatus.authenticated || !testProjectId) {
           // Test infrastructure when not authenticated
           console.log('🔍 Testing comprehensive workflow infrastructure...');
-          
+
           const tools = await client.listTools();
-          const requiredTools = ['gas_write', 'exec', 'gas_reorder', 'gas_version_create', 'gas_deploy_create'];
-          
+          const requiredTools = ['gas_write', 'exec', 'gas_reorder', 'deploy', 'project_create'];
+
           for (const toolName of requiredTools) {
             const tool = tools.find(t => t.name === toolName);
             expect(tool, `${toolName} should be available`).to.exist;
