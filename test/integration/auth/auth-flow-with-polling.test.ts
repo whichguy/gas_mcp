@@ -25,17 +25,17 @@ describe('Complete Auth Flow with Polling (Claude Code MCP Session)', () => {
     this.timeout(120000); // 2 minutes for manual OAuth completion
 
     console.log('\n📋 Step 1: Check initial auth status');
-    console.log('In Claude Code, run: gas_auth({mode: "status"})');
+    console.log('In Claude Code, run: auth({mode: "status"})');
     console.log('Expected: Should show not_authenticated with instructions\n');
 
     console.log('📋 Step 2: Start non-blocking auth flow');
-    console.log('In Claude Code, run: gas_auth({mode: "start", waitForCompletion: false})');
+    console.log('In Claude Code, run: auth({mode: "start", waitForCompletion: false})');
     console.log('Expected: Returns immediately with auth URL');
     console.log('Action: Open URL in browser and complete OAuth\n');
 
     console.log('📋 Step 3: Poll auth status until authenticated');
     console.log('While OAuth is in progress, you can run:');
-    console.log('  gas_auth({mode: "status"})');
+    console.log('  auth({mode: "status"})');
     console.log('Expected: Eventually shows authenticated: true\n');
 
     console.log('📋 Step 4: Verify filesystem token cache');
@@ -82,7 +82,7 @@ describe('Complete Auth Flow with Polling (Claude Code MCP Session)', () => {
       console.log('\n⏭️  No authentication detected within timeout');
       console.log('   This is expected if OAuth flow was not completed');
       console.log('   To complete this test:');
-      console.log('   1. Run: gas_auth({mode: "start", waitForCompletion: false})');
+      console.log('   1. Run: auth({mode: "start", waitForCompletion: false})');
       console.log('   2. Complete OAuth in browser');
       console.log('   3. Re-run this test');
       this.skip();
@@ -126,28 +126,28 @@ describe('Complete Auth Flow with Polling (Claude Code MCP Session)', () => {
     console.log('\n✅ Authentication flow completed successfully!');
     console.log('✅ Filesystem token caching verified!');
     console.log('\nNext steps:');
-    console.log('  - Run: gas_auth({mode: "status"}) to see authenticated status');
+    console.log('  - Run: auth({mode: "status"}) to see authenticated status');
     console.log('  - Run: gas_ls({scriptId: "..."}) to test API calls with cached token');
   });
 
   it('should explain blocking vs non-blocking auth modes', async function() {
-    console.log('\n📚 Understanding gas_auth modes:\n');
+    console.log('\n📚 Understanding auth modes:\n');
 
     console.log('1️⃣  Non-blocking mode (recommended for interactive use):');
-    console.log('   gas_auth({mode: "start", waitForCompletion: false})');
+    console.log('   auth({mode: "start", waitForCompletion: false})');
     console.log('   - Returns immediately with auth URL');
     console.log('   - User completes OAuth in browser');
-    console.log('   - Poll gas_auth({mode: "status"}) to check when complete');
+    console.log('   - Poll auth({mode: "status"}) to check when complete');
     console.log('   - More responsive UX for CLI/interactive tools\n');
 
     console.log('2️⃣  Blocking mode (simpler but hangs until completion):');
-    console.log('   gas_auth({mode: "start", waitForCompletion: true})');
+    console.log('   auth({mode: "start", waitForCompletion: true})');
     console.log('   - Opens browser and waits for OAuth completion');
     console.log('   - Hangs the tool call until user completes auth');
     console.log('   - Simpler for scripts but poor UX for interactive use\n');
 
     console.log('3️⃣  Status check (always non-blocking):');
-    console.log('   gas_auth({mode: "status"})');
+    console.log('   auth({mode: "status"})');
     console.log('   - Returns current authentication state');
     console.log('   - Never hangs or blocks');
     console.log('   - Use for polling during non-blocking auth\n');

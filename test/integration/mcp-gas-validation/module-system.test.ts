@@ -13,14 +13,14 @@
  */
 
 import { expect } from 'chai';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('Module System Validation Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
 
   before(async function() {
@@ -31,7 +31,7 @@ describe('Module System Validation Tests', () => {
     }
     client = globalAuthState.client;
     auth = globalAuthState.auth!;  // Reuse global auth with sessionId
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
 
     // Create test project with CommonJS infrastructure
     const result = await gas.createTestProject('MCP-CommonJS-Test');

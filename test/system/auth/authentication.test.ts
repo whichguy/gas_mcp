@@ -1,11 +1,11 @@
 import { expect } from 'chai';
 import { describe, it, before, beforeEach } from 'mocha';
-import { MCPTestClient, AuthTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 describe('MCP Server Authentication Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
 
   before(function() {
     // Use the shared global client to avoid multiple server processes
@@ -187,11 +187,12 @@ describe('MCP Server Authentication Tests', () => {
   describe('Logout Functionality', () => {
     it('should handle logout when not authenticated', async () => {
       // Should not throw even if not authenticated
-      const result = await auth.logout();
-      
-      // Updated to handle new logout response structure
-      expect(result).to.have.property('status');
-      expect(result.status).to.equal('logged_out');
+      await auth.logout();
+
+      // InProcessAuthHelper.logout() returns void
+      // Just verify it doesn't throw
+      const status = await auth.getAuthStatus();
+      expect(status.authenticated).to.be.false;
     });
 
     it('should clear authentication state on logout', async () => {

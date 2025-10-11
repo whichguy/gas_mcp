@@ -24,18 +24,18 @@ function test(name, condition) {
 }
 
 // Test source files exist
-const srcPath = path.join(__dirname, '../src/tools/gitSync.ts');
+const srcPath = path.join(__dirname, '../../src/tools/gitSync.ts');
 test('Source file exists', fs.existsSync(srcPath));
 
 if (fs.existsSync(srcPath)) {
   const content = fs.readFileSync(srcPath, 'utf-8');
-  
+
   // Test tool classes exist
-  test('GasGitInitTool exists', content.includes('class GasGitInitTool'));
-  test('GasGitSyncTool exists', content.includes('class GasGitSyncTool'));
-  test('GasGitStatusTool exists', content.includes('class GasGitStatusTool'));
-  test('GasGitSetSyncFolderTool exists', content.includes('class GasGitSetSyncFolderTool'));
-  test('GasGitGetSyncFolderTool exists', content.includes('class GasGitGetSyncFolderTool'));
+  test('GitInitTool exists', content.includes('class GitInitTool'));
+  test('GitSyncTool exists', content.includes('class GitSyncTool'));
+  test('GitStatusTool exists', content.includes('class GitStatusTool'));
+  test('GitSetSyncFolderTool exists', content.includes('class GitSetSyncFolderTool'));
+  test('GitGetSyncFolderTool exists', content.includes('class GitGetSyncFolderTool'));
   
   // Test key features
   test('Multi-repository support', content.includes('projectPath'));
@@ -45,18 +45,18 @@ if (fs.existsSync(srcPath)) {
 }
 
 // Test MCP server registration
-const serverPath = path.join(__dirname, '../src/server/mcpServer.ts');
+const serverPath = path.join(__dirname, '../../src/server/mcpServer.ts');
 if (fs.existsSync(serverPath)) {
   const serverContent = fs.readFileSync(serverPath, 'utf-8');
-  test('Tools registered in MCP server', 
-    serverContent.includes('GasGitInitTool') &&
-    serverContent.includes('GasGitSyncTool') &&
-    serverContent.includes('GasGitStatusTool')
+  test('Tools registered in MCP server',
+    serverContent.includes('GitInitTool') &&
+    serverContent.includes('GitSyncTool') &&
+    serverContent.includes('GitStatusTool')
   );
 }
 
 // Test build output exists (if built)
-const distPath = path.join(__dirname, '../dist/src/tools/gitSync.js');
+const distPath = path.join(__dirname, '../../dist/src/tools/gitSync.js');
 test('Compiled output exists', fs.existsSync(distPath));
 
 console.log('\n📊 Results:');

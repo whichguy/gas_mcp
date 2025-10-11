@@ -269,7 +269,7 @@ export abstract class BaseTool implements Tool {
         }
 
         // If first attempt failed, reload auth state from disk
-        // This ensures we see authentication saved by other tools (like gas_auth)
+        // This ensures we see authentication saved by other tools (like auth)
         console.error(`🔄 [${this.name}] Reloading auth state to check for fresh authentication...`);
         await this.sessionAuthManager.reloadAuthSession();
         
@@ -289,21 +289,21 @@ export abstract class BaseTool implements Tool {
 
       // Both attempts failed
       throw new AuthenticationError(
-        `Authentication required for ${this.name}. Please run gas_auth(mode="start") to authenticate with Google Apps Script, then retry this command.`
+        `Authentication required for ${this.name}. Please run auth(mode="start") to authenticate with Google Apps Script, then retry this command.`
       );
     }
 
     // Fall back to singleton auth
     if (!this.authStateManager.isAuthenticated()) {
       throw new AuthenticationError(
-        `Authentication required for ${this.name}. Please run gas_auth(mode="start") to authenticate with Google Apps Script, then retry this command.`
+        `Authentication required for ${this.name}. Please run auth(mode="start") to authenticate with Google Apps Script, then retry this command.`
       );
     }
 
     const token = this.authStateManager.getValidToken();
     if (!token) {
       throw new AuthenticationError(
-        `Authentication expired for ${this.name}. Please run gas_auth(mode="start") to re-authenticate with Google Apps Script, then retry this command.`
+        `Authentication expired for ${this.name}. Please run auth(mode="start") to re-authenticate with Google Apps Script, then retry this command.`
       );
     }
     

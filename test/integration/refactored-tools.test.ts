@@ -4,21 +4,25 @@
  */
 
 import { expect } from 'chai';
-import { MCPTestClient } from '../helpers/mcpClient.js';
+import { InProcessTestClient } from '../helpers/inProcessClient.js';
+import { globalAuthState } from '../setup/globalAuth.js';
 
 describe('Refactored Tools Integration', function() {
   this.timeout(30000);
 
-  let client: MCPTestClient;
+  let client: InProcessTestClient;
   const TEST_SCRIPT_ID = '1p3DDxPcgw23lzn2NQl3gM7Nkztki3VmmES46FbLm5IPHizEdJzsQjvAN'; // test-framework project
 
-  before(async () => {
-    client = new MCPTestClient();
-    await client.startAndConnect();
+  before(function() {
+    if (!globalAuthState.client || !globalAuthState.auth) {
+      this.skip(); // Skip if global client not available
+    }
+    client = globalAuthState.client!;
+    console.log('⚠️  Note: This test uses callTool() which may not be fully implemented in InProcessTestClient');
   });
 
   after(async () => {
-    await client.disconnect();
+    // In-process client cleanup handled by global teardown
   });
 
   describe('SedTool with RegexProcessor', () => {

@@ -24,12 +24,12 @@ function test(category, name, condition) {
 }
 
 function checkFileExists(filePath) {
-  return fs.existsSync(path.join(__dirname, '..', filePath));
+  return fs.existsSync(path.join(__dirname, '../..', filePath));
 }
 
 function checkFileContains(filePath, content) {
   try {
-    const fullPath = path.join(__dirname, '..', filePath);
+    const fullPath = path.join(__dirname, '../..', filePath);
     if (!fs.existsSync(fullPath)) return false;
     const fileContent = fs.readFileSync(fullPath, 'utf-8');
     return Array.isArray(content) ? content.every(c => fileContent.includes(c)) : fileContent.includes(content);
@@ -67,7 +67,7 @@ test('AUTH', 'Auth manager exists', checkFileExists('src/auth/authManager.ts'));
 test('AUTH', 'Auth tools exist', checkFileExists('src/tools/auth.ts'));
 
 // Check auth tool completeness
-test('AUTH', 'Auth tools have gas_auth', checkFileContains('src/tools/auth.ts', 'gas_auth'));
+test('AUTH', 'Auth tools have auth function', checkFileContains('src/tools/auth.ts', 'export async function auth'));
 test('AUTH', 'PKCE flow implementation', checkFileContains('src/auth/oauthClient.ts', ['PKCE', 'code_challenge']));
 test('AUTH', 'Session management', checkFileContains('src/auth/authState.ts', 'session'));
 
@@ -219,7 +219,7 @@ test('BUILD', 'Package.json exists', checkFileExists('package.json'));
 test('BUILD', 'ESLint config exists', checkFileExists('.eslintrc.json'));
 
 // Check build output
-test('BUILD', 'Dist directory exists', fs.existsSync(path.join(__dirname, '..', 'dist')));
+test('BUILD', 'Dist directory exists', fs.existsSync(path.join(__dirname, '../..', 'dist')));
 test('BUILD', 'Compiled server exists', checkFileExists('dist/src/server/mcpServer.js'));
 test('BUILD', 'Compiled tools exist', checkFileExists('dist/src/tools/gitSync.js'));
 

@@ -11,7 +11,6 @@ export class MCPTestClient {
   private transport: StdioClientTransport | null = null;
   private serverProcess: ChildProcess | null = null;
   private connected = false;
-  private sessionId: string | null = null;
 
   constructor() {
     this.client = new Client(
@@ -21,21 +20,6 @@ export class MCPTestClient {
         capabilities: {}
       }
     );
-  }
-
-  /**
-   * Set session ID for all tool calls
-   */
-  setSessionId(sessionId: string): void {
-    this.sessionId = sessionId;
-    console.log(`🔑 MCPTestClient now using sessionId: ${sessionId}`);
-  }
-
-  /**
-   * Get current session ID
-   */
-  getSessionId(): string | null {
-    return this.sessionId;
   }
 
   /**
@@ -82,21 +66,16 @@ export class MCPTestClient {
 
   /**
    * Call a tool with parameters
+   * Server handles authentication and tokens internally - no sessionId needed
    */
   async callTool(name: string, arguments_?: any): Promise<any> {
     if (!this.connected) {
       throw new Error('Client not connected');
     }
 
-    // Automatically include sessionId if set (unless already provided in arguments)
-    const params = arguments_ || {};
-    if (this.sessionId && !params.sessionId) {
-      params.sessionId = this.sessionId;
-    }
-
     const result = await this.client.callTool({
       name,
-      arguments: params
+      arguments: arguments_ || {}
     });
 
     // Check for tool errors and throw them (consistent with test expectations)
@@ -221,40 +200,26 @@ export async function createTestClient(): Promise<MCPTestClient> {
 
 /**
  * Test helper for authentication flow
+ * Server handles sessionId and tokens internally - no manual session management needed
  */
 export class AuthTestHelper {
   private client: MCPTestClient;
-  private sessionId: string | null = null;
 
   constructor(client: MCPTestClient) {
     this.client = client;
   }
 
   /**
-   * Get or set session ID for auth operations
-   */
-  getSessionId(): string | null {
-    return this.sessionId;
-  }
-
-  setSessionId(sessionId: string): void {
-    this.sessionId = sessionId;
-    console.log(`🔑 Auth helper now using sessionId: ${sessionId}`);
-  }
-
-  /**
    * Test authentication status
+   * Server manages sessions internally
    */
   async getAuthStatus(): Promise<any> {
-    const params: any = { mode: 'status' };
-    if (this.sessionId) {
-      params.sessionId = this.sessionId;
-    }
-    return await this.client.callAndParse('auth', params);
+    return await this.client.callAndParse('auth', { mode: 'status' });
   }
 
   /**
    * Check if authenticated
+   * Server manages sessions internally
    */
   async isAuthenticated(): Promise<boolean> {
     try {
@@ -267,95 +232,56 @@ export class AuthTestHelper {
 
   /**
    * Start interactive authentication
-   * NOTE: User prefers openBrowser=true and waitForCompletion=true in all cases
+   * Server manages sessions internally
    */
   async startInteractiveAuth(): Promise<any> {
-    const params: any = {
+    return await this.client.callAndParse('auth', {
       mode: 'start',
-      openBrowser: true,  // User wants true in all cases
-      waitForCompletion: true  // User wants true in all cases
-    };
-    if (this.sessionId) {
-      params.sessionId = this.sessionId;
-    }
-
-    const result = await this.client.callAndParse('auth', params);
-
-    // Capture sessionId from auth start response
-    if (result.sessionId && !this.sessionId) {
-      this.setSessionId(result.sessionId);
-    }
-
-    return result;
+      openBrowser: true,
+      waitForCompletion: true
+    });
   }
 
   /**
-   * Start interactive authentication with browser (for live integration tests)
-   * NOTE: This is now the same as startInteractiveAuth() since user wants true in all cases
+   * Start interactive authentication with browser
+   * Server manages sessions internally
    */
   async startInteractiveAuthWithBrowser(): Promise<any> {
-    const params: any = {
+    return await this.client.callAndParse('auth', {
       mode: 'start',
-      openBrowser: true, // Open browser for live testing
-      waitForCompletion: true // Wait for OAuth completion only in live tests
-    };
-    if (this.sessionId) {
-      params.sessionId = this.sessionId;
-    }
-
-    const result = await this.client.callAndParse('auth', params);
-
-    // Capture sessionId from auth start response
-    if (result.sessionId && !this.sessionId) {
-      this.setSessionId(result.sessionId);
-    }
-
-    return result;
+      openBrowser: true,
+      waitForCompletion: true
+    });
   }
 
   /**
    * Complete authentication with code
+   * Server manages sessions internally
    */
   async completeAuth(code: string): Promise<any> {
-    const params: any = {
+    return await this.client.callAndParse('auth', {
       mode: 'callback',
       code
-    };
-    if (this.sessionId) {
-      params.sessionId = this.sessionId;
-    }
-    return await this.client.callAndParse('auth', params);
+    });
   }
 
   /**
    * Logout
+   * Server manages sessions internally
    */
   async logout(): Promise<any> {
-    const params: any = { mode: 'logout' };
-    if (this.sessionId) {
-      params.sessionId = this.sessionId;
-    }
-    const result = await this.client.callAndParse('auth', params);
-
-    // Clear sessionId after logout
-    this.sessionId = null;
-    console.log('🔓 Session cleared after logout');
-
-    return result;
+    return await this.client.callAndParse('auth', { mode: 'logout' });
   }
 
   /**
    * Wait for authentication with timeout
-   * NOTE: This method polls using isAuthenticated() which already includes sessionId
+   * Server manages sessions internally
    */
   async waitForAuth(timeoutMs: number = 60000): Promise<boolean> {
     const startTime = Date.now();
     let attempt = 0;
 
     console.log(`⏳ Waiting for authentication (timeout: ${timeoutMs}ms)...`);
-    if (this.sessionId) {
-      console.log(`🔑 Using sessionId: ${this.sessionId}`);
-    }
 
     while (Date.now() - startTime < timeoutMs) {
       attempt++;

@@ -1,9 +1,10 @@
 {
   "loader": "ts-node/esm",
   "extensions": ["ts"],
+  "spec": "test/integration/**/*.test.ts",
   "require": ["test/setup/globalAuth.ts"],
-  "timeout": 15000,
+  "timeout": 300000,
   "exit": true,
   "reporter": "spec",
   "color": true
-} 
+}

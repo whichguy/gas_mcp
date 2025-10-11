@@ -25,7 +25,7 @@ function test(name, condition) {
 
 function checkFile(filePath, content) {
   try {
-    const fullPath = path.join(__dirname, '..', filePath);
+    const fullPath = path.join(__dirname, '../..', filePath);
     if (!fs.existsSync(fullPath)) return false;
     const fileContent = fs.readFileSync(fullPath, 'utf-8');
     if (Array.isArray(content)) {
@@ -52,7 +52,7 @@ test('Token storage security', checkFile('src/auth/authState.ts', ['encrypt', 's
 test('Automatic token refresh', checkFile('src/auth/authManager.ts', 'refresh'));
 
 console.log('\n🛠️  Auth Tools');
-test('gas_auth tool exists', checkFile('src/tools/auth.ts', 'gas_auth'));
+test('auth tool exists', checkFile('src/tools/auth.ts', 'export async function auth'));
 test('Multiple auth modes', checkFile('src/tools/auth.ts', ['start', 'status', 'logout']));
 test('Browser integration', checkFile('src/tools/auth.ts', 'openBrowser'));
 test('Stateless token support', checkFile('src/tools/auth.ts', 'accessToken'));

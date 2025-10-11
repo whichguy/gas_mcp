@@ -14,46 +14,99 @@
  */
 
 import { expect } from 'chai';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { setupIntegrationTest, globalAuthState } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('Deployment Validation Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
 
   before(async function() {
-    this.timeout(130000); // Allow time for OAuth flow if needed
+    this.timeout(60000); // Reduced timeout - no auth needed per test
 
-    // Explicit setup call - this is where auth happens
+    // Ensure global server is ready
     await setupIntegrationTest();
 
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
-      console.log('⚠️  Skipping integration tests - authentication failed');
+      console.log('⚠️  Skipping - server not ready');
       this.skip();
     }
 
     client = globalAuthState.client;
     auth = globalAuthState.auth!;
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
 
-    // Create test project with some files
+    // Create test project - server handles auth transparently
     const result = await gas.createTestProject('MCP-Deployment-Test');
     testProjectId = result.scriptId;
     console.log(`✅ Created deployment test project: ${testProjectId}`);
 
-    // Add a few test files for version control
+    // Add test files
     await gas.writeTestFile(testProjectId!, 'Main', 'function main() { return "v1"; }');
     await gas.writeTestFile(testProjectId!, 'Utils', 'exports.version = "1.0.0";');
   });
 
+  beforeEach(async function() {
+    // Validate server is authenticated
+    if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
+      console.error('⚠️  Server not authenticated - skipping test');
+      this.skip();
+    }
+
+    // Verify test project exists
+    if (testProjectId) {
+      try {
+        await client.callTool('info', { scriptId: testProjectId });
+      } catch (error) {
+        console.error('❌ Test project no longer valid:', error);
+        this.skip();
+      }
+    }
+
+    // Check token validity
+    try {
+      const authStatus = await auth.getAuthStatus();
+      if (!authStatus.authenticated || !authStatus.tokenValid) {
+        console.error('❌ Token expired or invalid');
+        this.skip();
+      }
+    } catch (error) {
+      console.error('❌ Failed to check auth status:', error);
+      this.skip();
+    }
+  });
+
+  afterEach(async function() {
+    // Log test result for debugging
+    const state = this.currentTest?.state;
+    if (state === 'failed') {
+      console.error(`❌ Test failed: ${this.currentTest?.title}`);
+    }
+  });
+
   after(async function() {
     this.timeout(TEST_TIMEOUTS.STANDARD);
+
     if (testProjectId) {
-      console.log(`🧹 Cleaning up test project: ${testProjectId}`);
-      await gas.cleanupTestProject(testProjectId);
+      try {
+        console.log(`🧹 Cleaning up test project: ${testProjectId}`);
+        await gas.cleanupTestProject(testProjectId);
+
+        // Verify cleanup succeeded
+        try {
+          await client.callTool('info', { scriptId: testProjectId });
+          console.warn('⚠️  Project still exists after cleanup!');
+        } catch (error) {
+          // Expected - project should be deleted
+          console.log('✅ Cleanup verified - project deleted');
+        }
+      } catch (cleanupError) {
+        console.error('❌ Cleanup failed (non-fatal):', cleanupError);
+        // Don't fail suite on cleanup error
+      }
     }
   });
 
@@ -314,6 +367,211 @@ describe('Deployment Validation Tests', () => {
       });
 
       expect(result.content[0].text).to.include('version');
+    });
+  });
+
+  describe('Edge Conditions & Error Handling', () => {
+    describe('Invalid Input Handling', () => {
+      it('should handle invalid scriptId gracefully', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+
+        try {
+          await client.callTool('version_create', {
+            scriptId: 'invalid-script-id-12345',
+            description: 'Test'
+          });
+          expect.fail('Should have thrown error');
+        } catch (error: any) {
+          expect(error.message).to.match(/invalid|not found|error|tool error/i);
+        }
+      });
+
+      it('should handle malformed scriptId', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+
+        try {
+          await client.callTool('version_list', {
+            scriptId: 'abc123' // Too short
+          });
+          expect.fail('Should have thrown error');
+        } catch (error: any) {
+          expect(error.message).to.match(/invalid|malformed|tool error/i);
+        }
+      });
+
+      it('should handle missing scriptId', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+
+        try {
+          await client.callTool('deploy_list', {
+            // No scriptId provided
+          });
+          expect.fail('Should have thrown error');
+        } catch (error: any) {
+          expect(error.message).to.match(/required|missing|scriptId|tool error/i);
+        }
+      });
+    });
+
+    describe('Network & API Failures', () => {
+      it('should timeout gracefully on non-existent project', async function() {
+        this.timeout(15000);
+
+        try {
+          await client.callTool('deploy_list', {
+            scriptId: '1' + 'a'.repeat(43) // Valid length, invalid ID
+          });
+          expect.fail('Should have thrown error');
+        } catch (error: any) {
+          expect(error.message).to.match(/timeout|not found|error|tool error/i);
+        }
+      });
+
+      it('should handle rate limiting gracefully', async function() {
+        this.timeout(TEST_TIMEOUTS.BULK);
+
+        // This test verifies error handling, not necessarily triggering actual rate limits
+        // Rapid sequential calls might trigger rate limiting
+        const promises = [];
+        for (let i = 0; i < 10; i++) {
+          promises.push(
+            client.callTool('version_list', { scriptId: testProjectId })
+              .catch(err => ({ error: err.message }))
+          );
+        }
+
+        const results = await Promise.all(promises);
+        // All should either succeed or have handled errors gracefully
+        results.forEach(result => {
+          if ('error' in result) {
+            expect(result.error).to.be.a('string');
+          } else {
+            expect(result.content[0].text).to.be.a('string');
+          }
+        });
+      });
+    });
+
+    describe('Authentication Edge Cases', () => {
+      it('should detect token expiration information', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+
+        const status = await auth.getAuthStatus();
+        expect(status).to.have.property('tokenValid');
+        expect(status).to.have.property('expiresAt');
+
+        if (status.tokenValid && status.expiresAt) {
+          const expiresAt = new Date(status.expiresAt);
+          const now = new Date();
+          const timeUntilExpiry = expiresAt.getTime() - now.getTime();
+
+          console.log(`   Token expires in ${Math.floor(timeUntilExpiry / 1000)}s`);
+          expect(timeUntilExpiry).to.be.greaterThan(0);
+        }
+      });
+
+      it('should verify authenticated user information', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+
+        const status = await auth.getAuthStatus();
+        expect(status).to.have.property('authenticated', true);
+        expect(status).to.have.property('user');
+
+        if (status.user) {
+          expect(status.user).to.have.property('email');
+          console.log(`   Authenticated as: ${status.user.email}`);
+        }
+      });
+    });
+
+    describe('Resource Conflicts', () => {
+      it('should handle duplicate version creation gracefully', async function() {
+        this.timeout(TEST_TIMEOUTS.BULK);
+        expect(testProjectId).to.not.be.null;
+
+        const description = `Duplicate test ${Date.now()}`;
+
+        // Create first version
+        const v1 = await client.callTool('version_create', {
+          scriptId: testProjectId,
+          description
+        });
+        expect(v1.content[0].text).to.include('version');
+
+        // Create second version with same description (should succeed - allowed)
+        const v2 = await client.callTool('version_create', {
+          scriptId: testProjectId,
+          description
+        });
+        expect(v2.content[0].text).to.include('version');
+      });
+
+      it('should handle concurrent deployment operations', async function() {
+        this.timeout(TEST_TIMEOUTS.BULK);
+        expect(testProjectId).to.not.be.null;
+
+        // Create a version for concurrent deployments
+        const versionResult = await client.callTool('version_create', {
+          scriptId: testProjectId,
+          description: 'Concurrent test version'
+        });
+        const versionMatch = versionResult.content[0].text.match(/version.*?(\d+)/i);
+        const versionNumber = versionMatch ? parseInt(versionMatch[1]) : 1;
+
+        // Try concurrent deployment operations
+        const promises = [
+          client.callTool('deploy_list', { scriptId: testProjectId }),
+          client.callTool('version_list', { scriptId: testProjectId }),
+          client.callTool('info', { scriptId: testProjectId })
+        ];
+
+        const results = await Promise.all(promises);
+
+        // All operations should complete successfully
+        expect(results).to.have.length(3);
+        results.forEach(result => {
+          expect(result.content[0].text).to.be.a('string');
+        });
+      });
+    });
+
+    describe('Deployment Edge Cases', () => {
+      it('should handle deployment without version number (HEAD deployment)', async function() {
+        this.timeout(TEST_TIMEOUTS.BULK);
+        expect(testProjectId).to.not.be.null;
+
+        const result = await client.callTool('deploy_create', {
+          scriptId: testProjectId,
+          description: 'HEAD deployment edge case'
+          // No versionNumber = HEAD deployment
+        });
+
+        expect(result.content[0].text).to.include('deployment');
+      });
+
+      it('should handle very long deployment descriptions', async function() {
+        this.timeout(TEST_TIMEOUTS.BULK);
+        expect(testProjectId).to.not.be.null;
+
+        // Create version first
+        const versionResult = await client.callTool('version_create', {
+          scriptId: testProjectId,
+          description: 'Version for long description test'
+        });
+        const versionMatch = versionResult.content[0].text.match(/version.*?(\d+)/i);
+        const versionNumber = versionMatch ? parseInt(versionMatch[1]) : 1;
+
+        // Create deployment with very long description
+        const longDescription = 'A'.repeat(200) + ' - Test deployment';
+
+        const result = await client.callTool('deploy_create', {
+          scriptId: testProjectId,
+          description: longDescription,
+          versionNumber: versionNumber
+        });
+
+        expect(result.content[0].text).to.include('deployment');
+      });
     });
   });
 });

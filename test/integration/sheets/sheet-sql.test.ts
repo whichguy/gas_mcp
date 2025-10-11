@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { describe, it, before } from 'mocha';
-import { MCPTestClient, AuthTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 /**
@@ -19,8 +19,8 @@ import { globalAuthState } from '../../setup/globalAuth.js';
  * - Tests against "Transactions" sheet
  */
 describe('Google Sheets SQL Integration Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
 
   // Test spreadsheet with Transactions sheet
   const TEST_SPREADSHEET_ID = '1UeHwBmfXMlNlqpHiEf_wF1CeOfICYbXWTBEZBvT3VTM';

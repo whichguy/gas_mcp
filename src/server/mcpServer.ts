@@ -520,7 +520,7 @@ export class MCPGasServer {
         }
 
         // SCHEMA FIX: Check if tool already returned proper MCP format
-        // Some tools (like gas_auth) return { content: [...], isError: false }
+        // Some tools (like auth) return { content: [...], isError: false }
         // Others return plain objects that need wrapping
         if (result && Array.isArray(result.content)) {
           // Tool already returned proper MCP format, just add sessionId

@@ -117,13 +117,20 @@ export class GASAuthClient {
 
             console.error(`OAuth server listening on ${this.redirectUri}`);
             console.error(`Authorization URL: ${authUrl}`);
+            console.error(`🔍 DEBUG: openBrowser parameter = ${openBrowser}`);
 
             if (openBrowser) {
                 console.error('Opening browser for authentication...');
                 try {
                     await open(authUrl);
-                } catch (error) {
-                    console.warn('Could not open browser automatically. Please visit the URL above manually.');
+                    console.error('✅ Browser launched successfully');
+                } catch (error: any) {
+                    console.error('❌ BROWSER LAUNCH FAILED:', error.message);
+                    console.error('');
+                    console.error('⚠️  MANUAL ACTION REQUIRED:');
+                    console.error('   Please open this URL manually in your browser:');
+                    console.error('   ' + authUrl);
+                    console.error('');
                 }
             }
 
@@ -261,7 +268,7 @@ export class GASAuthClient {
                 const tokenResponse = await this.exchangeCodeForTokens(code);
                 console.error('Token exchange successful');
                 
-                // Signal completion to waiting gas_auth call and wait for session setup
+                // Signal completion to waiting auth call and wait for session setup
                 if (this.currentAuthKey) {
                     console.error('Signaling auth completion and waiting for session setup...');
                     const completionPromise = new Promise<void>((resolve, reject) => {

@@ -383,7 +383,7 @@
       "description": "Created: 10/10/2025"
     },
     "mcp-git-thenrunlater-test": {
-      "scriptId": "14RUaFQWNBMf8HIPSYvx_54QKk4KNK8dBZNZcM7RtlUlTHv5UuRA1eOSn",
+      "scriptId": "1cD06OVVEY6CuKOEGyzYdvZ81z61Nh3kj8gw3JlCwiNN3EhNozsrOrCDX",
       "name": "mcp-git-thenrunlater-test",
       "description": "Created: 10/10/2025"
     },
@@ -423,22 +423,22 @@
       "description": "Created: 10/10/2025"
     },
     "mcp-deployment-test": {
-      "scriptId": "1W_Gbt0rJt_78gNkfb5-2bBmNQ-Wy3xdO8BFoPy_DpIa4TEjoH1F6t4AZ",
+      "scriptId": "1by1blt21QSwUDZE2N_jM1bOr9GvNFFgv67kNo6UNF4S2VrDHu86mcit6",
       "name": "mcp-deployment-test",
       "description": "Created: 10/10/2025"
     },
     "mcp-errortest": {
-      "scriptId": "14_k0fggwxAipCBUT-iXZB7EQhoQbTjTGToZQC86A_UQasbTFmEiM8_mK",
+      "scriptId": "1-lwYSQ8BCCrdtg8rWHVRyZ3u9RAHzxM6GSaDXYvqMCd78In8Ou9wX3AK",
       "name": "mcp-errortest",
       "description": "Created: 10/10/2025"
     },
     "mcp-fileops-test": {
-      "scriptId": "1zRdVgTGC9VVCyDLXwyB8FBBYkeKODC6UxeUpqPxQrxb8Ylp2MXiXoa92",
+      "scriptId": "1yt_xELP-RuM5LN5WueKJW-SM4iQFtA-T-fODa3H8SCHam1jyK5hCjrPQ",
       "name": "mcp-fileops-test",
       "description": "Created: 10/10/2025"
     },
     "mcp-commonjs-test": {
-      "scriptId": "1uJSafGMcboDhtjiZ57BCJZ5bhhmcxQOa57v1x8PI0h1HNyhf8iKgLwdp",
+      "scriptId": "1BsGEp9AWXKBc5P-oxX35ztQptNMlUkvvTWT7KSbEfxBScBIa0I5GOTCX",
       "name": "mcp-commonjs-test",
       "description": "Created: 10/10/2025"
     },
@@ -476,6 +476,36 @@
       "scriptId": "1QbzOM5xY5xSMWvbBm1lUAVkdwmgVL6tRNiUr-XMEPvQI3il3Csa13TDC",
       "name": "multi-sha-test-1760135306138",
       "description": "Created: 10/10/2025"
+    },
+    "sha-test-1760140619845": {
+      "scriptId": "1h5CjrvIlRUpIbjjYUtAysIgnTICEs0tzfbjMSc08MT5TmCNkmxZA-Ocs",
+      "name": "sha-test-1760140619845",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-mismatch-test-176014063863": {
+      "scriptId": "1izzgWUweN893DFUUbo3sI_WyOGnCRL3DKH9_-6j51trR74xg8t0kXrf_",
+      "name": "sha-mismatch-test-176014063863",
+      "description": "Created: 10/10/2025"
+    },
+    "sha-repair-test-1760140658765": {
+      "scriptId": "1oGCQjWA6pNJr9xjG6XRPBgLXOZ76H-CkV0k8uJrsKAevTd3X_P05WoLQ",
+      "name": "sha-repair-test-1760140658765",
+      "description": "Created: 10/10/2025"
+    },
+    "exec-sha-test-1760140679853": {
+      "scriptId": "1Dvt2dGVL5puedGN1xEoSvi6UzWiaSpCpTe_nR6-ANSWcJl9Yy59bOQZS",
+      "name": "exec-sha-test-1760140679853",
+      "description": "Created: 10/10/2025"
+    },
+    "multi-sha-test-1760140715269": {
+      "scriptId": "1WNGLVUBZMmIkuXM2196RUkeTlfSqmE_w54ISGUif3EhSS7nptl73P3mQ",
+      "name": "multi-sha-test-1760140715269",
+      "description": "Created: 10/10/2025"
+    },
+    "mcp-performance-test": {
+      "scriptId": "1CVHUZ3iGUOiAS9tTxFm6C03cEYfxnkY-YY1nuJNgSED79OdHzSMEHbT8",
+      "name": "mcp-performance-test",
+      "description": "Created: 10/10/2025"
     }
   },
   "localRoot": {
@@ -485,7 +515,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-10T22:28:42.293Z"
+    "lastModified": "2025-10-11T00:00:47.251Z"
   },
   "debug": true,
   "currentProject": {

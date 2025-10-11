@@ -2,21 +2,23 @@
  * Shared Integration Test Setup
  *
  * This file provides a simple setup function that integration tests can
- * explicitly call in their before() hooks. This approach is clearer than
- * mocha's "require" config option.
+ * explicitly call in their before() hooks.
+ *
+ * KEY PRINCIPLE: ONE SERVER, ONE AUTH
+ * - Global setup starts ONE MCP server for entire test suite
+ * - Global setup authenticates ONCE with Google
+ * - Server handles tokens internally
+ * - All tests reuse the same authenticated server
+ * - No per-test authentication or session management needed
  *
  * Usage in integration tests:
  * ```typescript
- * import { setupIntegrationTest, teardownIntegrationTest } from '../../setup/integrationSetup.js';
+ * import { setupIntegrationTest, globalAuthState } from '../../setup/integrationSetup.js';
  *
  * describe('My Integration Test', () => {
  *   before(async function() {
- *     this.timeout(130000);
+ *     this.timeout(30000); // Reduced from 130s - no auth needed per test
  *     await setupIntegrationTest();
- *   });
- *
- *   after(async function() {
- *     await teardownIntegrationTest();
  *   });
  * });
  * ```
@@ -24,7 +26,7 @@
 
 import { globalAuthState, mochaHooks } from './globalAuth.js';
 
-// Track if setup has been called to prevent multiple OAuth flows
+// Track if setup has been called to prevent multiple initializations
 let setupInProgress = false;
 let setupComplete = false;
 let setupPromise: Promise<void> | null = null;
@@ -33,20 +35,19 @@ let setupPromise: Promise<void> | null = null;
  * Setup function for integration tests
  * Call this in your test's before() hook
  *
- * This function ensures that authentication only happens ONCE, even if
- * multiple test files call it. All subsequent calls will wait for the
- * first setup to complete and reuse the same session.
+ * This function ensures that the global server is started and authenticated.
+ * After the first call, all subsequent calls just verify the server is ready.
  */
 export async function setupIntegrationTest(): Promise<void> {
-  // If already setup, return immediately
+  // If already setup and authenticated, return immediately
   if (setupComplete && globalAuthState.isAuthenticated && globalAuthState.client) {
-    console.log('✅ Auth already initialized, reusing existing session');
+    console.log('✅ Using existing authenticated MCP server');
     return;
   }
 
   // If setup is in progress, wait for it to complete
   if (setupInProgress && setupPromise) {
-    console.log('⏳ Auth setup in progress, waiting...');
+    console.log('⏳ Server setup in progress, waiting...');
     await setupPromise;
     return;
   }
@@ -55,11 +56,11 @@ export async function setupIntegrationTest(): Promise<void> {
   setupInProgress = true;
   setupPromise = (async () => {
     try {
-      console.log('🔐 Starting one-time auth setup for all integration tests...');
-      // Call the global auth setup
+      console.log('🚀 Initializing global MCP server (one-time setup)...');
+      // Call the global auth setup - this starts the server and authenticates
       await mochaHooks.beforeAll.call({ timeout: (ms: number) => {} });
       setupComplete = true;
-      console.log('✅ Auth setup complete - all test files will share this session');
+      console.log('✅ Global server ready - all tests will use this authenticated server');
     } catch (error) {
       setupInProgress = false;
       setupComplete = false;
@@ -72,17 +73,16 @@ export async function setupIntegrationTest(): Promise<void> {
 
 /**
  * Teardown function for integration tests
- * Call this in your test's after() hook (optional, usually not needed)
+ * Usually NOT needed - the global afterAll hook handles cleanup
  */
 export async function teardownIntegrationTest(): Promise<void> {
-  // Usually we want to keep the session alive between test suites
-  // Only call this if you explicitly want to tear down
-  // await mochaHooks.afterAll();
+  // Global afterAll hook will clean up the server
+  // Don't call this unless you explicitly want to tear down mid-suite
 }
 
 /**
  * Check if integration tests should run
- * Returns true if authenticated, false otherwise
+ * Returns true if server is authenticated and ready
  */
 export function shouldRunIntegrationTests(): boolean {
   return globalAuthState.isAuthenticated && !!globalAuthState.client;

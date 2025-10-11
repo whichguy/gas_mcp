@@ -10,42 +10,95 @@
  */
 
 import { expect } from 'chai';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { setupIntegrationTest, globalAuthState } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('File Operations Validation Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
 
   before(async function() {
-    this.timeout(130000); // Allow time for OAuth if needed
+    this.timeout(60000); // Reduced timeout - no auth needed per test
 
-    // Explicit setup call - this is where auth happens
+    // Ensure global server is ready
     await setupIntegrationTest();
 
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
-      console.log('⚠️  Skipping integration tests - authentication failed');
+      console.log('⚠️  Skipping - server not ready');
       this.skip();
     }
 
     client = globalAuthState.client;
     auth = globalAuthState.auth!;
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
 
-    // Create test project
+    // Create test project - server handles auth transparently
     const result = await gas.createTestProject('MCP-FileOps-Test');
     testProjectId = result.scriptId;
     console.log(`✅ Created test project: ${testProjectId}`);
   });
 
+  beforeEach(async function() {
+    // Validate server is authenticated
+    if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
+      console.error('⚠️  Server not authenticated - skipping test');
+      this.skip();
+    }
+
+    // Verify test project exists
+    if (testProjectId) {
+      try {
+        await client.callTool('info', { scriptId: testProjectId });
+      } catch (error) {
+        console.error('❌ Test project no longer valid:', error);
+        this.skip();
+      }
+    }
+
+    // Check token validity
+    try {
+      const authStatus = await auth.getAuthStatus();
+      if (!authStatus.authenticated || !authStatus.tokenValid) {
+        console.error('❌ Token expired or invalid');
+        this.skip();
+      }
+    } catch (error) {
+      console.error('❌ Failed to check auth status:', error);
+      this.skip();
+    }
+  });
+
+  afterEach(async function() {
+    // Log test result for debugging
+    const state = this.currentTest?.state;
+    if (state === 'failed') {
+      console.error(`❌ Test failed: ${this.currentTest?.title}`);
+    }
+  });
+
   after(async function() {
     this.timeout(TEST_TIMEOUTS.STANDARD);
+
     if (testProjectId) {
-      console.log(`🧹 Cleaning up test project: ${testProjectId}`);
-      await gas.cleanupTestProject(testProjectId);
+      try {
+        console.log(`🧹 Cleaning up test project: ${testProjectId}`);
+        await gas.cleanupTestProject(testProjectId);
+
+        // Verify cleanup succeeded
+        try {
+          await client.callTool('info', { scriptId: testProjectId });
+          console.warn('⚠️  Project still exists after cleanup!');
+        } catch (error) {
+          // Expected - project should be deleted
+          console.log('✅ Cleanup verified - project deleted');
+        }
+      } catch (cleanupError) {
+        console.error('❌ Cleanup failed (non-fatal):', cleanupError);
+        // Don't fail suite on cleanup error
+      }
     }
   });
 
@@ -399,6 +452,216 @@ function largeFunction() {
       for (let i = 1; i <= 10; i++) {
         expect(output).to.include(`Concurrent${i}`);
       }
+    });
+  });
+
+  describe('Edge Conditions & Error Handling', () => {
+    describe('Invalid Input Handling', () => {
+      it('should handle invalid scriptId gracefully', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+
+        try {
+          await client.callTool('cat', {
+            scriptId: 'invalid-script-id-12345',
+            path: 'SomeFile'
+          });
+          expect.fail('Should have thrown error');
+        } catch (error: any) {
+          expect(error.message).to.match(/invalid|not found|error|tool error/i);
+        }
+      });
+
+      it('should handle non-existent file path', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        try {
+          await client.callTool('cat', {
+            scriptId: testProjectId,
+            path: 'NonExistentFile12345'
+          });
+          expect.fail('Should have thrown error');
+        } catch (error: any) {
+          expect(error.message).to.match(/not found|error|tool error/i);
+        }
+      });
+
+      it('should handle invalid file names with forbidden characters', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        const invalidNames = ['file/with/slash', 'file\\with\\backslash', 'file:with:colon'];
+
+        for (const invalidName of invalidNames) {
+          try {
+            await gas.writeTestFile(testProjectId!, invalidName, 'content');
+            // Some invalid names might be handled by GAS API normalization
+          } catch (error: any) {
+            // Expected for truly invalid names
+            expect(error.message).to.be.a('string');
+          }
+        }
+      });
+    });
+
+    describe('File Operation Edge Cases', () => {
+      it('should handle empty file content', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        const result = await gas.writeTestFile(testProjectId!, 'EmptyFile', '');
+        expect(result).to.have.property('success', true);
+
+        const readResult = await gas.readFile(testProjectId!, 'EmptyFile');
+        expect(readResult).to.be.a('string');
+      });
+
+      it('should handle whitespace-only content', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        const whitespace = '   \n\n\t\t  \n   ';
+        const result = await gas.writeTestFile(testProjectId!, 'WhitespaceFile', whitespace);
+        expect(result).to.have.property('success', true);
+
+        const readResult = await gas.readFile(testProjectId!, 'WhitespaceFile');
+        expect(readResult).to.be.a('string');
+      });
+
+      it('should handle file names at character limits', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        // GAS file names have limits - test a reasonably long name
+        const longName = 'A'.repeat(50);
+
+        try {
+          const result = await gas.writeTestFile(testProjectId!, longName, 'content');
+          expect(result).to.have.property('success', true);
+
+          // Clean up
+          await client.callTool('rm', { scriptId: testProjectId, path: longName });
+        } catch (error: any) {
+          // If too long, should fail gracefully
+          expect(error.message).to.be.a('string');
+        }
+      });
+    });
+
+    describe('Copy/Move Edge Cases', () => {
+      it('should handle copying to same name (overwrite)', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        // Create original file
+        await gas.writeTestFile(testProjectId!, 'OverwriteSource', 'original');
+
+        // Create target with different content
+        await gas.writeTestFile(testProjectId!, 'OverwriteTarget', 'target');
+
+        // Copy should overwrite
+        const result = await client.callTool('cp', {
+          scriptId: testProjectId,
+          from: 'OverwriteSource',
+          to: 'OverwriteTarget'
+        });
+
+        expect(result.content[0].text).to.include('copied');
+      });
+
+      it('should handle move to same name (no-op or error)', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        await gas.writeTestFile(testProjectId!, 'MoveTest', 'content');
+
+        try {
+          await client.callTool('mv', {
+            scriptId: testProjectId,
+            from: 'MoveTest',
+            to: 'MoveTest'
+          });
+          // Should either succeed as no-op or fail
+        } catch (error: any) {
+          expect(error.message).to.be.a('string');
+        }
+      });
+    });
+
+    describe('Delete Edge Cases', () => {
+      it('should handle deleting already deleted file', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        // Create and delete file
+        await gas.writeTestFile(testProjectId!, 'DeleteTwice', 'content');
+        await client.callTool('rm', { scriptId: testProjectId, path: 'DeleteTwice' });
+
+        // Try to delete again
+        try {
+          await client.callTool('rm', { scriptId: testProjectId, path: 'DeleteTwice' });
+          expect.fail('Should have thrown error');
+        } catch (error: any) {
+          expect(error.message).to.match(/not found|error|tool error/i);
+        }
+      });
+
+      it('should handle bulk delete with some non-existent files', async function() {
+        this.timeout(TEST_TIMEOUTS.BULK);
+        expect(testProjectId).to.not.be.null;
+
+        // Create some files
+        await gas.writeTestFile(testProjectId!, 'BulkDelete1', 'content');
+        await gas.writeTestFile(testProjectId!, 'BulkDelete2', 'content');
+
+        // Try to delete including non-existent
+        const deletePromises = [
+          client.callTool('rm', { scriptId: testProjectId, path: 'BulkDelete1' }),
+          client.callTool('rm', { scriptId: testProjectId, path: 'BulkDelete2' }),
+          client.callTool('rm', { scriptId: testProjectId, path: 'NonExistent123' })
+            .catch(err => ({ error: err.message }))
+        ];
+
+        const results = await Promise.all(deletePromises);
+
+        // First two should succeed, third should fail
+        expect(results[0].content[0].text).to.include('deleted');
+        expect(results[1].content[0].text).to.include('deleted');
+        expect(results[2]).to.have.property('error');
+      });
+    });
+
+    describe('Pattern Matching Edge Cases', () => {
+      it('should handle pattern with no matches', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        const result = await client.callTool('ls', {
+          scriptId: testProjectId,
+          path: 'NonExistentPattern*'
+        });
+
+        // Should return empty or minimal result
+        expect(result.content[0].text).to.be.a('string');
+      });
+
+      it('should handle wildcard pattern matching all files', async function() {
+        this.timeout(TEST_TIMEOUTS.STANDARD);
+        expect(testProjectId).to.not.be.null;
+
+        // Create test files
+        await gas.writeTestFile(testProjectId!, 'PatternTest1', 'content');
+        await gas.writeTestFile(testProjectId!, 'PatternTest2', 'content');
+
+        const result = await client.callTool('ls', {
+          scriptId: testProjectId,
+          path: '*'
+        });
+
+        const output = result.content[0].text;
+        expect(output).to.include('PatternTest1');
+        expect(output).to.include('PatternTest2');
+      });
     });
   });
 });

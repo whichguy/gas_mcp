@@ -137,11 +137,24 @@ class TokenCacheHelpers {
   static async deleteTokenCache(email: string): Promise<void> {
     try {
       const cachePath = TokenCacheHelpers.getTokenCachePath(email);
+
+      // Enhanced logging with stack trace to track who is deleting tokens
+      console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.error(`🗑️  DELETING TOKEN CACHE`);
+      console.error(`   Email: ${email}`);
+      console.error(`   Path: ${cachePath}`);
+      console.error(`   Time: ${new Date().toISOString()}`);
+      console.error(`   Called from:`);
+      const stack = new Error().stack?.split('\n').slice(2, 5).join('\n') || 'Stack trace unavailable';
+      console.error(stack);
+      console.error(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
       await fs.unlink(cachePath);
-      console.error(`Deleted token cache for ${email}`);
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
         console.error(`Error deleting token cache for ${email}:`, error);
+      } else {
+        console.error(`⚠️  Token cache already deleted for ${email}`);
       }
     }
   }
@@ -176,9 +189,9 @@ export class SessionAuthManager {
     // Reduced logging - constructor is called on every tool execution
 
     if (sessionId) {
-      // Explicit session ID provided - use it directly
+      // Explicit session ID provided - but still need to check for existing sessions
       this.sessionId = sessionId;
-      this.sessionIdConfirmed = true;
+      this.sessionIdConfirmed = false; // Force search for existing sessions
     } else {
       // No session ID - generate temporary UUID, will check for existing sessions on first use
       this.sessionId = randomUUID();
@@ -570,6 +583,9 @@ export class SessionAuthManager {
     tokenValid: boolean;
     expiresIn?: number;
   }> {
+    // Ensure we've checked for existing sessions before accessing
+    await this.ensureSessionIdConfirmed();
+
     const authSession = await this.findSessionById(this.sessionId);
 
     if (!authSession) {

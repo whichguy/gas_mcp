@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 /**
@@ -17,9 +17,9 @@ import { globalAuthState } from '../../setup/globalAuth.js';
  * Usage: Set GAS_INTEGRATION_TEST=true to enable these tests
  */
 describe('Real Google Apps Script Integration Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjects: string[] = [];
 
   before(function() {
@@ -32,12 +32,12 @@ describe('Real Google Apps Script Integration Tests', () => {
 
     client = globalAuthState.client!;
     auth = globalAuthState.auth!;  // Reuse global auth with sessionId
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
     
     // Check authentication status
     if (!globalAuthState.isAuthenticated) {
       console.log('ℹ️  Running infrastructure tests (authentication not available)');
-      console.log('ℹ️  For full integration tests, authenticate using gas_auth');
+      console.log('ℹ️  For full integration tests, authenticate using auth');
     } else {
       console.log('🚀 Starting Real Google Apps Script Integration Tests with authentication');
     }
@@ -86,7 +86,7 @@ describe('Real Google Apps Script Integration Tests', () => {
         }
         
         console.log('✅ Real GAS integration infrastructure available');
-        console.log('ℹ️  To run full tests, authenticate with gas_auth');
+        console.log('ℹ️  To run full tests, authenticate with auth');
         
         // Test that tools properly require authentication
         try {

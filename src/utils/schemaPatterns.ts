@@ -102,7 +102,7 @@ export const ACCESS_TOKEN_SCHEMA = {
   description: 'Access token for stateless operation (optional). LLM TYPICAL: Omit - tool uses session authentication.',
   pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
   llmHints: {
-    typical: 'Usually omitted - tool uses session authentication from gas_auth',
+    typical: 'Usually omitted - tool uses session authentication from auth',
     stateless: 'Include when doing token-based operations without session storage',
     security: 'Never log or expose these tokens in responses'
   }
@@ -203,16 +203,16 @@ export const DEPLOYMENT_CONFIG_SCHEMA = {
  * Standard authentication prerequisites for LLM workflow guides
  */
 export const AUTH_PREREQUISITES = [
-  '1. Authentication: gas_auth({mode: "status"}) → gas_auth({mode: "start"}) if needed'
+  '1. Authentication: auth({mode: "status"}) → auth({mode: "start"}) if needed'
 ] as const;
 
 /**
  * Standard authentication error handling for LLM workflow guides
  */
 export const AUTH_ERROR_HANDLING = {
-  'AuthenticationError': 'Run gas_auth({mode: "start"}) to authenticate first',
+  'AuthenticationError': 'Run auth({mode: "start"}) to authenticate first',
   'PermissionError': 'Check Google Cloud Console permissions and API access',
-  'TokenExpired': 'Authentication token expired, run gas_auth({mode: "start"}) to re-authenticate'
+  'TokenExpired': 'Authentication token expired, run auth({mode: "start"}) to re-authenticate'
 } as const;
 
 /**

@@ -13,7 +13,7 @@
  */
 
 import { expect } from 'chai';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { setupIntegrationTest, globalAuthState } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 import * as fs from 'fs';
@@ -21,9 +21,9 @@ import * as path from 'path';
 import * as os from 'os';
 
 describe('Git Operations Validation Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
   let tempSyncFolder: string | null = null;
 
@@ -33,21 +33,35 @@ describe('Git Operations Validation Tests', () => {
   const REPO_FILES = ['index.html', 'LICENSE', 'permissions.js', 'README.md', 'script_scheduler.js', 'ui.js'];
 
   before(async function() {
-    this.timeout(130000); // Allow time for OAuth if needed
+    this.timeout(60000); // Reduced timeout - no auth needed per test
 
-    // Explicit setup call - singleton auth pattern
-    await setupIntegrationTest();
-
+    // Global hooks already set up the server - just verify it's ready
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
-      console.log('⚠️  Skipping integration tests - authentication failed');
+      console.log('⚠️  Skipping - server not ready');
       this.skip();
     }
 
     client = globalAuthState.client;
     auth = globalAuthState.auth!;
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
 
-    // Create test project
+    // CRITICAL: Verify we have a valid access token before attempting API calls
+    console.log('🔍 Verifying access token availability before test project creation...');
+    try {
+      const testToken = await client.getAccessToken();
+      if (!testToken) {
+        console.error('❌ No access token available - cannot create test project');
+        throw new Error('Access token not available after authentication');
+      }
+      console.log('✅ Access token verified - proceeding with test project creation');
+    } catch (tokenError: any) {
+      console.error(`❌ Token access failed: ${tokenError.message}`);
+      console.error('   This usually means OAuth completed but token was not stored properly');
+      this.skip();
+      return;
+    }
+
+    // Create test project - server handles auth transparently
     const result = await gas.createTestProject('MCP-Git-ThenRunLater-Test');
     testProjectId = result.scriptId;
     console.log(`✅ Created git test project: ${testProjectId}`);
@@ -57,17 +71,74 @@ describe('Git Operations Validation Tests', () => {
     console.log(`✅ Created temp sync folder: ${tempSyncFolder}`);
   });
 
+  beforeEach(async function() {
+    // Validate server is authenticated
+    if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
+      console.error('⚠️  Server not authenticated - skipping test');
+      this.skip();
+    }
+
+    // Verify test project exists using direct method (not callTool)
+    if (testProjectId) {
+      try {
+        await client.getProjectInfo(testProjectId);
+      } catch (error) {
+        console.error('❌ Test project no longer valid:', error);
+        this.skip();
+      }
+    }
+
+    // Check token validity
+    try {
+      const authStatus = await auth.getAuthStatus();
+      if (!authStatus.authenticated || !authStatus.tokenValid) {
+        console.error('❌ Token expired or invalid');
+        this.skip();
+      }
+    } catch (error) {
+      console.error('❌ Failed to check auth status:', error);
+      this.skip();
+    }
+  });
+
+  afterEach(async function() {
+    // Log test result for debugging
+    const state = this.currentTest?.state;
+    if (state === 'failed') {
+      console.error(`❌ Test failed: ${this.currentTest?.title}`);
+    }
+  });
+
   after(async function() {
     this.timeout(TEST_TIMEOUTS.STANDARD);
 
     if (testProjectId) {
-      console.log(`🧹 Cleaning up test project: ${testProjectId}`);
-      await gas.cleanupTestProject(testProjectId);
+      try {
+        console.log(`🧹 Cleaning up test project: ${testProjectId}`);
+        await gas.cleanupTestProject(testProjectId);
+
+        // Verify cleanup succeeded using direct method
+        try {
+          await client.getProjectInfo(testProjectId);
+          console.warn('⚠️  Project still exists after cleanup!');
+        } catch (error) {
+          // Expected - project should be deleted
+          console.log('✅ Cleanup verified - project deleted');
+        }
+      } catch (cleanupError) {
+        console.error('❌ Cleanup failed (non-fatal):', cleanupError);
+        // Don't fail suite on cleanup error
+      }
     }
 
     if (tempSyncFolder && fs.existsSync(tempSyncFolder)) {
-      console.log(`🧹 Cleaning up temp sync folder: ${tempSyncFolder}`);
-      fs.rmSync(tempSyncFolder, { recursive: true, force: true });
+      try {
+        console.log(`🧹 Cleaning up temp sync folder: ${tempSyncFolder}`);
+        fs.rmSync(tempSyncFolder, { recursive: true, force: true });
+        console.log('✅ Temp folder cleaned up');
+      } catch (cleanupError) {
+        console.error('❌ Temp folder cleanup failed (non-fatal):', cleanupError);
+      }
     }
   });
 

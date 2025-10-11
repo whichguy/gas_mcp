@@ -37,7 +37,7 @@ function testNice(name, condition) {
 
 function checkFile(filePath, content) {
   try {
-    const fullPath = path.join(__dirname, '..', filePath);
+    const fullPath = path.join(__dirname, '../..', filePath);
     if (!fs.existsSync(fullPath)) return false;
     const fileContent = fs.readFileSync(fullPath, 'utf-8');
     if (Array.isArray(content)) {
@@ -55,11 +55,11 @@ testCritical('MCP server implementation exists', checkFile('src/server/mcpServer
 testCritical('Main entry point exists', checkFile('src/index.ts'));
 testCritical('Base tool system exists', checkFile('src/tools/base.ts'));
 testCritical('Server compiles successfully', checkFile('dist/src/server/mcpServer.js'));
-testCritical('Tools compile successfully', fs.existsSync(path.join(__dirname, '..', 'dist/src/tools')) && checkFile('dist/src/tools/gitSync.js'));
+testCritical('Tools compile successfully', fs.existsSync(path.join(__dirname, '../..', 'dist/src/tools')) && checkFile('dist/src/tools/gitSync.js'));
 
 console.log('\n🔐 CRITICAL: Authentication System');
 testCritical('OAuth authentication works', checkFile('src/auth/oauthClient.ts'));
-testCritical('Auth tools exist (gas_auth)', checkFile('src/tools/auth.ts', 'gas_auth'));
+testCritical('Auth tools exist (auth)', checkFile('src/tools/auth.ts', 'export async function auth'));
 testCritical('Session management exists', checkFile('src/auth/authState.ts'));
 
 console.log('\n📁 CRITICAL: Core File Operations');

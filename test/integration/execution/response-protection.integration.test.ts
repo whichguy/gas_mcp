@@ -1,13 +1,13 @@
 import { expect } from 'chai';
 import { describe, it, before, after } from 'mocha';
-import { MCPTestClient, AuthTestHelper, GASTestHelper } from '../../helpers/mcpClient.js';
+import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 import { estimateTokenCount, filterLoggerOutput, protectResponseSize } from '../../../src/tools/execution/utilities/response-protection.js';
 
 describe('Response Protection Integration Tests', () => {
-  let client: MCPTestClient;
-  let auth: AuthTestHelper;
-  let gas: GASTestHelper;
+  let client: InProcessTestClient;
+  let auth: InProcessAuthHelper;
+  let gas: InProcessGASTestHelper;
   let testProjects: string[] = [];
 
   before(function() {
@@ -16,7 +16,7 @@ describe('Response Protection Integration Tests', () => {
     }
     client = globalAuthState.client!;
     auth = globalAuthState.auth!;  // Reuse global auth with sessionId
-    gas = new GASTestHelper(client);
+    gas = globalAuthState.gas!;
     console.log('Using shared global MCP client for response protection integration tests');
   });
 

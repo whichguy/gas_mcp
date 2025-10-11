@@ -38,7 +38,7 @@ describe('MCP Gas Error Classes', () => {
       expect(error.message).to.equal('Not authenticated');
       expect(data.requiresAuth).to.be.true;
       expect(data.authUrl).to.equal(authUrl);
-      expect(data.instructions).to.include('gas_auth(mode="start")');
+      expect(data.instructions).to.include('auth(mode="start")');
     });
 
     it('should work without auth URL', () => {
@@ -121,7 +121,7 @@ describe('MCP Gas Error Classes', () => {
       
       expect(error.message).to.equal('Failed to get auth URL');
       expect(data.phase).to.equal('authorization');
-      expect(data.instructions).to.include('gas_auth(mode="start")');
+      expect(data.instructions).to.include('auth(mode="start")');
     });
 
     it('should create OAuth error for token exchange phase', () => {
@@ -130,7 +130,7 @@ describe('MCP Gas Error Classes', () => {
       
       expect(error.message).to.equal('Invalid authorization code');
       expect(data.phase).to.equal('token_exchange');
-      expect(data.instructions).to.include('gas_auth(mode="logout")');
+      expect(data.instructions).to.include('auth(mode="logout")');
     });
 
     it('should handle all OAuth phases', () => {

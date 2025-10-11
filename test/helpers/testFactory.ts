@@ -170,7 +170,7 @@ function testFunction_${timestamp}() {
         base.error.data = {
           requiresAuth: true,
           authUrl: 'https://accounts.google.com/oauth/authorize?...',
-          instructions: 'Use gas_auth tool to authenticate: gas_auth(mode="start")',
+          instructions: 'Use auth tool to authenticate: auth(mode="start")',
           ...details
         };
         break;
@@ -197,7 +197,7 @@ function testFunction_${timestamp}() {
         base.error.code = -32003;
         base.error.data = {
           phase: 'authorization',
-          instructions: 'Start authentication flow with gas_auth(mode="start")',
+          instructions: 'Start authentication flow with auth(mode="start")',
           ...details
         };
         break;

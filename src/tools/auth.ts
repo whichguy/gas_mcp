@@ -133,8 +133,73 @@ async function cacheDeploymentUrlsForSession(
 
 /**
  * Main authentication handler with race condition fixes
+ *
+ * === OAUTH FLOW ARCHITECTURE ===
+ *
+ * This function implements a sophisticated async OAuth 2.0 flow that coordinates
+ * multiple concurrent operations within a single Node.js process:
+ *
+ * 1. BROWSER LAUNCH (Main Thread):
+ *    - Creates HTTP callback server on port 3000
+ *    - Generates PKCE challenge for secure authentication
+ *    - Opens system browser with Google OAuth consent URL
+ *    - Returns promise that waits for completion signal
+ *
+ * 2. USER AUTHENTICATION (Browser):
+ *    - User completes Google OAuth consent flow in browser
+ *    - Google redirects back to http://127.0.0.1:3000/callback with auth code
+ *
+ * 3. CALLBACK HANDLING (HTTP Server Thread):
+ *    - HTTP server receives callback request with authorization code
+ *    - Validates state parameter (CSRF protection)
+ *    - Exchanges auth code for access/refresh tokens using PKCE verifier
+ *    - Fetches user info from Google OAuth API
+ *    - Writes tokens to filesystem cache (.auth/tokens/<email>.json)
+ *    - Calls signalAuthCompletion() to notify waiting promise
+ *
+ * 4. SESSION SETUP (Main Thread):
+ *    - Promise resolves with token response
+ *    - Creates SessionAuthManager with tokens
+ *    - Stores tokens in memory for this session
+ *    - Returns success to caller
+ *
+ * === ASYNC COORDINATION ===
+ *
+ * The auth() function call launches a browser and WAITS, while a separate
+ * async callback handler processes the login, caches the token, and then
+ * notifies the first thread of success. All of this happens in Node.js
+ * behind the auth function using:
+ *
+ * - Promise-based signaling (authCompletionResolvers Map)
+ * - HTTP server async request handling
+ * - Filesystem I/O for token persistence
+ * - State machine for resolver lifecycle (pending → resolved/rejected)
+ *
+ * This is NOT multiple OS processes - it's async coordination within ONE
+ * Node.js process using promises, callbacks, and the event loop.
+ *
+ * === TOKEN CACHING & REUSE ===
+ *
+ * After successful authentication:
+ * - Tokens written to: ~/.mcp-gas/.auth/tokens/<email>.json
+ * - SessionAuthManager checks filesystem on startup (lazy discovery)
+ * - If valid cached token exists, no browser launch needed
+ * - Token refresh happens automatically when access_token expires
+ * - Use mode="status" to check if already authenticated before starting new flow
+ *
+ * === RACE CONDITION PROTECTION ===
+ *
+ * Multiple concurrent auth() calls are protected by:
+ * - authFlowMutex Map: Prevents concurrent flows for same auth key
+ * - activeAuthFlows Map: Tracks in-progress authentication promises
+ * - resolverStates Map: Tracks promise lifecycle (pending/resolved/rejected)
+ * - Atomic callback processing flags in oauthClient.ts
+ *
+ * @param params - Authentication parameters
+ * @param sessionAuthManager - Optional session manager for multi-session support
+ * @returns Promise resolving to authentication status and user info
  */
-export async function gas_auth({
+export async function auth({
   accessToken,
   mode = 'start',
   openBrowser = true,
@@ -194,14 +259,14 @@ export async function gas_auth({
               status: 'not_authenticated',
               message: 'Not currently authenticated',
               authenticated: false,
-              instructions: 'Use gas_auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
+              instructions: 'Use auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
               nextSteps: [
-                'Run: gas_auth({"mode": "start"})',
+                'Run: auth({"mode": "start"})',
                 'Complete OAuth flow in browser',
                 'Retry your original request'
               ],
               example: {
-                command: 'gas_auth',
+                command: 'auth',
                 parameters: { mode: 'start' }
               }
             } as any;
@@ -213,14 +278,14 @@ export async function gas_auth({
             status: 'not_authenticated',
             message: 'Not currently authenticated (status check failed)',
             authenticated: false,
-            instructions: 'Use gas_auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
+            instructions: 'Use auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
             nextSteps: [
-              'Run: gas_auth({"mode": "start"})',
+              'Run: auth({"mode": "start"})',
               'Complete OAuth flow in browser',
               'Retry your original request'
             ],
             example: {
-              command: 'gas_auth',
+              command: 'auth',
               parameters: { mode: 'start' }
             }
           } as any;
@@ -598,13 +663,13 @@ export class AuthTool extends BaseTool {
     additionalProperties: false,
     llmWorkflowGuide: {
       typicalSequence: [
-        '1. gas_auth({mode: "status"}) - Check current authentication',
-        '2. If not authenticated: gas_auth({mode: "start"}) - Start OAuth flow',
+        '1. auth({mode: "status"}) - Check current authentication',
+        '2. If not authenticated: auth({mode: "start"}) - Start OAuth flow',
         '3. User completes OAuth in browser',
         '4. Proceed with other gas_* tools which will use stored authentication'
       ],
       errorHandling: {
-        'not_authenticated': 'Call gas_auth with mode="start" to begin OAuth flow',
+        'not_authenticated': 'Call auth with mode="start" to begin OAuth flow',
         'oauth_error': 'Check Google Cloud Console OAuth client configuration',
         'timeout': 'User took too long to complete OAuth, retry with mode="start"'
       },
@@ -622,8 +687,8 @@ export class AuthTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     try {
-      const result = await gas_auth(params, this.sessionAuthManager);
-      
+      const result = await auth(params, this.sessionAuthManager);
+
       // SCHEMA FIX: Return plain object like other tools
       // Let the MCP server handle response wrapping consistently
       return result;

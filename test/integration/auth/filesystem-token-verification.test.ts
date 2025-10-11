@@ -5,7 +5,7 @@
  * It's designed to run after manual authentication through Claude Code's MCP session.
  *
  * Prerequisites:
- * 1. Authenticate: gas_auth({mode: "start"}) in Claude Code
+ * 1. Authenticate: auth({mode: "start"}) in Claude Code
  * 2. Complete OAuth flow in browser
  * 3. Run this test: npx mocha test/integration/auth/filesystem-token-verification.test.ts --no-config
  */
@@ -34,7 +34,7 @@ describe('Filesystem Token Cache Verification (No MCP Server)', () => {
 
     if (tokenFiles.length === 0) {
       console.log('\n⚠️  No token files found - authenticate first:');
-      console.log('   1. In Claude Code: gas_auth({mode: "start"})');
+      console.log('   1. In Claude Code: auth({mode: "start"})');
       console.log('   2. Complete OAuth in browser');
       console.log('   3. Re-run this test');
       this.skip();
