@@ -31,10 +31,10 @@ export class DeployTool extends BaseTool {
       operation: {
         type: 'string',
         enum: ['promote', 'rollback', 'status', 'reset'],
-        description: 'Operation to perform. promote: Move code between environments. rollback: Revert prod to previous version. status: View all environments. reset: Recreate 3 standard deployments.',
+        description: 'Operation to perform. promote: Move code between environments. rollback: Revert to previous version. status: View all environments. reset: Recreate 3 standard deployments.',
         llmHints: {
           promote: 'Create version snapshot (dev→staging) or update deployment to staging version (staging→prod)',
-          rollback: 'Update prod deployment to previous [PROD] tagged version',
+          rollback: 'Update deployment to previous tagged version (staging: previous [STAGING], prod: previous [PROD])',
           status: 'Show current state of all three environments',
           reset: 'Delete all deployments and recreate standard dev/staging/prod setup'
         }
@@ -42,10 +42,10 @@ export class DeployTool extends BaseTool {
       environment: {
         type: 'string',
         enum: ['staging', 'prod'],
-        description: 'Target environment for promote/rollback operations. staging: promote dev→staging. prod: promote staging→prod or rollback.',
+        description: 'Target environment for promote/rollback operations. Both support rollback to previous version (until reaching HEAD).',
         llmHints: {
-          staging: 'Creates version from HEAD and updates staging deployment',
-          prod: 'Updates prod deployment to staging version (promote) or previous version (rollback)'
+          staging: 'PROMOTE: creates version from HEAD | ROLLBACK: goes back one [STAGING] version (until HEAD)',
+          prod: 'PROMOTE: updates to staging version | ROLLBACK: goes back one [PROD] version (until HEAD)'
         }
       },
       description: {
@@ -55,7 +55,7 @@ export class DeployTool extends BaseTool {
       },
       toVersion: {
         type: 'number',
-        description: 'Target version number for rollback (optional). If omitted, automatically finds previous [PROD] version.',
+        description: 'Target version number for rollback (optional). If omitted, automatically finds previous tagged version for the environment.',
         minimum: 1
       },
       ...SchemaFragments.scriptId,
@@ -80,7 +80,7 @@ export class DeployTool extends BaseTool {
       promotionFlow: {
         devToStaging: 'Creates version from HEAD, updates staging deployment',
         stagingToProd: 'Updates prod deployment to staging version (highest)',
-        rollback: 'Updates prod deployment to previous [PROD] version'
+        rollback: 'Updates deployment to previous tagged version (staging→previous [STAGING], prod→previous [PROD]). Cannot rollback FROM HEAD.'
       }
     }
   };
@@ -231,82 +231,98 @@ export class DeployTool extends BaseTool {
   }
 
   /**
-   * Handle rollback operation (prod only)
+   * Handle rollback operation (staging or prod)
+   * Rolls back to previous tagged version (cannot rollback FROM HEAD)
    */
   private async handleRollback(scriptId: string, params: any, accessToken?: string): Promise<any> {
-    // Validate environment is provided and is 'prod'
+    // Validate environment is provided
     if (!params.environment) {
-      throw new ValidationError('environment', undefined, '"prod" (rollback only supports production)');
+      throw new ValidationError('environment', undefined, '"staging" or "prod" (rollback requires environment)');
     }
 
     const environment = this.validate.enum(
       params.environment,
       'environment',
-      ['prod'],
+      ['staging', 'prod'],
       'rollback operation'
     );
 
     const deployments = await this.findEnvironmentDeployments(scriptId, accessToken);
+    const envTag = environment === 'staging' ? ENV_TAGS.staging : ENV_TAGS.prod;
+    const deployment = deployments[environment];
 
-    if (!deployments.prod) {
-      throw new ValidationError('prod_deployment', 'not found', 'existing prod deployment - run gas_deploy({operation: "reset"}) to create deployments');
+    // Validate deployment exists
+    if (!deployment) {
+      throw new ValidationError(
+        `${environment}_deployment`,
+        'not found',
+        `existing ${environment} deployment - run gas_deploy({operation: "reset"}) to create deployments`
+      );
     }
 
-    const currentVersion = deployments.prod.versionNumber;
+    // Validate not at HEAD (cannot rollback from HEAD)
+    const currentVersion = deployment.versionNumber;
     if (!currentVersion) {
-      throw new ValidationError('prod_version', 'HEAD (null)', 'versioned production deployment - cannot rollback from HEAD');
+      throw new ValidationError(
+        `${environment}_version`,
+        'HEAD (null)',
+        `versioned ${environment} deployment - cannot rollback from HEAD`
+      );
     }
 
     let targetVersion: number;
 
     if (params.toVersion) {
+      // Manual version specification
       targetVersion = this.validate.number(params.toVersion, 'toVersion', 'rollback operation', 1);
     } else {
-      // Auto-find previous [PROD] version
+      // Auto-find previous tagged version for this environment
       const versions = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
-      const prodVersions = versions
-        .filter((v: any) => v.description?.includes(ENV_TAGS.prod))
+      const envVersions = versions
+        .filter((v: any) => v.description?.includes(envTag))
         .sort((a: any, b: any) => b.versionNumber - a.versionNumber);
 
-      const currentIndex = prodVersions.findIndex((v: any) => v.versionNumber === currentVersion);
+      const currentIndex = envVersions.findIndex((v: any) => v.versionNumber === currentVersion);
 
+      // Check if current version is in the tagged history
       if (currentIndex === -1) {
         throw new ValidationError(
-          'current_prod_version',
+          `current_${environment}_version`,
           `v${currentVersion}`,
-          `[PROD] tagged version (current v${currentVersion} not found in prod version history - may have been manually changed)`
+          `${envTag} tagged version (current v${currentVersion} not found in ${environment} version history - may have been manually changed)`
         );
       }
 
-      if (currentIndex === prodVersions.length - 1) {
+      // Check if there's a previous version to roll back to
+      if (currentIndex === envVersions.length - 1) {
         throw new ValidationError(
-          'previous_prod_version',
+          `previous_${environment}_version`,
           'none available',
-          `at least 2 [PROD] tagged versions to enable rollback (only found v${currentVersion})`
+          `at least 2 ${envTag} tagged versions to enable rollback (only found v${currentVersion})`
         );
       }
 
-      targetVersion = prodVersions[currentIndex + 1].versionNumber;
+      targetVersion = envVersions[currentIndex + 1].versionNumber;
     }
 
-    // Update prod deployment to target version
+    // Update deployment to target version
     await this.gasClient.updateDeployment(
       scriptId,
-      deployments.prod.deploymentId,
+      deployment.deploymentId,
       {
         versionNumber: targetVersion,
-        description: `${ENV_TAGS.prod} v${targetVersion} (rolled back from v${currentVersion})`
+        description: `${envTag} v${targetVersion} (rolled back from v${currentVersion})`
       },
       accessToken
     );
 
-    console.error(`✅ Rolled back production from v${currentVersion} to v${targetVersion}`);
+    console.error(`✅ Rolled back ${environment} from v${currentVersion} to v${targetVersion}`);
 
     const version = await this.gasClient.getVersion(scriptId, targetVersion, accessToken);
 
     return {
       operation: 'rollback',
-      environment: 'prod',
+      environment: environment,
       from: {
         versionNumber: currentVersion
       },
@@ -316,9 +332,9 @@ export class DeployTool extends BaseTool {
         createTime: version.createTime
       },
       deployment: {
-        deploymentId: deployments.prod.deploymentId,
+        deploymentId: deployment.deploymentId,
         versionNumber: targetVersion,
-        url: this.extractWebAppUrl(deployments.prod)
+        url: this.extractWebAppUrl(deployment)
       }
     };
   }
