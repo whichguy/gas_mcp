@@ -35,13 +35,13 @@ import { ContextTool } from '../tools/gas-context.js';
 import { SummaryTool } from '../tools/gas-summary.js';
 import { DepsTool } from '../tools/gas-deps.js';
 import { TreeTool } from '../tools/gas-tree.js';
-import { 
-  MkdirTool, 
-  InfoTool, 
+import {
+  MkdirTool,
+  InfoTool,
   ReorderTool,
-  ProjectMetricsTool
+  ProjectListTool
 } from '../tools/project.js';
-import { RunTool, ExecTool, ExecApiTool } from '../tools/execution.js';
+import { ExecTool, ExecApiTool } from '../tools/execution.js';
 import { ProxySetupTool } from '../tools/proxySetup.js';
 import {
   DeployCreateTool,
@@ -54,9 +54,10 @@ import {
   DeployUpdateTool
 } from '../tools/deployments.js';
 
-import { 
+import { DeployTool } from '../tools/deployment.js';
+
+import {
   FindDriveScriptTool,
-  BindScriptTool,
   CreateScriptTool
 } from '../tools/driveContainerTools.js';
 
@@ -75,19 +76,8 @@ import {
   VersionListTool
 } from '../tools/versions.js';
 
-// Import new local sync and project context tools
-import {
-  PullTool,
-  PushTool,
-  StatusTool
-} from '../tools/localSync.js';
-
-import {
-  ProjectSetTool,
-  ProjectGetTool,
-  ProjectAddTool,
-  ProjectListTool
-} from '../tools/projectContext.js';
+// Local sync tools removed - cat/write already provide local caching via LocalFileManager
+// PullTool, PushTool, StatusTool were redundant wrappers around same copyRemoteToLocal() calls
 
 // Local root tools removed - using git sync pattern instead
 // Projects now use ~/gas-repos/project-{scriptId} automatically
@@ -99,14 +89,13 @@ import {
   TriggerDeleteTool
 } from '../tools/triggers.js';
 
-// Import NEW git sync tools
+// Import NEW git sync tools (LOCAL-FIRST: removed git_init, local_sync auto-bootstraps)
 import {
-  GitInitTool,
-  GitSyncTool,
-  GitStatusTool,
-  GitSetSyncFolderTool,
-  GitGetSyncFolderTool
+  LocalSyncTool
 } from '../tools/gitSync.js';
+
+// Import generic configuration tool
+import { ConfigTool } from '../tools/config.js';
 
 // Import Google Sheets SQL tool
 import { SheetSqlTool } from '../tools/sheets/sheetsSql.js';
@@ -153,9 +142,9 @@ import { McpGasConfigManager } from '../config/mcpGasConfig.js';
  * - **Security**: Token masking and sanitized error reporting in production
  * 
  * See `docs/STDOUT_STDERR_DOCUMENTATION.md` for complete implementation details.
- * 
+ *
     * ### Tool Architecture
-   * - **11 Core Tools**: Complete Google Apps Script API coverage
+   * - **60 MCP Tools**: Complete Google Apps Script API coverage
    * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
    * - **Schema Validation**: Comprehensive input validation with helpful error messages
    * - **Rate Limiting**: Built-in rate limiting and retry strategies for Google APIs
@@ -236,12 +225,12 @@ export class MCPGasServer {
 
   /**
    * Create session-specific tool instances with isolated authentication
-   * 
-   * Each session gets its own instances of all 50 MCP tools, each configured
+   *
+   * Each session gets its own instances of all 60 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
-   * 
-   * ## Tool Categories Created (50 total tools):
+   *
+   * ## Tool Categories Created (60 total tools):
    *
    * ### Authentication & Session (1 tool)
    * - `auth` - OAuth 2.0 flow management with desktop PKCE
@@ -270,35 +259,21 @@ export class MCPGasServer {
    * - `gas_raw_find` - Advanced: Find files with actual GAS names
    * - `gas_raw_copy` - Advanced: Remote-to-remote file copying with merge strategies
    * 
-   * ### 🏗Project Management (4 tools)
+   * ### 🏗Project Management (3 tools)
    * - `gas_mkdir` - Create logical directories
    * - `gas_info` - Project information
    * - `gas_reorder` - File ordering
-   * - `gas_project_metrics` - Performance analytics
    * 
-   * ### Script Execution - RECOMMENDED (1 tool)
-   * - `gas_run` - Execute with current project context
-   * 
-   * ### Script Execution - ADVANCED (3 tools)
-   * - `gas_raw_run` - Advanced: Execute with explicit script ID
+   * ### Script Execution (3 tools)
+   * - `gas_exec` - JavaScript execution with explicit script ID
    * - `gas_run_api_exec` - API-based execution
    * - `gas_proxy_setup` - Proxy configuration
-   * 
-   * ### Local-Remote Sync - INDIVIDUAL COMMANDS (3 tools)
-   * - `gas_pull` - Pull remote files to local project-specific directory
-   * - `gas_push` - Push local project-specific files to remote project  
-   * - `gas_status` - Compare local and remote files
-   * 
-   * ### Project Context - WORKFLOW (1 tool)
-   * - `gas_project_set` - Set current project and auto-pull files
-   * 
-   * ### 📁 Local Root Management - PROJECT STRUCTURE (4 tools)
-   * - `gas_local_set_root` - Set configurable local root directory for all projects
-   * - `gas_local_get_root` - Get current local root configuration
-   * - `gas_local_list_projects` - List all local projects in directory structure
-   * - `gas_local_show_structure` - Show complete directory tree structure
-   * 
-   * ### Deployment Management (7 tools)
+   *
+   * ### 📁 Project List (1 tool)
+   * - `gas_project_list` - List all configured projects from gas-config.json
+   *
+   * ### Deployment Management (8 tools)
+   * - `gas_deploy` - 🎯 Consolidated deployment management across dev/staging/prod environments
    * - `gas_deploy_create` - Create deployments
    * - `gas_deploy_list` - List deployments
    * - `gas_deploy_get_details` - Get deployment details
@@ -319,9 +294,8 @@ export class MCPGasServer {
    * - `gas_logs_list` - Browse execution logs with Cloud Logging-first optimization
    * - `gas_logs_get` - Get complete logs for a single process with auto-pagination
    * 
-   * ### Drive Integration (3 tools)
+   * ### Drive Integration (2 tools)
    * - `gas_find_drive_script` - Find container scripts
-   * - `gas_bind_script` - Bind scripts to containers
    * - `gas_create_script` - Create container scripts
    * 
    * @param authManager - Session-specific authentication manager
@@ -332,7 +306,7 @@ export class MCPGasServer {
    * // Tools are created per session with isolated auth
    * const authManager = new SessionAuthManager(sessionId);
    * const tools = this.createSessionTools(authManager);
-   * const gasRunTool = tools.get('gas_run');
+   * const gasExecTool = tools.get('gas_exec');
    * ```
    */
   private createSessionTools(authManager: SessionAuthManager): Map<string, any> {
@@ -376,17 +350,14 @@ export class MCPGasServer {
       new MkdirTool(authManager),
       new InfoTool(authManager),
       new ReorderTool(authManager),
-      new ProjectMetricsTool(authManager),
       
-      // Script execution - RECOMMENDED auto-sync tool
-      new RunTool(authManager),           // Uses current project context
-      
-      // Script execution - ADVANCED raw tool
-      new ExecTool(authManager),        // Advanced: Explicit script ID
-      new ExecApiTool(authManager),    // Alternative API-based execution
-      new ProxySetupTool(authManager),
+      // Script execution tools
+      new ExecTool(authManager),        // JavaScript execution with explicit script ID
+      new ExecApiTool(authManager),     // Alternative API-based execution
+      new ProxySetupTool(authManager),  // Proxy configuration
       
       // Deployment management (with session-specific auth manager)
+      new DeployTool(authManager),          // Consolidated deployment management across dev/staging/prod
       new DeployCreateTool(authManager),
       new VersionCreateTool(authManager),
       new DeployListTool(authManager),
@@ -399,7 +370,6 @@ export class MCPGasServer {
       
       // Drive container and script discovery/management
       new FindDriveScriptTool(authManager),
-      new BindScriptTool(authManager),
       new CreateScriptTool(authManager),
       
       // Process management
@@ -413,16 +383,11 @@ export class MCPGasServer {
       // Version management
       new VersionGetTool(authManager),
       new VersionListTool(authManager),
-      
-      // Local-Remote sync operations - EXPLICIT workflow tools
-      new PullTool(authManager),          // Explicit pull for multi-env
-      new PushTool(authManager),          // Explicit push for multi-env  
-      new StatusTool(authManager),        // Diagnostic comparison
-      
+
+      // Local-Remote sync removed - cat/write provide auto-sync via LocalFileManager
+      // PullTool/PushTool/StatusTool were redundant (used same copyRemoteToLocal calls)
+
       // Project context - WORKFLOW tools (visible to MCP)
-      new ProjectSetTool(authManager),    // Main workflow: Set project & auto-pull
-      new ProjectGetTool(authManager),    // Get current project information
-      new ProjectAddTool(authManager),    // Add project to configuration  
       new ProjectListTool(authManager),   // List all configured projects
       
       // Local root management removed - all projects now use git sync pattern:
@@ -433,12 +398,9 @@ export class MCPGasServer {
       new TriggerCreateTool(authManager),  // Create time-based and event-driven triggers
       new TriggerDeleteTool(authManager),  // Delete triggers by ID or function name
       
-      // Git Sync - SAFE GIT INTEGRATION (5 tools replacing old 12 tools)
-      new GitInitTool(authManager),           // Initialize git association with .git.gs file
-      new GitSyncTool(authManager),           // Safe pull-merge-push synchronization
-      new GitStatusTool(authManager),         // Check git association and sync status
-      new GitSetSyncFolderTool(authManager),  // Set/update sync folder location
-      new GitGetSyncFolderTool(authManager),  // Query sync folder location
+      // Git Sync - SAFE GIT INTEGRATION (2 tools - LOCAL-FIRST, no auto-bootstrap)
+      new LocalSyncTool(authManager),         // Sync entire GAS project to local with git-aware organization
+      new ConfigTool(authManager),            // Generic configuration (sync_folder get/set)
 
       // Google Sheets SQL - SQL-STYLE OPERATIONS on Google Sheets
       new SheetSqlTool(authManager),          // Execute SELECT/INSERT/UPDATE/DELETE on Google Sheets with SQL syntax
@@ -646,7 +608,7 @@ export class MCPGasServer {
     console.error('Use sessionId parameter to manage multiple sessions');
     console.error('Use auth(mode="start") to authenticate with Google Apps Script');
     console.error('Authentication: Tools will return clear instructions when auth is needed');
-    console.error('Direct execution: gas_run can execute ANY statement without wrapper functions');
+    console.error('Direct execution: gas_exec can execute ANY statement without wrapper functions');
 
     // Clean up expired filesystem sessions on startup
     const filesCleaned = await SessionAuthManager.cleanupExpiredSessions();
