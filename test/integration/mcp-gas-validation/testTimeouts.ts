@@ -37,7 +37,7 @@ export const TEST_TIMEOUTS = {
   /**
    * EXTENDED (300 seconds / 5 minutes)
    * Use for: Deployment, versioning, full test suites
-   * Examples: gas_version_create, gas_deploy_create, complete suite runs
+   * Examples: deploy, complete suite runs
    */
   EXTENDED: 300000
 } as const;
