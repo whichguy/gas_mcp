@@ -44,14 +44,8 @@ import {
 import { ExecTool, ExecApiTool } from '../tools/execution.js';
 import { ProxySetupTool } from '../tools/proxySetup.js';
 import {
-  DeployCreateTool,
-  VersionCreateTool,
-  DeployListTool,
-  DeployGetDetailsTool,
   ProjectCreateTool,
-  ProjectInitTool,
-  DeployDeleteTool,
-  DeployUpdateTool
+  ProjectInitTool
 } from '../tools/deployments.js';
 
 import { DeployTool } from '../tools/deployment.js';
@@ -70,11 +64,6 @@ import {
   LogsListTool,
   LogsGetTool
 } from '../tools/logs.js';
-
-import {
-  VersionGetTool,
-  VersionListTool
-} from '../tools/versions.js';
 
 // Local sync tools removed - cat/write already provide local caching via LocalFileManager
 // PullTool, PushTool, StatusTool were redundant wrappers around same copyRemoteToLocal() calls
@@ -144,7 +133,7 @@ import { McpGasConfigManager } from '../config/mcpGasConfig.js';
  * See `docs/STDOUT_STDERR_DOCUMENTATION.md` for complete implementation details.
  *
     * ### Tool Architecture
-   * - **60 MCP Tools**: Complete Google Apps Script API coverage
+   * - **49 MCP Tools**: Streamlined Google Apps Script API coverage
    * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
    * - **Schema Validation**: Comprehensive input validation with helpful error messages
    * - **Rate Limiting**: Built-in rate limiting and retry strategies for Google APIs
@@ -226,11 +215,11 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    *
-   * Each session gets its own instances of all 60 MCP tools, each configured
+   * Each session gets its own instances of all 49 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    *
-   * ## Tool Categories Created (60 total tools):
+   * ## Tool Categories Created (49 total tools):
    *
    * ### Authentication & Session (1 tool)
    * - `auth` - OAuth 2.0 flow management with desktop PKCE
@@ -272,20 +261,11 @@ export class MCPGasServer {
    * ### 📁 Project List (1 tool)
    * - `gas_project_list` - List all configured projects from gas-config.json
    *
-   * ### Deployment Management (8 tools)
-   * - `gas_deploy` - 🎯 Consolidated deployment management across dev/staging/prod environments
-   * - `gas_deploy_create` - Create deployments
-   * - `gas_deploy_list` - List deployments
-   * - `gas_deploy_get_details` - Get deployment details
-   * - `gas_deploy_delete` - Delete deployments
-   * - `gas_deploy_update` - Update deployments
-   * - `gas_version_create` - Create versions
-   * - `gas_project_create` - Create projects
-   * 
-   * ### Version Management (2 tools)
-   * - `gas_version_get` - Get version details
-   * - `gas_version_list` - List all versions
-   * 
+   * ### Deployment & Project Creation (3 tools)
+   * - `gas_deploy` - 🎯 Consolidated deployment workflow across dev/staging/prod environments
+   * - `gas_project_create` - Create new GAS projects with infrastructure
+   * - `gas_project_init` - Initialize projects with standard configuration
+   *
    * ### Process Management (2 tools)
    * - `gas_process_list` - List user processes
    * - `gas_process_list_script` - List script processes
@@ -358,14 +338,10 @@ export class MCPGasServer {
       
       // Deployment management (with session-specific auth manager)
       new DeployTool(authManager),          // Consolidated deployment management across dev/staging/prod
-      new DeployCreateTool(authManager),
-      new VersionCreateTool(authManager),
-      new DeployListTool(authManager),
-      new DeployGetDetailsTool(authManager),
+
+      // Project creation and initialization (separate from deployment workflow)
       new ProjectCreateTool(authManager),
       new ProjectInitTool(authManager),
-      new DeployDeleteTool(authManager),
-      new DeployUpdateTool(authManager),
 
       
       // Drive container and script discovery/management
@@ -379,10 +355,6 @@ export class MCPGasServer {
       // Execution logs with Cloud Logging integration
       new LogsListTool(authManager),      // Browse logs with Cloud Logging-first optimization
       new LogsGetTool(authManager),       // Get complete logs for single process
-      
-      // Version management
-      new VersionGetTool(authManager),
-      new VersionListTool(authManager),
 
       // Local-Remote sync removed - cat/write provide auto-sync via LocalFileManager
       // PullTool/PushTool/StatusTool were redundant (used same copyRemoteToLocal calls)
