@@ -55,13 +55,11 @@ export class RawWriteTool extends BaseFileSystemTool {
     required: ['path', 'content', 'fileType'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: ['1.auth({mode:"status"})→auth({mode:"start"}) if needed', '2.project: create new|get scriptId via ls', '3.⚠️ VERIFY: You intend to COMPLETELY OVERWRITE the target file'],
-      dangerWarning: {behavior: 'This tool CLOBBERS (completely overwrites) remote files without merging', consequence: 'Any existing content in the target file will be PERMANENTLY LOST', recommendation: 'Use write instead for safe merging of local and remote content', useCase: 'Only use raw_write when you explicitly intend to replace entire file contents'},
-      saferAlternative: {tool: 'write', benefits: ['Intelligent merging of local and remote file content', 'Preserves existing code while adding new content', 'Safer for collaborative development', 'Same path format but with merge protection'], when: 'Use write for most file writing operations unless you specifically need to clobber files'},
-      useCases: {newFile: 'Creating completely new files from scratch', replace: 'Intentionally replacing entire file contents', bulk: 'Bulk operations where clobbering is intended', config: 'Replacing configuration files like appsscript.json', avoid: '⚠️ AVOID for: Updating existing files, collaborative editing, preserving content'},
-      fileTypes: {javascript: 'Content with functions → .gs file (SERVER_JS type)', html: 'Content with HTML tags → .html file (HTML type)', json: 'Content with JSON format → .json file (JSON type)'},
-      bestPractices: ['⚠️ CRITICAL: Only use when you intend to completely replace file contents', 'Consider write for safer merging operations', 'Use descriptive filenames that indicate purpose', 'Organize related functions in same file', 'Put utility functions in separate files at position 0', 'Use logical "/" paths for organization: utils/helpers, models/User'],
-      afterWriting: ['Use run to execute functions from this file', 'Use cat to verify file was written correctly', 'Use ls to see file in project structure', '⚠️ Verify that file clobbering was intentional']
+      prereq: 'auth→start if needed | scriptId via project_create|ls | ⚠️ VERIFY: intend to OVERWRITE file',
+      danger: 'CLOBBERS entire file without merge→content LOST | Use write for safe merging instead',
+      usage: 'newFile: from scratch | replace: entire contents | config: appsscript.json | ⚠️ AVOID: updating existing, collab',
+      types: 'JS→.gs (SERVER_JS) | HTML→.html | JSON→.json',
+      after: 'run to exec | cat to verify | ls to see structure'
     }
   };
 
