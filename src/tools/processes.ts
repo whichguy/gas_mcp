@@ -8,14 +8,14 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
  */
 export class ProcessListTool extends BaseTool {
   public name = 'process_list';
-  public description = 'List information about processes made by or on behalf of a user, such as process type and current status. LLM USE: Monitor script execution history and performance.';
+  public description = 'List information about processes made by or on behalf of a user, such as process type and current status. Monitor script execution history and performance.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       pageSize: {
         type: 'number',
-        description: 'Maximum number of processes to return (default: 50). LLM RECOMMENDATION: Use larger values for comprehensive data, smaller values for quick checks.',
+        description: 'Maximum number of processes to return (default: 50). Use larger values for comprehensive data, smaller for quick checks.',
         minimum: 1,
         default: 50,
         llmHints: {
@@ -26,7 +26,7 @@ export class ProcessListTool extends BaseTool {
       },
       pageToken: {
         type: 'string',
-        description: 'Token for pagination (optional). LLM USE: Include token from previous response to get next page of results.',
+        description: 'Token for pagination (optional). Include token from previous response to get next page.',
         llmHints: {
           workflow: 'Get this from previous process_list response.nextPageToken',
           iteration: 'Keep calling with pageToken until nextPageToken is null'
@@ -34,7 +34,7 @@ export class ProcessListTool extends BaseTool {
       },
       userProcessFilter: {
         type: 'object',
-        description: 'Filter criteria for user processes (optional). LLM USE: Filter by specific scripts, functions, time ranges, or process characteristics according to Google Apps Script API specification.',
+        description: 'Filter criteria for user processes (optional). Filter by scripts, functions, time ranges, or process characteristics.',
         properties: {
           scriptId: {
             type: 'string',
@@ -133,7 +133,7 @@ export class ProcessListTool extends BaseTool {
  */
 export class ProcessListScriptTool extends BaseTool {
   public name = 'process_list_script';
-  public description = 'List information about a script\'s executed processes, such as process type and current status. LLM USE: Debug and monitor specific script performance.';
+  public description = 'List information about a script\'s executed processes, such as process type and current status. Debug and monitor specific script performance.';
   
   public inputSchema = {
     type: 'object',
@@ -141,7 +141,7 @@ export class ProcessListScriptTool extends BaseTool {
       ...SchemaFragments.scriptId,
       pageSize: {
         type: 'number',
-        description: 'Maximum number of processes to return (default: 50). LLM RECOMMENDATION: Use larger values for comprehensive analysis.',
+        description: 'Maximum number of processes to return (default: 50). Use larger values for comprehensive analysis.',
         minimum: 1,
         default: 50,
         llmHints: {
@@ -151,14 +151,14 @@ export class ProcessListScriptTool extends BaseTool {
       },
       pageToken: {
         type: 'string',
-        description: 'Token for pagination (optional). LLM USE: Include token from previous response to get next page.',
+        description: 'Token for pagination (optional). Include token from previous response to get next page.',
         llmHints: {
           workflow: 'Get this from previous process_list_script response.nextPageToken'
         }
       },
       scriptProcessFilter: {
         type: 'object',
-        description: 'Filter criteria for script processes (optional). LLM USE: Filter by specific functions, time ranges, or process characteristics according to Google Apps Script API specification for listScriptProcesses.',
+        description: 'Filter criteria for script processes (optional). Filter by functions, time ranges, or process characteristics.',
         properties: {
           deploymentId: {
             type: 'string',

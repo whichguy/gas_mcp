@@ -21,7 +21,7 @@ export class RawWriteTool extends BaseFileSystemTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: scriptId/filename (WITHOUT extension). LLM CRITICAL: Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (scriptId/appsscript), never in subfolders. REQUIRED: Must include explicit scriptId prefix (e.g., "abc123def.../filename") - current project context is not used.',
+        description: 'Full path to file: scriptId/filename (WITHOUT extension). Extensions like .gs, .html, .json are AUTOMATICALLY added. Google Apps Script auto-detects file type from content. SPECIAL CASE: appsscript.json must be in project root (scriptId/appsscript), never in subfolders. REQUIRED: Must include explicit scriptId prefix (e.g., "abc123def.../filename") - current project context is not used.',
         pattern: '^[a-zA-Z0-9_-]{20,60}/[a-zA-Z0-9_.//-]+$',
         minLength: 25,
         examples: [
@@ -35,12 +35,12 @@ export class RawWriteTool extends BaseFileSystemTool {
       },
       content: {
         ...CONTENT_SCHEMA,
-        description: 'File content to write. ⚠️ WARNING: This content will COMPLETELY REPLACE the existing file. LLM FLEXIBILITY: Supports JavaScript/Apps Script, HTML, JSON. Content type automatically detected for proper file extension.',
+        description: 'File content to write. ⚠️ WARNING: This content will COMPLETELY REPLACE the existing file. Supports JavaScript/Apps Script, HTML, JSON. Content type automatically detected for proper file extension.',
         llmHints: {javascript: 'Apps Script functions, ES6+ syntax, Google services (SpreadsheetApp, etc.)', html: 'HTML templates for web apps, can include CSS and JavaScript', json: 'Configuration files like appsscript.json for project settings', limits: 'File size limits enforced by Google Apps Script API', encoding: 'UTF-8 encoding, supports international characters', danger: 'This content will OVERWRITE the entire remote file - existing content will be lost'}
       },
       position: {
         type: 'number',
-        description: 'File execution order position (0-based). LLM USE: Controls order in Apps Script editor and execution sequence. Lower numbers execute first.',
+        description: 'File execution order position (0-based). Controls order in Apps Script editor and execution sequence. Lower numbers execute first.',
         minimum: 0,
         llmHints: {execution: 'Lower numbers execute first in Apps Script runtime', organization: 'Use for dependencies: utilities first (0), main code later (1,2,3)', optional: 'Omit to append at end of file list', reordering: 'Use reorder tool to change position later'}
       },
