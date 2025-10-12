@@ -109,7 +109,15 @@ npm run test:all-verify          # Run all verification tests
 **Integration:** Compare with `git hash-object` → detect changes → selective sync → build optimization
 **Performance:** checksums=false (default, fast) | checksums=true (~50-100ms/file) | file_status (200 files max, 50 default)
 
-#### 5. Deployment & Version Control
+#### 5. Metadata Caching (Extended Attributes)
+**Purpose:** Eliminate redundant API calls by caching GAS metadata in filesystem xattr
+**Performance:** 85-95% faster reads (fast path: ~5-50ms vs slow path: ~800-1200ms)
+**Storage:** `user.gas.updateTime` + `user.gas.fileType` stored in extended attributes
+**Sync Detection:** Compare local mtime with cached updateTime → fast path if match (no API call)
+**Tools:** cat (fast path read) | write/raw_write (cache on write) | local_sync (cache on sync) | cache_clear (debug utility)
+**Docs:** See docs/METADATA_CACHING.md for complete architecture and usage examples
+
+#### 6. Deployment & Version Control
 **Unified Tool:** deploy({operation, environment, scriptId}) → single interface for all deployment ops
 **Operations:**
 - `promote` → dev→staging (creates version) or staging→prod (updates deployment)

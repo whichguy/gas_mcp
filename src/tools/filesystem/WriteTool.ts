@@ -20,7 +20,7 @@ import type { WriteParams, WriteResult } from './shared/types.js';
  */
 export class WriteTool extends BaseFileSystemTool {
   public name = 'write';
-  public description = 'Write file contents to Google Apps Script project. Automatically wraps user code with CommonJS module system (require, module, exports). Opportunistically uses git hook validation when available (atomic with full rollback), otherwise falls back to remote-first workflow.';
+  public description = 'Write file contents to Google Apps Script project. Automatically wraps user code with CommonJS module system (require, module, exports). Supports .git hooks for validation: writes locally first, runs hooks, then syncs validated content to remote (atomic with full rollback on failure). Falls back to remote-first workflow when git not available.';
 
   public inputSchema = {
     type: 'object',
@@ -272,9 +272,13 @@ export class WriteTool extends BaseFileSystemTool {
         const remoteFilesWithMeta = await this.gasClient.getProjectMetadata(scriptId, accessToken);
         await checkSyncOrThrow(localFilePath, filename, remoteFilesWithMeta);
       } catch (syncError: any) {
-        if (syncError.message && syncError.message.includes('out of sync')) {
+        // Re-throw sync errors (from checkSyncOrThrow)
+        if (syncError.message &&
+            (syncError.message.includes('out of sync') ||
+             syncError.message.includes('exists in GAS but not locally'))) {
           throw syncError;
         }
+        // Ignore other errors (e.g., network issues during metadata fetch)
       }
 
       try {
@@ -400,7 +404,7 @@ export class WriteTool extends BaseFileSystemTool {
         // Set mtime to match remote updateTime
         if (results.remoteFile?.updateTime) {
           try {
-            await setFileMtimeToRemote(filePath, results.remoteFile.updateTime);
+            await setFileMtimeToRemote(filePath, results.remoteFile.updateTime, results.remoteFile.type);
           } catch (mtimeError) {
             // Non-fatal error
           }
@@ -507,6 +511,13 @@ export class WriteTool extends BaseFileSystemTool {
     const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
     const filePath = join(projectPath, fullFilename);
 
+    // PHASE 0: Verify sync with remote (before local write)
+    if (!localOnly) {
+      const accessToken = await this.getAuthToken(params);
+      const remoteFiles = await this.gasClient.getProjectMetadata(scriptId, accessToken);
+      await checkSyncOrThrow(filePath, filename, remoteFiles);
+    }
+
     // PHASE 1: Local validation with hooks
     const hookResult = await writeLocalAndValidateWithHooks(
       content,
@@ -555,7 +566,7 @@ export class WriteTool extends BaseFileSystemTool {
         // Set mtime to match remote
         if (updatedFile?.updateTime) {
           try {
-            await setFileMtimeToRemote(filePath, updatedFile.updateTime);
+            await setFileMtimeToRemote(filePath, updatedFile.updateTime, fileType);
           } catch (mtimeError) {
             // Non-fatal error
           }

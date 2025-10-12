@@ -57,7 +57,7 @@ export class RawCatTool extends BaseFileSystemTool {
         const localPath = join(localRoot, parsedPath.filename + fileExtension);
         await mkdir(dirname(localPath), { recursive: true });
         await writeFile(localPath, file.source || '', 'utf-8');
-        await setFileMtimeToRemote(localPath, file.updateTime);
+        await setFileMtimeToRemote(localPath, file.updateTime, file.type);
       }
     } catch (syncError) {
       // Don't fail if local sync fails

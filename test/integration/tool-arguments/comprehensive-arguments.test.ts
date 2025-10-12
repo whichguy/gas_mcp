@@ -15,7 +15,7 @@ import { ArgumentTestHelper } from './helpers/argument-test-helper.js';
  * - Process tools (2 tools)
  * - Log tools (1 tool: log with list/get operations)
  * - Trigger tools (1 tool: trigger with list/create/delete operations)
- * - Advanced tools (context, summary, deps, tree)
+ * - Advanced tools (deps only - context/summary/tree removed as redundant)
  * - Project info tools (reorder only, info removed)
  *
  * Performance: ~5 minutes (vs 20+ minutes with per-test projects)
@@ -423,60 +423,6 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
 
   // ===== ADVANCED ANALYSIS TOOLS =====
   describe('Advanced Analysis Tools', function() {
-    describe('context', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'context',
-          { scriptId: sharedProjectId },
-          'get project context'
-        );
-
-        expect(result).to.have.property('context');
-      });
-
-      it('should accept with query parameter', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'context',
-          {
-            scriptId: sharedProjectId,
-            query: 'function'
-          },
-          'get context with query'
-        );
-
-        expect(result).to.have.property('context');
-      });
-    });
-
-    describe('summary', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'summary',
-          { scriptId: sharedProjectId },
-          'get project summary'
-        );
-
-        expect(result).to.have.property('summary');
-      });
-
-      it('should accept with mode parameter', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'summary',
-          {
-            scriptId: sharedProjectId,
-            mode: 'detailed'
-          },
-          'get summary with mode'
-        );
-
-        expect(result).to.have.property('summary');
-      });
-    });
-
     describe('deps', function() {
       it('should accept scriptId only', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
@@ -487,46 +433,6 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
         );
 
         expect(result).to.have.property('dependencies');
-      });
-    });
-
-    describe('tree', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'tree',
-          { scriptId: sharedProjectId },
-          'show project tree'
-        );
-
-        expect(result).to.have.property('tree');
-      });
-
-      it('should accept with maxDepth parameter', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'tree',
-          {
-            scriptId: sharedProjectId,
-            maxDepth: 3
-          },
-          'show tree with maxDepth'
-        );
-
-        expect(result).to.have.property('tree');
-      });
-
-      it('should reject invalid maxDepth type', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'tree',
-          {
-            scriptId: sharedProjectId,
-            maxDepth: 'three'
-          },
-          /maxDepth|number|type/i,
-          'maxDepth must be number'
-        );
       });
     });
   });

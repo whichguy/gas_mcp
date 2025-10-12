@@ -26,8 +26,9 @@ export { RawWriteTool } from './RawWriteTool.js';
 export { MvTool } from './MvTool.js';
 export { CpTool } from './CpTool.js';
 export { RawCpTool } from './RawCpTool.js';
+export { CacheClearTool } from './CacheClearTool.js';
 
-// All 10 filesystem tools successfully extracted from the monolith
+// All 11 filesystem tools successfully extracted from the monolith
 // This index provides backward-compatible imports for all completed tools
 
 // Re-export shared types and schemas for convenience

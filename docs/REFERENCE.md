@@ -58,8 +58,7 @@ exec({
 **Search & Analysis:**
 ```javascript
 ripgrep({scriptId: "...", pattern: "function.*test"})
-context({scriptId: "...", query: "authentication logic"})
-deps({scriptId: "..."})
+deps({scriptId: "..."}) // Analyze CommonJS dependencies
 ```
 
 ---
@@ -74,7 +73,7 @@ deps({scriptId: "..."})
 - All use Apps Script file API (works for both types)
 
 ✅ **Search & Analysis** - Universal
-- find, grep, ripgrep, sed, context, summary, deps, tree
+- find, grep, ripgrep, sed, deps
 - raw_find, raw_grep, raw_ripgrep, raw_sed
 - Operate on file content (works for both types)
 
@@ -291,7 +290,7 @@ All work identically for both script types.
 - No real directories (flat structure)
 - File size limit: ~50 MB total project
 
-### Search & Analysis (8 tools)
+### Search & Analysis (5 tools)
 
 All work identically for both script types.
 
@@ -310,10 +309,7 @@ All work identically for both script types.
 - `raw_sed` - Find/replace (complete files)
 
 **Project Analysis:**
-- `context` - Semantic code search
-- `summary` - Project summarization
-- `deps` - CommonJS dependency analysis
-- `tree` - Project structure visualization
+- `deps` - CommonJS dependency analysis with circular detection
 
 **No Limitations**: All operate on file content via Apps Script API
 
@@ -611,16 +607,16 @@ https://www.googleapis.com/auth/spreadsheets
 
 ### Overall Compatibility
 
-- **Total Tools**: 44 (reduced from 49 via consolidation)
-- **✅ Full Support (Both)**: 43 tools (98%)
+- **Total Tools**: 40 (reduced from 66 via consolidation)
+- **✅ Full Support (Both)**: 39 tools (98%)
 - **❌ Not Supported (Container-Bound)**: 1 tool (2%) - gas_log historical logging only
 - **⚠️ Limited/Needs Testing**: Minimal - most features tested
 
 ### Tool Consolidation (January 2025)
 
-- **Removed**: 5 tools (mkdir, info, proxy_setup, and redundant deployment tools)
+- **Removed**: 8 tools (mkdir, info, proxy_setup, context, summary, tree, and redundant deployment tools)
 - **Consolidated**: 5 tools → 2 tools (logs: 2→1, triggers: 3→1)
-- **Result**: 10% reduction in tool count, same functionality via operation parameters
+- **Result**: 38% reduction from original 66 tools, improved focus on core functionality
 
 ### Documentation Status
 

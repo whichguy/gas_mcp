@@ -21,7 +21,8 @@ import {
   RawCpTool,
   RmTool,
   MvTool,
-  CpTool
+  CpTool,
+  CacheClearTool
 } from '../tools/filesystem/index.js';
 import { GrepTool, RawGrepTool } from '../tools/grep.js';
 import { FindTool, RawFindTool } from '../tools/find.js';
@@ -31,10 +32,7 @@ import { EditTool } from '../tools/edit.js';
 import { RawEditTool } from '../tools/raw-edit.js';
 import { AiderTool } from '../tools/aider.js';
 import { RawAiderTool } from '../tools/raw-aider.js';
-import { ContextTool } from '../tools/gas-context.js';
-import { SummaryTool } from '../tools/gas-summary.js';
 import { DepsTool } from '../tools/gas-deps.js';
-import { TreeTool } from '../tools/gas-tree.js';
 import {
   ReorderTool,
   ProjectListTool
@@ -123,7 +121,7 @@ import { McpGasConfigManager } from '../config/mcpGasConfig.js';
  * See `docs/STDOUT_STDERR_DOCUMENTATION.md` for complete implementation details.
  *
     * ### Tool Architecture
-   * - **44 MCP Tools**: Streamlined Google Apps Script API coverage
+   * - **40 MCP Tools**: Streamlined Google Apps Script API coverage
    * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
    * - **Schema Validation**: Comprehensive input validation with helpful error messages
    * - **Rate Limiting**: Built-in rate limiting and retry strategies for Google APIs
@@ -205,11 +203,11 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    *
-   * Each session gets its own instances of all 44 MCP tools, each configured
+   * Each session gets its own instances of all 40 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    *
-   * ## Tool Categories Created (44 total tools):
+   * ## Tool Categories Created (40 total tools):
    *
    * ### Authentication & Session (1 tool)
    * - `auth` - OAuth 2.0 flow management with desktop PKCE
@@ -292,14 +290,12 @@ export class MCPGasServer {
       new EditTool(authManager),          // Token-efficient exact string editing
       new AiderTool(authManager),         // Token-efficient fuzzy string editing
       new FindTool(authManager),          // Find files with virtual names
-      new ContextTool(authManager),       // Intelligent context-aware search (simplified version)
-      new SummaryTool(authManager),       // Content summarization with multiple analysis modes
       new DepsTool(authManager),          // Dependency analysis with circular detection and complexity metrics
-      new TreeTool(authManager),          // Project structure visualization with hierarchical trees and statistics
       new RmTool(authManager),
       new MvTool(authManager),
       new CpTool(authManager),
-      
+      new CacheClearTool(authManager),    // Clear cached GAS metadata from extended attributes
+
       // Filesystem operations - ADVANCED raw tools (explicit project IDs)
       new RawCatTool(authManager),        // Advanced: Explicit project ID paths
       new RawWriteTool(authManager),      // Advanced: Explicit project ID paths
