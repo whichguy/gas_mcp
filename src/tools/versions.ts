@@ -29,12 +29,11 @@ export class VersionGetTool extends BaseTool {
     required: ['scriptId', 'versionNumber'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls', '3.version exists (version_list)'],
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal version mgmt'},
-      limitations: {versionCreation: 'immutable snapshots→no edit after', versionLimit: 'account-dependent (50-100 typical)', fileContentAccess: 'metadata only→cat for content'},
-      useCases: {codeReview: 'version_get({scriptId,versionNumber:5})', comparison: 'multiple version_get→compare', deployment: 'version_get→verify before deploy'},
-      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', VersionNotFound: 'version_list→see available'},
-      returnValue: {versionNumber: 'requested version num', description: 'version description/changelog', createTime: 'creation timestamp', fileCount: 'file count in version'}
+      prereq: 'auth→start | scriptId | version exists (version_list)',
+      limits: 'immutable snapshots | 50-100 typical limit | metadata only (use cat for content)',
+      usage: 'review: version_get({scriptId,versionNumber}) | compare: multiple version_get | deploy: verify before deploy',
+      errors: 'AuthenticationError: auth→start | ScriptNotFound: verify scriptId | VersionNotFound: version_list',
+      return: 'versionNumber | description | createTime | fileCount'
     }
   };
 
