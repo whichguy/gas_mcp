@@ -101,26 +101,11 @@ export class LogTool extends BaseTool {
     required: ['operation', 'scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls', '3.standalone+GCP only (NOT container-bound)'],
-      limitations: {containerBound: 'Container-bound (Sheets/Docs/Forms)→Cloud Logging API rejects', solution: 'exec→auto-captures Logger.log() in logger_output', historicalOnly: 'historical logs only→exec for realtime'},
-      alternatives: {containerBoundLogging: {tool: 'exec', usage: 'exec({scriptId,js_statement:"Logger.log(\'debug\');yourCode()"})', benefit: 'auto-captures ALL Logger.log()', why: 'universal standalone+container-bound'}, realtimeLogging: {tool: 'exec', usage: 'wrap with Logger.log() for debug', benefit: 'immediate feedback (no Cloud Logging delay)'}},
-      nextSteps: ['SUCCESS→logs_get({scriptId,processId})→detailed logs', 'FAILURE (container-bound)→exec realtime', 'analysis→process_list for trends'],
-      useCases: {
-        list: {
-          recentErrors: 'log({operation:"list",scriptId:"...",functionName:"myFunc",minutes:15,statusFilter:"FAILED"})',
-          debugging: 'log({operation:"list",scriptId:"...",functionName:"processData",minutes:30})',
-          monitoring: 'log({operation:"list",scriptId:"...",minutes:60,statusFilter:"ALL"})',
-          historical: 'log({operation:"list",scriptId:"...",timeRange:{start:"2024-01-01T00:00:00Z",end:"2024-01-01T23:59:59Z"}})',
-          containerBoundAlternative: 'container-bound→exec({scriptId:"...",js_statement:"Logger.log(\'debug\');yourFunction()"})'
-        },
-        get: {
-          debugging: 'log({operation:"get",scriptId:"...",processId:"..."})',
-          analysis: 'log({operation:"get",scriptId:"...",processId:"...",includeMetadata:true})',
-          logsOnly: 'log({operation:"get",scriptId:"...",processId:"...",includeMetadata:false})',
-          containerBoundAlternative: 'container-bound→exec({scriptId:"...",js_statement:"Logger.log(\'debug\');yourFunction()"})'
-        }
-      },
-      performance: {fast: 'functionName→Cloud Logging-first (optimized)', fallback: 'no functionName→Process API first (slower,comprehensive)'}
+      prereq: 'auth→start | scriptId | standalone+GCP only (NOT container-bound)',
+      limits: 'Container-bound→Cloud Logging rejects | Use exec for container-bound+realtime',
+      usage: 'list: errors={statusFilter:"FAILED"} | debug={functionName,minutes} | historical={timeRange} | get: {processId}',
+      alternative: 'Container-bound→exec({js_statement:"Logger.log();yourCode()"}) auto-captures output',
+      perf: 'functionName→fast Cloud Logging | no functionName→slower Process API'
     }
   };
 
