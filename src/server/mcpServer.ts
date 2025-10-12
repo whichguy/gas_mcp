@@ -53,8 +53,7 @@ import {
 } from '../tools/driveContainerTools.js';
 
 import {
-  ProcessListTool,
-  ProcessListScriptTool
+  ProcessListTool
 } from '../tools/processes.js';
 
 // Consolidated log tool with list and get operations
@@ -254,9 +253,8 @@ export class MCPGasServer {
    * - `project_create` - Create new GAS projects with infrastructure
    * - `project_init` - Initialize projects with standard configuration
    *
-   * ### Process Management (2 tools)
-   * - `process_list` - List user processes
-   * - `process_list_script` - List script processes
+   * ### Process Management (1 tool)
+   * - `process_list` - List user processes (supports scriptId filter)
    *
    * ### Execution Logs (1 tool)
    * - `log` - Browse execution logs (list operation) and get detailed process logs (get operation)
@@ -334,7 +332,6 @@ export class MCPGasServer {
       
       // Process management
       new ProcessListTool(authManager),
-      new ProcessListScriptTool(authManager),
 
       // Execution logs with Cloud Logging integration (consolidated: list + get operations)
       new LogTool(authManager),          // Browse logs (list) and get detailed process logs (get)

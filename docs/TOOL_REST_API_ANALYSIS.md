@@ -131,15 +131,15 @@ From `gasClient.ts`, the GAS REST API provides:
 
 **Analysis**: Direct REST API mapping. Necessary.
 
-### ⏱️ Process & Logs (4 tools) - **NICHE**
+### ⏱️ Process & Logs (3 tools) - **NICHE**
 | Tool | REST API Endpoint | Usage |
 |------|------------------|-------|
-| `process_list` | GET /processes | List user processes |
-| `process_list_script` | GET /projects/{scriptId}/processes | Script-specific |
+| `process_list` | GET /processes (supports scriptId filter) | List user/script processes |
 | `logs_list` | Cloud Logging API | Browse logs |
 | `logs_get` | Cloud Logging API | Get specific process logs |
 
 **Analysis**: Niche debugging tools. Essential for production monitoring.
+**Note**: `process_list_script` consolidated into `process_list` (use `userProcessFilter.scriptId`)
 
 ### 🔗 Drive Integration (2 tools) - **NICHE**
 | Tool | REST API | Purpose |

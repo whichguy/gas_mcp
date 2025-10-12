@@ -2720,20 +2720,33 @@ interface GasProcessListInput {
 }
 ```
 
-### `gas_process_list_script` - List Script Processes
+### `gas_process_list` - List User/Script Processes
 
-List information about a script's executed processes.
+List information about processes made by or on behalf of a user. Supports filtering by scriptId.
+
+**Note:** Consolidated from separate `gas_process_list` and `gas_process_list_script` tools.
 
 #### Input Schema
 ```typescript
-interface GasProcessListScriptInput {
-  scriptId: string;
+interface GasProcessListInput {
   pageSize?: number; // 1-50, default: 50
   pageToken?: string;
-  scriptProcessFilter?: ScriptProcessFilter;
+  userProcessFilter?: {
+    scriptId?: string;  // Filter by specific script
+    deploymentId?: string;
+    projectName?: string;
+    functionName?: string;
+    startTime?: string;  // RFC3339 format
+    endTime?: string;    // RFC3339 format
+    types?: ProcessType[];
+    statuses?: ProcessStatus[];
+    userAccessLevels?: UserAccessLevel[];
+  };
   accessToken?: string;
 }
 ```
+
+**Migration:** Use `userProcessFilter.scriptId` instead of separate tool.
 
 ---
 

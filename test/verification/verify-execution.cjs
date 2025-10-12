@@ -70,8 +70,8 @@ test('Auto-deployment features', checkFile('src/tools/execution.ts', 'autoRedepl
 test('Module resolution system', checkFile('src/CommonJS.js', ['require', 'module', 'exports']));
 
 console.log('\n📊 Monitoring and Analytics');
-test('Process monitoring', checkFile('src/tools/processes.ts', 'gas_process_list'));
-test('Script-specific processes', checkFile('src/tools/processes.ts', 'gas_process_list_script'));
+test('Process monitoring', checkFile('src/tools/processes.ts', 'process_list'));
+test('Script-specific process filtering', checkFile('src/tools/processes.ts', 'scriptId'));
 test('Execution metrics', checkFile('src/tools/project.ts', 'gas_project_metrics'));
 test('Performance tracking', checkFile('src/tools/processes.ts', ['performance', 'duration']));
 
