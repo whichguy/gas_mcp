@@ -1231,14 +1231,12 @@ export class ProjectInitTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      whenToUse: ['exec fails "__defineModule__ not defined"|projects not via project_create|missing exec infra|require()/module.exports broken'],
-      prerequisites: ['1.auth→start if needed', '2.scriptId from existing (ls)'],
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal infra init'},
-      shaVerification: {algorithm: 'Git SHA-1: sha1("blob "+size+"\\0"+content)', forcefalse: 'verify+warn on mismatch (no repair, preserves)', forcetrue: 'verify+auto-repair mismatch (reinstall)', warningLocation: 'verificationWarnings[] when force=false', compatibility: 'matches git hash-object'},
-      limitations: {existingFiles: 'default preserve→force:true overwrite', manifestUpdates: 'updates appsscript.json', noRollback: 'partial possible→check filesInstalled+errors'},
-      useCases: {basicInit: 'project_init({scriptId})', commonJSOnly: 'project_init({scriptId,includeExecutionInfrastructure:false})', executionOnly: 'project_init({scriptId,includeCommonJS:false})', verifyOnly: 'project_init({scriptId,force:false})→SHA check+warn', autoRepair: 'project_init({scriptId,force:true})→SHA auto-repair'},
-      returnValue: {status: 'success|partial|failed', scriptId: 'initialized project ID', filesInstalled: 'installed/updated list', filesSkipped: 'existing skipped list', verificationWarnings: 'SHA warnings (force=false+mismatch)', errors: 'error list'},
-      nextSteps: ['exec({scriptId,js_statement:"Math.PI*2"})', '__defineModule__(_main) pattern', 'require("ModuleName")']
+      when: 'exec fails __defineModule__ | projects not via project_create | missing infra',
+      prereq: 'auth→start | scriptId from ls',
+      sha: 'Git SHA-1 | force=false: warn on mismatch | force=true: auto-repair',
+      usage: 'basic: project_init({scriptId}) | verify: force=false | repair: force=true',
+      return: 'status | scriptId | filesInstalled/Skipped | verificationWarnings (force=false) | errors',
+      next: 'exec test | __defineModule__ pattern | require("Module")'
     }
   };
 
