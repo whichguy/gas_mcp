@@ -43,7 +43,7 @@ export class GrepTool extends BaseTool {
       alternatives: 'raw_grep→explicit project ID|search system content',
       scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→searches unwrapped user code'},
       limitations: {maxResults: '200 limit→token overflow prevent (specific patterns)', maxFiles: '500 limit→path param narrow', regexPerformance: 'complex regex slow on large (prefer simple)'},
-      nextSteps: ['AFTER: cat→full context', 'MODIFY: sed→find/replace', 'UPDATE: write→changes', 'VERIFY: gas_run→test'],
+      nextSteps: ['AFTER: cat→full context', 'MODIFY: sed→find/replace', 'UPDATE: write→changes', 'VERIFY: exec→test'],
       relatedTools: {preferred: '⚡ ripgrep→RECOMMENDED (multi-pattern+smart case+context+performance)', semanticSearch: 'context→NL queries vs regex', fileDiscovery: 'find→name/properties vs content', readFiles: 'cat→complete after match', editFiles: 'sed→batch find/replace | write→individual'},
       commonJsIntegration: 'SERVER_JS auto-integrated (CommonJS.js)→_main() wrapper removed→clean user code search (require()/module/exports available at exec)',
       editingWorkflow: 'unwrapped results→cat shows same→editing ready',
@@ -56,7 +56,7 @@ export class GrepTool extends BaseTool {
     properties: {
       pattern: {
         type: 'string',
-        description: 'Search pattern (supports regex and literal text). Searches clean user code (same content as gas_cat shows). Examples: "function\\\\s+(\\\\w+)" finds user functions, "require(" finds user dependencies',
+        description: 'Search pattern (supports regex and literal text). Searches clean user code (same content as cat shows). Examples: "function\\\\s+(\\\\w+)" finds user functions, "require(" finds user dependencies',
         minLength: 1,
         examples: [
           'require\\\\(',                    // Find user require calls (no wrapper noise)
@@ -74,7 +74,7 @@ export class GrepTool extends BaseTool {
       ...SchemaFragments.scriptId,
       path: {
         type: 'string',
-        description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Searches clean user code in matching files (same content processing as gas_cat). Examples: "" (entire project), "utils/*" (wildcard), ".*Controller.*" (regex).',
+        description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Searches clean user code in matching files (same content processing as cat). Examples: "" (entire project), "utils/*" (wildcard), ".*Controller.*" (regex).',
         default: '',
         examples: [
           '',                            // Search entire project (user code only)
@@ -262,7 +262,7 @@ export class GrepTool extends BaseTool {
 
     // Add metadata about content processing
     (results as any).contentType = 'user-code (CommonJS unwrapped)';
-    (results as any).note = 'Search performed on clean user code. Use gas_raw_grep to search full file content including CommonJS wrappers.';
+    (results as any).note = 'Search performed on clean user code. Use raw_grep to search full file content including CommonJS wrappers.';
 
     // Add formatted output for different display modes
     if (searchOptions.compact) {
@@ -310,7 +310,7 @@ export class GrepTool extends BaseTool {
   }
 
   /**
-   * Get target files for search (shared by gas_grep and gas_raw_grep patterns)
+   * Get target files for search (shared by grep and raw_grep patterns)
    */
   private async getTargetFiles(params: any, accessToken?: string): Promise<GASFile[]> {
     // If specific files provided, get those (apply translation to each file)
@@ -620,7 +620,7 @@ export class RawGrepTool extends BaseTool {
     // Add metadata about content processing and data source
     (results as any).contentType = 'raw-content (includes CommonJS wrappers)';
     (results as any).dataSource = 'direct-api-call';
-    (results as any).note = 'Search performed on complete file content including CommonJS wrappers and system code retrieved via direct API calls. Use gas_grep to search only user code.';
+    (results as any).note = 'Search performed on complete file content including CommonJS wrappers and system code retrieved via direct API calls. Use grep to search only user code.';
 
     // Add formatted output for different display modes
     if (searchOptions.compact) {
@@ -633,7 +633,7 @@ export class RawGrepTool extends BaseTool {
   }
 
   /**
-   * Get target files via direct API calls (used by gas_raw_grep for consistency)
+   * Get target files via direct API calls (used by raw_grep for consistency)
    */
   private async getTargetFilesViaAPI(params: any, accessToken: string): Promise<GASFile[]> {
     // If specific files provided, get those via API

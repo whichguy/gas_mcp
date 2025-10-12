@@ -51,7 +51,7 @@ test('CORE', 'Configuration system exists', checkFileExists('src/config/mcpGasCo
 
 // Check CommonJS integration
 test('CORE', 'CommonJS runtime exists', checkFileExists('src/CommonJS.js'));
-test('CORE', 'MCP execution runtime exists', checkFileExists('src/__mcp_gas_run.js'));
+test('CORE', 'MCP execution runtime exists', checkFileExists('src/__mcp_exec.js'));
 test('CORE', 'Apps Script manifest exists', checkFileExists('src/appsscript.json'));
 
 console.log();

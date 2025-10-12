@@ -71,7 +71,7 @@ testCritical('File operations compile', checkFile('dist/src/tools/filesystem.js'
 console.log('\n⚡ CRITICAL: Code Execution');
 testCritical('JavaScript execution (gas_run)', checkFile('src/tools/execution.ts', 'gas_run'));
 testCritical('CommonJS runtime exists', checkFile('src/CommonJS.js'));
-testCritical('MCP execution runtime exists', checkFile('src/__mcp_gas_run.js'));
+testCritical('MCP execution runtime exists', checkFile('src/__mcp_exec.js'));
 
 console.log('\n🔄 CRITICAL: Git Integration (Our Main Feature)');
 testCritical('Git sync tools exist', checkFile('src/tools/gitSync.ts'));

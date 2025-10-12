@@ -1,8 +1,8 @@
 /**
- * gas_ripgrep and gas_raw_ripgrep - Advanced search with ripgrep-inspired features
+ * ripgrep and raw_ripgrep - Advanced search with ripgrep-inspired features
  * 
- * gas_ripgrep: High-performance search in clean user code (CommonJS unwrapped)
- * gas_raw_ripgrep: High-performance search in raw content (including CommonJS wrappers)
+ * ripgrep: High-performance search in clean user code (CommonJS unwrapped)
+ * raw_ripgrep: High-performance search in raw content (including CommonJS wrappers)
  * 
  * Features inspired by ripgrep: multiple patterns, context control, smart case,
  * advanced regex, replacement suggestions, and performance statistics.
@@ -817,7 +817,7 @@ export class RipgrepSearchEngine extends GrepSearchEngine {
 }
 
 /**
- * gas_ripgrep - High-performance search with ripgrep-inspired features (RECOMMENDED)
+ * ripgrep - High-performance search with ripgrep-inspired features (RECOMMENDED)
  * Searches clean user code with CommonJS unwrapping and virtual file names
  */
 export class RipgrepTool extends BaseTool {
@@ -1022,8 +1022,8 @@ export class RipgrepTool extends BaseTool {
       fileSystemReality: 'GAS flat: "utils/helper.js" = filename "utils/helper" NOT file in folder',
       pathFilteringLogic: 'Prefix matching on complete filenames (not directory traversal)',
       performance: 'Optimized: multi-pattern | in-memory | regex cache | performance stats',
-      workflow: 'Search→analyze→generate replacements→apply via gas_write',
-      contentComparison: 'ripgrep: clean code (gas_cat shows) | raw_ripgrep: full content+wrappers'
+      workflow: 'Search→analyze→generate replacements→apply via write',
+      contentComparison: 'ripgrep: clean code (cat shows) | raw_ripgrep: full content+wrappers'
     }
   };
 
@@ -1283,7 +1283,7 @@ export class RipgrepTool extends BaseTool {
 }
 
 /**
- * gas_raw_ripgrep - High-performance search with ripgrep-inspired features (ADVANCED)
+ * raw_ripgrep - High-performance search with ripgrep-inspired features (ADVANCED)
  * Searches complete file content including CommonJS wrappers and system code
  */
 export class RawRipgrepTool extends BaseTool {

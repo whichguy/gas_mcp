@@ -386,7 +386,7 @@ export class TreeTool extends BaseTool {
       },
       includeSystem: {
         type: 'boolean',
-        description: 'Include system files (CommonJS, __mcp_gas_run, etc.) in analysis',
+        description: 'Include system files (CommonJS, __mcp_exec, etc.) in analysis',
         default: false
       },
       ...SchemaFragments.workingDir,
@@ -444,7 +444,7 @@ export class TreeTool extends BaseTool {
       throw GASErrorHandler.handleApiError(error, {
         operation: 'project tree visualization',
         scriptId: params.scriptId,
-        tool: 'gas_tree'
+        tool: 'tree'
       });
     }
   }

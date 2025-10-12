@@ -102,7 +102,7 @@ async function executeAtomicAuthFlow(
 
 /**
  * Cache deployment URLs for common script operations after successful authentication
- * This reduces the need for deployment lookups in gas_run
+ * This reduces the need for deployment lookups in exec
  */
 async function cacheDeploymentUrlsForSession(
   authStateManager: AuthStateManager | SessionAuthManager, 
@@ -120,7 +120,7 @@ async function cacheDeploymentUrlsForSession(
     const gasClient = new GASClient();
     
     // Note: We can't easily enumerate all script IDs without a projects list API
-    // So for now, we'll implement caching on-demand in gas_run when a script is first used
+    // So for now, we'll implement caching on-demand in exec when a script is first used
     // This function is prepared for future enhancements where we might cache known script IDs
     
     console.error('Deployment URL caching prepared for on-demand use');
@@ -666,7 +666,7 @@ export class AuthTool extends BaseTool {
         '1. auth({mode: "status"}) - Check current authentication',
         '2. If not authenticated: auth({mode: "start"}) - Start OAuth flow',
         '3. User completes OAuth in browser',
-        '4. Proceed with other gas_* tools which will use stored authentication'
+        '4. Proceed with other * tools which will use stored authentication'
       ],
       errorHandling: {
         'not_authenticated': 'Call auth with mode="start" to begin OAuth flow',
@@ -675,7 +675,7 @@ export class AuthTool extends BaseTool {
       },
       dependencies: {
         before: 'No dependencies - this is the entry point for authentication',
-        after: 'All other gas_* tools require successful authentication'
+        after: 'All other * tools require successful authentication'
       }
     }
   };

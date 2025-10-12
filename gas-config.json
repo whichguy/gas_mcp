@@ -566,6 +566,11 @@
       "scriptId": "1736hj-iGlj-KWIKeR8aB55X9J8kYGdAACQLeTYhd-dIXZTe05mT80VEi",
       "name": "real-git-sync-test-17602210414",
       "description": "Created: 10/11/2025"
+    },
+    "test-project-consolidated-suit": {
+      "scriptId": "1QaG9FFTm_QQWoeBpXTYdyWm-cxV4VyD1HpxzEY_apQnHCh0qyFHSG0fI",
+      "name": "test-project-consolidated-suit",
+      "description": "Created: 10/11/2025"
     }
   },
   "localRoot": {
@@ -575,7 +580,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-11T22:18:49.012Z"
+    "lastModified": "2025-10-12T00:38:33.593Z"
   },
   "debug": true,
   "currentProject": {

@@ -70,9 +70,9 @@ export class ReorderTool extends BaseTool {
 
     // Enforce critical file ordering:
     // Position 0: CommonJS (always first)
-    // Position 1: __mcp_gas_run (always second, right after CommonJS)
+    // Position 1: __mcp_exec (always second, right after CommonJS)
     const commonJsIndex = reorderedFiles.findIndex((f: any) => f.name === 'CommonJS');
-    const mcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === '__mcp_gas_run');
+    const mcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === '__mcp_exec');
 
     // Move CommonJS to position 0 if not already there
     if (commonJsIndex !== -1 && commonJsIndex !== 0) {
@@ -80,8 +80,8 @@ export class ReorderTool extends BaseTool {
       reorderedFiles.unshift(commonJsFile);
     }
 
-    // Move __mcp_gas_run to position 1 if not already there (right after CommonJS)
-    const updatedMcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === '__mcp_gas_run');
+    // Move __mcp_exec to position 1 if not already there (right after CommonJS)
+    const updatedMcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === '__mcp_exec');
     if (updatedMcpRunIndex !== -1 && updatedMcpRunIndex !== 1) {
       const [mcpRunFile] = reorderedFiles.splice(updatedMcpRunIndex, 1);
       reorderedFiles.splice(1, 0, mcpRunFile);
@@ -97,7 +97,7 @@ export class ReorderTool extends BaseTool {
       oldPosition: currentIndex,
       newPosition,
       totalFiles: files.length,
-      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. CommonJS enforced at position 0, __mcp_gas_run at position 1.`
+      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. CommonJS enforced at position 0, __mcp_exec at position 1.`
     };
   }
 }

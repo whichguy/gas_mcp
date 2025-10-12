@@ -108,7 +108,7 @@ async function generateDeploymentArtifacts(environment, version) {
     configFile: `config/${environment}-config.json`,
     templates: [
       'src/CommonJS.js',
-      'src/__mcp_gas_run.js',
+      'src/__mcp_exec.js',
       'src/appsscript.json',
       'src/templates/error-handler.gs'
     ]
@@ -188,7 +188,7 @@ async function validateProductionBuild() {
   const requiredFiles = [
     'dist/src/index.js',
     'dist/src/CommonJS.js',
-    'dist/src/__mcp_gas_run.js',
+    'dist/src/__mcp_exec.js',
     'dist/src/appsscript.json',
     'dist/src/templates/error-handler.gs',
     'dist/artifacts/deployment-info.json'

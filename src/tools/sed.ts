@@ -1,7 +1,7 @@
 /**
  * @fileoverview sed-inspired find/replace tools for Google Apps Script projects
  * 
- * Implements gas_sed and gas_raw_sed tools that provide powerful find/replace operations
+ * Implements sed and raw_sed tools that provide powerful find/replace operations
  * using regular expressions with capture groups. Leverages existing ripgrep infrastructure
  * for maximum code reuse and efficiency.
  * 
@@ -54,7 +54,7 @@ interface ReplacementOperation {
  * 
  * @example
  * Basic find/replace:
- * gas_sed({
+ * sed({
  *   scriptId: "1abc2def...",
  *   pattern: "oldFunction",
  *   replacement: "newFunction"
@@ -62,7 +62,7 @@ interface ReplacementOperation {
  * 
  * @example
  * Regex with capture groups:
- * gas_sed({
+ * sed({
  *   scriptId: "1abc2def...",
  *   pattern: "function\\s+(\\w+)\\s*\\(",
  *   replacement: "async function $1(",
@@ -71,7 +71,7 @@ interface ReplacementOperation {
  * 
  * @example
  * Multiple patterns:
- * gas_sed({
+ * sed({
  *   scriptId: "1abc2def...",
  *   patterns: ["console\\.log", "Logger\\.log"],
  *   replacement: "debug.log"
@@ -79,7 +79,7 @@ interface ReplacementOperation {
  */
 export class SedTool extends BaseTool {
   public name = 'sed';
-  public description = '🔧 RECOMMENDED: sed-style find/replace operations with automatic CommonJS processing. Supports regex patterns with capture groups ($1, $2), multi-pattern operations, and file filtering. Processes clean user code (same content as gas_cat shows).';
+  public description = '🔧 RECOMMENDED: sed-style find/replace operations with automatic CommonJS processing. Supports regex patterns with capture groups ($1, $2), multi-pattern operations, and file filtering. Processes clean user code (same content as cat shows).';
 
   public inputSchema = {
     type: 'object',
@@ -253,7 +253,7 @@ export class SedTool extends BaseTool {
       throw GASErrorHandler.handleApiError(error, {
         operation: 'sed find/replace operation',
         scriptId: params.scriptId,
-        tool: 'gas_sed'
+        tool: 'sed'
       });
     }
   }
@@ -302,7 +302,7 @@ export class SedTool extends BaseTool {
  * 
  * @example
  * Process system files:
- * gas_raw_sed({
+ * raw_sed({
  *   scriptId: "1abc2def...",
  *   pattern: "_main\\\\s*\\\\(",
  *   replacement: "_mainFunction(",
@@ -311,7 +311,7 @@ export class SedTool extends BaseTool {
  */
 export class RawSedTool extends BaseTool {
   public name = 'raw_sed';
-  public description = '🔧 ADVANCED: sed-style find/replace on raw file content including CommonJS wrappers and system code. Operates on complete file content (same as gas_raw_cat shows). Use for system-level modifications.';
+  public description = '🔧 ADVANCED: sed-style find/replace on raw file content including CommonJS wrappers and system code. Operates on complete file content (same as raw_cat shows). Use for system-level modifications.';
 
   public inputSchema = {
     type: 'object',
@@ -350,7 +350,7 @@ export class RawSedTool extends BaseTool {
         description: 'File pattern to filter operations on raw content',
         type: 'string',
         default: '',
-        examples: ['*', '*.gs', 'CommonJS', '__mcp_gas_run']
+        examples: ['*', '*.gs', 'CommonJS', '__mcp_exec']
       },
       ...SchemaFragments.includeFileTypes,
       ...SchemaFragments.excludeFiles,
@@ -483,7 +483,7 @@ export class RawSedTool extends BaseTool {
       throw GASErrorHandler.handleApiError(error, {
         operation: 'raw sed find/replace operation',
         scriptId: params.scriptId,
-        tool: 'gas_raw_sed'
+        tool: 'raw_sed'
       });
     }
   }

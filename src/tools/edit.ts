@@ -38,7 +38,7 @@ interface EditResult {
 /**
  * Token-efficient file editing with exact string matching
  *
- * Provides ~83% token savings vs gas_write by having LLM output only changed text
+ * Provides ~83% token savings vs write by having LLM output only changed text
  * instead of entire file content. Uses client-side orchestration of cat + write.
  */
 export class EditTool extends BaseTool {
@@ -99,7 +99,7 @@ export class EditTool extends BaseTool {
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal token-efficient editing'}
     },
     llmHints: {
-      preferOver: {gas_write: 'small changes→95%+ save (output only changed)', gas_sed: 'exact string vs regex (reliable)', gas_cat_then_write: 'never read+write back→edit for efficiency'},
+      preferOver: {write: 'small changes→95%+ save (output only changed)', sed: 'exact string vs regex (reliable)', cat_then_write: 'never read+write back→edit for efficiency'},
       idealUseCases: ['Config values (debug flags|ports|URLs)', 'Function/variable names', 'Import/require statements', 'Typos|small bugs', 'Multi-line same file (max 20 ops)'],
       avoidWhen: ['new files→write | full refactor→write | multi-file patterns→sed | fuzzy match needed→aider'],
       responseOptimization: 'Default minimal (~10tok) | dryRun:true→full diff'

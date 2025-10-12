@@ -40,11 +40,11 @@ interface AiderResult {
  * Token-efficient file editing using exact string matching on raw file content (includes CommonJS wrappers)
  *
  * Like RawEditTool but uses fuzzy matching to find similar (but not exact) text in raw content.
- * Use for editing system files or module infrastructure. Provides 95%+ token savings vs gas_raw_write.
+ * Use for editing system files or module infrastructure. Provides 95%+ token savings vs raw_write.
  */
 export class RawAiderTool extends BaseTool {
   public name = 'raw_aider';
-  public description = 'Token-efficient file editing using fuzzy string matching on raw file content (includes CommonJS wrappers). Use for editing system files or module infrastructure. Provides 95%+ token savings vs gas_raw_write.';
+  public description = 'Token-efficient file editing using fuzzy string matching on raw file content (includes CommonJS wrappers). Use for editing system files or module infrastructure. Provides 95%+ token savings vs raw_write.';
 
   public inputSchema = {
     type: 'object',
@@ -103,7 +103,7 @@ export class RawAiderTool extends BaseTool {
       whenNotToUse: ['user code→aider (auto unwrap) | exact raw→raw_edit (faster) | new system→raw_write | app dev→aider'],
       bestPractices: ['dryRun first | default 0.8→adjust | specific searchText | context for match | single-file | multi-file→sed'],
       tokenSavings: '95%+ vs write (~10tok: {success,editsApplied,filePath})',
-      examples: [{scenario: 'CommonJS wrapper spacing', code: 'path:"abc123.../CommonJS",edits:[{searchText:"function _main(module,exports,require)",replaceText:"function _mainWrapper(module, exports, require)"}]'}, {scenario: 'system permissive 0.7', code: 'path:"abc123.../__mcp_gas_run",edits:[{searchText:"function execute",replaceText:"function executeWithLogging",similarityThreshold:0.7}]'}, {scenario: 'preview raw (recommended)', code: 'path:"abc123.../CommonJS",edits:[{searchText:"__defineModule__",replaceText:"__defineModuleEnhanced__"}],dryRun:true'}],
+      examples: [{scenario: 'CommonJS wrapper spacing', code: 'path:"abc123.../CommonJS",edits:[{searchText:"function _main(module,exports,require)",replaceText:"function _mainWrapper(module, exports, require)"}]'}, {scenario: 'system permissive 0.7', code: 'path:"abc123.../__mcp_exec",edits:[{searchText:"function execute",replaceText:"function executeWithLogging",similarityThreshold:0.7}]'}, {scenario: 'preview raw (recommended)', code: 'path:"abc123.../CommonJS",edits:[{searchText:"__defineModule__",replaceText:"__defineModuleEnhanced__"}],dryRun:true'}],
       vsGasAider: 'aider: unwrap for user code | raw_aider: preserve wrappers for system',
       vsGasRawEdit: 'raw_edit: exact char match | raw_aider: fuzzy for variations',
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal raw fuzzy'}
@@ -111,7 +111,7 @@ export class RawAiderTool extends BaseTool {
 
     llmHints: {
       decisionTree: {'Exact text known?': {yes: 'edit (fast)', no: 'aider (fuzzy)'}, 'Text has formatting variations?': {yes: 'aider (handles whitespace/format)', no: 'edit (exact ok)'}, 'Need regex patterns?': {yes: 'sed (pattern replace)', no: 'aider|edit (string)'}, 'Creating new file?': {yes: 'write (create)', no: 'aider|edit'}},
-      preferOver: {gas_edit: 'whitespace/format var | uncertain→fuzzy (80%) vs exact (100%)', gas_write: 'small changes→95%+ save (~10tok vs ~4.5k)', gas_sed: 'flexible no-regex→Levenshtein vs regex'},
+      preferOver: {edit: 'whitespace/format var | uncertain→fuzzy (80%) vs exact (100%)', write: 'small changes→95%+ save (~10tok vs ~4.5k)', sed: 'flexible no-regex→Levenshtein vs regex'},
       idealUseCases: ['reformatted (whitespace/indent)', 'uncertain content→approx known', 'fn calls: spacing var', 'copied: formatted out (pretty/minified)', 'inconsistent: CRLF/LF | tabs/spaces', 'CommonJS user code (auto unwrap/wrap)'],
       avoidWhen: ['exact→edit (better perf) | regex→sed | new files→write | multi-occur diff→edit+index | system files→raw_aider'],
       similarityThresholdGuide: {'0.95-1.0': 'strict: whitespace only', '0.85-0.95': 'strict: minor (const x=1 vs x = 1)', '0.8-0.85': 'default: format var (indent/line endings)', '0.7-0.8': 'permissive: moderate (getUserData vs get_user_data)', '0.6-0.7': 'very permissive: significant diff (may false match)', 'below 0.6': 'too loose: high risk'},

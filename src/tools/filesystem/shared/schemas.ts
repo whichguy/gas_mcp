@@ -110,14 +110,14 @@ export const CONTENT_SCHEMA = {
     'const config = require("Config");\\nexports.apiKey = config.getKey();'
   ],
   llmHints: {
-    gas_write: 'Use gas_write when: (1) Creating new files from scratch, (2) Making large changes affecting multiple sections, (3) Refactoring entire file structure',
-    gas_edit: 'Use gas_edit for small exact-text changes (outputs ~10 tokens vs ~4,500 tokens for gas_write) when you know the exact text to replace',
-    gas_aider: 'Use gas_aider for small changes with formatting variations (fuzzy matching + 95%+ token savings) when text might have whitespace/formatting differences',
-    tokenEfficiency: '⚠️ IMPORTANT: For small changes to existing files, consider using gas_edit or gas_aider instead for 95%+ token savings',
+    write: 'Use write when: (1) Creating new files from scratch, (2) Making large changes affecting multiple sections, (3) Refactoring entire file structure',
+    edit: 'Use edit for small exact-text changes (outputs ~10 tokens vs ~4,500 tokens for write) when you know the exact text to replace',
+    aider: 'Use aider for small changes with formatting variations (fuzzy matching + 95%+ token savings) when text might have whitespace/formatting differences',
+    tokenEfficiency: '⚠️ IMPORTANT: For small changes to existing files, consider using edit or aider instead for 95%+ token savings',
     decisionTree: {
-      'Creating new file?': 'Use gas_write (file creation)',
-      'Small change to existing file?': 'Use gas_edit (exact match) or gas_aider (fuzzy match) for 95%+ token savings',
-      'Large changes or refactoring?': 'Use gas_write (entire file replacement)'
+      'Creating new file?': 'Use write (file creation)',
+      'Small change to existing file?': 'Use edit (exact match) or aider (fuzzy match) for 95%+ token savings',
+      'Large changes or refactoring?': 'Use write (entire file replacement)'
     }
   }
 } as const;

@@ -18,7 +18,7 @@ import { ensureManifestEntryPoints } from '../utilities/manifest-config.js';
  * Sets up execution infrastructure for a Google Apps Script project
  *
  * This includes:
- * 1. Execution shim (__mcp_gas_run.js) - Handles code execution and logging
+ * 1. Execution shim (__mcp_exec.js) - Handles code execution and logging
  * 2. HTML templates - Success and error response pages for web UI
  * 3. Manifest configuration - Ensures proper web app entry points
  * 4. HEAD deployment - Creates/updates deployment for immediate execution
@@ -56,9 +56,9 @@ export async function setupInfrastructure(
       15000, // 15-second timeout
       'Get project content'
     );
-    shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run');
-    const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run_success');
-    const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run_error');
+    shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_exec');
+    const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_exec_success');
+    const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_exec_error');
     htmlTemplatesExist = hasSuccessHtml && hasErrorHtml;
     console.error(`Shim exists: ${shimExists}, HTML templates exist: ${htmlTemplatesExist}`);
   } catch (error: any) {
@@ -80,14 +80,14 @@ export async function setupInfrastructure(
       mcpVersion: '1.0.0'
     });
 
-    const shimFile = shimCode.files.find((file: GASFile) => file.name === '__mcp_gas_run');
+    const shimFile = shimCode.files.find((file: GASFile) => file.name === '__mcp_exec');
     if (!shimFile?.source) {
       throw new Error('Failed to generate execution shim code');
     }
 
     try {
       await withTimeout(
-        gasClient.updateFile(scriptId, '__mcp_gas_run', shimFile.source, 0, accessToken),
+        gasClient.updateFile(scriptId, '__mcp_exec', shimFile.source, 0, accessToken),
         20000, // 20-second timeout for file upload
         'Update shim file'
       );
@@ -98,7 +98,7 @@ export async function setupInfrastructure(
       try {
         const verification = await verifyInfrastructureFile(
           scriptId,
-          '__mcp_gas_run',
+          '__mcp_exec',
           sessionAuthManager,
           accessToken
         );
@@ -130,7 +130,7 @@ export async function setupInfrastructure(
     try {
       const verification = await verifyInfrastructureFile(
         scriptId,
-        '__mcp_gas_run',
+        '__mcp_exec',
         sessionAuthManager,
         accessToken
       );
@@ -158,7 +158,7 @@ export async function setupInfrastructure(
     try {
       const successHtml = getSuccessHtmlTemplate();
       await withTimeout(
-        gasClient.updateFile(scriptId, '__mcp_gas_run_success', successHtml, 0, accessToken, 'HTML'),
+        gasClient.updateFile(scriptId, '__mcp_exec_success', successHtml, 0, accessToken, 'HTML'),
         20000,
         'Update success HTML template'
       );
@@ -166,7 +166,7 @@ export async function setupInfrastructure(
 
       const errorHtml = getErrorHtmlTemplate();
       await withTimeout(
-        gasClient.updateFile(scriptId, '__mcp_gas_run_error', errorHtml, 0, accessToken, 'HTML'),
+        gasClient.updateFile(scriptId, '__mcp_exec_error', errorHtml, 0, accessToken, 'HTML'),
         20000,
         'Update error HTML template'
       );

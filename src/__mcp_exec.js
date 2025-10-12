@@ -20,12 +20,12 @@ function _main(module, exports, require) {
    * CONVENTION: Returns null if this is not a gas_run request,
    * allowing other doGet handlers to check the request.
    *
-   * Routes on URI path: /__mcp_gas_run or parameter: _mcp_run=true
+   * Routes on URI path: /__mcp_exec or parameter: _mcp_run=true
    */
   function doGetHandler(e) {
     // Check if this is a gas_run request using URI or parameter
     const isGasRunRequest = (e.parameter && e.parameter._mcp_run === 'true') ||
-                           (e.pathInfo && e.pathInfo === '/__mcp_gas_run');
+                           (e.pathInfo && e.pathInfo === '/__mcp_exec');
 
     if (!isGasRunRequest) {
       return null; // Not a gas_run request, let other handlers check
@@ -159,12 +159,12 @@ function _main(module, exports, require) {
    * CONVENTION: Returns null if this is not a gas_run request,
    * allowing other doPost handlers to check the request.
    *
-   * Routes on URI path: /__mcp_gas_run or parameter: _mcp_run=true
+   * Routes on URI path: /__mcp_exec or parameter: _mcp_run=true
    */
   function doPostHandler(e) {
     // Check if this is a gas_run request using URI or parameter
     const isGasRunRequest = (e.parameter && e.parameter._mcp_run === 'true') ||
-                           (e.pathInfo && e.pathInfo === '/__mcp_gas_run');
+                           (e.pathInfo && e.pathInfo === '/__mcp_exec');
 
     if (!isGasRunRequest) {
       return null; // Not a gas_run request, let other handlers check
@@ -395,7 +395,7 @@ function htmlAuthSuccessResponse(executionResult) {
 
   try {
     // Load HTML template
-    const template = HtmlService.createTemplateFromFile('__mcp_gas_run_success');
+    const template = HtmlService.createTemplateFromFile('__mcp_exec_success');
     template.projectName = projectName;
     template.deploymentUrl = deploymentUrl;
     template.scriptId = scriptId;
@@ -442,9 +442,9 @@ function htmlAuthSuccessResponse(executionResult) {
       '\n' +
       '    <p><strong>To enable the full IDE-style interface, deploy these files:</strong></p>\n' +
       '    <div class="info">\n' +
-      '      <code>__mcp_gas_run.js</code> (✓ deployed)<br>\n' +
-      '      <code>__mcp_gas_run_success.html</code> (❌ missing)<br>\n' +
-      '      <code>__mcp_gas_run_error.html</code> (❌ missing)\n' +
+      '      <code>__mcp_exec.js</code> (✓ deployed)<br>\n' +
+      '      <code>__mcp_exec_success.html</code> (❌ missing)<br>\n' +
+      '      <code>__mcp_exec_error.html</code> (❌ missing)\n' +
       '    </div>\n' +
       '\n' +
       '    <p><strong>How to deploy:</strong></p>\n' +
@@ -473,7 +473,7 @@ function htmlAuthSuccessResponse(executionResult) {
    * Universal invocation for google.script.run
    * Supports both:
    * - Raw JavaScript expressions: invoke('2 + 2')
-   * - Module paths: invoke('__mcp_gas_run.__gas_run', '2 + 2')
+   * - Module paths: invoke('__mcp_exec.__gas_run', '2 + 2')
    * @param {string} codeOrPath - JavaScript code or Module.function path
    * @param {...*} args - Arguments (for module path mode only)
    * @returns {*} Result (auto-parses ContentService responses)
@@ -496,7 +496,7 @@ function htmlAuthSuccessResponse(executionResult) {
           return {
             success: false,
             error: `Invalid module path: ${codeOrPath}. Expected format: 'moduleName.functionName'`,
-            example: 'invoke("__mcp_gas_run.__gas_run", "2 + 2")'
+            example: 'invoke("__mcp_exec.__gas_run", "2 + 2")'
           };
         }
         
@@ -551,7 +551,7 @@ function htmlAuthErrorResponse(errorData) {
 
   try {
     // Load HTML template
-    const template = HtmlService.createTemplateFromFile('__mcp_gas_run_error');
+    const template = HtmlService.createTemplateFromFile('__mcp_exec_error');
     template.projectName = projectName;
     template.scriptId = scriptId;
     template.errorMessage = errorData.error || 'Unknown error';
@@ -602,9 +602,9 @@ function htmlAuthErrorResponse(errorData) {
       '    <h3>⚠️ Additional Issue: Missing Template Files</h3>\n' +
       '    <p>The error page template is also missing. Deploy all required files:</p>\n' +
       '    <div class="info">\n' +
-      '      <code>__mcp_gas_run.js</code> (✓ deployed)<br>\n' +
-      '      <code>__mcp_gas_run_success.html</code> (❌ missing)<br>\n' +
-      '      <code>__mcp_gas_run_error.html</code> (❌ missing)\n' +
+      '      <code>__mcp_exec.js</code> (✓ deployed)<br>\n' +
+      '      <code>__mcp_exec_success.html</code> (❌ missing)<br>\n' +
+      '      <code>__mcp_exec_error.html</code> (❌ missing)\n' +
       '    </div>\n' +
       '    <p><strong>How to deploy:</strong></p>\n' +
       '    <ol>\n' +
@@ -653,7 +653,7 @@ function htmlAuthErrorResponse(errorData) {
   ///////// END USER CODE /////////
 }
 
-__defineModule__(_main, '__mcp_gas_run', { loadNow: true });
+__defineModule__(_main, '__mcp_exec', { loadNow: true });
 
 /**
  * Hoisted bridge function for google.script.run compatibility
@@ -661,5 +661,5 @@ __defineModule__(_main, '__mcp_gas_run', { loadNow: true });
  * @customfunction
  */
 function invoke(modulePath, ...args) {
-  return require('__mcp_gas_run').invoke(modulePath, ...args);
+  return require('__mcp_exec').invoke(modulePath, ...args);
 }

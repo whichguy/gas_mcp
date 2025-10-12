@@ -36,7 +36,7 @@ interface FindOptions {
 }
 
 /**
- * gas_find - Find files with virtual name translation (RECOMMENDED)
+ * find - Find files with virtual name translation (RECOMMENDED)
  * Shows user-friendly names like .gitignore, .git instead of .gitignore.gs, .git.gs
  */
 export class FindTool extends BaseTool {
@@ -103,11 +103,11 @@ export class FindTool extends BaseTool {
     required: ['scriptId'],
     llmGuidance: {
       whenToUse: 'finding files→user-friendly virtual names',
-      workflow: 'shell find: gas_find({scriptId,name:"*.test.gs"})',
-      alternatives: 'gas_raw_find→actual GAS names',
+      workflow: 'shell find: find({scriptId,name:"*.test.gs"})',
+      alternatives: 'raw_find→actual GAS names',
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal→shows virtual names'},
       limitations: {flatFileStructure: 'no real dirs→filename prefixes', wildcardSupport: '*,?,[abc]→match filenames not paths', virtualFileNames: 'dotfiles virtual (.gitignore) not GAS (.gitignore.gs)'},
-      examples: ['test files: gas_find({scriptId,name:"*test*.gs"})', 'config: gas_find({scriptId,name:".git*"})', 'large: gas_find({scriptId,size:"+10k"})', 'details: gas_find({scriptId,ls:true})']
+      examples: ['test files: find({scriptId,name:"*test*.gs"})', 'config: find({scriptId,name:".git*"})', 'large: find({scriptId,size:"+10k"})', 'details: find({scriptId,ls:true})']
     }
   };
 
@@ -297,7 +297,7 @@ export class FindTool extends BaseTool {
 }
 
 /**
- * gas_raw_find - Find files showing actual GAS names (ADVANCED)
+ * raw_find - Find files showing actual GAS names (ADVANCED)
  * Shows actual GAS file names like .git.gs, .gitignore.gs
  */
 export class RawFindTool extends BaseTool {
@@ -364,9 +364,9 @@ export class RawFindTool extends BaseTool {
     required: ['scriptId'],
     llmGuidance: {
       whenToUse: 'actual GAS file names (no translation)',
-      workflow: 'shell find: gas_raw_find({scriptId,name:".git*"})',
-      alternatives: 'gas_find→user-friendly virtual names',
-      examples: ['dotfiles: gas_raw_find({scriptId,name:".git*"})', 'actual name: gas_raw_find({scriptId,name:".gitignore.gs"})']
+      workflow: 'shell find: raw_find({scriptId,name:".git*"})',
+      alternatives: 'find→user-friendly virtual names',
+      examples: ['dotfiles: raw_find({scriptId,name:".git*"})', 'actual name: raw_find({scriptId,name:".gitignore.gs"})']
     }
   };
 

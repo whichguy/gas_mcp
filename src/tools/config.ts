@@ -121,7 +121,7 @@ export class ConfigTool extends BaseTool {
           recommendedActions: {
             primary: 'Create .git/config.gs breadcrumb manually',
             gasCommands: [
-              `gas_write({scriptId: '${scriptId}', fileName: '.git/config.gs', content: '[remote "origin"]\\n\\turl = https://github.com/owner/repo.git\\n[branch "main"]'})`
+              `write({scriptId: '${scriptId}', fileName: '.git/config.gs', content: '[remote "origin"]\\n\\turl = https://github.com/owner/repo.git\\n[branch "main"]'})`
             ],
             description: 'Manually create .git/config.gs breadcrumb in GAS first, then create local git repo'
           }
@@ -259,7 +259,7 @@ export class ConfigTool extends BaseTool {
       if (!config) {
         throw new ValidationError('git-link', scriptId,
           'Project must have .git/config.gs file.\n' +
-          'Manually create breadcrumb: gas_write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo.git"})'
+          'Manually create breadcrumb: write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo.git"})'
         );
       }
 

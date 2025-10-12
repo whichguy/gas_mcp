@@ -105,7 +105,7 @@ export class ContextTool extends BaseTool {
       throw GASErrorHandler.handleApiError(error, {
         operation: 'context-aware search',
         scriptId: params.scriptId,
-        tool: 'gas_context'
+        tool: 'context'
       });
     }
   }

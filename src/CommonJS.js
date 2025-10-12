@@ -693,7 +693,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
           if (fullPath &&
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
-              (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
+              (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
             Logger.log(`[OK] Module detected: "${fullPath}"`);
             return fullPath;
@@ -707,7 +707,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
           if (fullPath &&
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
-              (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
+              (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
             Logger.log(`[OK] Module detected: "${fullPath}"`);
             return fullPath;
@@ -850,7 +850,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
           if (fullPath &&
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
-              (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
+              (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
             return modules[fullPath] || __createModule__(fullPath);
           }
@@ -866,7 +866,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
           if (fullPath &&
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
-              (fullPath === '__mcp_gas_run' || !fullPath.startsWith('__')) &&
+              (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
               fullPath !== 'CommonJS') {
             return modules[fullPath] || __createModule__(fullPath);
           }
