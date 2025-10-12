@@ -36,7 +36,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     await context.cleanup();
   });
 
-  describe('gas_write: Valid Arguments', function() {
+  describe('write: Valid Arguments', function() {
     it('should accept minimal required arguments', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -145,7 +145,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     });
   });
 
-  describe('gas_write: Invalid Arguments', function() {
+  describe('write: Invalid Arguments', function() {
     it('should reject missing required scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,
@@ -252,7 +252,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     });
   });
 
-  describe('gas_cat: Valid Arguments', function() {
+  describe('cat: Valid Arguments', function() {
     beforeEach(async function() {
       // Create a test file to read
       await context.client.callAndParse('write', {
@@ -308,7 +308,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     });
   });
 
-  describe('gas_cat: Invalid Arguments', function() {
+  describe('cat: Invalid Arguments', function() {
     it('should reject missing scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,
@@ -357,7 +357,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     });
   });
 
-  describe('gas_ls: Valid Arguments', function() {
+  describe('ls: Valid Arguments', function() {
     it('should accept scriptId only', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -413,7 +413,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     });
   });
 
-  describe('gas_ls: Invalid Arguments', function() {
+  describe('ls: Invalid Arguments', function() {
     it('should reject missing scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,
@@ -451,7 +451,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     });
   });
 
-  describe('gas_rm: Valid Arguments', function() {
+  describe('rm: Valid Arguments', function() {
     beforeEach(async function() {
       // Create a test file to delete
       await context.client.callAndParse('write', {
@@ -476,7 +476,7 @@ describe('MCP Tool: File Operations - Argument Validation', function() {
     });
   });
 
-  describe('gas_rm: Invalid Arguments', function() {
+  describe('rm: Invalid Arguments', function() {
     it('should reject missing scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,

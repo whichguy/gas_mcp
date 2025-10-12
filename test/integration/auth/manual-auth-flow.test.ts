@@ -9,7 +9,7 @@
  * 2. Run: auth({mode: "start"})
  * 3. Complete OAuth flow in browser
  * 4. Run: auth({mode: "status"}) - verify authenticated
- * 5. Run: gas_ls({scriptId: "..."}) - verify API call works
+ * 5. Run: ls({scriptId: "..."}) - verify API call works
  * 6. Check: ls -la .auth/tokens/ - verify token file created with 600 permissions
  * 7. Check: cat .auth/tokens/*.json | jq - verify token structure
  *

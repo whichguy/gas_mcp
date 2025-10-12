@@ -36,9 +36,7 @@ describe('MCP Server Basic Connection Tests', () => {
       expect(toolNames).to.include('rm');
       expect(toolNames).to.include('mv');
       expect(toolNames).to.include('cp');
-      expect(toolNames).to.include('gas_mkdir');
-      expect(toolNames).to.include('gas_info');
-      expect(toolNames).to.include('gas_reorder');
+      expect(toolNames).to.include('reorder');
     });
 
     it('should provide proper tool schemas', async () => {

@@ -326,7 +326,7 @@ export class GASTestHelper {
    * List all projects
    */
   async listProjects(): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__ls', { path: '' });
+    return await this.client.callAndParse('ls', { path: '' });
   }
 
   /**
@@ -341,7 +341,7 @@ export class GASTestHelper {
    * List files in a project
    */
   async listFiles(projectId: string): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__ls', { scriptId: projectId });
+    return await this.client.callAndParse('ls', { scriptId: projectId });
   }
 
   /**
@@ -350,7 +350,7 @@ export class GASTestHelper {
   async writeTestFile(projectId: string, filename: string, content?: string): Promise<any> {
     const fileContent = content || `// Test file created at ${new Date().toISOString()}\nfunction testFunction() {\n  console.log('Hello from ${filename}');\n}`;
 
-    return await this.client.callAndParse('mcp__gas__write', {
+    return await this.client.callAndParse('write', {
       scriptId: projectId,
       path: filename,
       content: fileContent
@@ -361,24 +361,24 @@ export class GASTestHelper {
    * Read a file
    */
   async readFile(projectId: string, filename: string): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__cat', {
+    return await this.client.callAndParse('cat', {
       scriptId: projectId,
       path: filename
     });
   }
 
   /**
-   * Get project info
+   * Get project info (using ls for file listing)
    */
   async getProjectInfo(projectId: string): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__info', { scriptId: projectId });
+    return await this.client.callAndParse('ls', { scriptId: projectId });
   }
 
   /**
    * Delete a file
    */
   async deleteFile(projectId: string, filename: string): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__rm', {
+    return await this.client.callAndParse('rm', {
       scriptId: projectId,
       path: filename
     });
@@ -388,7 +388,7 @@ export class GASTestHelper {
    * Copy a file
    */
   async copyFile(fromProjectId: string, fromFilename: string, toProjectId: string, toFilename: string): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__cp', {
+    return await this.client.callAndParse('cp', {
       scriptId: fromProjectId,
       from: fromFilename,
       to: toFilename
@@ -399,7 +399,7 @@ export class GASTestHelper {
    * Move/rename a file
    */
   async moveFile(fromProjectId: string, fromFilename: string, toProjectId: string, toFilename: string): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__mv', {
+    return await this.client.callAndParse('mv', {
       scriptId: fromProjectId,
       from: fromFilename,
       to: toFilename
@@ -410,7 +410,7 @@ export class GASTestHelper {
    * Run a JavaScript statement in a project
    */
   async runFunction(projectId: string, js_statement: string): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__run', {
+    return await this.client.callAndParse('exec', {
       scriptId: projectId,
       js_statement: js_statement
     });
@@ -420,7 +420,7 @@ export class GASTestHelper {
    * Reorder files
    */
   async reorderFiles(projectId: string, fileOrder: string[]): Promise<any> {
-    return await this.client.callAndParse('mcp__gas__reorder', {
+    return await this.client.callAndParse('reorder', {
       scriptId: projectId,
       fileOrder
     });

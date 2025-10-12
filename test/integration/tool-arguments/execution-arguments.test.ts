@@ -426,7 +426,7 @@ describe('MCP Tool: Execution - Argument Validation', function() {
     });
   });
 
-  describe('gas_exec: Valid Arguments', function() {
+  describe('exec: Valid Arguments', function() {
     it('should accept minimal arguments (same as run)', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -459,7 +459,7 @@ describe('MCP Tool: Execution - Argument Validation', function() {
     });
   });
 
-  describe('gas_exec: Invalid Arguments', function() {
+  describe('exec: Invalid Arguments', function() {
     it('should reject same invalid arguments as run', async function() {
       await ArgumentTestHelper.expectError(
         context.client,

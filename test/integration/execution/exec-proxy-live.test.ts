@@ -48,13 +48,13 @@ describe('MCP exec_proxy Live Test - globalThis Pattern', () => {
         // Test the tools are available
         const tools = await client.listTools();
         const gasRunTool = tools.find(tool => tool.name === 'exec');
-        const gasProxySetupTool = tools.find(tool => tool.name === 'gas_proxy_setup');
+        const gasProxySetupTool = tools.find(tool => tool.name === 'proxy_setup');
         
         expect(gasRunTool).to.exist;
         console.log('✅ exec tool available');
         
         expect(gasProxySetupTool).to.exist;
-        console.log('✅ gas_proxy_setup tool available');
+        console.log('✅ proxy_setup tool available');
         
         // Test error handling without auth
         try {
@@ -101,7 +101,7 @@ describe('MCP exec_proxy Live Test - globalThis Pattern', () => {
       }
 
       try {
-        const proxySetupResult = await client.callAndParse('gas_proxy_setup', {
+        const proxySetupResult = await client.callAndParse('proxy_setup', {
           scriptId: testProjectId,
           deployAsWebApp: true,
           overwrite: true
@@ -117,7 +117,7 @@ describe('MCP exec_proxy Live Test - globalThis Pattern', () => {
         }
       } catch (setupError: any) {
         console.log('⚠️  Proxy setup failed:', setupError.message);
-        console.log('✅ gas_proxy_setup infrastructure test completed');
+        console.log('✅ proxy_setup infrastructure test completed');
       }
 
       // STEP 4: ADD TEST FUNCTIONS WITH KNOWN RESULTS
@@ -273,11 +273,11 @@ function testProduct() {
     });
 
     it('should provide usage examples and patterns', () => {
-      console.log('\n📚 exec and gas_proxy_setup Usage Examples:');
+      console.log('\n📚 exec and proxy_setup Usage Examples:');
       console.log('');
       console.log('```javascript');
       console.log('// 1. Set up proxy first');
-      console.log('gas_proxy_setup({');
+      console.log('proxy_setup({');
       console.log('  scriptId: "your-project-id",');
       console.log('  deployAsWebApp: true,');
       console.log('  overwrite: true');
@@ -305,7 +305,7 @@ function testProduct() {
       console.log('```');
       console.log('');
       console.log('Key Features:');
-      console.log('• gas_proxy_setup: Creates doGet() proxy infrastructure');
+      console.log('• proxy_setup: Creates doGet() proxy infrastructure');
       console.log('• exec: Executes functions with auto-redeploy');
       console.log('• Auto-redeploy when files change');
       console.log('• Web App deployment for better doGet() support');

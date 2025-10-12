@@ -14,7 +14,6 @@ describe('AuthTool', () => {
   beforeEach(() => {
     // Set test mode to prevent OAuth server conflicts
     process.env.MCP_TEST_MODE = 'true';
-    process.env.GAS_MOCK_AUTH = 'true';
 
     sessionAuthManager = new SessionAuthManager();
     authTool = new AuthTool(sessionAuthManager);
@@ -25,7 +24,6 @@ describe('AuthTool', () => {
   afterEach(() => {
     restore();
     delete process.env.MCP_TEST_MODE;
-    delete process.env.GAS_MOCK_AUTH;
   });
 
   describe('tool properties', () => {

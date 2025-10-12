@@ -391,7 +391,7 @@ function getAPIData(action) {
     console.log(`🏗️  Creating project from template: ${template.name}`);
 
     // Create the project
-    const projectId = await context.client.callAndParse('gas_project_create', {
+    const projectId = await context.client.callAndParse('project_create', {
       title: template.title
     });
 

@@ -47,8 +47,6 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       const toolNames = tools.map(tool => tool.name);
       const expectedTools = [
         'auth', 'ls', 'cat', 'write',
-        'rm', 'mv', 'cp', 'gas_mkdir',
-        'gas_info', 'gas_reorder', 'exec',
         'deploy', 'project_create', 'project_init'
       ];
       

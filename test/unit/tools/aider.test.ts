@@ -165,25 +165,25 @@ describe('AiderTool', () => {
       const schema = aiderTool.inputSchema as any;
       const preferOver = schema.llmHints.preferOver;
 
-      expect(preferOver.gas_edit).to.exist;
-      expect(preferOver.gas_edit).to.include('whitespace');
-      expect(preferOver.gas_edit).to.include('fuzzy');
+      expect(preferOver.edit).to.exist;
+      expect(preferOver.edit).to.include('whitespace');
+      expect(preferOver.edit).to.include('fuzzy');
     });
 
     it('should explain when to prefer aider over sed', () => {
       const schema = aiderTool.inputSchema as any;
       const preferOver = schema.llmHints.preferOver;
 
-      expect(preferOver.gas_sed).to.exist;
-      expect(preferOver.gas_sed).to.include('Levenshtein');
+      expect(preferOver.sed).to.exist;
+      expect(preferOver.sed).to.include('Levenshtein');
     });
 
     it('should explain when to prefer aider over write', () => {
       const schema = aiderTool.inputSchema as any;
       const preferOver = schema.llmHints.preferOver;
 
-      expect(preferOver.gas_write).to.exist;
-      expect(preferOver.gas_write).to.include('95%+');
+      expect(preferOver.write).to.exist;
+      expect(preferOver.write).to.include('95%+');
     });
   });
 

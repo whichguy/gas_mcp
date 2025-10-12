@@ -57,7 +57,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     await context.cleanup();
   });
 
-  describe('gas_grep: Valid Arguments', function() {
+  describe('grep: Valid Arguments', function() {
     it('should accept minimal required arguments', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -162,7 +162,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     });
   });
 
-  describe('gas_grep: Invalid Arguments', function() {
+  describe('grep: Invalid Arguments', function() {
     it('should reject missing scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,
@@ -239,7 +239,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     });
   });
 
-  describe('gas_ripgrep: Valid Arguments', function() {
+  describe('ripgrep: Valid Arguments', function() {
     it('should accept minimal arguments', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -346,7 +346,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     });
   });
 
-  describe('gas_ripgrep: Invalid Arguments', function() {
+  describe('ripgrep: Invalid Arguments', function() {
     it('should reject invalid sort value', async function() {
       await ArgumentTestHelper.expectError(
         context.client,
@@ -376,7 +376,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     });
   });
 
-  describe('gas_find: Valid Arguments', function() {
+  describe('find: Valid Arguments', function() {
     it('should accept scriptId only', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -445,7 +445,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     });
   });
 
-  describe('gas_find: Invalid Arguments', function() {
+  describe('find: Invalid Arguments', function() {
     it('should reject missing scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,
@@ -496,7 +496,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     });
   });
 
-  describe('gas_sed: Valid Arguments', function() {
+  describe('sed: Valid Arguments', function() {
     it('should accept minimal required arguments', async function() {
       const result = await ArgumentTestHelper.expectSuccess(
         context.client,
@@ -561,7 +561,7 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
     });
   });
 
-  describe('gas_sed: Invalid Arguments', function() {
+  describe('sed: Invalid Arguments', function() {
     it('should reject missing scriptId', async function() {
       await ArgumentTestHelper.expectError(
         context.client,

@@ -41,7 +41,7 @@ describe('Auth + List Projects Integration Test', () => {
       await auth.logout();
 
       try {
-        const unauthResult = await client.callTool('gas_project_list', {});
+        const unauthResult = await client.callTool('project_list', {});
         console.log('Response while unauthenticated:', JSON.stringify(unauthResult, null, 2));
 
         // Should either throw error or return auth instructions
@@ -133,7 +133,7 @@ describe('Auth + List Projects Integration Test', () => {
       console.log('\n📋 Step 3: Listing projects WITH authentication...');
       console.log('Expected: Should successfully list projects using cached token');
 
-      const projectListResult = await client.callTool('gas_project_list', {});
+      const projectListResult = await client.callTool('project_list', {});
 
       console.log('✅ Project list API call succeeded');
 
