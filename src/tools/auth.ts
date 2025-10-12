@@ -621,9 +621,9 @@ export class AuthTool extends BaseTool {
         description: 'Authentication operation mode. LLM WORKFLOW GUIDANCE: (1) ALWAYS call mode="status" FIRST to check if already authenticated. (2) Only use mode="start" if status shows not authenticated. (3) Use mode="logout" to clear authentication when switching accounts.',
         examples: ['start', 'status', 'logout'],
         llmHints: {
-          whenToUse: 'Call status first, then start if needed, logout only when changing accounts',
-          workflowStep: 'First step in any Google Apps Script operation sequence',
-          errorRecovery: 'If auth fails, check OAuth client configuration in Google Cloud Console'
+          workflow: 'status first → start if needed → logout for account switch',
+          firstStep: 'Required before any GAS operations',
+          errors: 'Check OAuth config in Google Cloud Console'
         }
       },
       openBrowser: {
@@ -631,9 +631,8 @@ export class AuthTool extends BaseTool {
         default: true,
         description: 'Automatically open browser for OAuth authentication. LLM GUIDANCE: Set to false in automated/headless environments or testing. Set to true for interactive user sessions.',
         llmHints: {
-          automation: 'Use false for automated scripts, CI/CD, or when browser not available',
-          interactive: 'Use true (default) for user-initiated authentication flows',
-          testing: 'Set to false during testing to prevent unwanted browser launches'
+          false: 'Automated/CI/CD/testing (no browser)',
+          true: 'Interactive user auth (default)'
         }
       },
       waitForCompletion: {
@@ -641,10 +640,9 @@ export class AuthTool extends BaseTool {
         default: true,
         description: 'Wait for OAuth flow to complete before returning. LLM CRITICAL: Default true waits until authentication completes. Set false to return immediately with auth URL (5-minute timeout).',
         llmHints: {
-          blocking: 'Default true: Tool waits until user completes OAuth flow in browser',
-          nonBlocking: 'Set false: Returns auth URL immediately, user completes auth separately',
-          timeout: 'Has 5-minute timeout when waitForCompletion=true to prevent infinite hanging',
-          recommendation: 'Use true (default) for most LLM operations to ensure session is ready'
+          true: 'Waits for OAuth completion (default, 5min timeout)',
+          false: 'Returns URL immediately (async completion)',
+          recommend: 'Use true for LLM ops (session ready)'
         }
       },
       accessToken: {
@@ -652,31 +650,18 @@ export class AuthTool extends BaseTool {
         description: 'Pre-existing access token for stateless operation. LLM USE CASE: When you already have a valid OAuth token and want to bypass session storage. Useful for temporary operations or token testing.',
         pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
         llmHints: {
-          format: 'Must start with "ya29." followed by alphanumeric characters',
-          stateless: 'Bypasses session storage, good for one-off operations',
-          testing: 'Useful when testing with known good tokens',
-          security: 'Never log or expose these tokens in responses'
+          format: 'Starts with "ya29."',
+          use: 'Stateless ops|testing with known tokens',
+          security: 'Never log/expose tokens'
         }
       }
     },
     required: [],
     additionalProperties: false,
     llmWorkflowGuide: {
-      typicalSequence: [
-        '1. auth({mode: "status"}) - Check current authentication',
-        '2. If not authenticated: auth({mode: "start"}) - Start OAuth flow',
-        '3. User completes OAuth in browser',
-        '4. Proceed with other * tools which will use stored authentication'
-      ],
-      errorHandling: {
-        'not_authenticated': 'Call auth with mode="start" to begin OAuth flow',
-        'oauth_error': 'Check Google Cloud Console OAuth client configuration',
-        'timeout': 'User took too long to complete OAuth, retry with mode="start"'
-      },
-      dependencies: {
-        before: 'No dependencies - this is the entry point for authentication',
-        after: 'All other * tools require successful authentication'
-      }
+      flow: ['status → start (if needed) → OAuth in browser → other tools'],
+      errors: 'not_authenticated→start | oauth_error→check GCP | timeout→retry',
+      deps: 'Entry point (no deps) | Required for all other tools'
     }
   };
 

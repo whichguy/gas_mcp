@@ -55,13 +55,13 @@ export class FindTool extends BaseTool {
       name: {
         type: 'string',
         description: 'File name pattern (supports wildcards: *, ?, [abc])',
-        examples: ['*.gs', 'test*', '[Tt]est.gs', '.git*']
+        examples: ['*.gs', 'test*']
       },
       type: {
         type: 'string',
         description: 'File type filter',
         enum: ['SERVER_JS', 'HTML', 'JSON', 'f', 'd'],
-        examples: ['SERVER_JS', 'HTML', 'JSON']
+        examples: ['SERVER_JS']
       },
       maxdepth: {
         type: 'number',
@@ -73,7 +73,7 @@ export class FindTool extends BaseTool {
         type: 'string',
         description: 'Size filter (+N for larger than N bytes, -N for smaller)',
         pattern: '^[+-]?\\d+[kMG]?$',
-        examples: ['+100', '-1000', '+10k', '-1M']
+        examples: ['+100', '+10k']
       },
       newer: {
         type: 'string',
@@ -107,7 +107,7 @@ export class FindTool extends BaseTool {
       alternatives: 'raw_find→actual GAS names',
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal→shows virtual names'},
       limitations: {flatFileStructure: 'no real dirs→filename prefixes', wildcardSupport: '*,?,[abc]→match filenames not paths', virtualFileNames: 'dotfiles virtual (.gitignore) not GAS (.gitignore.gs)'},
-      examples: ['test files: find({scriptId,name:"*test*.gs"})', 'config: find({scriptId,name:".git*"})', 'large: find({scriptId,size:"+10k"})', 'details: find({scriptId,ls:true})']
+      examples: ['find({scriptId,name:"*test*.gs"})', 'find({scriptId,size:"+10k"})']
     }
   };
 
@@ -316,13 +316,13 @@ export class RawFindTool extends BaseTool {
       name: {
         type: 'string',
         description: 'File name pattern (supports wildcards: *, ?, [abc])',
-        examples: ['*.gs', 'test*', '[Tt]est.gs', '.git*']
+        examples: ['*.gs', 'test*']
       },
       type: {
         type: 'string',
         description: 'File type filter',
         enum: ['SERVER_JS', 'HTML', 'JSON', 'f', 'd'],
-        examples: ['SERVER_JS', 'HTML', 'JSON']
+        examples: ['SERVER_JS']
       },
       maxdepth: {
         type: 'number',
@@ -334,7 +334,7 @@ export class RawFindTool extends BaseTool {
         type: 'string',
         description: 'Size filter (+N for larger than N bytes, -N for smaller)',
         pattern: '^[+-]?\\d+[kMG]?$',
-        examples: ['+100', '-1000', '+10k', '-1M']
+        examples: ['+100', '+10k']
       },
       newer: {
         type: 'string',
@@ -366,7 +366,7 @@ export class RawFindTool extends BaseTool {
       whenToUse: 'actual GAS file names (no translation)',
       workflow: 'shell find: raw_find({scriptId,name:".git*"})',
       alternatives: 'find→user-friendly virtual names',
-      examples: ['dotfiles: raw_find({scriptId,name:".git*"})', 'actual name: raw_find({scriptId,name:".gitignore.gs"})']
+      examples: ['raw_find({scriptId,name:".git*"})']
     }
   };
 

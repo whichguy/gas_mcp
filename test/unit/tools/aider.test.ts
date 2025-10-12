@@ -55,12 +55,7 @@ describe('AiderTool', () => {
 
   describe('Input Validation', () => {
     it('should require scriptId parameter', () => {
-      const params = {
-        path: 'test.gs',
-        edits: [{ searchText: 'old', replaceText: 'new' }]
-      };
-
-      expect(() => aiderTool.inputSchema.required).to.include('scriptId');
+      expect(aiderTool.inputSchema.required).to.include('scriptId');
     });
 
     it('should require path parameter', () => {

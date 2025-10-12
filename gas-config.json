@@ -508,12 +508,12 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1RrVVPkh0Cmnsmn1q8q8gLomMgFfUQ2Oh91h-usQAWc2mJ2Z8e7fwG2LD",
+      "scriptId": "1y-zID75tSeaBkho738lwZd4QvbnpnOC2jfuMYUrUg0ju4_IUdunz7WkL",
       "name": "consolidated-test-project",
       "description": "Created: 10/11/2025"
     },
     "exec-test": {
-      "scriptId": "1CrXVqkkg3Hw-Uz-juku-GdwX7sjSqUjfbXBWfIQMs9kzS6W0L3TtmPS5",
+      "scriptId": "1GwbjuQXEBt7LaUO4ij_OdK_FZYNEFNr7M6PMUFXoIohZq7JWDC8njTtX",
       "name": "exec-test",
       "description": "Created: 10/11/2025"
     },
@@ -580,7 +580,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-12T00:38:33.593Z"
+    "lastModified": "2025-10-12T01:17:52.203Z"
   },
   "debug": true,
   "currentProject": {

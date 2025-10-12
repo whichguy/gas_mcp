@@ -110,14 +110,12 @@ export class RawAiderTool extends BaseTool {
     },
 
     llmHints: {
-      decisionTree: {'Exact text known?': {yes: 'edit (fast)', no: 'aider (fuzzy)'}, 'Text has formatting variations?': {yes: 'aider (handles whitespace/format)', no: 'edit (exact ok)'}, 'Need regex patterns?': {yes: 'sed (pattern replace)', no: 'aider|edit (string)'}, 'Creating new file?': {yes: 'write (create)', no: 'aider|edit'}},
-      preferOver: {edit: 'whitespace/format var | uncertain→fuzzy (80%) vs exact (100%)', write: 'small changes→95%+ save (~10tok vs ~4.5k)', sed: 'flexible no-regex→Levenshtein vs regex'},
-      idealUseCases: ['reformatted (whitespace/indent)', 'uncertain content→approx known', 'fn calls: spacing var', 'copied: formatted out (pretty/minified)', 'inconsistent: CRLF/LF | tabs/spaces', 'CommonJS user code (auto unwrap/wrap)'],
-      avoidWhen: ['exact→edit (better perf) | regex→sed | new files→write | multi-occur diff→edit+index | system files→raw_aider'],
-      similarityThresholdGuide: {'0.95-1.0': 'strict: whitespace only', '0.85-0.95': 'strict: minor (const x=1 vs x = 1)', '0.8-0.85': 'default: format var (indent/line endings)', '0.7-0.8': 'permissive: moderate (getUserData vs get_user_data)', '0.6-0.7': 'very permissive: significant diff (may false match)', 'below 0.6': 'too loose: high risk'},
-      algorithmDetails: {matchingMethod: '5-phase: (1)exact | (2)normalized+map whitespace | (3)length filter | (4)charset filter | (5)Levenshtein last', normalization: 'Phase 2: position map→normalized→orig→no corruption', windowSizes: '5 strategic: -10%|-5%|0%|+5%|+10%', similarityScore: '1-(editDist/maxLen)', optimization: 'Phase 2→skip Levenshtein | Phases 3-4→filter 90%+ | coarse→fine→95% fewer checks'},
-      responseOptimization: 'Default minimal (~10tok). dryRun→full: matches+similarity+diff',
-      errorHandling: {'No match found': 'increase threshold (0.8→0.7) | more specific searchText+context', 'Wrong text matched': 'decrease threshold (0.8→0.9) | add context', 'Multiple matches': 'add context→unique ID'}
+      decision: 'Exact→raw_edit | format var→raw_aider | regex→sed',
+      preferOver: 'raw_edit (format/uncertain) | raw_write (95% save)',
+      idealFor: 'System wrappers with whitespace|_main spacing|CommonJS format',
+      avoid: 'User code→aider | exact→raw_edit | new→raw_write',
+      threshold: '0.9+ strict | 0.8 default | 0.7 permissive',
+      warning: 'Raw content only (preserves wrappers)'
     }
   };
 

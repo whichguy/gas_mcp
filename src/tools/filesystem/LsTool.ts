@@ -64,7 +64,7 @@ export class LsTool extends BaseFileSystemTool {
       limitations: {flatFileStructure: 'no real dirs→filename prefixes ("utils/helper") simulate', wildcardPatterns: '*,? supported→matching by wildcardMode', virtualFileDisplay: 'dotfiles (.gitignore,.git/config.gs)→virtual not GAS names'},
       examples: ['ls({})→all projects', 'ls({scriptId:"1abc2def..."})→files', 'ls({scriptId:"1abc2def...",path:"*.gs"})→pattern', 'ls({scriptId:"1abc2def...",path:"utils/*"})→subfolder', 'ls({scriptId:"1abc2def...",detailed:true})→detailed', 'ls({scriptId:"1abc2def...",checksums:true})→checksums', 'ls({scriptId:"1abc2def...",detailed:true,checksums:true})→both'],
       virtualFiles: 'dotfiles (.gitignore)→virtual names not GAS storage',
-      checksums: {whenToUse: 'verify integrity|detect changes (no download)|compare with local Git', format: 'Git SHA-1: sha1("blob "+size+"\\0"+content)', verification: 'matches: git hash-object <file>', integration: 'local_sync tools→detect GAS↔Git diverge (no download)'}
+      checksums: {whenToUse: 'verify file integrity|detect changes (no download)|compare with local Git', format: 'Git-compatible SHA-1: sha1("blob "+size+"\\0"+content)', verification: 'matches: git hash-object <file>', integration: 'local_sync tools→detect GAS↔Git diverge (no download)'}
     }
   };
 

@@ -43,14 +43,14 @@ export class RegexProcessor {
    * Check if a string contains regex metacharacters
    */
   private static hasRegexMetachars(pattern: string): boolean {
-    return /[.*+?^${}()|[\]\\]/.test(pattern);
+    return /[.*+?^${}()|[\\\]]/.test(pattern);
   }
 
   /**
    * Escape special regex characters for literal matching
    */
   private static escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return str.replace(/[.*+?^${}()|[\\\]]/g, '\\$&');
   }
 
   /**
@@ -87,8 +87,8 @@ export class RegexProcessor {
       processedPattern = `\\b${processedPattern}\\b`;
     }
 
-    // Build flags
-    const flags = caseSensitive ? 'g' : 'gi';
+    // Build flags (no 'g' flag by default to avoid lastIndex issues)
+    const flags = caseSensitive ? '' : 'i';
 
     return new RegExp(processedPattern, flags);
   }
@@ -119,7 +119,9 @@ export class RegexProcessor {
     text: string,
     options: RegexOptions = {}
   ): Array<{ match: string; index: number; line: number; column: number }> {
-    const regex = this.buildRegex(pattern, options);
+    const baseRegex = this.buildRegex(pattern, options);
+    // Add 'g' flag for exec() loop
+    const regex = new RegExp(baseRegex.source, baseRegex.flags + 'g');
     const lines = text.split('\n');
     const matches: Array<{ match: string; index: number; line: number; column: number }> = [];
 
@@ -166,7 +168,9 @@ export class RegexProcessor {
     text: string,
     options: RegexOptions = {}
   ): { text: string; count: number } {
-    const regex = this.buildRegex(pattern, options);
+    const baseRegex = this.buildRegex(pattern, options);
+    // Add 'g' flag for replace all
+    const regex = new RegExp(baseRegex.source, baseRegex.flags + 'g');
     let count = 0;
 
     const modifiedText = text.replace(regex, (...args) => {

@@ -123,40 +123,11 @@ export class LocalSyncTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      conceptualModel: ['.git/config.gs breadcrumb REQUIRED in GAS', 'Breadcrumbs mark folders+metadata', 'Multi-repo: multiple .git/ folders supported', 'NO auto-bootstrap: manual setup required'],
-      prerequisites: ['.git/config.gs exists in GAS', 'Local git repo (git init + remote)', 'Git installed', 'GAS project exists'],
-      typicalWorkflow: [
-        '1. Manually create .git/config.gs in GAS (use write)',
-        '2. mkdir ~/gas-repos/project-{scriptId} && cd there',
-        '3. git init && git remote add origin <url>',
-        '4. local_sync({scriptId})→syncs files',
-        '5. git add -A && git commit -m "Initial sync"',
-        '6. git push origin main',
-        '7. Make changes (local OR GAS)',
-        '8. local_sync({scriptId})→intelligent merge+sync'
-      ],
-      useCases: {
-        firstTime: 'Create .git/config.gs → git init+remote → local_sync',
-        afterGasEdit: 'local_sync({scriptId})→pull+merge',
-        beforeDeploy: 'local_sync({scriptId,direction:"push-only"})',
-        fullSync: 'local_sync({scriptId})',
-        pullOnly: 'local_sync({scriptId,direction:"pull-only"})',
-        forceOverwrite: 'local_sync({scriptId,forceOverwrite:true})→⚠️ DANGEROUS'
-      },
-      interoperability: {
-        beforeSync: ['git status→check uncommitted', 'git stash→save temp', 'gh repo sync→pull GitHub'],
-        afterSync: ['git diff→review', 'git add -A && commit', 'git push origin branch', 'gh pr create'],
-        githubMcp: ['get_file_contents→compare', 'create_pull_request→after push', 'list_commits→history']
-      },
-      criticalBehavior: [
-        '🚫 NO AUTO-BOOTSTRAP: .git/config.gs must exist in GAS',
-        '⚠️ ALWAYS pull ALL from GAS first (never blind)',
-        '✅ Merge intelligently (git merge-file)',
-        '🔒 Push→GAS only if merge succeeds',
-        '🛑 Stop→manual if conflicts',
-        '📁 .git-gas/ folder→merge artifacts'
-      ],
-      conflictResolution: ['Conflicts→.git-gas/ folder', 'git merge-tool | manual edit', 'local_sync again after resolve', 'forceOverwrite:true→take one (dangerous)']
+      model: '.git/config.gs REQUIRED in GAS | NO auto-bootstrap | Multi-repo supported',
+      setup: ['1. write .git/config.gs in GAS', '2. mkdir+git init+remote', '3. local_sync', '4. git add+commit+push'],
+      usage: 'firstTime: .git/config.gs→git init→local_sync | after GAS edit: local_sync | directions: sync|pull-only|push-only',
+      behavior: 'ALWAYS pull first | merge intelligently | push only if merge succeeds | stop on conflicts',
+      conflicts: '.git-gas/ folder | manual edit | local_sync again | forceOverwrite (dangerous)'
     }
   };
 

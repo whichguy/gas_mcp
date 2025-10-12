@@ -363,146 +363,64 @@ export class ExecTool extends BaseTool {
       environment: {
         type: 'string',
         enum: ['dev', 'staging', 'prod'],
-        description: 'Environment to execute code in (default: dev). dev: HEAD (always latest code), staging: Latest snapshot version, prod: Production deployed version.',
+        description: 'Execution environment (default: dev). dev=HEAD (latest), staging=snapshot, prod=stable.',
         default: 'dev',
         llmHints: {
-          dev: 'Executes on HEAD deployment - latest uncommitted code (default)',
-          staging: 'Executes on highest version number - latest snapshot',
-          prod: 'Executes on production deployment - stable version',
-          default: 'Defaults to dev if not specified'
+          dev: 'HEAD (latest code, default)',
+          staging: 'Latest snapshot version',
+          prod: 'Stable production version'
         }
       },
       js_statement: {
         type: 'string',
-        description: 'JavaScript statement to execute directly in Google Apps Script. COMPREHENSIVE EXECUTION CAPABILITIES: (1) Run arbitrary JavaScript expressions and statements of unlimited length, (2) Execute existing functions from your project files using require("ModuleName").functionName() pattern, (3) Access ALL Google Apps Script services (DriveApp, SpreadsheetApp, GmailApp, etc.), (4) All Logger.log() output is automatically captured and returned. COMMONJS INTEGRATION: Use require("Utils").myFunction() to call functions from other project files - the CommonJS system resolves all dependencies automatically.',
+        description: 'JavaScript to execute in GAS. Supports: ES6+ expressions, require("Module").func() for project code, all GAS services (DriveApp/SpreadsheetApp/etc), Logger.log() auto-captured. CommonJS resolves dependencies automatically.',
         minLength: 1,
-        examples: [
-          // Basic JavaScript and Math
-          'Math.PI * 2',
-          'new Date().toISOString()',
-          '[1,2,3,4,5].reduce((sum, n) => sum + n, 0)',
-          'JSON.stringify({message: "Hello", timestamp: new Date()})',
-          
-          // Google Apps Script Services - Drive
-          'DriveApp.getRootFolder().getName()',
-          'DriveApp.getFiles().next().getName()',
-          'DriveApp.createFile("test.txt", "Hello World").getId()',
-          'DriveApp.getFilesByName("MyFile").hasNext()',
-          
-          // Google Apps Script Services - Spreadsheets
-          'SpreadsheetApp.create("My New Sheet").getId()',
-          'SpreadsheetApp.getActiveSheet().getRange("A1").setValue("Hello")',
-          'SpreadsheetApp.openById("your-sheet-id").getSheets().length',
-          
-          // Google Apps Script Services - Gmail
-          'GmailApp.getInboxThreads(0, 5).length',
-          'GmailApp.search("is:unread").length',
-          
-          // Google Apps Script Services - Calendar
-          'CalendarApp.getDefaultCalendar().getName()',
-          'CalendarApp.getAllCalendars().length',
-          
-          // Google Apps Script Services - Documents
-          'DocumentApp.create("New Doc").getId()',
-          
-          // Google Apps Script Services - Utilities
-          'Utilities.getUuid()',
-          'Utilities.base64Encode("Hello World")',
-          'Utilities.formatDate(new Date(), "GMT", "yyyy-MM-dd")',
-          
-          // Google Apps Script Services - Properties & Cache
-          'PropertiesService.getScriptProperties().getKeys().length',
-          'CacheService.getScriptCache().get("test")',
-          
-          // Google Apps Script Services - URL Fetch
-          'UrlFetchApp.fetch("https://api.github.com/zen").getContentText()',
-          
-          // Session and User Info
-          'Session.getActiveUser().getEmail()',
-          'Session.getTemporaryActiveUserKey()',
-          'Session.getScriptTimeZone()',
-          
-          // Execute functions from your project files via CommonJS require()
-          'require("Calculator").add(5, 3)',                    // Call add function from Calculator.js
-          'require("Utils").formatDate(new Date())',            // Call formatDate from Utils.js
-          'require("Database").getUserById(123)',               // Call getUserById from Database.js
-          'require("API").fetchWeatherData("New York")',        // Call fetchWeatherData from API.js
-          'require("MathLibrary").fibonacci(10)',               // Call fibonacci from MathLibrary.js
-          'const utils = require("Utils"); utils.processData([1,2,3,4,5])', // Store module reference
-          'const calc = require("Calculator"); calc.multiply(4, 6)',         // Chain multiple calls
-          
-          // Complex workflows combining project functions with GAS services
-          'const data = require("Utils").parseCSV("name,age\\nJohn,30"); SpreadsheetApp.create("Import").getActiveSheet().getRange(1,1,data.length,2).setValues(data)',
-          'const result = require("API").processPayment({amount: 100}); Logger.log("Payment result: " + JSON.stringify(result)); result.success',
-          
-          // Complex multi-line operations
-          'const sheet = SpreadsheetApp.create("Data Analysis"); const data = [[1,2,3],[4,5,6]]; sheet.getActiveSheet().getRange(1,1,2,3).setValues(data); return sheet.getId()',
-          
-          // Logger.log() output is automatically captured and returned
-          'Logger.log("Starting calculation..."); const result = 2 + 2; Logger.log("Result: " + result); result',
-          'Logger.log("Calling project function..."); const data = require("Utils").getData(); Logger.log("Retrieved " + data.length + " items"); data',
-          'Logger.log("Testing API integration"); const weather = require("API").getWeather("London"); Logger.log("Temperature: " + weather.temp); weather',
-          
-          // Error handling with comprehensive logging
-          'try { const result = DriveApp.getRootFolder().getName(); Logger.log("Success: " + result); return result; } catch(e) { Logger.log("Error: " + e.toString()); throw e; }',
-          'try { const user = require("Database").getUser(999); Logger.log("User found: " + user.name); return user; } catch(e) { Logger.log("User lookup failed: " + e.message); return null; }'
-        ],
+        examples: ['Math.PI * 2', 'require("Utils").myFunc()', 'DriveApp.createFile("x","y").getId()'],
         llmHints: {
-          capability: 'UNLIMITED JavaScript ES6+ support plus ALL Google Apps Script services - no restrictions',
-          expressions: 'Can execute any mathematical expressions, object operations, API calls of any complexity',
-          projectFunctions: 'EXECUTE YOUR PROJECT FUNCTIONS: Use require("ModuleName").functionName() to call any function from your project files - the CommonJS system handles all imports automatically',
-          commonJsIntegration: 'FULL COMMONJS SUPPORT: Call functions between modules, access require(), module, exports - all dependencies resolved automatically at runtime',
-          services: 'FULL ACCESS: DriveApp, SpreadsheetApp, GmailApp, CalendarApp, DocumentApp, SlidesApp, FormsApp, ScriptApp, PropertiesService, CacheService, LockService, Utilities, UrlFetchApp, HtmlService, CardService, and ALL other GAS services',
-          return: 'Return values are automatically JSON-serialized for response',
-          debugging: 'Use console.log() or Logger.log() for debugging output in execution logs',
-          logCapture: 'ALL Logger.log() output is automatically captured in response.logger_output field - no manual retrieval needed',
-          logFiltering: 'Use logFilter for pattern-based filtering (ERROR|WARN), or logTail for last N lines (logTail: 50)',
-          overwhelmingLogs: 'When Logger.log() produces too much output, use logTail to see only recent lines or logFilter to find specific patterns',
-          filterExamples: 'Common filters: "ERROR|WARN" (errors), "^\\[.*\\]" (bracketed lines), "result.*:" (result lines)',
-          size: 'Up to 500,000 characters supported - write extremely complex multi-line operations freely',
-          performance: 'Configurable timeouts up to 1 hour for long-running operations'
+          capability: 'Full ES6+ JavaScript + ALL GAS services + CommonJS modules',
+          projectFunctions: 'require("Module").func() calls your project code',
+          logCapture: 'Logger.log() auto-captured | logFilter:"ERROR|WARN" | logTail:50',
+          size: '500k chars max | 1hr timeout configurable'
         }
       },
       autoRedeploy: {
         type: 'boolean',
-        description: 'Enable automatic deployment infrastructure setup. FLEXIBLE OPTIONS: true (default) = auto-create deployments as needed, false = use existing deployments only, "force" = always create new deployment. Set to false for faster execution on pre-configured projects.',
+        description: 'Auto-deploy setup. true (default)=create as needed, false=use existing, "force"=always new. Set false for speed on pre-configured projects.',
         default: true,
         llmHints: {
-          recommended: 'Keep true for seamless operation - tool handles deployment complexity',
-          manual: 'Set false only if managing deployments separately with deploy_create',
-          infrastructure: 'Creates HEAD deployment with /dev URL for testing latest code',
-          performance: 'Set false for faster execution on pre-configured projects',
-          flexible: 'Supports boolean true/false or string "force" for always creating new deployments'
+          true: 'Auto-deploy (default, seamless)',
+          false: 'Use existing deployment (faster)',
+          force: 'Always create new deployment'
         }
       },
       executionTimeout: {
         type: 'number',
-        description: 'Maximum execution timeout in seconds (default: 780 = 13 minutes). Set higher for long-running operations. Maximum: 3600 seconds (1 hour).',
+        description: 'Max execution timeout in seconds (default: 780=13min, max: 3600=1hr). Increase for long-running ops.',
         default: 780,
         minimum: 780,
         maximum: 3600,
         llmHints: {
-          longOperations: 'Increase for complex calculations, large data processing, or multiple API calls',
-          maximum: 'Maximum 1 hour (3600 seconds) to prevent indefinite hanging',
-          default: '13 minutes (780 seconds) provides generous time for most operations'
+          default: '13min (780s)',
+          max: '1hr (3600s)',
+          increase: 'For long-running ops'
         }
       },
       responseTimeout: {
         type: 'number', 
-        description: 'Maximum response reading timeout in seconds (default: 780 = 13 minutes). Set higher for large response payloads.',
+        description: 'Max response timeout in seconds (default: 780=13min, max: 3600=1hr). Increase for large payloads.',
         default: 780,
         minimum: 780,
         maximum: 3600,
         llmHints: {
-          largeResponses: 'Increase for operations that return large amounts of data',
-          typical: '13 minutes (780 seconds) provides generous time for large responses',
-          maximum: 'Maximum 1 hour (3600 seconds) for extremely large datasets'
+          default: '13min (780s)',
+          max: '1hr (3600s) for large data',
+          increase: 'For large response payloads'
         }
       },
       ...SchemaFragments.accessToken,
       logFilter: {
         type: 'string',
-        description: 'Optional regex pattern to filter logger_output lines (ripgrep-style). Only lines matching this pattern will be included. If not specified, all logger output is returned.',
+        description: 'Optional regex to filter logger_output lines (ripgrep-style). Only matching lines included. Unspecified=all output.',
         examples: [
           'ERROR|WARN',           // Show only error/warning lines
           '^\\[.*\\]',             // Lines starting with brackets
@@ -512,7 +430,7 @@ export class ExecTool extends BaseTool {
       },
       logTail: {
         type: 'number',
-        description: 'Optional: Return only the last N lines of logger_output. Useful when logs are overwhelming. Applied after logFilter if both are specified.',
+        description: 'Optional: Return last N lines of logger_output. Useful for overwhelming logs. Applied after logFilter.',
         minimum: 1,
         maximum: 10000,
         examples: [10, 50, 100]
@@ -521,12 +439,9 @@ export class ExecTool extends BaseTool {
     required: ['scriptId', 'js_statement'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: ['auth: status→start if needed', 'project: create new | get scriptId via ls', 'optional: write files before exec'],
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support+Logger capture', notes: 'Universal solution - container-bound debug works'},
-      limitations: {executionTime: '6min free | 30min workspace (adjust executionTimeout)', requiresHeadDeployment: 'Auto-creates HEAD /dev URL', memoryLimits: 'GAS quotas (account-dependent)'},
-      useCases: {calc: 'Math.pow(2,10)', date: 'new Date().toISOString()', user: 'Session.getActiveUser().getEmail()', fn: 'require("Calculator").add(5,3)', svc: 'DriveApp.getRootFolder().getName()', data: '[1,2,3].map(x=>x*2).join(",")'},
-      errorHandling: {AuthenticationError: 'Run auth', ScriptNotFound: 'Verify scriptId', SyntaxError: 'Check js syntax', RuntimeError: 'Check functions/services exist'},
-      performance: {firstRun: '3-5s (deploy)', subsequentRuns: '1-2s', optimization: 'Complex ops→files'}
+      prerequisites: ['auth if needed', 'scriptId from project_list'],
+      limitations: '6min free | 30min workspace (adjust executionTimeout)',
+      quickStart: ['Math.pow(2,10)', 'require("Calc").add(5,3)', 'DriveApp.getRootFolder().getName()']
     },
     responseSchema: {
       type: 'object',
@@ -542,7 +457,7 @@ export class ExecTool extends BaseTool {
         },
         logger_output: {
           type: 'string',
-          description: 'Logger output from console.log(), Logger.log(), and other logging. May include filter metadata if logFilter or logTail parameters were used. Includes module loading messages, debug output, and session logging.'
+          description: 'Logger output from console.log()/Logger.log(). May include filter metadata if logFilter/logTail used.'
         },
         scriptId: {
           type: 'string',
@@ -559,11 +474,11 @@ export class ExecTool extends BaseTool {
         },
         error: {
           type: 'object',
-          description: 'Error details (only present when status is "error")',
+          description: 'Error details (only when status="error")',
           properties: {
-            type: { type: 'string', description: 'Error type/category' },
-            message: { type: 'string', description: 'Human-readable error message' },
-            originalError: { type: 'string', description: 'Original error message if available' }
+            type: { type: 'string', description: 'Error type' },
+            message: { type: 'string', description: 'Error message' },
+            originalError: { type: 'string', description: 'Original error if available' }
           }
         }
       },

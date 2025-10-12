@@ -40,51 +40,24 @@ export class GrepTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     llmGuidance: {
-      alternatives: 'raw_grep→explicit project ID|search system content',
-      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→searches unwrapped user code'},
-      limitations: {maxResults: '200 limit→token overflow prevent (specific patterns)', maxFiles: '500 limit→path param narrow', regexPerformance: 'complex regex slow on large (prefer simple)'},
-      nextSteps: ['AFTER: cat→full context', 'MODIFY: sed→find/replace', 'UPDATE: write→changes', 'VERIFY: exec→test'],
-      relatedTools: {preferred: '⚡ ripgrep→RECOMMENDED (multi-pattern+smart case+context+performance)', semanticSearch: 'context→NL queries vs regex', fileDiscovery: 'find→name/properties vs content', readFiles: 'cat→complete after match', editFiles: 'sed→batch find/replace | write→individual'},
-      commonJsIntegration: 'SERVER_JS auto-integrated (CommonJS.js)→_main() wrapper removed→clean user code search (require()/module/exports available at exec)',
-      editingWorkflow: 'unwrapped results→cat shows same→editing ready',
-      moduleAccess: 'finds require("ModuleName")+module.exports+exports.func in clean code (no wrapper noise)',
-      whenToUse: '⚠️ PREFER ripgrep→multi-pattern+smart case+advanced | grep→simple single-pattern only (auto CommonJS unwrap)',
-      workflow: 'searches clean user code (dev write+edit)',
-      contentComparison: 'grep→cat content (unwrapped) | raw_grep→raw_cat content (full+wrappers)',
-      currentBehavior: 'direct API (like raw_grep) | may support local future'
+      whenToUse: '⚠️ PREFER ripgrep (multi-pattern+smart case) | grep for simple single-pattern',
+      limitations: '200 result max, 500 file max',
+      nextSteps: ['cat→context', 'sed→replace', 'write→save'],
+      contentType: 'unwrapped user code (no CommonJS wrappers)'
     },
     properties: {
       pattern: {
         type: 'string',
-        description: 'Search pattern (supports regex and literal text). Searches clean user code (same content as cat shows). Examples: "function\\\\s+(\\\\w+)" finds user functions, "require(" finds user dependencies',
+        description: 'Search pattern (regex/literal). Searches clean user code (same as cat). "function\\\\s+(\\\\w+)" finds functions.',
         minLength: 1,
-        examples: [
-          'require\\\\(',                    // Find user require calls (no wrapper noise)
-          'function\\\\s+(\\\\w+)',          // Find user function definitions (skips _main wrapper)
-          'exports\\.[a-zA-Z_$]',           // Find user exports assignments
-          'module\\.exports\\s*=',          // Find user module.exports
-          'TODO:|FIXME:',                   // Find user todo items
-          'console\\\\.log',                // Find user console.log statements
-          'Logger\\\\.log',                 // Find user Logger.log statements
-          'api[_-]?key',                    // Find potential API keys in user code
-          '^\\\\s*const\\\\s+\\\\w+',      // Find user const declarations
-          'class\\\\s+(\\\\w+)',           // Find user class definitions
-        ]
+        examples: ['function\\\\s+(\\\\w+)', 'TODO:|FIXME:']
       },
       ...SchemaFragments.scriptId,
       path: {
         type: 'string',
-        description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Searches clean user code in matching files (same content processing as cat). Examples: "" (entire project), "utils/*" (wildcard), ".*Controller.*" (regex).',
+        description: 'File/path pattern (wildcard/regex). ""=project, "utils/*"=wildcard, ".*Controller.*"=regex. Clean user code (cat content).',
         default: '',
-        examples: [
-          '',                            // Search entire project (user code only)
-          'ai_tools/*',                  // Wildcard: ai_tools directory (user code only)  
-          '*Connector*',                 // Wildcard: files containing Connector (user code only)
-          '.*Controller.*',              // Regex: files containing Controller (user code only)
-          '(utils|helpers)/.*',          // Regex: utils OR helpers directories (user code only)
-          '.*\\.(test|spec)$',          // Regex: test files ending in .test or .spec (user code only)
-          'test/*/*.test'                // Wildcard: test files in subdirectories (user code only)
-        ]
+        examples: ['ai_tools/*', '.*Controller.*']
       },
       pathMode: {
         type: 'string',
@@ -96,10 +69,7 @@ export class GrepTool extends BaseTool {
         type: 'array',
         items: { type: 'string' },
         description: 'Specific file list to search (alternative to path parameter)',
-        examples: [
-          ['scriptId/utils/helpers', 'scriptId/models/User'],
-          ['scriptId/ai_tools/BaseConnector', 'scriptId/ai_tools/ClaudeConnector']
-        ]
+        examples: [['scriptId/utils/helpers', 'scriptId/models/User']]
       },
       searchMode: {
         type: 'string',
@@ -157,23 +127,16 @@ export class GrepTool extends BaseTool {
         type: 'array',
         items: { type: 'string' },
         description: 'Files to exclude from search (supports wildcards)',
-        examples: [
-          ['*/test/*', '*/CommonJS'],
-          ['scriptId/dist/*', 'scriptId/node_modules/*']
-        ]
+        examples: [['*/test/*', 'scriptId/dist/*']]
       },
       includeFileTypes: {
         type: 'array',
-        items: { 
+        items: {
           type: 'string',
           enum: ['SERVER_JS', 'HTML', 'JSON']
         },
         description: 'Filter by file types (SERVER_JS, HTML, JSON)',
-        examples: [
-          ['SERVER_JS'],                    // JavaScript files only
-          ['SERVER_JS', 'HTML'],           // JavaScript and HTML files
-          ['JSON']                         // JSON files only
-        ]
+        examples: [['SERVER_JS']]
       },
       ...SchemaFragments.accessToken
     },
@@ -428,33 +391,14 @@ export class RawGrepTool extends BaseTool {
         type: 'string',
         description: 'Search pattern (supports regex and literal text). Searches complete file content (same content as raw_cat shows) including CommonJS wrappers via direct API calls only. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
         minLength: 1,
-        examples: [
-          'require\\\\(',                      // Find require calls in full content
-          'function\\\\s+(\\\\w+)',            // Find all function definitions including wrappers
-          '_main\\\\s*\\\\(',                 // Find CommonJS main wrapper functions
-          '__defineModule__',                  // Find CommonJS system module definition calls
-          'globalThis\\.__getCurrentModule',   // Find module system calls
-          'module\\s*=\\s*globalThis',        // Find module assignments
-          'exports\\s*=\\s*module\\.exports', // Find exports assignments
-          'TODO:|FIXME:',                      // Find todo items in full context
-          'console\\\\.log',                   // Find console.log in all content
-          'Logger\\\\.log',                    // Find Logger.log in all content
-        ]
+        examples: ['_main\\\\s*\\\\(', '__defineModule__']
       },
       ...SchemaFragments.scriptId,
       path: {
         type: 'string',
         description: 'File or path pattern with wildcard/regex support (filename only, or scriptId/path if scriptId parameter is empty). Always retrieves content via direct API calls, never uses local cached files. Same content processing as raw_cat.',
         default: '',
-        examples: [
-          '',                            // Search entire project (includes CommonJS wrappers)
-          'ai_tools/*',                  // Wildcard: ai_tools directory (full content)
-          '*Connector*',                 // Wildcard: files containing Connector (full content)
-          '.*Controller.*',              // Regex: files containing Controller (full content)
-          '(utils|helpers)/.*',          // Regex: utils OR helpers directories (full content)
-          '.*\\.(test|spec)$',          // Regex: test files ending in .test or .spec (full content)
-          'test/*/*.test'                // Wildcard: test files in subdirectories (full content)
-        ]
+        examples: ['ai_tools/*', '.*Controller.*']
       },
       pathMode: {
         type: 'string',
@@ -466,10 +410,7 @@ export class RawGrepTool extends BaseTool {
         type: 'array',
         items: { type: 'string' },
         description: 'Specific file list to search with explicit project IDs (alternative to path parameter). Always retrieved via direct API calls.',
-        examples: [
-          ['abc123def456.../utils/helpers', 'abc123def456.../models/User'],
-          ['abc123def456.../ai_tools/BaseConnector', 'abc123def456.../ai_tools/ClaudeConnector']
-        ]
+        examples: [['abc123def456.../utils/helpers', 'abc123def456.../models/User']]
       },
       searchMode: {
         type: 'string',
@@ -527,23 +468,16 @@ export class RawGrepTool extends BaseTool {
         type: 'array',
         items: { type: 'string' },
         description: 'Files to exclude from search (supports wildcards)',
-        examples: [
-          ['*/test/*', '*/CommonJS'],
-          ['abc123def456.../dist/*', 'abc123def456.../node_modules/*']
-        ]
+        examples: [['*/test/*', 'abc123def456.../dist/*']]
       },
       includeFileTypes: {
         type: 'array',
-        items: { 
+        items: {
           type: 'string',
           enum: ['SERVER_JS', 'HTML', 'JSON']
         },
         description: 'Filter by file types (SERVER_JS, HTML, JSON)',
-        examples: [
-          ['SERVER_JS'],                    // JavaScript files only
-          ['SERVER_JS', 'HTML'],           // JavaScript and HTML files
-          ['JSON']                         // JSON files only
-        ]
+        examples: [['SERVER_JS']]
       },
       ...SchemaFragments.accessToken
     },

@@ -432,10 +432,18 @@ export class InProcessTestClient {
 
   /**
    * Cleanup - disconnect and clear state
+   * @param clearAuth - Whether to clear authentication tokens (default: false for persistent tokens)
    */
-  async cleanup(): Promise<void> {
+  async cleanup(clearAuth: boolean = false): Promise<void> {
     console.log('\n🧹 Cleaning up in-process client...');
-    await this.logout();
+
+    if (clearAuth) {
+      console.log('🔓 Clearing authentication tokens...');
+      await this.logout();
+    } else {
+      console.log('✅ Preserving authentication tokens for next run');
+    }
+
     console.log('✅ Cleanup complete\n');
   }
 }
