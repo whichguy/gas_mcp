@@ -93,13 +93,12 @@ export class VersionListTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls'],
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal version listing'},
-      limitations: {pagination: 'pageSize per call→pageToken for more', sortOrder: 'reverse chronological (newest first)', metadataOnly: 'metadata only→version_get for detail'},
-      useCases: {history: 'version_list({scriptId})', deployment: 'version_list→select for deploy_create', comparison: 'version_list→identify versions→compare'},
-      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', NoVersions: 'no saved versions→version_create'},
-      returnValue: {versions: 'Array: version objects+nums+metadata', totalCount: 'total versions count', nextPageToken: 'token if more exist'},
-      nextSteps: ['version_get→examine detail', 'deploy_create with versionNumber→deploy']
+      prereq: 'auth→start | scriptId',
+      limits: 'pageSize+pageToken pagination | reverse chronological | metadata only (version_get for detail)',
+      usage: 'history: version_list({scriptId}) | deploy: select for deploy_create | compare: identify→compare',
+      errors: 'AuthenticationError: auth→start | ScriptNotFound: verify scriptId | NoVersions: version_create',
+      return: 'versions[] | totalCount | nextPageToken',
+      next: 'version_get for detail | deploy_create with versionNumber'
     }
   };
 
