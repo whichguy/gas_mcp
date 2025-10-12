@@ -100,6 +100,16 @@ export function parseGasUrl(webAppUrl: string): GasUrlInfo {
   try {
     const url = new URL(webAppUrl);
 
+    // Reject URLs with query parameters (must end with /exec or /dev)
+    if (url.search) {
+      return {
+        deploymentId: null,
+        isDomainSpecific: false,
+        domain: null,
+        endpoint: null
+      };
+    }
+
     // Combined regex with optional domain section and optional trailing slash
     // Captures: [1] = domain (optional), [2] = deployment ID, [3] = endpoint type
     // Pattern: /a/macros/[DOMAIN]/s/[ID]/exec or /macros/s/[ID]/dev with optional trailing slash

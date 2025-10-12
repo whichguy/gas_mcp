@@ -31,31 +31,31 @@ export class DeployTool extends BaseTool {
       operation: {
         type: 'string',
         enum: ['promote', 'rollback', 'status', 'reset'],
-        description: 'Operation to perform. promote: Move code between environments. rollback: Revert to previous version. status: View all environments. reset: Recreate 3 standard deployments.',
+        description: 'Operation: promote=move code, rollback=revert, status=view all, reset=recreate 3 deployments.',
         llmHints: {
-          promote: 'Create version snapshot (dev→staging) or update deployment to staging version (staging→prod)',
-          rollback: 'Update deployment to previous tagged version (staging: previous [STAGING], prod: previous [PROD])',
-          status: 'Show current state of all three environments',
-          reset: 'Delete all deployments and recreate standard dev/staging/prod setup'
+          promote: 'dev→staging (create version) | staging→prod (update deployment)',
+          rollback: 'Revert to previous tagged version',
+          status: 'View all 3 environments',
+          reset: 'Recreate dev/staging/prod'
         }
       },
       environment: {
         type: 'string',
         enum: ['staging', 'prod'],
-        description: 'Target environment for promote/rollback operations. Both support rollback to previous version (until reaching HEAD).',
+        description: 'Target env for promote/rollback. Both support rollback to previous version.',
         llmHints: {
-          staging: 'PROMOTE: creates version from HEAD | ROLLBACK: goes back one [STAGING] version (until HEAD)',
-          prod: 'PROMOTE: updates to staging version | ROLLBACK: goes back one [PROD] version (until HEAD)'
+          staging: 'Promote: HEAD→version | Rollback: previous version',
+          prod: 'Promote: staging→prod | Rollback: previous version'
         }
       },
       description: {
         type: 'string',
-        description: 'Version description (required for promote to staging). Tagged with [STAGING] automatically.',
+        description: 'Version description (required for promote to staging). Auto-tagged [STAGING].',
         examples: ['v1.0 Release Candidate', 'Bug fixes for issue #123', 'New feature: user management']
       },
       toVersion: {
         type: 'number',
-        description: 'Target version number for rollback (optional). If omitted, automatically finds previous tagged version for the environment.',
+        description: 'Version for rollback (optional). If omitted, auto-finds previous tagged version.',
         minimum: 1
       },
       ...SchemaFragments.scriptId,
@@ -63,25 +63,9 @@ export class DeployTool extends BaseTool {
     },
     required: ['operation', 'scriptId'],
     llmWorkflowGuide: {
-      typicalSequence: [
-        '1. Create project with 3 deployments: project_create({ title: "My Project" })',
-        '2. Develop on HEAD (dev auto-serves latest code)',
-        '3. Promote to staging: deploy({ environment: "staging", operation: "promote", description: "v1.0" })',
-        '4. Test staging deployment',
-        '5. Promote to prod: deploy({ environment: "prod", operation: "promote" })',
-        '6. If issues: deploy({ environment: "prod", operation: "rollback" })'
-      ],
-      environmentModel: {
-        dev: 'Always HEAD (deployment.versionNumber = null, latest code)',
-        staging: 'Highest version number (latest snapshot)',
-        prod: 'Deployed version (deployment.versionNumber)',
-        note: 'After staging→prod promotion: staging === prod (same version)'
-      },
-      promotionFlow: {
-        devToStaging: 'Creates version from HEAD, updates staging deployment',
-        stagingToProd: 'Updates prod deployment to staging version (highest)',
-        rollback: 'Updates deployment to previous tagged version (staging→previous [STAGING], prod→previous [PROD]). Cannot rollback FROM HEAD.'
-      }
+      flow: ['dev (HEAD) → promote → staging (versioned) → promote → prod (versioned)'],
+      environments: 'dev: HEAD | staging: latest snapshot | prod: stable version',
+      rollback: 'staging/prod only (not from HEAD)'
     }
   };
 

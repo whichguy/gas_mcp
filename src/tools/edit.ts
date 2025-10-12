@@ -99,10 +99,10 @@ export class EditTool extends BaseTool {
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal token-efficient editing'}
     },
     llmHints: {
-      preferOver: {write: 'small changes→95%+ save (output only changed)', sed: 'exact string vs regex (reliable)', cat_then_write: 'never read+write back→edit for efficiency'},
-      idealUseCases: ['Config values (debug flags|ports|URLs)', 'Function/variable names', 'Import/require statements', 'Typos|small bugs', 'Multi-line same file (max 20 ops)'],
-      avoidWhen: ['new files→write | full refactor→write | multi-file patterns→sed | fuzzy match needed→aider'],
-      responseOptimization: 'Default minimal (~10tok) | dryRun:true→full diff'
+      preferOver: 'write (95% save) | sed (exact vs regex) | cat+write (never)',
+      idealFor: 'Config|renames|typos|small bugs (max 20 ops)',
+      avoid: 'New files→write | refactor→write | multi-file→sed | fuzzy→aider',
+      response: '~10tok default | dryRun→diff'
     }
   };
 

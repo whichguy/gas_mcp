@@ -64,22 +64,10 @@ export class ConfigTool extends BaseTool {
     required: ['action', 'scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      actions: {
-        get: 'Query current configuration value',
-        set: 'Update configuration value'
-      },
-      useCases: {
-        getSyncFolder: 'config({action:"get", type:"sync_folder", scriptId:"..."})',
-        setSyncFolder: 'config({action:"set", type:"sync_folder", scriptId:"...", value:"~/new/path"})',
-        moveSyncFolder: 'config({action:"set", type:"sync_folder", scriptId:"...", value:"~/new/path", moveExisting:true})'
-      },
-      interoperability: {
-        beforeSet: ['git status→check uncommitted', 'git stash→save WIP', 'pwd→note dir'],
-        afterSet: ['cd <newPath>', 'git status→verify', 'git remote -v→check remotes', 'local_sync({scriptId})'],
-        withGitCommands: ['cd <syncFolder>', 'git status', 'git log --oneline -5', 'git push origin <branch>'],
-        withGithubMcp: ['get_repository→compare remote', 'list_commits→history', 'create_pull_request→after push']
-      },
-      warnings: ['⚠️ no uncommitted before move', '📁 moveExisting:true→physically moves repo', '🔗 remotes+history preserved', '📝 updates .git/config.gs in GAS']
+      actions: 'get=query | set=update',
+      examples: ['get: config({action:"get",type:"sync_folder"})', 'set: config({...value:"~/path"})', 'move: add moveExisting:true'],
+      workflow: ['before: git status|stash', 'after: cd <path> | local_sync', 'git: cd <folder> | status|log|push'],
+      warnings: 'no uncommitted before move | moveExisting physically moves repo | updates .git/config.gs'
     }
   };
 

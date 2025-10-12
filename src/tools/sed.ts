@@ -86,40 +86,27 @@ export class SedTool extends BaseTool {
     properties: {
       ...SchemaFragments.scriptId,
       pattern: {
-        description: 'Primary regex pattern to search for. Supports capture groups with $1, $2 syntax in replacement.',
+        description: 'Regex pattern. Supports capture groups ($1, $2).',
         type: 'string',
         minLength: 1,
-        examples: [
-          'function\\\\s+(\\\\w+)',
-          'console\\\\.log\\\\([^)]*\\\\)',
-          '\\\\b(var|let)\\\\s+(\\\\w+)',
-          'require\\\\(["\']([^"\']+)["\']\\\\)'
-        ]
+        examples: ['function\\\\s+(\\\\w+)', 'console\\\\.log\\\\([^)]*\\\\)']
       },
       patterns: {
-        description: 'Multiple search patterns (OR logic with main pattern). All patterns use same replacement.',
+        description: 'Multiple patterns (OR logic). Same replacement for all.',
         type: 'array',
         items: { type: 'string' },
-        examples: [
-          ['console\\.log', 'Logger\\.log'],
-          ['function\\\\s+(\\\\w+)', 'const\\\\s+(\\\\w+)\\\\s*=']
-        ]
+        examples: [['console\\.log', 'Logger\\.log']]
       },
       replacement: {
-        description: 'Replacement string. Use $1, $2, etc. for capture groups from regex patterns.',
+        description: 'Replacement string. Use $1, $2 for capture groups.',
         type: 'string',
-        examples: [
-          'async function $1',
-          'debug.log($1)',
-          'const $2',
-          'require("$1")'
-        ]
+        examples: ['async function $1', 'debug.log($1)']
       },
       path: {
-        description: 'File pattern to filter operations (supports wildcards). Empty processes all files.',
+        description: 'File pattern (wildcards supported). Empty=all files.',
         type: 'string',
         default: '',
-        examples: ['*.js', 'utils/*', '*Controller*', 'test/*.spec']
+        examples: ['*.js', 'utils/*']
       },
       ...SchemaFragments.includeFileTypes,
       ...SchemaFragments.excludeFiles,
@@ -318,39 +305,27 @@ export class RawSedTool extends BaseTool {
     properties: {
       ...SchemaFragments.scriptId,
       pattern: {
-        description: 'Primary regex pattern to search for in raw content. Supports capture groups with $1, $2 syntax.',
+        description: 'Regex pattern for raw content. Supports capture groups ($1, $2).',
         type: 'string',
         minLength: 1,
-        examples: [
-          '_main\\\\s*\\\\(',
-          '__defineModule__\\\\s*\\\\(',
-          'globalThis\\.__',
-          'module\\\\s*=\\\\s*globalThis'
-        ]
+        examples: ['_main\\\\s*\\\\(', '__defineModule__\\\\s*\\\\(']
       },
       patterns: {
-        description: 'Multiple search patterns (OR logic) for raw content processing.',
+        description: 'Multiple patterns (OR logic) for raw content.',
         type: 'array',
         items: { type: 'string' },
-        examples: [
-          ['_main', '__defineModule__'],
-          ['CommonJS', 'wrapper', 'shim']
-        ]
+        examples: [['_main', '__defineModule__']]
       },
       replacement: {
-        description: 'Replacement string for raw content. Use $1, $2, etc. for capture groups.',
+        description: 'Replacement string. Use $1, $2 for capture groups.',
         type: 'string',
-        examples: [
-          '_mainFunction(',
-          '__defineModuleWrapper__(',
-          'globalThis.__enhanced'
-        ]
+        examples: ['_mainFunction(', '__defineModuleWrapper__(']
       },
       path: {
         description: 'File pattern to filter operations on raw content',
         type: 'string',
         default: '',
-        examples: ['*', '*.gs', 'CommonJS', '__mcp_exec']
+        examples: ['*', '*.gs']
       },
       ...SchemaFragments.includeFileTypes,
       ...SchemaFragments.excludeFiles,

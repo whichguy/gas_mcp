@@ -104,11 +104,10 @@ export class RawEditTool extends BaseTool {
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal raw editing'}
     },
     llmHints: {
-      preferOver: {raw_write: 'small system changes→95%+ save (output only changed)', edit: 'modify wrappers/infra→edit unwraps'},
-      idealUseCases: ['CommonJS system (CommonJS.js)', 'Exec infra (__mcp_exec.js)', 'Module wrappers (_main fns)', 'System bugs in infra', 'Auto-gen code (exact preservation)'],
-      avoidWhen: ['user code→edit (auto unwraps) | new system→raw_write | full refactor→raw_write | app dev→edit'],
-      responseOptimization: 'Default minimal (~10tok) | dryRun:true→full diff',
-      systemFileWarning: 'System files only | user code→edit (handles CommonJS auto)'
+      preferOver: 'raw_write (95% save) | edit (preserve wrappers)',
+      idealFor: 'CommonJS system|__mcp_exec|_main wrappers|system bugs',
+      avoid: 'User code→edit | new→raw_write | refactor→raw_write',
+      warning: 'System files only (user→edit)'
     }
   };
 

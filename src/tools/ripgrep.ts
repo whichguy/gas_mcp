@@ -829,51 +829,29 @@ export class RipgrepTool extends BaseTool {
     properties: {
       pattern: {
         type: 'string',
-        description: 'Primary search pattern (regex or literal). Supports advanced regex features, multiline matching, and Unicode. Use with smartCase for intelligent case handling.',
+        description: 'Search pattern (regex or literal). Supports advanced regex, multiline, Unicode. Use smartCase for auto case handling.',
         minLength: 1,
-        examples: [
-          'function\\\\s+(\\\\w+)',         // Function definitions
-          'TODO|FIXME|HACK',               // Multiple alternatives  
-          '(?m)^class\\\\s+(\\\\w+)',      // Multiline class definitions
-          'require\\\\(["\']([^"\']+)',    // Module imports
-          '\\\\b(async|await)\\\\b',       // Word boundaries
-          '.{0,50}error.{0,50}',           // Context around errors
-        ]
+        examples: ['function\\\\s+(\\\\w+)', 'TODO|FIXME']
       },
       ...SchemaFragments.scriptId,
       patterns: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Additional search patterns (OR logic with main pattern). Enables multi-pattern search like ripgrep.',
-        examples: [
-          ['TODO', 'FIXME', 'HACK'],
-          ['function.*test', 'describe.*spec'],
-          ['error', 'exception', 'fail']
-        ]
+        description: 'Additional patterns (OR logic). Multi-pattern search like ripgrep.',
+        examples: [['TODO', 'FIXME']]
       },
       path: {
         type: 'string',
-        description: 'Filename prefix pattern for pseudo-directory filtering. GAS has no real directories - filenames like "utils/helper" use prefixes to simulate directories.',
+        description: 'Filename prefix pattern. GAS uses prefixes like "utils/helper" to simulate directories.',
         default: '',
-        examples: [
-          '',                            // All files (root level and prefixed)
-          'utils/*',                     // Files starting with "utils/" prefix
-          'api/v1/*',                    // Files starting with "api/v1/" prefix  
-          'test/*.test',                 // Test files with test/ prefix
-          '*Controller*',                // Files containing "Controller" anywhere
-          '.*\\.config$',                // Files ending with ".config"
-        ]
+        examples: ['utils/*', '*Controller*']
       },
       pseudoDepth: {
         type: 'number',
-        description: 'Maximum "directory depth" by counting "/" separators in filenames. Since GAS has no real directories, this simulates depth filtering.',
+        description: 'Max "depth" by counting "/" in filenames. Simulates directory depth filtering.',
         minimum: 0,
         maximum: 10,
-        examples: [
-          0,   // Only root-level files (no "/" in filename)
-          1,   // Files like "utils/helper" (one "/" separator)
-          2,   // Files like "api/v1/client" (two "/" separators)
-        ]
+        examples: [1]
       },
       fixedStrings: {
         type: 'boolean',
@@ -883,7 +861,7 @@ export class RipgrepTool extends BaseTool {
       smartCase: {
         type: 'boolean',
         default: false,
-        description: 'Smart case matching: if pattern has uppercase letters, search case-sensitively; otherwise case-insensitive (like ripgrep -S)'
+        description: 'Smart case: uppercase in pattern=case-sensitive, else case-insensitive (ripgrep -S)'
       },
       multiline: {
         type: 'boolean',
@@ -894,19 +872,19 @@ export class RipgrepTool extends BaseTool {
         type: 'number',
         minimum: 0,
         maximum: 10,
-        description: 'Number of lines to show before each match (like ripgrep -B)'
+        description: 'Lines before match (ripgrep -B)'
       },
       contextAfter: {
         type: 'number',
         minimum: 0,
         maximum: 10,
-        description: 'Number of lines to show after each match (like ripgrep -A)'
+        description: 'Lines after match (ripgrep -A)'
       },
       context: {
         type: 'number',
         minimum: 0,
         maximum: 10,
-        description: 'Number of lines to show before and after each match (like ripgrep -C)'
+        description: 'Lines before+after match (ripgrep -C)'
       },
       wholeWord: {
         type: 'boolean',
@@ -925,7 +903,7 @@ export class RipgrepTool extends BaseTool {
       },
       replace: {
         type: 'string',
-        description: 'Generate replacement suggestions using this pattern (like ripgrep -r). Non-destructive - only shows suggestions.'
+        description: 'Replacement suggestions (ripgrep -r). Non-destructive.'
       },
       maxCount: {
         type: 'number',
@@ -975,10 +953,7 @@ export class RipgrepTool extends BaseTool {
         type: 'array',
         items: { type: 'string' },
         description: 'Filename patterns to exclude from search (supports wildcards)',
-        examples: [
-          ['*/test/*', '*/CommonJS'],
-          ['*Test*', '*Spec*']
-        ]
+        examples: [['*/test/*', '*Test*']]
       },
       includeFileTypes: {
         type: 'array',
@@ -987,11 +962,7 @@ export class RipgrepTool extends BaseTool {
           enum: ['SERVER_JS', 'HTML', 'JSON']
         },
         description: 'Filter by GAS file types',
-        examples: [
-          ['SERVER_JS'],                    // JavaScript files only
-          ['SERVER_JS', 'HTML'],           // JavaScript and HTML files
-          ['JSON']                         // JSON files only
-        ]
+        examples: [['SERVER_JS']]
       },
       ignoreCase: {
         type: 'boolean',
@@ -1013,17 +984,10 @@ export class RipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
-      fileSystem: 'GAS flat: "utils/helper"|"api/client" = single filenames with pseudo-directory prefixes',
-      pathPatterns: 'path:"utils/*" → prefix filter | "*" matches remaining filename',
-      whenToUse: 'Advanced text search: multi-pattern | context | pseudo-directory filtering',
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal with full ripgrep features'},
-      limitations: {maxCount: '1000/file max→specific patterns', maxFiles: '500 max→path narrow', performance: 'Complex regex+multiline→profile showStats'},
-      examples: ['Multi-pattern: patterns:["fn.*test","describe.*spec"],smartCase:true', 'Context: pattern:"TODO",contextBefore:2,contextAfter:3', 'Replace preview: pattern:"console\\\\.log",replace:"Logger.log"', 'Util fns: pattern:"function.*util",path:"utils/*"', 'API errors: patterns:["error","exception"],path:"api/*",context:2', 'Root only: pattern:"TODO",pseudoDepth:0', 'Config: pattern:"config",path:"*config*"', 'Stats: pattern:"slow.*operation",showStats:true', 'Case-insensitive: pattern:"todo",ignoreCase:true', 'Sorted: pattern:"function",sort:"path"', 'Trimmed: pattern:"class.*\\\\{",trim:true'],
-      fileSystemReality: 'GAS flat: "utils/helper.js" = filename "utils/helper" NOT file in folder',
-      pathFilteringLogic: 'Prefix matching on complete filenames (not directory traversal)',
-      performance: 'Optimized: multi-pattern | in-memory | regex cache | performance stats',
-      workflow: 'Search→analyze→generate replacements→apply via write',
-      contentComparison: 'ripgrep: clean code (cat shows) | raw_ripgrep: full content+wrappers'
+      whenToUse: 'Advanced multi-pattern search with context+filtering',
+      limitations: '1000/file max, 500 file max',
+      examples: ['patterns:["TODO","FIXME"],smartCase:true', 'pattern:"error",path:"api/*",context:2', 'pattern:"fn",sort:"path",trim:true'],
+      contentType: 'clean user code (unwrapped)'
     }
   };
 
@@ -1295,41 +1259,22 @@ export class RawRipgrepTool extends BaseTool {
     properties: {
       pattern: {
         type: 'string',
-        description: 'Primary search pattern (regex or literal). Searches complete file content including CommonJS wrappers and system code. Examples: "_main\\\\s*\\\\(" finds CommonJS wrappers, "__defineModule__" finds system calls',
+        description: 'Search pattern (regex or literal) on raw content+CommonJS wrappers+system code. "_main\\\\s*\\\\(" finds wrappers.',
         minLength: 1,
-        examples: [
-          'require\\\\(',                      // Find require calls in full content
-          'function\\\\s+(\\\\w+)',            // Find all function definitions including wrappers
-          '_main\\\\s*\\\\(',                 // Find CommonJS main wrapper functions
-          '__defineModule__',                  // Find CommonJS system module definition calls
-          'globalThis\\.__getCurrentModule',   // Find module system calls
-          'module\\s*=\\s*globalThis',        // Find module assignments
-          'exports\\s*=\\s*module\\.exports', // Find exports assignments
-        ]
+        examples: ['_main\\\\s*\\\\(', '__defineModule__']
       },
       ...SchemaFragments.scriptId,
       patterns: {
         type: 'array',
         items: { type: 'string' },
         description: 'Additional search patterns (OR logic with main pattern) for searching raw content with system code.',
-        examples: [
-          ['_main', '__defineModule__', 'globalThis'],
-          ['require\\\\(', 'module\\.exports', 'exports\\s*='],
-          ['CommonJS', 'wrapper', 'shim']
-        ]
+        examples: [['_main', '__defineModule__']]
       },
       path: {
         type: 'string',
         description: 'Filename prefix pattern for pseudo-directory filtering. Always retrieves content via direct API calls, never uses local cached files.',
         default: '',
-        examples: [
-          '',                            // Search entire project (includes CommonJS wrappers)
-          'utils/*',                     // Wildcard: utils prefix (full content)
-          '*Connector*',                 // Wildcard: files containing Connector (full content)
-          '.*Controller.*',              // Regex: files containing Controller (full content)
-          '(utils|helpers)/.*',          // Regex: utils OR helpers prefixes (full content)
-          '.*\\.(test|spec)$',          // Regex: test files ending in .test or .spec (full content)
-        ]
+        examples: ['utils/*', '.*Controller.*']
       },
       pseudoDepth: {
         type: 'number',
@@ -1437,10 +1382,7 @@ export class RawRipgrepTool extends BaseTool {
         type: 'array',
         items: { type: 'string' },
         description: 'Files to exclude from raw content search',
-        examples: [
-          ['*/test/*', '*/debug/*'],
-          ['*Temp*', '*Backup*']
-        ]
+        examples: [['*/test/*', '*Temp*']]
       },
       includeFileTypes: {
         type: 'array',
@@ -1472,7 +1414,7 @@ export class RawRipgrepTool extends BaseTool {
     llmGuidance: {
       whenToUse: 'System analysis | debug CommonJS wrappers | search complete file content+system code',
       contentDifference: 'raw_ripgrep: complete (_main+__defineModule__+wrappers) | ripgrep: clean user code',
-      examples: ['Wrapper issues: patterns:["_main","__defineModule__"],showStats:true', 'System: pattern:"globalThis\\\\.__",multiline:true', 'Debug: pattern:"module\\\\s*=",context:3', 'Full: pattern:"CommonJS",path:"*",maxFiles:200', 'Case-insensitive: pattern:"_main",ignoreCase:true', 'Sorted: pattern:"require",sort:"path"', 'Trimmed: pattern:"function",trim:true'],
+      examples: ['patterns:["_main","__defineModule__"],showStats:true', 'pattern:"module",context:3', 'pattern:"require",sort:"path",trim:true'],
       dataSource: 'Always direct API calls→complete file content+all wrappers+infra code',
       performance: 'Direct API (no local cache) | full system wrapper content in scope'
     }

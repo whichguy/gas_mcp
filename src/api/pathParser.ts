@@ -138,16 +138,16 @@ export function getFileType(filename: string): string {
   if (baseName === 'appsscript') {
     return 'JSON';
   }
-  
+
   // If no extension, default to SERVER_JS
   if (!filename.includes('.')) {
     return 'SERVER_JS';
   }
-  
+
   const ext = filename.substring(filename.lastIndexOf('.'));
   const type = FILE_TYPE_MAP[ext.toLowerCase()];
   if (!type) {
-    return 'SERVER_JS'; // Default to SERVER_JS instead of throwing error
+    throw new ValidationError('extension', ext, `valid file extension (${Object.keys(FILE_TYPE_MAP).join(', ')})`);
   }
   return type;
 }
@@ -173,9 +173,9 @@ export function parsePath(path: string): ParsedPath {
   const parts = path.split('/').filter(part => part.length > 0);
   const scriptId = parts[0];
 
-  // Validate script ID format (Google Drive file IDs are typically 25-60 characters)
-  if (!/^[a-zA-Z0-9_-]{25,60}$/.test(scriptId)) {
-    throw new ValidationError('scriptId', scriptId, 'valid Google Apps Script project ID (25-60 characters, alphanumeric, _, -)');
+  // Validate script ID format (Google Drive file IDs are typically 25-60 characters, but allow up to 100)
+  if (!/^[a-zA-Z0-9_-]{25,100}$/.test(scriptId)) {
+    throw new ValidationError('scriptId', scriptId, 'valid Google Apps Script project ID (25-100 characters, alphanumeric, _, -)');
   }
 
   // Check for wildcard patterns in the entire path
@@ -231,16 +231,14 @@ export function parsePath(path: string): ParsedPath {
   // 2. It has any extension (contains a dot)
   // 3. It looks like a code file (starts with uppercase or contains camelCase)
   // 4. It's a special Google Apps Script file (appsscript manifest or Code)
-  // 5. The last part is a valid Google Apps Script filename (alphanumeric, underscores, hyphens)
-  // 6. In GAS, filenames with "/" are valid and represent logical directory structure
+  // Default to directory if none of the above match (e.g., "models", "utils", "src")
   const hasKnownExtension = /\.(gs|ts|html|json)$/i.test(lastPart);
   const hasAnyExtension = lastPart.includes('.');
   const looksLikeCodeFile = /^[A-Z]/.test(lastPart) || /[a-z][A-Z]/.test(lastPart);
   const isSpecialGASFile = lastPart === 'appsscript' || lastPart === 'Code';
-  const isValidGASFilename = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(lastPart);
-  
-  // ✅ FIXED: Accept files with directory prefixes - GAS supports "/" in filenames
-  const isFile = hasKnownExtension || hasAnyExtension || looksLikeCodeFile || isSpecialGASFile || isValidGASFilename;
+
+  // ✅ FIXED: Default to directory for simple lowercase names like "models", "utils", "src"
+  const isFile = hasKnownExtension || hasAnyExtension || looksLikeCodeFile || isSpecialGASFile;
 
   if (isFile) {
     return {
@@ -360,9 +358,9 @@ export function resolveHybridScriptId(
 ): HybridPathResolution {
   // Case 1: scriptId provided → use it, treat path as clean
   if (scriptId && scriptId.trim()) {
-    // Validate scriptId format (Google Drive file IDs are typically 25-60 characters)
-    if (!/^[a-zA-Z0-9_-]{25,60}$/.test(scriptId)) {
-      throw new ValidationError('scriptId', scriptId, 'valid Google Apps Script project ID (25-60 characters, alphanumeric, _, -)');
+    // Validate scriptId format (Google Drive file IDs are typically 25-60 characters, but allow up to 100)
+    if (!/^[a-zA-Z0-9_-]{25,100}$/.test(scriptId)) {
+      throw new ValidationError('scriptId', scriptId, 'valid Google Apps Script project ID (25-100 characters, alphanumeric, _, -)');
     }
     
     return {
