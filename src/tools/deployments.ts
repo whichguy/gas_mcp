@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Get the __mcp_gas_run.js template content
+ * Get the __mcp_exec.js template content
  * @returns {string} The execution infrastructure template content
  */
 function getExecutionTemplate(): string {
@@ -29,11 +29,11 @@ function getExecutionTemplate(): string {
       srcDir = path.join(currentDir, '..');
     }
     
-    const templatePath = path.join(srcDir, '__mcp_gas_run.js');
+    const templatePath = path.join(srcDir, '__mcp_exec.js');
     
     return fs.readFileSync(templatePath, 'utf8');
   } catch (error) {
-    console.error('Error reading __mcp_gas_run.js template:', error);
+    console.error('Error reading __mcp_exec.js template:', error);
     throw new Error(`Failed to read execution template: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
@@ -70,7 +70,7 @@ function getManifestTemplate(): any {
 
 
 /**
- * Get the __mcp_gas_run_success.html template content
+ * Get the __mcp_exec_success.html template content
  * @returns {string} The success HTML template content
  */
 export function getSuccessHtmlTemplate(): string {
@@ -85,17 +85,17 @@ export function getSuccessHtmlTemplate(): string {
       srcDir = path.join(currentDir, '..');
     }
 
-    const templatePath = path.join(srcDir, '__mcp_gas_run_success.html');
+    const templatePath = path.join(srcDir, '__mcp_exec_success.html');
 
     return fs.readFileSync(templatePath, 'utf8');
   } catch (error) {
-    console.error('Error reading __mcp_gas_run_success.html template:', error);
+    console.error('Error reading __mcp_exec_success.html template:', error);
     throw new Error(`Failed to read success HTML template: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Get the __mcp_gas_run_error.html template content
+ * Get the __mcp_exec_error.html template content
  * @returns {string} The error HTML template content
  */
 export function getErrorHtmlTemplate(): string {
@@ -110,11 +110,11 @@ export function getErrorHtmlTemplate(): string {
       srcDir = path.join(currentDir, '..');
     }
 
-    const templatePath = path.join(srcDir, '__mcp_gas_run_error.html');
+    const templatePath = path.join(srcDir, '__mcp_exec_error.html');
 
     return fs.readFileSync(templatePath, 'utf8');
   } catch (error) {
-    console.error('Error reading __mcp_gas_run_error.html template:', error);
+    console.error('Error reading __mcp_exec_error.html template:', error);
     throw new Error(`Failed to read error HTML template: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
@@ -400,7 +400,7 @@ export class DeployCreateTool extends BaseTool {
           executeAs: webAppExecuteAs
         };
 
-        // Always use gas_run URL format for consistency
+        // Always use exec URL format for consistency
         const webAppUrl = deployment.webAppUrl;
 
         result.webAppUrl = webAppUrl;
@@ -418,7 +418,7 @@ export class DeployCreateTool extends BaseTool {
         ];
       } else {
         console.error(`⚙️ Processing API Executable deployment configuration...`);
-        result.instructions = 'API Executable deployment created successfully. Functions can now be executed via gas_run tool.';
+        result.instructions = 'API Executable deployment created successfully. Functions can now be executed via exec tool.';
         result.apiEndpoint = `https://script.googleapis.com/v1/scripts/${scriptId}:run`;
       }
 
@@ -780,7 +780,7 @@ export class DeployListTool extends BaseTool {
         };
         
         analysis.apiExecutables.push(apiInfo);
-        analysis.gasRunCommands.push(`gas_run_api_exec --scriptId=${deployment.deploymentId} --functionName=myFunction`);
+        analysis.gasRunCommands.push(`exec_api_exec --scriptId=${deployment.deploymentId} --functionName=myFunction`);
       }
 
       // Issue detection
@@ -954,7 +954,7 @@ export class DeployListTool extends BaseTool {
     }
     
     if (analysis.apiExecutableCount > 0) {
-      instructions.push(`Found ${analysis.apiExecutableCount} API executable deployment(s) - use gas_run_api_exec for function calls`);
+      instructions.push(`Found ${analysis.apiExecutableCount} API executable deployment(s) - use exec_api_exec for function calls`);
     }
     
     if (analysis.headCount > 0) {
@@ -1029,12 +1029,12 @@ export class ProjectCreateTool extends BaseTool {
     required: ['title'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      typicalSequence: ['1.auth→start if needed', '2.project_create({title,localName})', '3.auto-added to local config', '4.gas_project_set({project})→start working', '5.gas_write({path,content})→uses current', '6.gas_run({js_statement})→test exec'],
+      typicalSequence: ['1.auth→start if needed', '2.project_create({title,localName})', '3.auto-added to local config', '4.project_set({project})→start working', '5.write({path,content})→uses current', '6.exec({js_statement})→test exec'],
       scriptTypeCompatibility: {standalone: 'Creates standalone (default)', containerBound: 'Cannot create container-bound via API→use driveContainerTools|UI', notes: 'Standalone only→container-bound: bind manually|create_script'},
       limitations: {projectType: 'standalone only (no container-bound)', quotas: 'subject to GAS quota (varies)', initialState: 'CommonJS.js (2-param) auto-deployed→ready for code'},
-      returnValue: {scriptId: 'SAVE→required for all ops', localName: 'use with gas_project_set|pull|push', webAppUrl: 'null initially→created on first deploy', driveUrl: 'direct link→Apps Script editor'},
-      nextSteps: ['IMMEDIATE: save scriptId', 'OPTIONAL: gas_project_set({project:localName})', 'ADD CODE: gas_write({scriptId,path,content})', 'TEST: gas_run({scriptId,js_statement})', 'DEPLOY: deploy_create({scriptId})'],
-      relatedTools: {containerBoundAlternative: 'create_script→Sheets/Docs/Forms bound', projectManagement: 'project_list|project_add', codeManagement: 'gas_write|gas_cat', execution: 'gas_run', deployment: 'version_create+deploy_create'},
+      returnValue: {scriptId: 'SAVE→required for all ops', localName: 'use with project_set|pull|push', webAppUrl: 'null initially→created on first deploy', driveUrl: 'direct link→Apps Script editor'},
+      nextSteps: ['IMMEDIATE: save scriptId', 'OPTIONAL: project_set({project:localName})', 'ADD CODE: write({scriptId,path,content})', 'TEST: exec({scriptId,js_statement})', 'DEPLOY: deploy_create({scriptId})'],
+      relatedTools: {containerBoundAlternative: 'create_script→Sheets/Docs/Forms bound', projectManagement: 'project_list|project_add', codeManagement: 'write|cat', execution: 'exec', deployment: 'version_create+deploy_create'},
       errorHandling: {AuthenticationError: 'auth→start first', PermissionError: 'check Drive perms+API access', QuotaExceeded: 'reached project creation limit'}
     }
   };
@@ -1206,7 +1206,7 @@ export class ProjectInitTool extends BaseTool {
       },
       includeExecutionInfrastructure: {
         type: 'boolean',
-        description: 'Install/update __mcp_gas_run execution infrastructure (default: true)',
+        description: 'Install/update __mcp_exec execution infrastructure (default: true)',
         default: true
       },
       updateManifest: {
@@ -1233,14 +1233,14 @@ export class ProjectInitTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      whenToUse: ['gas_run fails "__defineModule__ not defined"|projects not via project_create|missing exec infra|require()/module.exports broken'],
-      prerequisites: ['1.auth→start if needed', '2.scriptId from existing (gas_ls)'],
+      whenToUse: ['exec fails "__defineModule__ not defined"|projects not via project_create|missing exec infra|require()/module.exports broken'],
+      prerequisites: ['1.auth→start if needed', '2.scriptId from existing (ls)'],
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal infra init'},
       shaVerification: {algorithm: 'Git SHA-1: sha1("blob "+size+"\\0"+content)', forcefalse: 'verify+warn on mismatch (no repair, preserves)', forcetrue: 'verify+auto-repair mismatch (reinstall)', warningLocation: 'verificationWarnings[] when force=false', compatibility: 'matches git hash-object'},
       limitations: {existingFiles: 'default preserve→force:true overwrite', manifestUpdates: 'updates appsscript.json', noRollback: 'partial possible→check filesInstalled+errors'},
       useCases: {basicInit: 'project_init({scriptId})', commonJSOnly: 'project_init({scriptId,includeExecutionInfrastructure:false})', executionOnly: 'project_init({scriptId,includeCommonJS:false})', verifyOnly: 'project_init({scriptId,force:false})→SHA check+warn', autoRepair: 'project_init({scriptId,force:true})→SHA auto-repair'},
       returnValue: {status: 'success|partial|failed', scriptId: 'initialized project ID', filesInstalled: 'installed/updated list', filesSkipped: 'existing skipped list', verificationWarnings: 'SHA warnings (force=false+mismatch)', errors: 'error list'},
-      nextSteps: ['gas_run({scriptId,js_statement:"Math.PI*2"})', '__defineModule__(_main) pattern', 'require("ModuleName")']
+      nextSteps: ['exec({scriptId,js_statement:"Math.PI*2"})', '__defineModule__(_main) pattern', 'require("ModuleName")']
     }
   };
 
@@ -1437,10 +1437,10 @@ export class ProjectInitTool extends BaseTool {
   }
 
   /**
-   * Install execution infrastructure (__mcp_gas_run.js)
+   * Install execution infrastructure (__mcp_exec.js)
    */
   private async installExecutionInfrastructure(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const fileName = '__mcp_gas_run';
+    const fileName = '__mcp_exec';
 
     // Check if file exists and verify if needed
     if (existingFiles.has(fileName)) {
@@ -1487,7 +1487,7 @@ export class ProjectInitTool extends BaseTool {
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
       const writeParams = {
-        path: `${scriptId}/__mcp_gas_run`,
+        path: `${scriptId}/__mcp_exec`,
         content: executionTemplate,
         fileType: 'SERVER_JS' as const,
         position: 1, // Execute after CommonJS
@@ -1521,11 +1521,11 @@ export class ProjectInitTool extends BaseTool {
   }
 
   /**
-   * Install HTML templates (__mcp_gas_run_success.html and __mcp_gas_run_error.html)
+   * Install HTML templates (__mcp_exec_success.html and __mcp_exec_error.html)
    */
   private async installHtmlTemplates(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const successFileName = '__mcp_gas_run_success';
-    const errorFileName = '__mcp_gas_run_error';
+    const successFileName = '__mcp_exec_success';
+    const errorFileName = '__mcp_exec_error';
     const results: any[] = [];
 
     // Install success template
@@ -1542,7 +1542,7 @@ export class ProjectInitTool extends BaseTool {
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
-          path: `${scriptId}/__mcp_gas_run_success`,
+          path: `${scriptId}/__mcp_exec_success`,
           content: successTemplate,
           fileType: 'HTML' as const,
           accessToken
@@ -1573,7 +1573,7 @@ export class ProjectInitTool extends BaseTool {
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
-          path: `${scriptId}/__mcp_gas_run_error`,
+          path: `${scriptId}/__mcp_exec_error`,
           content: errorTemplate,
           fileType: 'HTML' as const,
           accessToken
@@ -1654,7 +1654,7 @@ export class ProjectInitTool extends BaseTool {
     }
 
     if (result.status === 'success') {
-      message += '. Project is now ready for gas_run execution and CommonJS modules.';
+      message += '. Project is now ready for exec execution and CommonJS modules.';
     } else if (result.status === 'partial') {
       message += '. Some files were installed but errors occurred.';
     } else {
@@ -1835,7 +1835,7 @@ export class DeployGetDetailsTool extends BaseTool {
     if (apiExecutableEntry) {
       usage.apiExecutable = {
         access: apiExecutableEntry.executionApi?.access || 'Unknown',
-        gasCommand: `gas_run_api_exec --scriptId=${deployment.deploymentId} --functionName=myFunction`,
+        gasCommand: `exec_api_exec --scriptId=${deployment.deploymentId} --functionName=myFunction`,
         requirements: [
           'Function must be accessible via Apps Script API',
           'Proper OAuth scopes required',
@@ -1877,7 +1877,7 @@ export class DeployGetDetailsTool extends BaseTool {
     if (apiExecutableEntry) {
       instructions.push(`⚙️ API Executable available for function calls`);
       instructions.push(`🔑 Access level: ${apiExecutableEntry.executionApi?.access || 'Unknown'}`);
-      instructions.push(`🔧 Use: gas_run_api_exec --scriptId=${deployment.scriptId} --functionName=myFunction`);
+      instructions.push(`🔧 Use: exec_api_exec --scriptId=${deployment.scriptId} --functionName=myFunction`);
     }
 
     if (deployment.versionNumber) {

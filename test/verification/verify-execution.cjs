@@ -65,7 +65,7 @@ test('Proxy setup capabilities', checkFile('src/tools/proxySetup.ts', 'gas_proxy
 
 console.log('\n🔧 Runtime Infrastructure');
 test('CommonJS module system', checkFile('src/CommonJS.js'));
-test('MCP execution runtime', checkFile('src/__mcp_gas_run.js'));
+test('MCP execution runtime', checkFile('src/__mcp_exec.js'));
 test('Auto-deployment features', checkFile('src/tools/execution.ts', 'autoRedeploy'));
 test('Module resolution system', checkFile('src/CommonJS.js', ['require', 'module', 'exports']));
 

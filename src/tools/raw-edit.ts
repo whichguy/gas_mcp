@@ -39,7 +39,7 @@ interface RawEditResult {
  */
 export class RawEditTool extends BaseTool {
   public name = 'raw_edit';
-  public description = 'Token-efficient file editing using exact string matching on raw file content (includes CommonJS wrappers). Use for editing system files or module infrastructure. Provides 83% token savings vs gas_raw_write.';
+  public description = 'Token-efficient file editing using exact string matching on raw file content (includes CommonJS wrappers). Use for editing system files or module infrastructure. Provides 83% token savings vs raw_write.';
 
   public inputSchema = {
     type: 'object',
@@ -99,13 +99,13 @@ export class RawEditTool extends BaseTool {
       whenToUse: 'Raw content (_main+__defineModule__) editing | system files | user code→prefer edit',
       contentDifference: 'raw_edit: complete (_main+__defineModule__) | edit: clean user code',
       tokenSavings: '95%+ vs raw_write (minimal ~10tok vs thousands)',
-      examples: ['CommonJS: path:"abc123.../CommonJS",edits:[{oldText:"function _main(",newText:"function _mainWrapper("}]', 'System: path:"abc123.../__mcp_gas_run",edits:[...]'],
+      examples: ['CommonJS: path:"abc123.../CommonJS",edits:[{oldText:"function _main(",newText:"function _mainWrapper("}]', 'System: path:"abc123.../__mcp_exec",edits:[...]'],
       vsGasEdit: 'edit: unwraps | raw_edit: preserves exact',
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal raw editing'}
     },
     llmHints: {
-      preferOver: {gas_raw_write: 'small system changes→95%+ save (output only changed)', gas_edit: 'modify wrappers/infra→edit unwraps'},
-      idealUseCases: ['CommonJS system (CommonJS.js)', 'Exec infra (__mcp_gas_run.js)', 'Module wrappers (_main fns)', 'System bugs in infra', 'Auto-gen code (exact preservation)'],
+      preferOver: {raw_write: 'small system changes→95%+ save (output only changed)', edit: 'modify wrappers/infra→edit unwraps'},
+      idealUseCases: ['CommonJS system (CommonJS.js)', 'Exec infra (__mcp_exec.js)', 'Module wrappers (_main fns)', 'System bugs in infra', 'Auto-gen code (exact preservation)'],
       avoidWhen: ['user code→edit (auto unwraps) | new system→raw_write | full refactor→raw_write | app dev→edit'],
       responseOptimization: 'Default minimal (~10tok) | dryRun:true→full diff',
       systemFileWarning: 'System files only | user code→edit (handles CommonJS auto)'

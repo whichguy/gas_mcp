@@ -77,7 +77,7 @@ export class WriteTool extends BaseFileSystemTool {
       commonJsIntegration: 'All SERVER_JS→auto CommonJS: (1)require() import (2)module object (3)exports shorthand → plain JS→wrapper transparent',
       moduleAccess: 'require("Mod") import | module.exports={...} export | exports.func=... shorthand → system: load/cache/resolve',
       wrapperHandling: 'Accidental _main()|__defineModule__→auto clean+replace proper structure → never manual add',
-      systemFiles: 'CommonJS|__mcp_gas_run|appsscript never wrapped→underlying infra',
+      systemFiles: 'CommonJS|__mcp_exec|appsscript never wrapped→underlying infra',
       examples: ['JS: path:"utils",content:"<arbitrary JS>"', 'exports: content:"module.exports={...}"', 'HTML: path:"sidebar",fileType:"HTML"', 'config: path:"appsscript",fileType:"JSON"', 'local: localOnly:true', 'WebApp: content:"<web app handler>",moduleOptions:{loadNow:true}', 'Trigger: content:"<trigger function>",moduleOptions:{loadNow:true}', 'util: content:"<utility functions>",moduleOptions:{loadNow:false}', 'preserve: omit moduleOptions→preserve loadNow+hoisted', 'hoisted: moduleOptions:{hoistedFunctions:[{name:"FN",params:["p1","p2"]}]}', 'remove hoisted: moduleOptions:{hoistedFunctions:[]}'],
       responseFormat: {basic: 'success:true + path + size', withLocal: 'local:{path,exists} if written locally', withGit: 'git:{associated,syncFolder} if .git.gs found', note: 'Response includes local file path and git association hint when .git.gs exists'},
       hoistedFunctionLifecycle: {preservation: 'omit moduleOptions→preserve hoisted+loadNow', replacement: 'provide hoistedFunctions→replace', removal: 'hoistedFunctions:[]→remove all bridges', noCruft: 'auto cleanup old→no orphans'}

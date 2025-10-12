@@ -136,7 +136,7 @@ export class SummaryTool extends BaseTool {
       throw GASErrorHandler.handleApiError(error, {
         operation: 'content summarization',
         scriptId: params.scriptId,
-        tool: 'gas_summary'
+        tool: 'summary'
       });
     }
   }

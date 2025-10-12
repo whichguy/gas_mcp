@@ -45,7 +45,7 @@ interface AiderResult {
  */
 export class AiderTool extends BaseTool {
   public name = 'aider';
-  public description = 'Token-efficient file editing using fuzzy string matching. Finds and replaces similar (not exact) text, handling formatting variations and minor differences. Provides 95%+ token savings vs gas_write.';
+  public description = 'Token-efficient file editing using fuzzy string matching. Finds and replaces similar (not exact) text, handling formatting variations and minor differences. Provides 95%+ token savings vs write.';
 
   public inputSchema = {
     type: 'object',
@@ -102,7 +102,7 @@ export class AiderTool extends BaseTool {
 
     llmHints: {
       decisionTree: {'Exact text known?': {yes: 'edit (fast)', no: 'aider (fuzzy)'}, 'Text has formatting variations?': {yes: 'aider (handles whitespace/format)', no: 'edit (exact ok)'}, 'Need regex patterns?': {yes: 'sed (pattern replace)', no: 'aider|edit (string)'}, 'Creating new file?': {yes: 'write (create)', no: 'aider|edit'}},
-      preferOver: {gas_edit: 'whitespace/format var | uncertain→aider (80% fuzzy) vs edit (100% exact)', gas_write: 'small changes→aider (95%+ save: ~10tok vs ~4.5k)', gas_sed: 'flexible no-regex→Levenshtein vs sed regex'},
+      preferOver: {edit: 'whitespace/format var | uncertain→aider (80% fuzzy) vs edit (100% exact)', write: 'small changes→aider (95%+ save: ~10tok vs ~4.5k)', sed: 'flexible no-regex→Levenshtein vs sed regex'},
       idealUseCases: ['reformatted code (whitespace/indent)', 'uncertain content→approx known', 'fn calls: spacing var', 'copied: formatted out (pretty/minified)', 'inconsistent: CRLF/LF | tabs/spaces', 'CommonJS user code (auto unwrap/wrap)'],
       avoidWhen: ['exact→edit (better perf) | regex→sed | new files→write | multi-occur diff→edit+index | system files→raw_aider'],
       similarityThresholdGuide: {'0.95-1.0': 'strict: whitespace only', '0.85-0.95': 'strict: minor (const x=1 vs x = 1)', '0.8-0.85': 'default: format var (indent/line endings)', '0.7-0.8': 'permissive: moderate (getUserData vs get_user_data)', '0.6-0.7': 'very permissive: significant diff (may false match)', 'below 0.6': 'too loose: high risk'},

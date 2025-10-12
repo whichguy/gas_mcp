@@ -95,7 +95,7 @@ export class GasDependencyAnalyzer {
   }
   
   private static getModuleType(fileName: string): 'internal' | 'external' | 'system' {
-    if (fileName === 'CommonJS' || fileName === '__mcp_gas_run' || fileName === 'appsscript') {
+    if (fileName === 'CommonJS' || fileName === '__mcp_exec' || fileName === 'appsscript') {
       return 'system';
     }
     
@@ -287,7 +287,7 @@ export class DepsTool extends BaseTool {
       },
       includeSystem: {
         type: 'boolean',
-        description: 'Include system files (CommonJS, __mcp_gas_run, etc.) in analysis',
+        description: 'Include system files (CommonJS, __mcp_exec, etc.) in analysis',
         default: false
       },
       showComplexity: {
@@ -337,7 +337,7 @@ export class DepsTool extends BaseTool {
       throw GASErrorHandler.handleApiError(error, {
         operation: 'dependency analysis',
         scriptId: params.scriptId,
-        tool: 'gas_deps'
+        tool: 'deps'
       });
     }
   }

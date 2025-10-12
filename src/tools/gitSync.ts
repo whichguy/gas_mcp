@@ -126,7 +126,7 @@ export class LocalSyncTool extends BaseTool {
       conceptualModel: ['.git/config.gs breadcrumb REQUIRED in GAS', 'Breadcrumbs mark folders+metadata', 'Multi-repo: multiple .git/ folders supported', 'NO auto-bootstrap: manual setup required'],
       prerequisites: ['.git/config.gs exists in GAS', 'Local git repo (git init + remote)', 'Git installed', 'GAS project exists'],
       typicalWorkflow: [
-        '1. Manually create .git/config.gs in GAS (use gas_write)',
+        '1. Manually create .git/config.gs in GAS (use write)',
         '2. mkdir ~/gas-repos/project-{scriptId} && cd there',
         '3. git init && git remote add origin <url>',
         '4. local_sync({scriptId})→syncs files',
@@ -188,7 +188,7 @@ export class LocalSyncTool extends BaseTool {
         throw new ValidationError('git-link', scriptId,
           'No .git/config.gs breadcrumb found in GAS project.\n' +
           'You must manually create .git/config.gs in GAS first.\n' +
-          'Example: gas_write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo\\n[branch \\"main\\"]"})'
+          'Example: write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo\\n[branch \\"main\\"]"})'
         );
       }
       
@@ -265,7 +265,7 @@ export class LocalSyncTool extends BaseTool {
       throw new ValidationError('git-link', `${projectPath || 'root'}`,
         `No .git/config.gs breadcrumb found in GAS project at path: ${projectPath || 'root'}.\n` +
         'You must manually create .git/config.gs in GAS first.\n' +
-        'Example: gas_write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo\\n[branch \\"main\\"]"})'
+        'Example: write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo\\n[branch \\"main\\"]"})'
       );
     }
 

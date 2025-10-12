@@ -16,7 +16,7 @@ const ASSET_EXTENSIONS = ['.js', '.json', '.html', '.gs'];
 // Essential files only (excluding demo/test files)
 const ESSENTIAL_FILES = [
   'CommonJS.js',
-  '__mcp_gas_run.js', 
+  '__mcp_exec.js', 
   'appsscript.json'
 ];
 

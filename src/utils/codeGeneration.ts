@@ -7,7 +7,7 @@
  * - ExecTool.getProxyFunctionCode() (140 lines) -> Web app proxy
  * 
  * Architecture: Self-contained system with dynamic execution
- * - __mcp_gas_run: System shim ONLY - never modified after creation
+ * - __mcp_exec: System shim ONLY - never modified after creation
  * - User code: Separate .gs files (e.g., Code.gs, UserFunctions.gs)
  * - Dynamic code execution via Function constructor
  */
@@ -33,7 +33,7 @@ export interface CodeGenerationResult {
 
 /**
  * Simple template reader that reads template content from src directory
- * @param templateName - The template filename (e.g., '__mcp_gas_run.js', 'CommonJS.js')
+ * @param templateName - The template filename (e.g., '__mcp_exec.js', 'CommonJS.js')
  * @returns Template content as string
  */
 function getTemplate(templateName: string): string {
@@ -86,7 +86,7 @@ export class CodeGenerator {
     // Always include the MCP system file
     const mcpSystemContent = this.generateMcpClassFile(timezone, mcpVersion);
     files.push({
-      name: '__mcp_gas_run',
+      name: '__mcp_exec',
       type: 'SERVER_JS',
       source: mcpSystemContent
     });
@@ -139,7 +139,7 @@ export class CodeGenerator {
    * - ALL USER CODE MUST BE IN SEPARATE .GS FILES
    */
   private static generateMcpClassFile(timezone: string, mcpVersion: string): string {
-    return getTemplate('__mcp_gas_run.js');
+    return getTemplate('__mcp_exec.js');
   }
 
   /**

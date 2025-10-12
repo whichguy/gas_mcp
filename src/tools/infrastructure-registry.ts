@@ -117,28 +117,28 @@ export const INFRASTRUCTURE_REGISTRY: Record<string, InfrastructureFile> = {
     description: 'CommonJS module system providing require(), module.exports, and exports'
   },
 
-  '__mcp_gas_run': {
-    name: '__mcp_gas_run',
+  '__mcp_exec': {
+    name: '__mcp_exec',
     getTemplate: getExecutionInfraTemplate,
     computeSHA: () => computeGitSHA(getExecutionInfraTemplate()),
     category: 'optional',
-    description: 'Execution infrastructure for gas_run tool with dynamic function execution'
+    description: 'Execution infrastructure for exec tool with dynamic function execution'
   },
 
-  '__mcp_gas_run_success': {
-    name: '__mcp_gas_run_success',
+  '__mcp_exec_success': {
+    name: '__mcp_exec_success',
     getTemplate: getSuccessHtmlTemplate,
     computeSHA: () => computeGitSHA(getSuccessHtmlTemplate()),
     category: 'optional',
-    description: 'HTML template for successful gas_run execution results'
+    description: 'HTML template for successful exec execution results'
   },
 
-  '__mcp_gas_run_error': {
-    name: '__mcp_gas_run_error',
+  '__mcp_exec_error': {
+    name: '__mcp_exec_error',
     getTemplate: getErrorHtmlTemplate,
     computeSHA: () => computeGitSHA(getErrorHtmlTemplate()),
     category: 'optional',
-    description: 'HTML template for gas_run execution errors with debugging information'
+    description: 'HTML template for exec execution errors with debugging information'
   }
 };
 

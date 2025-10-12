@@ -259,7 +259,7 @@ export class TriggerTool extends BaseTool {
         })()
       `;
 
-      // Execute using gas_exec
+      // Execute using exec
       const gasExecTool = new ExecTool(this.sessionAuthManager);
       const runResult = await gasExecTool.execute({
         scriptId,
@@ -326,7 +326,7 @@ export class TriggerTool extends BaseTool {
           throw new Error(`Unsupported trigger type: ${triggerType}`);
       }
 
-      // Execute using gas_exec
+      // Execute using exec
       const gasExecTool = new ExecTool(this.sessionAuthManager);
       const runResult = await gasExecTool.execute({
         scriptId,
@@ -450,7 +450,7 @@ export class TriggerTool extends BaseTool {
         `;
       }
 
-      // Execute using gas_exec
+      // Execute using exec
       const gasExecTool = new ExecTool(this.sessionAuthManager);
       const runResult = await gasExecTool.execute({
         scriptId,

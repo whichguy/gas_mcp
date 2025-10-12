@@ -627,7 +627,7 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
     }
     
     // Don't wrap special system files
-    const specialFiles = ['appsscript', 'CommonJS', '__mcp_gas_run'];
+    const specialFiles = ['appsscript', 'CommonJS', '__mcp_exec'];
     const baseFileName = fileName.split('/').pop()?.split('.')[0] || '';
     
     return !specialFiles.includes(baseFileName);

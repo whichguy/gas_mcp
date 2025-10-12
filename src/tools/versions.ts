@@ -16,7 +16,7 @@ export class VersionGetTool extends BaseTool {
       ...SchemaFragments.scriptId,
       versionNumber: {
         type: 'number',
-        description: 'Version number to retrieve. LLM USE: Get this from version_list or gas_deploy_list responses.',
+        description: 'Version number to retrieve. LLM USE: Get this from version_list or deploy_list responses.',
         minimum: 1,
         llmHints: {
           obtaining: 'Use version_list to see all available version numbers',
@@ -31,7 +31,7 @@ export class VersionGetTool extends BaseTool {
     llmWorkflowGuide: {
       prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls', '3.version exists (version_list)'],
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal version mgmt'},
-      limitations: {versionCreation: 'immutable snapshots→no edit after', versionLimit: 'account-dependent (50-100 typical)', fileContentAccess: 'metadata only→gas_cat for content'},
+      limitations: {versionCreation: 'immutable snapshots→no edit after', versionLimit: 'account-dependent (50-100 typical)', fileContentAccess: 'metadata only→cat for content'},
       useCases: {codeReview: 'version_get({scriptId,versionNumber:5})', comparison: 'multiple version_get→compare', deployment: 'version_get→verify before deploy'},
       errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', VersionNotFound: 'version_list→see available'},
       returnValue: {versionNumber: 'requested version num', description: 'version description/changelog', createTime: 'creation timestamp', fileCount: 'file count in version'}
@@ -98,9 +98,9 @@ export class VersionListTool extends BaseTool {
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal version listing'},
       limitations: {pagination: 'pageSize per call→pageToken for more', sortOrder: 'reverse chronological (newest first)', metadataOnly: 'metadata only→version_get for detail'},
       useCases: {history: 'version_list({scriptId})', deployment: 'version_list→select for deploy_create', comparison: 'version_list→identify versions→compare'},
-      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', NoVersions: 'no saved versions→gas_version_create'},
+      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', NoVersions: 'no saved versions→version_create'},
       returnValue: {versions: 'Array: version objects+nums+metadata', totalCount: 'total versions count', nextPageToken: 'token if more exist'},
-      nextSteps: ['version_get→examine detail', 'gas_deploy_create with versionNumber→deploy']
+      nextSteps: ['version_get→examine detail', 'deploy_create with versionNumber→deploy']
     }
   };
 

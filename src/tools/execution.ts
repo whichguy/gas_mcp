@@ -29,7 +29,7 @@ import { performDomainAuth } from './execution/auth/domain-auth.js';
  */
 export class ExecApiTool extends BaseTool {
   public name = 'exec_api';
-  public description = 'Execute a function in a Google Apps Script project via API executable. CRITICAL: Functions must be deployed as API executable before execution. Use gas_version_create → gas_deploy_create → gas_run_api_exec workflow for new/modified functions.';
+  public description = 'Execute a function in a Google Apps Script project via API executable. CRITICAL: Functions must be deployed as API executable before execution. Use version_create → deploy_create → exec_api_exec workflow for new/modified functions.';
   
   public inputSchema = {
     type: 'object',
@@ -97,7 +97,7 @@ export class ExecApiTool extends BaseTool {
       
       if (!accessToken) {
         throw new AuthenticationError(
-          `Authentication required for gas_run_api_exec operation. Use auth(mode="start") to authenticate and retry.`
+          `Authentication required for exec_api_exec operation. Use auth(mode="start") to authenticate and retry.`
         );
       }
       console.error(`Executing function: ${functionName} in script: ${scriptId}`);
@@ -158,20 +158,20 @@ export class ExecApiTool extends BaseTool {
         };
 
         const authError = new AuthenticationError(
-          `Authentication required for gas_run_api_exec operation (HTTP ${authStatusCode}). Use auth(mode="start") to authenticate and retry.`
+          `Authentication required for exec_api_exec operation (HTTP ${authStatusCode}). Use auth(mode="start") to authenticate and retry.`
         );
         
         // Add HTTP response details to error data
         authError.data = {
           ...authError.data,
           statusCode: authStatusCode,
-          operation: 'gas_run_api_exec',
+          operation: 'exec_api_exec',
           scriptId,
           httpResponse: httpDetails,
           instructions: [
             'Use auth with mode="start" to begin authentication',
             'Complete the OAuth flow in your browser',
-            'Then retry your gas_run_api_exec request'
+            'Then retry your exec_api_exec request'
           ],
           command: 'auth({"mode": "start"})',
           statusCheck: 'auth({"mode": "status"})'
@@ -201,9 +201,9 @@ export class ExecApiTool extends BaseTool {
           helpMessage = 'Function not found - likely not deployed as API executable or function name incorrect';
           setupInstructions = [
             'REQUIRED: Deploy your functions before execution',
-            '1. Create version: gas_version_create(scriptId="your-project", description="Latest changes")',
-            '2. Deploy API: gas_deploy_create(scriptId="your-project", description="API deployment")',
-            '3. Then retry: gas_run_api_exec(scriptId="your-project", functionName="yourFunction")',
+            '1. Create version: version_create(scriptId="your-project", description="Latest changes")',
+            '2. Deploy API: deploy_create(scriptId="your-project", description="API deployment")',
+            '3. Then retry: exec_api_exec(scriptId="your-project", functionName="yourFunction")',
             '',
             'Alternative: Manual deployment via Google Apps Script editor:',
             '• Open https://script.google.com → your project',
@@ -243,10 +243,10 @@ export class ExecApiTool extends BaseTool {
           },
           troubleshooting: {
             deploymentWorkflow: [
-              '1. gas_write(path="project/file.gs", content="function myFunc() {...}")',
-              '2. gas_version_create(scriptId="project", description="Added myFunc")',
-              '3. gas_deploy_create(scriptId="project", description="API deployment")',
-              '4. gas_run_api_exec(scriptId="project", functionName="myFunc")'
+              '1. write(path="project/file.gs", content="function myFunc() {...}")',
+              '2. version_create(scriptId="project", description="Added myFunc")',
+              '3. deploy_create(scriptId="project", description="API deployment")',
+              '4. exec_api_exec(scriptId="project", functionName="myFunc")'
             ],
             apiRequirements: [
               'Functions must be deployed as API executable before execution',
@@ -292,10 +292,10 @@ export class ExecApiTool extends BaseTool {
         },
         troubleshooting: {
           deploymentWorkflow: [
-            '1. gas_write(path="project/file.gs", content="function myFunc() {...}")',
-            '2. gas_version_create(scriptId="project", description="Added myFunc")',
-            '3. gas_deploy_create(scriptId="project", description="API deployment")',
-            '4. gas_run_api_exec(scriptId="project", functionName="myFunc")'
+            '1. write(path="project/file.gs", content="function myFunc() {...}")',
+            '2. version_create(scriptId="project", description="Added myFunc")',
+            '3. deploy_create(scriptId="project", description="API deployment")',
+            '4. exec_api_exec(scriptId="project", functionName="myFunc")'
           ],
           apiRequirements: [
             'Functions must be deployed as API executable before execution',
@@ -322,7 +322,7 @@ export class ExecApiTool extends BaseTool {
  * - autoRedeploy=false: Uses existing deployment only (requires manual deployment)
  * 
  *  AUTOMATIC SHIM CODE CREATION:
- * - This tool AUTOMATICALLY creates __mcp_gas_run shim code if missing
+ * - This tool AUTOMATICALLY creates __mcp_exec shim code if missing
  * - Provides dynamic code execution via Function constructor
  * - Enables execution of any JavaScript expression (e.g., fib(13), Math.PI * 2)
  * - Shim is added before deployment for zero-setup dynamic execution
@@ -342,19 +342,19 @@ export class ExecApiTool extends BaseTool {
  * This tool provides zero-setup dynamic JavaScript execution with automatic infrastructure setup.
  * Perfect for web app scenarios with proper JSON serialization and fresh deployment guarantee.
  * 
- * Note: This is the primary gas_run implementation that creates fresh deployments. An alternative
+ * Note: This is the primary exec implementation that creates fresh deployments. An alternative
  * implementation (GASHeadDeployTool) exists that checks for existing web app deployments first
  * and uses the most recent version, creating new ones only if none exist.
  * 
  * Requirements:
  * - Script project will be auto-deployed as Web App by default
- * - Execution shim (__mcp_gas_run) will be auto-added if missing
+ * - Execution shim (__mcp_exec) will be auto-added if missing
  * - Returns JSON responses that can be properly dehydrated/rehydrated
  * - Must have script.scriptapp OAuth scope
  */
 export class ExecTool extends BaseTool {
   public name = 'exec';
-  public description = 'ADVANCED: Execute JavaScript with explicit script ID. Use gas_run for normal workflow.';
+  public description = 'ADVANCED: Execute JavaScript with explicit script ID. Use exec for normal workflow.';
   
   public inputSchema = {
     type: 'object',
@@ -469,7 +469,7 @@ export class ExecTool extends BaseTool {
         default: true,
         llmHints: {
           recommended: 'Keep true for seamless operation - tool handles deployment complexity',
-          manual: 'Set false only if managing deployments separately with gas_deploy_create',
+          manual: 'Set false only if managing deployments separately with deploy_create',
           infrastructure: 'Creates HEAD deployment with /dev URL for testing latest code',
           performance: 'Set false for faster execution on pre-configured projects',
           flexible: 'Supports boolean true/false or string "force" for always creating new deployments'
@@ -530,7 +530,7 @@ export class ExecTool extends BaseTool {
     },
     responseSchema: {
       type: 'object',
-      description: 'Response from gas_raw_run execution with result and logger output',
+      description: 'Response from raw_run execution with result and logger output',
       properties: {
         status: {
           type: 'string',
@@ -703,20 +703,20 @@ export class ExecTool extends BaseTool {
         };
 
         const authError = new AuthenticationError(
-          `Authentication required for gas_run operation (HTTP ${statusCode}). Use auth(mode="start") to authenticate and retry.`
+          `Authentication required for exec operation (HTTP ${statusCode}). Use auth(mode="start") to authenticate and retry.`
         );
         
         // Add HTTP response details to error data
         authError.data = {
           ...authError.data,
           statusCode,
-          operation: 'gas_run',
+          operation: 'exec',
           scriptId,
           httpResponse: httpDetails,
           instructions: [
             'Use auth with mode="start" to begin authentication',
             'Complete the OAuth flow in your browser',
-            'Then retry your gas_run request'
+            'Then retry your exec request'
           ],
           command: 'auth({"mode": "start"})',
           statusCheck: 'auth({"mode": "status"})'
@@ -894,7 +894,7 @@ export class ExecTool extends BaseTool {
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
       // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
-      // ADD MCP_RUN PARAMETER: Signal to __mcp_gas_run handler via URI-based routing
+      // ADD MCP_RUN PARAMETER: Signal to __mcp_exec handler via URI-based routing
       const separator = executionUrl.includes('?') ? '&' : '?';
       const encodedJsStatement = encodeURIComponent(js_statement);
       const finalUrl = `${executionUrl}${separator}_mcp_run=true&func=${encodedJsStatement}`;
@@ -1084,7 +1084,7 @@ export class ExecTool extends BaseTool {
     try {
       // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
       // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
-      // ADD MCP_RUN PARAMETER: Signal to __mcp_gas_run handler via URI-based routing
+      // ADD MCP_RUN PARAMETER: Signal to __mcp_exec handler via URI-based routing
       const separator = executionUrl.includes('?') ? '&' : '?';
       const encodedJsStatement = encodeURIComponent(js_statement);
       const finalUrl = `${executionUrl}${separator}_mcp_run=true&func=${encodedJsStatement}`;
@@ -1204,7 +1204,7 @@ export class ExecTool extends BaseTool {
           };
         }
         
-        console.error(`[COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - calling gas_run_auth`);
+        console.error(`[COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - calling exec_auth`);
 
         try {
           // Call performDomainAuth to handle domain authorization
@@ -1529,7 +1529,7 @@ export class ExecTool extends BaseTool {
    * Handle domain authorization for Google Apps Script web apps
    * Makes a test request to the /dev endpoint and launches browser if cookie auth is needed
    */
-  private async gas_run_auth(scriptId: string, accessToken: string): Promise<void> {
+  private async exec_auth(scriptId: string, accessToken: string): Promise<void> {
     console.error(`[GAS_RUN_AUTH] Starting domain authorization for script: ${scriptId}`);
     
     try {
@@ -1700,9 +1700,9 @@ export class ExecTool extends BaseTool {
         15000, // 15-second timeout
         'Get project content'
       );
-      shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run');
-      const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run_success');
-      const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_gas_run_error');
+      shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_exec');
+      const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_exec_success');
+      const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_exec_error');
       htmlTemplatesExist = hasSuccessHtml && hasErrorHtml;
       console.error(`Shim exists: ${shimExists}, HTML templates exist: ${htmlTemplatesExist}`);
     } catch (error: any) {
@@ -1724,14 +1724,14 @@ export class ExecTool extends BaseTool {
         mcpVersion: '1.0.0'
       });
 
-      const shimFile = shimCode.files.find((file: GASFile) => file.name === '__mcp_gas_run');
+      const shimFile = shimCode.files.find((file: GASFile) => file.name === '__mcp_exec');
       if (!shimFile?.source) {
         throw new Error('Failed to generate execution shim code');
       }
 
       try {
         await withTimeout(
-          this.gasClient.updateFile(scriptId, '__mcp_gas_run', shimFile.source, 0, accessToken),
+          this.gasClient.updateFile(scriptId, '__mcp_exec', shimFile.source, 0, accessToken),
           20000, // 20-second timeout for file upload
           'Update shim file'
         );
@@ -1750,7 +1750,7 @@ export class ExecTool extends BaseTool {
       try {
         const successHtml = getSuccessHtmlTemplate();
         await withTimeout(
-          this.gasClient.updateFile(scriptId, '__mcp_gas_run_success', successHtml, 0, accessToken, 'HTML'),
+          this.gasClient.updateFile(scriptId, '__mcp_exec_success', successHtml, 0, accessToken, 'HTML'),
           20000,
           'Update success HTML template'
         );
@@ -1758,7 +1758,7 @@ export class ExecTool extends BaseTool {
 
         const errorHtml = getErrorHtmlTemplate();
         await withTimeout(
-          this.gasClient.updateFile(scriptId, '__mcp_gas_run_error', errorHtml, 0, accessToken, 'HTML'),
+          this.gasClient.updateFile(scriptId, '__mcp_exec_error', errorHtml, 0, accessToken, 'HTML'),
           20000,
           'Update error HTML template'
         );
