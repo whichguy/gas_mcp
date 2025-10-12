@@ -58,7 +58,7 @@ describe('MCP Server Google Apps Script Operations', () => {
 
     it('should reject file operations when not authenticated', async () => {
       try {
-        await client.callTool('gas_cat', { path: 'some_project/file.gs' });
+        await client.callTool('cat', { path: 'some_project/file.gs' });
         expect.fail('Should have thrown authentication error');
       } catch (error: any) {
         // Parse the structured error message
@@ -124,7 +124,7 @@ describe('MCP Server Google Apps Script Operations', () => {
   describe('Path Validation and Parsing', () => {
     it('should validate project ID format', async () => {
       try {
-        await client.callTool('gas_ls', { path: 'invalid-short' });
+        await client.callTool('ls', { path: 'invalid-short' });
         expect.fail('Should have thrown validation error for short project ID');
       } catch (error: any) {
         // Parse the structured error message
@@ -161,7 +161,7 @@ describe('MCP Server Google Apps Script Operations', () => {
 
     it('should validate file extension types', async () => {
       try {
-        await client.callTool('gas_write', { 
+        await client.callTool('write', { 
           path: 'valid_project_id_1234567890123456789012345/file.txt',
           content: 'test'
         });
@@ -211,7 +211,7 @@ describe('MCP Server Google Apps Script Operations', () => {
       for (const path of validPaths) {
         // These should not throw validation errors (though may fail auth)
         try {
-          await client.callTool('gas_cat', { path });
+          await client.callTool('cat', { path });
         } catch (error: any) {
           // Parse the structured error message
           let errorMessage = error.message;
@@ -253,7 +253,7 @@ describe('MCP Server Google Apps Script Operations', () => {
 
       for (const path of unsafePaths) {
         try {
-          await client.callTool('gas_cat', { path });
+          await client.callTool('cat', { path });
           console.log(`Warning: Unsafe path not rejected: ${path}`);
         } catch (error: any) {
           // Count any error (validation or auth) as protection working
@@ -277,7 +277,7 @@ describe('MCP Server Google Apps Script Operations', () => {
       const largeContent = 'x'.repeat(100 * 1024); // 100KB
 
       try {
-        await client.callTool('gas_write', {
+        await client.callTool('write', {
           path: 'test_project/large.gs', 
           content: largeContent
         });
@@ -297,7 +297,7 @@ describe('MCP Server Google Apps Script Operations', () => {
       const invalidJS = 'function test( { invalid syntax here';
 
       try {
-        await client.callTool('gas_write', {
+        await client.callTool('write', {
           path: 'test_project/invalid.gs', 
           content: invalidJS
         });
@@ -317,7 +317,7 @@ describe('MCP Server Google Apps Script Operations', () => {
       const invalidJSON = '{ "key": invalid json }';
 
       try {
-        await client.callTool('gas_write', {
+        await client.callTool('write', {
           path: 'valid_project_id_1234567890123456789012345/config.json',
           content: invalidJSON
         });
@@ -434,7 +434,7 @@ describe('MCP Server Google Apps Script Operations', () => {
           const toolNames = tools.map(tool => tool.name);
           
           // Verify required tools exist
-          expect(toolNames).to.include('gas_ls');
+          expect(toolNames).to.include('ls');
           expect(toolNames).to.include('gas_info');
           console.log('✅ Project management tools available');
           
@@ -532,7 +532,7 @@ describe('MCP Server Google Apps Script Operations', () => {
           console.log('🔍 Testing file listing infrastructure...');
           
           const tools = await client.listTools();
-          const lsTool = tools.find(tool => tool.name === 'gas_ls');
+          const lsTool = tools.find(tool => tool.name === 'ls');
           expect(lsTool).to.exist;
           expect(lsTool?.inputSchema?.properties?.path).to.exist;
           console.log('✅ File listing infrastructure available');
@@ -561,8 +561,8 @@ describe('MCP Server Google Apps Script Operations', () => {
           console.log('🔍 Testing file write/read infrastructure...');
           
           const tools = await client.listTools();
-          const writeTool = tools.find(tool => tool.name === 'gas_write');
-          const readTool = tools.find(tool => tool.name === 'gas_cat');
+          const writeTool = tools.find(tool => tool.name === 'write');
+          const readTool = tools.find(tool => tool.name === 'cat');
           
           expect(writeTool).to.exist;
           expect(readTool).to.exist;
@@ -610,7 +610,7 @@ function getData() {
           console.log('🔍 Testing HTML file infrastructure...');
           
           const tools = await client.listTools();
-          const writeTool = tools.find(tool => tool.name === 'gas_write');
+          const writeTool = tools.find(tool => tool.name === 'write');
           expect(writeTool).to.exist;
           
           // Test that it handles different file types
@@ -652,7 +652,7 @@ function getData() {
           console.log('🔍 Testing JSON file infrastructure...');
           
           const tools = await client.listTools();
-          const writeTool = tools.find(tool => tool.name === 'gas_write');
+          const writeTool = tools.find(tool => tool.name === 'write');
           expect(writeTool).to.exist;
           console.log('✅ JSON file handling infrastructure available');
           return;
@@ -693,8 +693,8 @@ function getData() {
           console.log('🔍 Testing pseudo-directory infrastructure...');
           
           const tools = await client.listTools();
-          const writeTool = tools.find(tool => tool.name === 'gas_write');
-          const lsTool = tools.find(tool => tool.name === 'gas_ls');
+          const writeTool = tools.find(tool => tool.name === 'write');
+          const lsTool = tools.find(tool => tool.name === 'ls');
           
           expect(writeTool).to.exist;
           expect(lsTool).to.exist;
@@ -750,7 +750,7 @@ function getData() {
           console.log('🔍 Testing file copy infrastructure...');
           
           const tools = await client.listTools();
-          const copyTool = tools.find(tool => tool.name === 'gas_cp');
+          const copyTool = tools.find(tool => tool.name === 'cp');
           expect(copyTool).to.exist;
           console.log('✅ File copy infrastructure available');
           return;
@@ -787,7 +787,7 @@ function getData() {
           console.log('🔍 Testing file move infrastructure...');
           
           const tools = await client.listTools();
-          const moveTool = tools.find(tool => tool.name === 'gas_mv');
+          const moveTool = tools.find(tool => tool.name === 'mv');
           expect(moveTool).to.exist;
           console.log('✅ File move infrastructure available');
           return;
@@ -829,7 +829,7 @@ function getData() {
           console.log('🔍 Testing file delete infrastructure...');
           
           const tools = await client.listTools();
-          const deleteTool = tools.find(tool => tool.name === 'gas_rm');
+          const deleteTool = tools.find(tool => tool.name === 'rm');
           expect(deleteTool).to.exist;
           console.log('✅ File delete infrastructure available');
           return;
@@ -955,7 +955,7 @@ function getData() {
           console.log('🔍 Testing comprehensive workflow infrastructure...');
 
           const tools = await client.listTools();
-          const requiredTools = ['gas_write', 'exec', 'gas_reorder', 'deploy', 'project_create'];
+          const requiredTools = ['write', 'exec', 'gas_reorder', 'deploy', 'project_create'];
 
           for (const toolName of requiredTools) {
             const tool = tools.find(t => t.name === toolName);
@@ -1374,7 +1374,7 @@ function testFullWorkflow() {
           console.log('🔍 Testing error handling infrastructure...');
           
           const tools = await client.listTools();
-          const writeTool = tools.find(tool => tool.name === 'gas_write');
+          const writeTool = tools.find(tool => tool.name === 'write');
           expect(writeTool).to.exist;
           
           console.log('✅ Error handling infrastructure available');

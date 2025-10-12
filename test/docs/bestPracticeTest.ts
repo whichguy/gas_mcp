@@ -39,8 +39,8 @@ describe('Best Practice MCP Server Tests', () => {
       const toolNames = tools.map(tool => tool.name);
       
       expect(toolNames).to.include('auth');
-      expect(toolNames).to.include('gas_ls');
-      expect(toolNames).to.include('gas_write');
+      expect(toolNames).to.include('ls');
+      expect(toolNames).to.include('write');
       
       console.log(`✅ Found ${tools.length} tools available`);
     });
@@ -54,7 +54,7 @@ describe('Best Practice MCP Server Tests', () => {
 
       // Test that operations properly require authentication
       try {
-        await context.client.callAndParse('gas_ls', { path: '' });
+        await context.client.callAndParse('ls', { path: '' });
         expect.fail('Should have required authentication');
       } catch (error) {
         // ✅ GOOD: Proper MCP error handling
@@ -70,7 +70,7 @@ describe('Best Practice MCP Server Tests', () => {
       });
 
       try {
-        await context.client.callAndParse('gas_write', {
+        await context.client.callAndParse('write', {
           path: 'invalid/project/file.gs',
           content: 'test content'
         });
@@ -116,12 +116,12 @@ describe('Best Practice MCP Server Tests', () => {
       // Test file operations
       const content = `// Test file\nfunction testFunction() {\n  return 'success';\n}`;
       
-      await context.client.callAndParse('gas_write', {
+      await context.client.callAndParse('write', {
         path: `${projectId}/test.gs`,
         content: content
       });
 
-      const readResult = await context.client.callAndParse('gas_cat', {
+      const readResult = await context.client.callAndParse('cat', {
         path: `${projectId}/test.gs`
       });
 

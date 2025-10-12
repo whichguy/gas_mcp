@@ -112,7 +112,7 @@ export class MCPGasTestHelper {
       for (const filePath of context.createdFiles) {
         try {
           const [projectId, fileName] = filePath.split('/');
-          await context.client.callAndParse('gas_rm', { path: filePath });
+          await context.client.callAndParse('rm', { path: filePath });
           console.log(`🗑️  Deleted file: ${filePath}`);
         } catch (error) {
           console.warn(`⚠️  Failed to delete file ${filePath}:`, error);
@@ -169,7 +169,7 @@ export class MCPGasTestHelper {
   ): Promise<void> {
     const filePath = `${projectId}/${fileName}`;
     
-    await context.client.callAndParse('gas_write', {
+    await context.client.callAndParse('write', {
       path: filePath,
       content: content
     });
@@ -186,12 +186,12 @@ export class MCPGasTestHelper {
     
     try {
       // List and delete all files in the project
-      const files = await client.callAndParse('gas_ls', { path: projectId });
+      const files = await client.callAndParse('ls', { path: projectId });
       
       if (files.items && files.items.length > 0) {
         for (const file of files.items) {
           try {
-            await client.callAndParse('gas_rm', {
+            await client.callAndParse('rm', {
               path: `${projectId}/${file.name}`
             });
           } catch (error) {

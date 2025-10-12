@@ -36,13 +36,10 @@ import { SummaryTool } from '../tools/gas-summary.js';
 import { DepsTool } from '../tools/gas-deps.js';
 import { TreeTool } from '../tools/gas-tree.js';
 import {
-  MkdirTool,
-  InfoTool,
   ReorderTool,
   ProjectListTool
 } from '../tools/project.js';
 import { ExecTool, ExecApiTool } from '../tools/execution.js';
-import { ProxySetupTool } from '../tools/proxySetup.js';
 import {
   ProjectCreateTool,
   ProjectInitTool
@@ -60,10 +57,8 @@ import {
   ProcessListScriptTool
 } from '../tools/processes.js';
 
-import {
-  LogsListTool,
-  LogsGetTool
-} from '../tools/logs.js';
+// Consolidated log tool with list and get operations
+import { LogTool } from '../tools/logs.js';
 
 // Local sync tools removed - cat/write already provide local caching via LocalFileManager
 // PullTool, PushTool, StatusTool were redundant wrappers around same copyRemoteToLocal() calls
@@ -71,12 +66,8 @@ import {
 // Local root tools removed - using git sync pattern instead
 // Projects now use ~/gas-repos/project-{scriptId} automatically
 
-// Import trigger management tools
-import {
-  TriggerListTool,
-  TriggerCreateTool,
-  TriggerDeleteTool
-} from '../tools/triggers.js';
+// Consolidated trigger tool with list, create, delete operations
+import { TriggerTool } from '../tools/triggers.js';
 
 // Import NEW git sync tools (LOCAL-FIRST: removed git_init, local_sync auto-bootstraps)
 import {
@@ -133,7 +124,7 @@ import { McpGasConfigManager } from '../config/mcpGasConfig.js';
  * See `docs/STDOUT_STDERR_DOCUMENTATION.md` for complete implementation details.
  *
     * ### Tool Architecture
-   * - **49 MCP Tools**: Streamlined Google Apps Script API coverage
+   * - **44 MCP Tools**: Streamlined Google Apps Script API coverage
    * - **Base Tool Pattern**: All tools extend `BaseTool` with common validation and error handling
    * - **Schema Validation**: Comprehensive input validation with helpful error messages
    * - **Rate Limiting**: Built-in rate limiting and retry strategies for Google APIs
@@ -215,51 +206,48 @@ export class MCPGasServer {
   /**
    * Create session-specific tool instances with isolated authentication
    *
-   * Each session gets its own instances of all 49 MCP tools, each configured
+   * Each session gets its own instances of all 44 MCP tools, each configured
    * with a session-specific authentication manager. This ensures complete
    * isolation between different MCP clients.
    *
-   * ## Tool Categories Created (49 total tools):
+   * ## Tool Categories Created (44 total tools):
    *
    * ### Authentication & Session (1 tool)
    * - `auth` - OAuth 2.0 flow management with desktop PKCE
    *
-   * ### 📂 Filesystem Operations - RECOMMENDED (10 tools)
-   * - `gas_ls` - List projects and files
-   * - `gas_file_status` - Get comprehensive file status with SHA checksums  
-   * - `gas_cat` - Smart reader (local-first with remote fallback)
-   * - `gas_write` - Auto-sync writer (local + remote)
-   * - `gas_grep` - Content search with pattern matching (unwrapped user code)
-   * - `gas_ripgrep` - ⚡ High-performance search with ripgrep-inspired features including multi-pattern, context control, and advanced regex
-   * - `gas_sed` - sed-style find/replace operations with regex capture groups ($1, $2) and multi-pattern support on clean user code
-   * - `gas_edit` - 💎 Token-efficient file editing with exact string matching (83% token savings vs gas_write)
-   * - `gas_find` - Find files with shell-like patterns and virtual names
-   * - `gas_rm` - Delete files
-   * - `gas_mv` - Move/rename files
-   * - `gas_cp` - Copy files
-   * 
+   * ### 📂 Filesystem Operations - RECOMMENDED (14 tools)
+   * - `ls` - List projects and files
+   * - `file_status` - Get comprehensive file status with SHA checksums
+   * - `cat` - Smart reader (local-first with remote fallback)
+   * - `write` - Auto-sync writer (local + remote)
+   * - `grep` - Content search with pattern matching (unwrapped user code)
+   * - `ripgrep` - ⚡ High-performance search with ripgrep-inspired features including multi-pattern, context control, and advanced regex
+   * - `sed` - sed-style find/replace operations with regex capture groups ($1, $2) and multi-pattern support on clean user code
+   * - `edit` - 💎 Token-efficient file editing with exact string matching (83% token savings vs write)
+   * - `find` - Find files with shell-like patterns and virtual names
+   * - `rm` - Delete files
+   * - `mv` - Move/rename files
+   * - `cp` - Copy files
+   *
    * ### Filesystem Operations - ADVANCED (6 tools)
-   * - `gas_raw_cat` - Advanced: Read with explicit project ID paths
-   * - `gas_raw_write` - Advanced: Write with explicit project ID paths
-   * - `gas_raw_grep` - Advanced: Search full content (API-only, never local files)
-   * - `gas_raw_ripgrep` - Advanced: High-performance search on raw content including CommonJS wrappers and system code
-   * - `gas_raw_sed` - Advanced: sed-style find/replace on raw content including wrappers for system-level modifications
-   * - `gas_raw_edit` - Advanced: Token-efficient editing on raw content (includes CommonJS wrappers)
-   * - `gas_raw_find` - Advanced: Find files with actual GAS names
-   * - `gas_raw_copy` - Advanced: Remote-to-remote file copying with merge strategies
-   * 
-   * ### 🏗Project Management (3 tools)
-   * - `gas_mkdir` - Create logical directories
-   * - `gas_info` - Project information
-   * - `gas_reorder` - File ordering
-   * 
-   * ### Script Execution (3 tools)
-   * - `gas_exec` - JavaScript execution with explicit script ID
-   * - `gas_run_api_exec` - API-based execution
-   * - `gas_proxy_setup` - Proxy configuration
+   * - `raw_cat` - Advanced: Read with explicit project ID paths
+   * - `raw_write` - Advanced: Write with explicit project ID paths
+   * - `raw_grep` - Advanced: Search full content (API-only, never local files)
+   * - `raw_ripgrep` - Advanced: High-performance search on raw content including CommonJS wrappers and system code
+   * - `raw_sed` - Advanced: sed-style find/replace on raw content including wrappers for system-level modifications
+   * - `raw_edit` - Advanced: Token-efficient editing on raw content (includes CommonJS wrappers)
+   * - `raw_find` - Advanced: Find files with actual GAS names
+   * - `raw_cp` - Advanced: Remote-to-remote file copying with merge strategies
+   *
+   * ### 🏗Project Management (1 tool)
+   * - `reorder` - File ordering
+   *
+   * ### Script Execution (2 tools)
+   * - `exec` - JavaScript execution with explicit script ID
+   * - `exec_api` - API-based execution
    *
    * ### 📁 Project List (1 tool)
-   * - `gas_project_list` - List all configured projects from gas-config.json
+   * - `project_list` - List all configured projects from gas-config.json
    *
    * ### Deployment & Project Creation (3 tools)
    * - `deploy` - 🎯 Consolidated deployment workflow across dev/staging/prod environments
@@ -267,16 +255,15 @@ export class MCPGasServer {
    * - `project_init` - Initialize projects with standard configuration
    *
    * ### Process Management (2 tools)
-   * - `gas_process_list` - List user processes
-   * - `gas_process_list_script` - List script processes
+   * - `process_list` - List user processes
+   * - `process_list_script` - List script processes
    *
-   * ### Execution Logs (2 tools)
-   * - `gas_logs_list` - Browse execution logs with Cloud Logging-first optimization
-   * - `gas_logs_get` - Get complete logs for a single process with auto-pagination
-   * 
+   * ### Execution Logs (1 tool)
+   * - `log` - Browse execution logs (list operation) and get detailed process logs (get operation)
+   *
    * ### Drive Integration (2 tools)
-   * - `gas_find_drive_script` - Find container scripts
-   * - `gas_create_script` - Create container scripts
+   * - `find_drive_script` - Find container scripts
+   * - `create_script` - Create container scripts
    * 
    * @param authManager - Session-specific authentication manager
    * @returns Map of tool name to tool instance
@@ -286,7 +273,7 @@ export class MCPGasServer {
    * // Tools are created per session with isolated auth
    * const authManager = new SessionAuthManager(sessionId);
    * const tools = this.createSessionTools(authManager);
-   * const gasExecTool = tools.get('gas_exec');
+   * const execTool = tools.get('exec');
    * ```
    */
   private createSessionTools(authManager: SessionAuthManager): Map<string, any> {
@@ -327,14 +314,11 @@ export class MCPGasServer {
       new RawCpTool(authManager),        // Advanced: Bulk copy without CommonJS processing
       
       // 🏗Project management
-      new MkdirTool(authManager),
-      new InfoTool(authManager),
       new ReorderTool(authManager),
-      
+
       // Script execution tools
       new ExecTool(authManager),        // JavaScript execution with explicit script ID
       new ExecApiTool(authManager),     // Alternative API-based execution
-      new ProxySetupTool(authManager),  // Proxy configuration
       
       // Deployment management (with session-specific auth manager)
       new DeployTool(authManager),          // Consolidated deployment management across dev/staging/prod
@@ -352,9 +336,8 @@ export class MCPGasServer {
       new ProcessListTool(authManager),
       new ProcessListScriptTool(authManager),
 
-      // Execution logs with Cloud Logging integration
-      new LogsListTool(authManager),      // Browse logs with Cloud Logging-first optimization
-      new LogsGetTool(authManager),       // Get complete logs for single process
+      // Execution logs with Cloud Logging integration (consolidated: list + get operations)
+      new LogTool(authManager),          // Browse logs (list) and get detailed process logs (get)
 
       // Local-Remote sync removed - cat/write provide auto-sync via LocalFileManager
       // PullTool/PushTool/StatusTool were redundant (used same copyRemoteToLocal calls)
@@ -365,10 +348,8 @@ export class MCPGasServer {
       // Local root management removed - all projects now use git sync pattern:
       // ~/gas-repos/project-{scriptId}/ for consistent file management
       
-      // Trigger management - AUTOMATION tools
-      new TriggerListTool(authManager),    // List all installable triggers
-      new TriggerCreateTool(authManager),  // Create time-based and event-driven triggers
-      new TriggerDeleteTool(authManager),  // Delete triggers by ID or function name
+      // Trigger management - AUTOMATION tools (consolidated: list + create + delete operations)
+      new TriggerTool(authManager),        // List, create, and delete installable triggers
       
       // Git Sync - SAFE GIT INTEGRATION (2 tools - LOCAL-FIRST, no auto-bootstrap)
       new LocalSyncTool(authManager),         // Sync entire GAS project to local with git-aware organization
@@ -580,7 +561,7 @@ export class MCPGasServer {
     console.error('Use sessionId parameter to manage multiple sessions');
     console.error('Use auth(mode="start") to authenticate with Google Apps Script');
     console.error('Authentication: Tools will return clear instructions when auth is needed');
-    console.error('Direct execution: gas_exec can execute ANY statement without wrapper functions');
+    console.error('Direct execution: exec can execute ANY statement without wrapper functions');
 
     // Clean up expired filesystem sessions on startup
     const filesCleaned = await SessionAuthManager.cleanupExpiredSessions();

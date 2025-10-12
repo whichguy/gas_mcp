@@ -41,8 +41,8 @@ describe('✅ Corrected MCP Gas Server Best Practices', () => {
         const toolNames = tools.map(tool => tool.name);
         
         expect(toolNames).to.include('auth');
-        expect(toolNames).to.include('gas_ls');
-        expect(toolNames).to.include('gas_write');
+        expect(toolNames).to.include('ls');
+        expect(toolNames).to.include('write');
         
         console.log(`✅ Found ${tools.length} tools on shared server`);
         
@@ -65,7 +65,7 @@ describe('✅ Corrected MCP Gas Server Best Practices', () => {
         // Test without authentication
         if (!context.authenticated) {
           try {
-            await context.client.callAndParse('gas_ls', { path: '' });
+            await context.client.callAndParse('ls', { path: '' });
             expect.fail('Should have required authentication');
           } catch (error) {
             // ✅ CORRECT: Proper MCP error handling
@@ -73,7 +73,7 @@ describe('✅ Corrected MCP Gas Server Best Practices', () => {
           }
         } else {
           console.log('⏭️  Auth available - testing authenticated path');
-          const result = await context.client.callAndParse('gas_ls', { path: '' });
+          const result = await context.client.callAndParse('ls', { path: '' });
           expect(result).to.have.property('items');
         }
         
@@ -89,7 +89,7 @@ describe('✅ Corrected MCP Gas Server Best Practices', () => {
 
       try {
         // Trigger a validation error
-        await context.client.callAndParse('gas_write', {
+        await context.client.callAndParse('write', {
           path: 'invalid//path',
           content: 'x'.repeat(200000) // Too large
         });
@@ -131,7 +131,7 @@ describe('✅ Corrected MCP Gas Server Best Practices', () => {
         
         await MCPGasTestHelper.writeTestFile(context, projectId, 'test.gs', content);
 
-        const readResult = await context.client.callAndParse('gas_cat', {
+        const readResult = await context.client.callAndParse('cat', {
           path: `${projectId}/test.gs`
         });
 

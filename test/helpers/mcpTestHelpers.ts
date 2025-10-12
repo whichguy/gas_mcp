@@ -168,12 +168,12 @@ export class MCPTestHelper {
     
     try {
       // List and delete all files in the project
-      const files = await client.callAndParse('gas_ls', { path: projectId });
+      const files = await client.callAndParse('ls', { path: projectId });
       
       if (files.items && files.items.length > 0) {
         for (const file of files.items) {
           try {
-            await client.callAndParse('gas_rm', {
+            await client.callAndParse('rm', {
               path: `${projectId}/${file.name}`
             });
           } catch (error) {

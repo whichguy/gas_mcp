@@ -72,7 +72,7 @@ describe('LsTool', () => {
 
     it('should match git hash-object for sample content', () => {
       // Known test case: echo -n "test" | git hash-object --stdin
-      // Git SHA-1 for "test" = 9daeafb9864cf43055ae93beb0afd6c7d144bfa4
+      // Git SHA-1 for "test" = 30d74d258442c7c65512eafab474568dd706c430
       const content = 'test';
 
       const size = Buffer.byteLength(content, 'utf8');
@@ -85,7 +85,7 @@ describe('LsTool', () => {
       const actual = (lsTool as any).computeGitSha1(content);
 
       expect(actual).to.equal(expected);
-      expect(actual).to.equal('9daeafb9864cf43055ae93beb0afd6c7d144bfa4');
+      expect(actual).to.equal('30d74d258442c7c65512eafab474568dd706c430');
     });
 
     it('should handle empty content', () => {

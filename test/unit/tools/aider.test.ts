@@ -15,12 +15,12 @@ describe('AiderTool', () => {
 
   describe('Tool Metadata', () => {
     it('should have correct tool name', () => {
-      expect(aiderTool.name).to.equal('mcp__gas__mcp__gas__aider');
+      expect(aiderTool.name).to.equal('aider');
     });
 
     it('should have descriptive description', () => {
       expect(aiderTool.description).to.include('fuzzy');
-      expect(aiderTool.description).to.include('token-efficient');
+      expect(aiderTool.description).to.include('Token-efficient');
     });
 
     it('should have comprehensive input schema', () => {
@@ -74,8 +74,8 @@ describe('AiderTool', () => {
     it('should validate scriptId format', () => {
       const schema = aiderTool.inputSchema as any;
       expect(schema.properties.scriptId.pattern).to.exist;
-      expect(schema.properties.scriptId.minLength).to.equal(44);
-      expect(schema.properties.scriptId.maxLength).to.equal(44);
+      expect(schema.properties.scriptId.minLength).to.equal(25);
+      expect(schema.properties.scriptId.maxLength).to.equal(60);
     });
 
     it('should validate path format', () => {
@@ -139,15 +139,15 @@ describe('AiderTool', () => {
     it('should document 95%+ token savings', () => {
       const schema = aiderTool.inputSchema as any;
       expect(schema.llmGuidance.tokenSavings).to.include('95%+');
-      expect(schema.llmGuidance.tokenSavings).to.include('~10 tokens');
+      expect(schema.llmGuidance.tokenSavings).to.include('~10');
     });
 
     it('should explain minimal response format', () => {
       const schema = aiderTool.inputSchema as any;
       const responseOptimization = schema.llmHints.responseOptimization;
 
-      expect(responseOptimization).to.include('~10 tokens');
-      expect(responseOptimization).to.include('success, editsApplied, filePath');
+      expect(responseOptimization).to.include('~10tok');
+      expect(responseOptimization).to.include('success');
     });
 
     it('should document token economics', () => {
@@ -166,8 +166,8 @@ describe('AiderTool', () => {
       const preferOver = schema.llmHints.preferOver;
 
       expect(preferOver.gas_edit).to.exist;
-      expect(preferOver.gas_edit).to.include('fuzzy matching');
-      expect(preferOver.gas_edit).to.include('80% similar');
+      expect(preferOver.gas_edit).to.include('whitespace');
+      expect(preferOver.gas_edit).to.include('fuzzy');
     });
 
     it('should explain when to prefer aider over sed', () => {
@@ -183,7 +183,7 @@ describe('AiderTool', () => {
       const preferOver = schema.llmHints.preferOver;
 
       expect(preferOver.gas_write).to.exist;
-      expect(preferOver.gas_write).to.include('95%+ tokens');
+      expect(preferOver.gas_write).to.include('95%+');
     });
   });
 
@@ -252,7 +252,7 @@ describe('AiderTool', () => {
     it('should explain universal compatibility', () => {
       const schema = aiderTool.inputSchema as any;
       const notes = schema.llmGuidance.scriptTypeCompatibility.notes;
-      expect(notes).to.include('universally');
+      expect(notes).to.include('Universal');
     });
   });
 
@@ -284,13 +284,13 @@ describe('AiderTool', () => {
       const schema = aiderTool.inputSchema as any;
       expect(schema.llmGuidance.commonJsIntegration).to.exist;
       expect(schema.llmGuidance.commonJsIntegration).to.include('unwrap');
-      expect(schema.llmGuidance.commonJsIntegration).to.include('re-wrap');
+      expect(schema.llmGuidance.commonJsIntegration).to.include('rewrap');
     });
 
     it('should clarify clean user code editing', () => {
       const schema = aiderTool.inputSchema as any;
       expect(schema.llmGuidance.commonJsIntegration).to.include('clean user code');
-      expect(schema.llmGuidance.commonJsIntegration).to.include('module infrastructure');
+      expect(schema.llmGuidance.commonJsIntegration).to.include('system handles');
     });
   });
 });

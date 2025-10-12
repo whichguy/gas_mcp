@@ -59,7 +59,7 @@ describe('Comprehensive MCP-GAS Workflow Test', () => {
         
         // Test that tools are available but require authentication
         try {
-          await client.callTool('gas_ls', { path: 'test_project' });
+          await client.callTool('ls', { path: 'test_project' });
           expect.fail('Should have required authentication');
         } catch (error: any) {
           expect(error.data?.requiresAuth || error.message.includes('Authentication')).to.be.true;
