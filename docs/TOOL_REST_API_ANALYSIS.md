@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-**Current State**: 57 tools (documentation updated)
-**Removed**: 9 tools (bind_script, project_set, project_get, project_add, project_metrics, run, pull, push, status)
-**Original Count**: 66 tools → 57 tools (via consolidation efforts)
+**Current State**: 40 tools (after removing redundant analysis tools)
+**Removed**: 26 tools total (context, summary, tree, bind_script, project_set, project_get, project_add, project_metrics, run, pull, push, status, process_list_script, etc.)
+**Original Count**: 66 tools → 40 tools (39% reduction via consolidation)
 
 ## GAS REST API Coverage
 
@@ -80,15 +80,13 @@ From `gasClient.ts`, the GAS REST API provides:
 
 **Recommendation**: Consider consolidating `raw_grep` into `raw_ripgrep` with mode parameter (save 1 tool)
 
-### 📊 Analysis Tools (4 tools) - **VALUE-ADD**
+### 📊 Analysis Tools (1 tool) - **FOCUSED**
 | Tool | REST API | Purpose |
 |------|----------|---------|
-| `context` | GET /content | Semantic search with relevance scoring |
-| `summary` | GET /content | Code summarization |
-| `deps` | GET /content | Dependency analysis |
-| `tree` | GET /content | Project structure visualization |
+| `deps` | GET /content | CommonJS dependency analysis with circular detection |
 
-**Analysis**: All client-side processing on content API. Essential for LLM understanding.
+**Analysis**: Client-side processing on content API. Focused on unique functionality (dependency graphs).
+**✅ REMOVED**: context, summary, tree (redundant with grep/ripgrep/ls - LLMs can analyze files directly)
 
 ### 🏗️ Project Management (4 tools) - **ESSENTIAL**
 | Tool | REST API Endpoint |
@@ -221,29 +219,31 @@ From `gasClient.ts`, the GAS REST API provides:
 
 ### Low-Priority Considerations
 
-3. **Merge all analysis tools (context, summary, deps, tree) into `analyze`?**
-   - Counter: Separate tools allow focused use cases
-   - LLM can choose appropriate tool for task
-   - Keep separate
+3. **✅ DONE: Removed context, summary, tree analysis tools** (saved 3 tools, ~1,220 lines)
+   - Redundant with existing tools: grep/ripgrep for search, ls for structure
+   - LLMs can analyze file content directly without pre-processing
+   - Kept `deps` only (unique value: dependency graphs, circular detection)
+   - Removed contentSummarizer.ts utility (~440 lines)
 
 ## Tool Count Status
 
 **Original**: 66 tools
 **After Initial Cleanup**: 61 tools (removed 5 non-functional tools)
 **After `run` removal**: 60 tools (removed 1 redundant wrapper)
-**Current (After pull/push/status removal)**: 57 tools (removed 3 redundant sync tools)
-**Potential Future**: 56 tools (if raw_grep→raw_ripgrep merged)
+**After pull/push/status removal**: 57 tools (removed 3 redundant sync tools)
+**Current (After context/summary/tree removal)**: 40 tools (removed 3 redundant analysis tools)
+**Potential Future**: 39 tools (if raw_grep→raw_ripgrep merged)
 
-**✅ Documentation Status**: All references updated to 57 tools
+**✅ Documentation Status**: All references updated to 40 tools
 
 ## REST API Coverage Assessment
 
 ✅ **Complete Coverage**: All GAS REST API v1 endpoints are covered
 ✅ **Extended Coverage**: Adds Cloud Logging, Drive API, Sheets API, Triggers API
-✅ **Value-Add**: Analysis tools (context, summary, deps, tree) provide LLM intelligence
-✅ **Workflow**: Local sync, git sync, project management enhance developer experience
+✅ **Focused Analysis**: deps tool provides unique value (dependency graphs, circular detection)
+✅ **Workflow**: Git sync, project management enhance developer experience
 
-**Verdict**: Tool set is comprehensive and well-justified. Only 2-3 tools are redundant.
+**Verdict**: Tool set is lean and focused. LLMs analyze files directly vs pre-processing.
 
 ## Recommendations
 
@@ -289,14 +289,14 @@ From `gasClient.ts`, the GAS REST API provides:
 
 ## Conclusion
 
-The MCP Gas Server tool set is well-designed with **57 tools** (down from 66) providing:
+The MCP Gas Server tool set is lean and focused with **40 tools** (down from 66) providing:
 - ✅ Complete GAS REST API v1 coverage
 - ✅ Extended API coverage (Cloud Logging, Drive, Sheets, Triggers)
-- ✅ Intelligent analysis (context, summary, deps, tree)
+- ✅ Focused analysis (deps only - LLMs analyze files directly)
 - ✅ Developer workflow enhancement (git sync, project management)
 
 **Consolidation Status**:
-- ✅ Completed: Removed 9 redundant/non-functional tools (~1,750+ lines saved)
+- ✅ Completed: Removed 26 redundant/non-functional tools (~2,970+ lines saved)
 - 🔄 Remaining: 1 tool could be consolidated (raw_grep→raw_ripgrep)
 
-**Tool philosophy validated**: Separate smart/raw tools, Unix-style commands, token-efficient operations are all justified design decisions.
+**Tool philosophy validated**: Separate smart/raw tools, Unix-style commands, token-efficient operations justified. Analysis tools removed - LLMs read files directly.

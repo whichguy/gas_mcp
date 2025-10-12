@@ -171,7 +171,7 @@ export class RawWriteTool extends BaseFileSystemTool {
         // Find remote updateTime and set local mtime to match
         const remoteFile = updatedFiles.find((f: any) => f.name === filename);
         if (remoteFile?.updateTime) {
-          await setFileMtimeToRemote(localPath, remoteFile.updateTime);
+          await setFileMtimeToRemote(localPath, remoteFile.updateTime, remoteFile.type);
         }
       }
     } catch (syncError) {

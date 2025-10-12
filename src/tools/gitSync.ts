@@ -653,7 +653,7 @@ export class LocalSyncTool extends BaseTool {
       // Preserve GAS mtime for accurate sync detection
       if (file.updateTime) {
         const { setFileMtimeToRemote } = await import('../utils/fileHelpers.js');
-        await setFileMtimeToRemote(fullPath, file.updateTime);
+        await setFileMtimeToRemote(fullPath, file.updateTime, file.type);
       }
     }
 
@@ -699,7 +699,7 @@ export class LocalSyncTool extends BaseTool {
       // Preserve GAS mtime for accurate sync detection
       if (file.updateTime) {
         const { setFileMtimeToRemote } = await import('../utils/fileHelpers.js');
-        await setFileMtimeToRemote(fullPath, file.updateTime);
+        await setFileMtimeToRemote(fullPath, file.updateTime, file.type);
       }
     }
 

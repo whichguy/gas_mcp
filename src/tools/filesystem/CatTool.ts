@@ -4,6 +4,7 @@ import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { unwrapModuleContent, shouldWrapContent } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { setFileMtimeToRemote, isFileInSync } from '../../utils/fileHelpers.js';
+import { getCachedGASMetadata } from '../../utils/gasMetadataCache.js';
 import { join, dirname } from 'path';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
@@ -79,7 +80,96 @@ export class CatTool extends BaseFileSystemTool {
     const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
     const accessToken = await this.getAuthToken(params);
 
-    // Sync verification
+    // Fast path optimization: Check if we can use local cache without API call
+    if (preferLocal) {
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const fullFilename = filename + fileExtension;
+      const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+      const localFilePath = join(projectPath, fullFilename);
+
+      const cachedMeta = await getCachedGASMetadata(localFilePath);
+
+      if (cachedMeta) {
+        const inSync = await isFileInSync(localFilePath, cachedMeta.updateTime);
+
+        if (inSync) {
+          // Fast path: Return local content without API call
+          try {
+            const localContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
+
+            if (localContent) {
+              // Format result directly (skip expensive API call)
+              let result: any = {
+                path: fullPath,
+                scriptId: scriptId,
+                filename,
+                content: localContent,
+                source: 'local',
+                fileType: cachedMeta.fileType,
+                fileExtension,
+                syncStatus: { inSync: true, differences: [], message: 'In sync (cached metadata)' },
+                gitRepository: {
+                  initialized: gitStatus.gitInitialized,
+                  path: gitStatus.repoPath,
+                  isNewRepo: gitStatus.isNewRepo
+                }
+              };
+
+              // CommonJS integration - unwrap for editing
+              let finalContent = result.content;
+              let commonJsInfo: any = null;
+
+              if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
+                const { unwrappedContent } = unwrapModuleContent(finalContent);
+
+                if (unwrappedContent !== finalContent) {
+                  finalContent = unwrappedContent;
+
+                  const { analyzeCommonJsUsage } = await import('../../utils/moduleWrapper.js');
+                  const featureAnalysis = analyzeCommonJsUsage(unwrappedContent);
+
+                  commonJsInfo = {
+                    moduleUnwrapped: true,
+                    originalLength: result.content.length,
+                    unwrappedLength: finalContent.length,
+                    commonJsFeatures: {
+                      hasRequireFunction: true,
+                      hasModuleObject: true,
+                      hasExportsObject: true,
+                      userRequireCalls: featureAnalysis.requireCalls,
+                      userModuleExports: featureAnalysis.moduleExports,
+                      userExportsUsage: featureAnalysis.exportsUsage
+                    },
+                    systemNote: 'When executed, this code has access to require(), module, and exports via the CommonJS system',
+                    editingNote: 'CommonJS wrapper removed for editing convenience - will be re-applied automatically on write'
+                  };
+                } else {
+                  commonJsInfo = {
+                    moduleUnwrapped: false,
+                    reason: 'No CommonJS wrapper structure found in content'
+                  };
+                }
+              } else {
+                commonJsInfo = {
+                  moduleUnwrapped: false,
+                  reason: `${result.fileType || 'unknown'} files don't use the CommonJS module system`
+                };
+              }
+
+              result.content = finalContent;
+              result.commonJsInfo = commonJsInfo;
+
+              // Fast path success - return immediately without API call
+              return result;
+            }
+          } catch (localError: any) {
+            // Fall through to slow path with API call
+          }
+        }
+      }
+    }
+
+    // Slow path: Need API call for sync verification
     let syncStatus: any = null;
     let remoteFiles: any[] = [];
 
@@ -138,7 +228,7 @@ export class CatTool extends BaseFileSystemTool {
         const content = remoteFile.source || remoteFile.content || '';
         await mkdir(dirname(localFilePath), { recursive: true });
         await writeFile(localFilePath, content, 'utf-8');
-        await setFileMtimeToRemote(localFilePath, remoteFile.updateTime);
+        await setFileMtimeToRemote(localFilePath, remoteFile.updateTime, remoteFile.type);
       }
     }
 
