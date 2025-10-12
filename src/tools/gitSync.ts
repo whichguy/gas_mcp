@@ -647,10 +647,16 @@ export class LocalSyncTool extends BaseTool {
       } else if (file.type === 'SERVER_JS') {
         content = unwrapCommonJSModule(content);
       }
-      
+
       await fs.writeFile(fullPath, content, 'utf8');
+
+      // Preserve GAS mtime for accurate sync detection
+      if (file.updateTime) {
+        const { setFileMtimeToRemote } = await import('../utils/fileHelpers.js');
+        await setFileMtimeToRemote(fullPath, file.updateTime);
+      }
     }
-    
+
     // Store git config files in .git-gas folder for local reference
     const gitConfigFiles = gasFiles.filter(f => f.name.startsWith('.git/'));
     if (gitConfigFiles.length > 0) {
@@ -669,13 +675,13 @@ export class LocalSyncTool extends BaseTool {
     for (const file of gasFiles) {
       const localPath = await this.transformGASToLocal(file, gitConfig);
       const fullPath = path.join(syncFolder, localPath);
-      
+
       // Create directory if needed
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
-      
+
       // Transform and write content
       let content = file.source;
-      
+
       // Handle transformations
       if (file.name === 'README' && file.type === 'HTML') {
         const result = transformHTMLToMarkdown(content, file.name);
@@ -687,10 +693,16 @@ export class LocalSyncTool extends BaseTool {
       } else if (file.type === 'SERVER_JS') {
         content = unwrapCommonJSModule(content);
       }
-      
+
       await fs.writeFile(fullPath, content, 'utf8');
+
+      // Preserve GAS mtime for accurate sync detection
+      if (file.updateTime) {
+        const { setFileMtimeToRemote } = await import('../utils/fileHelpers.js');
+        await setFileMtimeToRemote(fullPath, file.updateTime);
+      }
     }
-    
+
     // Store git config files in .git-gas folder for local reference
     const gitConfigFiles = gasFiles.filter(f => f.name.startsWith('.git/'));
     if (gitConfigFiles.length > 0) {

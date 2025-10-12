@@ -153,10 +153,12 @@ When tools fail, suggest:
 
 #### **Process Inspection**
 
-**process_list / process_list_script**
+**process_list** (supports scriptId filter)
 - `nextSteps`:
   - For FAILED status: Suggest logs_get for details
   - For COMPLETED: Suggest project_metrics for trends
+- `filterByScript`: Use `userProcessFilter.scriptId` parameter
+- **Note**: Consolidated from separate `process_list_script` tool
 
 **logs_list**
 - `nextSteps`: Suggest logs_get with specific processId

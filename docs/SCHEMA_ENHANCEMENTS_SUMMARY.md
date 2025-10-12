@@ -39,7 +39,7 @@ Added `scriptTypeCompatibility` and `limitations` sections to document:
 - ✅ logs_list (logs.ts:93-137) - *from previous session*
 - ✅ logs_get (logs.ts) - *from previous session*
 - ✅ process_list (processes.ts) - *from previous session*
-- ✅ process_list_script (processes.ts) - *from previous session*
+- ✅ process_list (processes.ts) - Consolidated, removed separate process_list_script tool
 
 **Project Management (2):**
 - ✅ project_create (deployments.ts:806-842)

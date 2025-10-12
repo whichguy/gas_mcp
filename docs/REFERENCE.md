@@ -91,7 +91,7 @@ deps({scriptId: "..."})
 - Uses file API (works for both types)
 
 ✅ **Process Metadata** - Universal
-- process_list, process_list_script
+- process_list (supports scriptId filter)
 - Returns metadata only (no logs)
 
 ✅ **Versions** - Universal
@@ -356,15 +356,12 @@ log({operation: "list", scriptId: "...", statusFilter: "FAILED"})
 log({operation: "get", scriptId: "...", processId: "..."})
 ```
 
-**`process_list`** - List all user processes
+**`process_list`** - List all user processes (supports scriptId filter)
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 - **Returns**: Metadata only (no logs)
-
-**`process_list_script`** - List script processes
-- **Standalone**: ✅ Full Support
-- **Container-Bound**: ✅ Full Support
-- **Returns**: Metadata only (no logs)
+- **Filter by script**: Use `userProcessFilter.scriptId` parameter
+- **Note**: Consolidated from separate `process_list_script` tool
 
 ### Deployments (10 tools)
 

@@ -21,7 +21,7 @@ These tests validate the **logical functionality and argument validation** of MC
 - Deployment (8 tools): deploy_create, version_create, deploy_list, deploy_get_details, etc.
 - Project Context (4 tools): project_set, project_list, project_add, project_get
 - Versions (2 tools): version_list, version_get
-- Processes (2 tools): process_list, process_list_script
+- Processes (1 tool): process_list (supports scriptId filter)
 - Logs (2 tools): logs_list, logs_get
 - Triggers (3 tools): trigger_list, trigger_create, trigger_delete
 - Local Sync (3 tools): pull, push, status
@@ -103,7 +103,7 @@ npx mocha test/integration/tool-arguments/comprehensive-arguments.test.ts --grep
 | Deployment | 8 | comprehensive-arguments.test.ts | ~1min |
 | Project Context | 4 | comprehensive-arguments.test.ts | ~30s |
 | Versions | 2 | comprehensive-arguments.test.ts | ~30s |
-| Processes | 2 | comprehensive-arguments.test.ts | ~30s |
+| Processes | 1 | comprehensive-arguments.test.ts | ~30s |
 | Logs | 2 | comprehensive-arguments.test.ts | ~30s |
 | Triggers | 3 | comprehensive-arguments.test.ts | ~30s |
 | Local Sync | 3 | comprehensive-arguments.test.ts | ~30s |

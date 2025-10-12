@@ -160,6 +160,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   });
 
   // ===== PROCESS TOOLS =====
+  // NOTE: process_list_script consolidated into process_list (use userProcessFilter.scriptId)
   describe('Process Tools', function() {
     describe('process_list', function() {
       it('should accept no arguments', async function() {
@@ -184,24 +185,16 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
         expect(result).to.have.property('processes');
       });
 
-      it('should reject invalid pageSize type', async function() {
-        await ArgumentTestHelper.expectError(
-          context.client,
-          'process_list',
-          { pageSize: 'five' },
-          /pageSize|number|type/i,
-          'pageSize must be number'
-        );
-      });
-    });
-
-    describe('process_list_script', function() {
-      it('should accept scriptId only', async function() {
+      it('should accept with scriptId filter', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'process_list_script',
-          { scriptId: sharedProjectId },
-          'list script processes'
+          'process_list',
+          {
+            userProcessFilter: {
+              scriptId: sharedProjectId
+            }
+          },
+          'list processes with scriptId filter'
         );
 
         expect(result).to.have.property('processes');
@@ -210,10 +203,12 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       it('should accept with status filter', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'process_list_script',
+          'process_list',
           {
-            scriptId: sharedProjectId,
-            status: 'COMPLETED'
+            userProcessFilter: {
+              scriptId: sharedProjectId,
+              statuses: ['COMPLETED']
+            }
           },
           'list processes with status filter'
         );
@@ -221,16 +216,13 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
         expect(result).to.have.property('processes');
       });
 
-      it('should reject invalid status enum', async function() {
+      it('should reject invalid pageSize type', async function() {
         await ArgumentTestHelper.expectError(
           context.client,
-          'process_list_script',
-          {
-            scriptId: sharedProjectId,
-            status: 'INVALID_STATUS'
-          },
-          /status|invalid|enum/i,
-          'invalid status value'
+          'process_list',
+          { pageSize: 'five' },
+          /pageSize|number|type/i,
+          'pageSize must be number'
         );
       });
     });
