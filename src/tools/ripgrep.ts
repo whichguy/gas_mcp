@@ -984,10 +984,9 @@ export class RipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
-      whenToUse: 'Advanced multi-pattern search with context+filtering',
-      limitations: '1000/file max, 500 file max',
-      examples: ['patterns:["TODO","FIXME"],smartCase:true', 'pattern:"error",path:"api/*",context:2', 'pattern:"fn",sort:"path",trim:true'],
-      contentType: 'clean user code (unwrapped)'
+      whenToUse: 'Multi-pattern search with context, smart case, and advanced regex. Searches clean user code (CommonJS unwrapped).',
+      features: 'smartCase: auto case detection | multiline: cross-line patterns | replace: non-destructive suggestions | sort/trim: result formatting',
+      examples: ['Multi: patterns:["TODO","FIXME"]', 'Context: context:2,path:"api/*"', 'Advanced: sort:"path",trim:true']
     }
   };
 
@@ -1412,11 +1411,9 @@ export class RawRipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
-      whenToUse: 'System analysis | debug CommonJS wrappers | search complete file content+system code',
-      contentDifference: 'raw_ripgrep: complete (_main+__defineModule__+wrappers) | ripgrep: clean user code',
-      examples: ['patterns:["_main","__defineModule__"],showStats:true', 'pattern:"module",context:3', 'pattern:"require",sort:"path",trim:true'],
-      dataSource: 'Always direct API calls→complete file content+all wrappers+infra code',
-      performance: 'Direct API (no local cache) | full system wrapper content in scope'
+      whenToUse: 'System analysis and debugging CommonJS infrastructure. Searches raw content including _main() wrappers and __defineModule__ calls.',
+      vsRipgrep: 'raw_ripgrep: complete file with wrappers | ripgrep: clean user code only',
+      examples: ['System: patterns:["_main","__defineModule__"]', 'Debug: pattern:"module",context:3']
     }
   };
 

@@ -68,19 +68,12 @@ export class WriteTool extends BaseFileSystemTool {
     required: ['scriptId', 'path', 'content'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Normal file write + explicit scriptId → auto atomic hook validation (git exists) | fallback: remote-first',
-      workflow: 'write({scriptId:"abc123...",path:"filename",content:"..."}) → git hook validation auto (no flags)',
-      alternatives: 'raw_write: single-dest | advanced positioning',
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal + auto CommonJS wrap'},
-      limitations: {fileTypes: 'SERVER_JS(.gs) | HTML(.html) | JSON(appsscript only)', moduleWrapping: 'Auto wrap _main() for SERVER_JS → raw_write for exact', gitHookDependency: '.git/ exists→hook validation | else→remote-first', preservationOverhead: 'omit moduleOptions→~200-500ms preserve loadNow'},
-      gitIntegration: 'git exists: (1)local write+commit+hooks (2)hooks pass→remote sync (3)remote fail→revert commit | no git: remote first→local sync',
-      commonJsIntegration: 'All SERVER_JS→auto CommonJS: (1)require() import (2)module object (3)exports shorthand → plain JS→wrapper transparent',
-      moduleAccess: 'require("Mod") import | module.exports={...} export | exports.func=... shorthand → system: load/cache/resolve',
-      wrapperHandling: 'Accidental _main()|__defineModule__→auto clean+replace proper structure → never manual add',
-      systemFiles: 'CommonJS|__mcp_exec|appsscript never wrapped→underlying infra',
-      examples: ['JS: path:"utils",content:"<arbitrary JS>"', 'exports: content:"module.exports={...}"', 'HTML: path:"sidebar",fileType:"HTML"', 'config: path:"appsscript",fileType:"JSON"', 'local: localOnly:true', 'WebApp: content:"<web app handler>",moduleOptions:{loadNow:true}', 'Trigger: content:"<trigger function>",moduleOptions:{loadNow:true}', 'util: content:"<utility functions>",moduleOptions:{loadNow:false}', 'preserve: omit moduleOptions→preserve loadNow+hoisted', 'hoisted: moduleOptions:{hoistedFunctions:[{name:"FN",params:["p1","p2"]}]}', 'remove hoisted: moduleOptions:{hoistedFunctions:[]}'],
-      responseFormat: {basic: 'success:true + path + size', withLocal: 'local:{path,exists} if written locally', withGit: 'git:{associated,syncFolder} if .git.gs found', note: 'Response includes local file path and git association hint when .git.gs exists'},
-      hoistedFunctionLifecycle: {preservation: 'omit moduleOptions→preserve hoisted+loadNow', replacement: 'provide hoistedFunctions→replace', removal: 'hoistedFunctions:[]→remove all bridges', noCruft: 'auto cleanup old→no orphans'}
+      whenToUse: 'Normal file write with auto CommonJS wrapping. Use edit/aider for small changes (95%+ token savings).',
+      alternatives: 'edit: exact text match, aider: fuzzy match, raw_write: no CommonJS processing',
+      commonJs: 'Auto-wraps SERVER_JS with require(), module, exports. Never manually add _main() or __defineModule__.',
+      moduleOptions: 'loadNow: true=eager startup, false=lazy on require(). hoistedFunctions: [{name,params}] for Sheets autocomplete.',
+      gitHooks: '.git exists → local write+hooks → remote sync (atomic rollback on failure). No git → remote-first.',
+      examples: ['Basic: {path:"utils",content:"function add(a,b){return a+b}"}', 'Module: {path:"calc",content:"module.exports={add,multiply}"}', 'WebApp: {path:"doGet",content:"...",moduleOptions:{loadNow:true}}']
     }
   };
 

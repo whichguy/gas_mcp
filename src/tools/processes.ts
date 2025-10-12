@@ -99,10 +99,9 @@ export class ProcessListTool extends BaseTool {
     },
     required: [],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      prereq: 'auth→start if needed',
-      usage: 'monitoring: process_list({pageSize:50}) | debugging: userProcessFilter.scriptId | analysis: userProcessFilter.functionName',
-      errors: 'AuthenticationError: auth→start | PermissionError: check GCP Console'
+    llmGuidance: {
+      whenToUse: 'Monitor script execution history | Debug specific script or function executions',
+      filtering: 'userProcessFilter: scriptId, functionName, statuses, types, timeRange'
     }
   };
 

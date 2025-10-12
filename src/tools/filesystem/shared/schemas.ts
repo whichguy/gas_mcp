@@ -22,50 +22,26 @@ export const FILE_TYPE_SCHEMA = {
 
 export const MODULE_OPTIONS_SCHEMA = {
   type: 'object',
-  description: 'Optional CommonJS module loading configuration. Controls how/when module is loaded. If not specified, preserved from existing file or uses default for new files (~200-500ms overhead for preservation). For bulk operations or large projects, provide explicit options to skip preservation.',
+  description: 'CommonJS module config: loadNow (eager/lazy loading), hoistedFunctions (Sheets autocomplete). Omit to preserve existing (~200ms overhead).',
   nullable: true,
   additionalProperties: true,
   properties: {
     loadNow: {
       type: 'boolean',
-      description: 'Load module immediately at startup (true), defer until first require() (false/undefined). When rewriting existing files, previous loadNow value is preserved unless explicitly overridden. For new files, undefined uses default lazy loading (executes on first require).',
-      examples: [true, false],
-      llmHints: {
-        whenTrue: 'Set loadNow=true for: (1) Web app handlers: doGet(), doPost() - must be available at HTTP request time, (2) Trigger functions: onOpen(), onEdit(), onInstall() - called by GAS automatically, (3) Global functions: any function that needs to be callable immediately without require(), (4) Event registrations: modules that export __events__ object',
-        whenFalse: 'Set loadNow=false for utility libraries and helper modules that are only loaded via require() calls',
-        whenOmit: 'RECOMMENDED: Omit moduleOptions entirely to preserve existing setting when rewriting files. For new files, omitting creates default behavior (no loadNow, equivalent to lazy loading)',
-        preservation: 'When moduleOptions parameter is omitted/undefined, system reads existing remote file and preserves current loadNow setting (~200-500ms API call overhead). For new files, uses default (null = lazy load on first require)',
-        performance: 'For bulk operations on multiple files, provide explicit loadNow value to skip preservation API lookup',
-        commonJsContext: 'In CommonJS, loadNow=true means module._main() executes at script startup, loadNow=false/null means it executes on first require() call'
-      }
+      description: 'true=execute at startup (doGet/doPost/triggers), false=lazy on first require() (utils/libs). Omit=preserve existing.',
+      examples: [true, false]
     },
     hoistedFunctions: {
       type: 'array',
-      description: 'Functions to hoist as top-level declarations for Google Sheets autocomplete. These create thin bridge functions that delegate to the module implementation.',
+      description: 'Array of {name, params, jsdoc?} for Sheets custom functions autocomplete.',
       items: {
         type: 'object',
         properties: {
-          name: {
-            type: 'string',
-            description: 'Function name to hoist'
-          },
-          params: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Parameter names for the function'
-          },
-          jsdoc: {
-            type: 'string',
-            description: 'Optional JSDoc comment with @customfunction tag. If omitted, a default comment is generated.'
-          }
+          name: { type: 'string', description: 'Function name' },
+          params: { type: 'array', items: { type: 'string' }, description: 'Parameter names' },
+          jsdoc: { type: 'string', description: 'Optional JSDoc with @customfunction' }
         },
         required: ['name', 'params']
-      },
-      llmHints: {
-        whenToUse: 'Use for Google Sheets custom functions that need autocomplete. The hoisted bridge delegates to the module implementation.',
-        placement: 'Bridge functions are placed after _main() and before __defineModule__(), visible at parse time for Sheets autocomplete.',
-        pattern: 'Bridge function calls require("moduleName").functionName(params) to delegate to the wrapped implementation.',
-        example: 'hoistedFunctions: [{ name: "ASK_CLAUDE", params: ["prompt", "range"], jsdoc: "/** @customfunction */" }]'
       }
     }
   }
@@ -103,21 +79,12 @@ export const WILDCARD_MODE_SCHEMA = {
 
 export const CONTENT_SCHEMA = {
   type: 'string',
-  description: 'Raw user JavaScript content. The CommonJS module system will automatically wrap your code in a _main() function, making the require() function, module object, and exports object available to all your code. Do NOT manually include _main() function or __defineModule__ calls - they are generated automatically by the CommonJS system (see CommonJS.js for implementation details).',
+  description: 'JavaScript code (auto-wrapped with CommonJS require/exports). Do not include _main() or __defineModule__.',
   examples: [
-    'function calculateTax(amount) { return amount * 0.08; }\\nreturn { calculateTax };',
-    'const utils = require("Utils");\\nfunction process(data) { return utils.clean(data); }\\nmodule.exports = { process };',
-    'const config = require("Config");\\nexports.apiKey = config.getKey();'
+    'function add(a,b){return a+b}\\nmodule.exports={add}',
+    'const utils=require("Utils");exports.process=data=>utils.clean(data)'
   ],
   llmHints: {
-    write: 'Use write when: (1) Creating new files from scratch, (2) Making large changes affecting multiple sections, (3) Refactoring entire file structure',
-    edit: 'Use edit for small exact-text changes (outputs ~10 tokens vs ~4,500 tokens for write) when you know the exact text to replace',
-    aider: 'Use aider for small changes with formatting variations (fuzzy matching + 95%+ token savings) when text might have whitespace/formatting differences',
-    tokenEfficiency: '⚠️ IMPORTANT: For small changes to existing files, consider using edit or aider instead for 95%+ token savings',
-    decisionTree: {
-      'Creating new file?': 'Use write (file creation)',
-      'Small change to existing file?': 'Use edit (exact match) or aider (fuzzy match) for 95%+ token savings',
-      'Large changes or refactoring?': 'Use write (entire file replacement)'
-    }
+    toolChoice: 'write: new/large changes | edit: exact text (~10 tok) | aider: fuzzy (~10 tok) | 95%+ savings for small edits'
   }
 } as const;

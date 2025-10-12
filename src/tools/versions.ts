@@ -28,12 +28,9 @@ export class VersionGetTool extends BaseTool {
     },
     required: ['scriptId', 'versionNumber'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      prereq: 'auth→start | scriptId | version exists (version_list)',
-      limits: 'immutable snapshots | 50-100 typical limit | metadata only (use cat for content)',
-      usage: 'review: version_get({scriptId,versionNumber}) | compare: multiple version_get | deploy: verify before deploy',
-      errors: 'AuthenticationError: auth→start | ScriptNotFound: verify scriptId | VersionNotFound: version_list',
-      return: 'versionNumber | description | createTime | fileCount'
+    llmGuidance: {
+      whenToUse: 'Review specific version before deployment | Compare multiple versions',
+      workflow: 'version_list → select versionNumber → version_get → deploy_create'
     }
   };
 
@@ -92,13 +89,9 @@ export class VersionListTool extends BaseTool {
     },
     required: ['scriptId'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      prereq: 'auth→start | scriptId',
-      limits: 'pageSize+pageToken pagination | reverse chronological | metadata only (version_get for detail)',
-      usage: 'history: version_list({scriptId}) | deploy: select for deploy_create | compare: identify→compare',
-      errors: 'AuthenticationError: auth→start | ScriptNotFound: verify scriptId | NoVersions: version_create',
-      return: 'versions[] | totalCount | nextPageToken',
-      next: 'version_get for detail | deploy_create with versionNumber'
+    llmGuidance: {
+      whenToUse: 'View version history | Select version for deployment',
+      workflow: 'version_list → version_get (detail) → deploy_create (deploy specific version)'
     }
   };
 

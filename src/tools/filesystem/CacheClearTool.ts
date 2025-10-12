@@ -43,11 +43,9 @@ export class CacheClearTool extends BaseFileSystemTool {
       }
     },
     required: ['path'],
-    llmWorkflowGuide: {
-      prereq: 'Valid path to cached file or project',
-      usage: 'Debug: sync issues | Force: fresh API call | Verify: cache behavior',
-      scope: 'file: single file metadata | project: all files in project',
-      after: 'Next operation will use slow path (API call) to re-cache metadata'
+    llmGuidance: {
+      whenToUse: 'Debug sync issues | Force fresh API call to verify metadata | Test cache behavior',
+      effect: 'Clears xattr metadata only (not file content) | Next operation re-caches via API'
     }
   };
 

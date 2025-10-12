@@ -618,50 +618,30 @@ export class AuthTool extends BaseTool {
         type: 'string',
         enum: ['start', 'status', 'logout'],
         default: 'start',
-        description: 'Authentication operation mode. LLM WORKFLOW GUIDANCE: (1) ALWAYS call mode="status" FIRST to check if already authenticated. (2) Only use mode="start" if status shows not authenticated. (3) Use mode="logout" to clear authentication when switching accounts.',
-        examples: ['start', 'status', 'logout'],
-        llmHints: {
-          workflow: 'status first → start if needed → logout for account switch',
-          firstStep: 'Required before any GAS operations',
-          errors: 'Check OAuth config in Google Cloud Console'
-        }
+        description: 'Authentication operation mode. WORKFLOW: (1) Call status first to check if authenticated. (2) Use start if not authenticated. (3) Use logout to switch accounts.',
+        examples: ['start', 'status', 'logout']
       },
       openBrowser: {
         type: 'boolean',
         default: true,
-        description: 'Automatically open browser for OAuth authentication. Set to false in automated/headless environments or testing. Set to true for interactive user sessions.',
-        llmHints: {
-          false: 'Automated/CI/CD/testing (no browser)',
-          true: 'Interactive user auth (default)'
-        }
+        description: 'Automatically open browser for OAuth authentication. Set false for headless/automated environments.'
       },
       waitForCompletion: {
         type: 'boolean',
         default: true,
-        description: 'Wait for OAuth flow to complete before returning. Default true waits until authentication completes. Set false to return immediately with auth URL (5-minute timeout).',
-        llmHints: {
-          true: 'Waits for OAuth completion (default, 5min timeout)',
-          false: 'Returns URL immediately (async completion)',
-          recommend: 'Use true for LLM ops (session ready)'
-        }
+        description: 'Wait for OAuth flow to complete before returning (5min timeout). Default true recommended for LLM operations.'
       },
       accessToken: {
         type: 'string',
-        description: 'Pre-existing access token for stateless operation. LLM USE CASE: When you already have a valid OAuth token and want to bypass session storage. Useful for temporary operations or token testing.',
-        pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
-        llmHints: {
-          format: 'Starts with "ya29."',
-          use: 'Stateless ops|testing with known tokens',
-          security: 'Never log/expose tokens'
-        }
+        description: 'Pre-existing access token for stateless operation. Format: starts with "ya29."',
+        pattern: '^ya29\\.[a-zA-Z0-9_-]+$'
       }
     },
     required: [],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      flow: ['status → start (if needed) → OAuth in browser → other tools'],
-      errors: 'not_authenticated→start | oauth_error→check GCP | timeout→retry',
-      deps: 'Entry point (no deps) | Required for all other tools'
+    llmGuidance: {
+      workflow: 'status → start (if needed) → OAuth in browser → other tools',
+      firstStep: 'Required entry point before all other GAS operations'
     }
   };
 

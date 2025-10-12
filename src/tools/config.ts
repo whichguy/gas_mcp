@@ -63,11 +63,10 @@ export class ConfigTool extends BaseTool {
     },
     required: ['action', 'scriptId'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      actions: 'get=query | set=update',
-      examples: ['get: config({action:"get",type:"sync_folder"})', 'set: config({...value:"~/path"})', 'move: add moveExisting:true'],
-      workflow: ['before: git status|stash', 'after: cd <path> | local_sync', 'git: cd <folder> | status|log|push'],
-      warnings: 'no uncommitted before move | moveExisting physically moves repo | updates .git/config.gs'
+    llmGuidance: {
+      actions: 'get: query sync_folder path | set: update sync_folder location',
+      moveExisting: 'physically moves git repo preserving history + updates .git/config.gs',
+      workflow: 'before move: git status/stash | after: cd <path> + local_sync'
     }
   };
 

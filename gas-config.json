@@ -571,6 +571,11 @@
       "scriptId": "1QaG9FFTm_QQWoeBpXTYdyWm-cxV4VyD1HpxzEY_apQnHCh0qyFHSG0fI",
       "name": "test-project-consolidated-suit",
       "description": "Created: 10/11/2025"
+    },
+    "claude-api-client-library": {
+      "scriptId": "1MBS-3_GBNE_xy6kFSEm-lXukd8vabA9RL64s8-vR2eHyzbA0BF4ZiiKh",
+      "name": "claude-api-client-library",
+      "description": "Created: 10/12/2025"
     }
   },
   "localRoot": {
@@ -580,7 +585,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-12T01:17:52.203Z"
+    "lastModified": "2025-10-12T17:16:10.613Z"
   },
   "debug": true,
   "currentProject": {
