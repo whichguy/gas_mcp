@@ -1029,13 +1029,11 @@ export class ProjectCreateTool extends BaseTool {
     required: ['title'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      typicalSequence: ['1.auth→start if needed', '2.project_create({title,localName})', '3.auto-added to local config', '4.project_set({project})→start working', '5.write({path,content})→uses current', '6.exec({js_statement})→test exec'],
-      scriptTypeCompatibility: {standalone: 'Creates standalone (default)', containerBound: 'Cannot create container-bound via API→use driveContainerTools|UI', notes: 'Standalone only→container-bound: bind manually|create_script'},
-      limitations: {projectType: 'standalone only (no container-bound)', quotas: 'subject to GAS quota (varies)', initialState: 'CommonJS.js (2-param) auto-deployed→ready for code'},
-      returnValue: {scriptId: 'SAVE→required for all ops', localName: 'use with project_set|pull|push', webAppUrl: 'null initially→created on first deploy', driveUrl: 'direct link→Apps Script editor'},
-      nextSteps: ['IMMEDIATE: save scriptId', 'OPTIONAL: project_set({project:localName})', 'ADD CODE: write({scriptId,path,content})', 'TEST: exec({scriptId,js_statement})', 'DEPLOY: deploy_create({scriptId})'],
-      relatedTools: {containerBoundAlternative: 'create_script→Sheets/Docs/Forms bound', projectManagement: 'project_list|project_add', codeManagement: 'write|cat', execution: 'exec', deployment: 'version_create+deploy_create'},
-      errorHandling: {AuthenticationError: 'auth→start first', PermissionError: 'check Drive perms+API access', QuotaExceeded: 'reached project creation limit'}
+      sequence: 'auth→start | project_create({title}) | write | exec | deploy_create',
+      compat: 'standalone only (container-bound: use UI/create_script)',
+      return: 'scriptId=SAVE (required) | localName | webAppUrl=null→deploy | driveUrl',
+      next: 'save scriptId | write code | exec test | deploy_create',
+      errors: 'AuthenticationError: auth→start | PermissionError: check Drive/API | QuotaExceeded: limit reached'
     }
   };
 
