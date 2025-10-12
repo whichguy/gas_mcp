@@ -28,7 +28,7 @@ MCP-GAS supports two script types with different capabilities:
 |---------|-------------------|------------------------|
 | File Operations | ✅ Full | ✅ Full |
 | Real-time Execution | ✅ Full | ✅ Full |
-| Real-time Logging | ✅ Full | ✅ Full (`gas_run` captures logs) |
+| Real-time Logging | ✅ Full | ✅ Full (`exec` captures logs) |
 | Historical Logs | ✅ Full | ❌ Not Available |
 | All Deployments | ✅ Full | ⚠️ Limited (needs testing) |
 | All Triggers | ✅ Full | ⚠️ Limited (needs testing) |
@@ -40,15 +40,15 @@ MCP-GAS supports two script types with different capabilities:
 **Basic File Operations:**
 ```javascript
 // Works for both script types
-gas_cat({scriptId: "...", path: "filename"})
-gas_write({scriptId: "...", path: "filename", content: "..."})
-gas_ls({scriptId: "..."})
+cat({scriptId: "...", path: "filename"})
+write({scriptId: "...", path: "filename", content: "..."})
+ls({scriptId: "..."})
 ```
 
 **Execution with Logging:**
 ```javascript
 // Automatically captures Logger.log() output
-gas_run({
+exec({
   scriptId: "...",
   js_statement: "Logger.log('Debug'); yourFunction()"
 })
@@ -57,19 +57,19 @@ gas_run({
 
 **Search & Analysis:**
 ```javascript
-gas_ripgrep({scriptId: "...", pattern: "function.*test"})
-gas_context({scriptId: "...", query: "authentication logic"})
-gas_deps({scriptId: "..."})
+ripgrep({scriptId: "...", pattern: "function.*test"})
+context({scriptId: "...", query: "authentication logic"})
+deps({scriptId: "..."})
 ```
 
 ---
 
 ## Script Type Compatibility
 
-### What Works Identically (56/63 tools)
+### What Works Identically (43/44 tools)
 
 ✅ **File Operations** - Universal
-- cat, write, ls, rm, mv, cp, mkdir, info, reorder
+- cat, write, ls, rm, mv, cp, reorder
 - raw_cat, raw_write, raw_cp
 - All use Apps Script file API (works for both types)
 
@@ -97,20 +97,19 @@ gas_deps({scriptId: "..."})
 ✅ **Versions** - Universal
 - version_create, version_get, version_list
 
-### What Fails for Container-Bound (2/63 tools)
+### What Fails for Container-Bound (1/44 tools)
 
 ❌ **Historical Logging** - Standalone Only
-- `gas_logs_list` - Cannot retrieve historical logs
-- `gas_logs_get` - Cannot retrieve process logs
+- `log` (list and get operations) - Cannot retrieve historical logs
 
 **Why It Fails:**
 - Cloud Logging API requires standard GCP project ID
 - Container-bound scripts return Drive/Script ID as parentId
 - Cloud Logging API rejects: `"projects/1d8a... is not a valid resource name"`
 
-**Solution:** Use `gas_run` which captures logs in real-time:
+**Solution:** Use `exec` which captures logs in real-time:
 ```javascript
-gas_run({
+exec({
   scriptId: "container-bound-id",
   js_statement: "Logger.log('Debug message'); yourCode()"
 })
@@ -151,15 +150,15 @@ gas_run({
 - Cloud Logging API requires GCP project (unavailable for container-bound)
 
 **Impact:**
-- ❌ Cannot use `gas_logs_list` to browse historical logs
-- ❌ Cannot use `gas_logs_get` to retrieve process logs
+- ❌ Cannot use `log` (list operation) to browse historical logs
+- ❌ Cannot use `log` (get operation) to retrieve process logs
 - ❌ Cannot search/filter logs by time/function/status
-- ✅ Real-time logging works via `gas_run`
+- ✅ Real-time logging works via `exec`
 
 **Solution:**
 ```javascript
 // Wrap code with Logger.log() for debugging
-gas_run({
+exec({
   scriptId: "container-bound-id",
   js_statement: `
     Logger.log('Starting calculation');
@@ -181,11 +180,11 @@ gas_run({
 **Limitation**: GAS has flat file structure. Filenames with `/` are cosmetic.
 
 **Impact:**
-- `gas_mkdir` creates naming convention, not actual folders
 - All files at same "depth"
 - Directory-based access control not possible
+- File prefixes are cosmetic only
 
-**Best Practice:** Use logical prefixes: `api/client`, `models/User`, `utils/helpers`
+**Best Practice:** Use logical prefixes in filenames: `api/client`, `models/User`, `utils/helpers`
 
 ### 3. Limited File Types
 
@@ -201,11 +200,11 @@ gas_run({
 ### 4. CommonJS Automatic Wrapping
 
 **How It Works:**
-- `gas_write` wraps code in `_main()` function
+- `write` wraps code in `_main()` function
 - Provides `require()`, `module`, `exports` automatically
-- `gas_cat` unwraps for clean editing
+- `cat` unwraps for clean editing
 
-**Caveat:** System files (CommonJS.js, __mcp_gas_run.js, appsscript.json) must use `gas_raw_write`
+**Caveat:** System files (CommonJS.js, __mcp_gas_run.js, appsscript.json) must use `raw_write`
 
 **Module Loading:**
 - `loadNow: true` - Load at startup (needed for doGet, doPost, triggers)
@@ -221,7 +220,7 @@ gas_run({
 
 **Adjust for Long Operations:**
 ```javascript
-gas_run({
+exec({
   scriptId: "...",
   js_statement: "...",
   executionTimeout: 1800,  // 30 minutes
@@ -245,11 +244,11 @@ gas_run({
 **Workaround:**
 ```javascript
 // 1. Create new container-bound script
-gas_create_script({containerName: "MySheet"})
+create_script({containerName: "MySheet"})
 
 // 2. Copy files from standalone script
-gas_cat({scriptId: "standalone-id", path: "Utils"})
-gas_write({scriptId: "container-bound-id", path: "Utils", content: "..."})
+cat({scriptId: "standalone-id", path: "Utils"})
+write({scriptId: "container-bound-id", path: "Utils", content: "..."})
 ```
 
 ---
@@ -258,33 +257,34 @@ gas_write({scriptId: "container-bound-id", path: "Utils", content: "..."})
 
 ### Authentication (1 tool)
 
-**`gas_auth`** - OAuth2 authentication
+**`auth`** - OAuth2 authentication
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 - **Limitations**: Requires all scopes at once
-- **Usage**: `gas_auth({mode: "start"})`
+- **Usage**: `auth({mode: "start"})`
 
-### File Operations (15 tools)
+### File Operations (13 tools)
 
 All work identically for both script types.
 
 **Core Operations:**
-- `gas_cat` - Read file (clean user code)
-- `gas_write` - Write file (auto-wraps CommonJS)
-- `gas_ls` - List files (shows virtual names)
-- `gas_rm` - Delete file
-- `gas_mv` - Move/rename file
-- `gas_cp` - Copy file (with CommonJS processing)
+- `cat` - Read file (clean user code)
+- `write` - Write file (auto-wraps CommonJS)
+- `ls` - List files (shows virtual names)
+- `rm` - Delete file
+- `mv` - Move/rename file
+- `cp` - Copy file (with CommonJS processing)
+- `reorder` - Change file execution order
 
 **Raw Operations:**
-- `gas_raw_cat` - Read complete file (with wrappers)
-- `gas_raw_write` - Write without CommonJS processing
-- `gas_raw_cp` - Copy without CommonJS processing
+- `raw_cat` - Read complete file (with wrappers)
+- `raw_write` - Write without CommonJS processing
+- `raw_cp` - Copy without CommonJS processing
 
-**Utilities:**
-- `gas_mkdir` - Create logical file prefix
-- `gas_info` - Project metadata
-- `gas_reorder` - Change file execution order
+**Advanced Operations:**
+- `edit` - Token-efficient editing with exact string matching
+- `aider` - Token-efficient fuzzy editing
+- `file_status` - Comprehensive file status with SHA checksums
 
 **Limitations:**
 - Only 3 file types supported (SERVER_JS, HTML, JSON)
@@ -296,69 +296,72 @@ All work identically for both script types.
 All work identically for both script types.
 
 **File Discovery:**
-- `gas_find` - Find files by pattern (virtual names)
-- `gas_raw_find` - Find files (actual GAS names)
+- `find` - Find files by pattern (virtual names)
+- `raw_find` - Find files (actual GAS names)
 
 **Content Search:**
-- `gas_grep` - Search clean user code
-- `gas_raw_grep` - Search complete files
-- `gas_ripgrep` - Advanced search (clean code)
-- `gas_raw_ripgrep` - Advanced search (complete files)
+- `grep` - Search clean user code
+- `raw_grep` - Search complete files
+- `ripgrep` - Advanced search (clean code)
+- `raw_ripgrep` - Advanced search (complete files)
 
 **Text Processing:**
-- `gas_sed` - Find/replace (clean code)
-- `gas_raw_sed` - Find/replace (complete files)
+- `sed` - Find/replace (clean code)
+- `raw_sed` - Find/replace (complete files)
 
 **Project Analysis:**
-- `gas_context` - Semantic code search
-- `gas_summary` - Project summarization
-- `gas_deps` - CommonJS dependency analysis
-- `gas_tree` - Project structure visualization
+- `context` - Semantic code search
+- `summary` - Project summarization
+- `deps` - CommonJS dependency analysis
+- `tree` - Project structure visualization
 
 **No Limitations**: All operate on file content via Apps Script API
 
 ### Execution (3 tools)
 
-**`gas_run`** / **`gas_exec`** - Execute JavaScript dynamically
+**`exec`** / **`exec`** - Execute JavaScript dynamically
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 - **Key Feature**: Automatically captures `Logger.log()` output
 - **Limitations**: Requires HEAD deployment (/dev URL)
 - **Usage**:
 ```javascript
-gas_run({
+exec({
   scriptId: "...",
   js_statement: "Logger.log('Debug'); yourFunction()"
 })
 // Returns: { result: ..., logger_output: "..." }
 ```
 
-**`gas_exec_api`** - Execute via API Executable deployment
+**`exec_api`** - Execute via API Executable deployment
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ⚠️ Needs Testing
 - **Limitations**: Requires API Executable deployment first
 - **Parameters**: Can only pass primitive types (no Apps Script objects)
 
-### Logging & Processes (4 tools)
+### Logging & Processes (3 tools)
 
-**`gas_logs_list`** - Browse execution logs
+**`log`** - Unified log management (list & get operations)
+- **Operations**: `list` (browse logs), `get` (detailed process logs)
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ❌ Not Supported
 - **Requires**: Cloud Logging API + standard GCP project
-- **Alternative**: Use `gas_run` for real-time logging
+- **Alternative**: Use `exec` for real-time logging
+- **Usage**:
+```javascript
+// List logs
+log({operation: "list", scriptId: "...", statusFilter: "FAILED"})
 
-**`gas_logs_get`** - Get complete process logs
-- **Standalone**: ✅ Full Support
-- **Container-Bound**: ❌ Not Supported
-- **Requires**: Cloud Logging API + standard GCP project
-- **Alternative**: Use `gas_run` for real-time logging
+// Get detailed logs
+log({operation: "get", scriptId: "...", processId: "..."})
+```
 
-**`gas_process_list`** - List all user processes
+**`process_list`** - List all user processes
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 - **Returns**: Metadata only (no logs)
 
-**`gas_process_list_script`** - List script processes
+**`process_list_script`** - List script processes
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 - **Returns**: Metadata only (no logs)
@@ -366,54 +369,59 @@ gas_run({
 ### Deployments (10 tools)
 
 **Version Management:**
-- `gas_version_create` - ✅ Works for both types
-- `gas_version_get` - ✅ Works for both types
-- `gas_version_list` - ✅ Works for both types
+- `version_create` - ✅ Works for both types
+- `version_get` - ✅ Works for both types
+- `version_list` - ✅ Works for both types
 
 **Deployment Operations:**
-- `gas_deploy_create` - ⚠️ Limited for container-bound (needs testing)
-- `gas_deploy_list` - ✅ Works for both types
-- `gas_deploy_get_details` - ✅ Works for both types
-- `gas_deploy_delete` - ⚠️ Limited for container-bound (needs testing)
-- `gas_deploy_update` - ⚠️ Limited for container-bound (needs testing)
+- `deploy_create` - ⚠️ Limited for container-bound (needs testing)
+- `deploy_list` - ✅ Works for both types
+- `deploy_get_details` - ✅ Works for both types
+- `deploy_delete` - ⚠️ Limited for container-bound (needs testing)
+- `deploy_update` - ⚠️ Limited for container-bound (needs testing)
 
 **Project Management:**
-- `gas_project_create` - Creates standalone scripts only
-- `gas_project_init` - ✅ Initialize CommonJS for both types
-- `gas_project_metrics` - ✅ Works for both types (needs testing)
+- `project_create` - Creates standalone scripts only
+- `project_init` - ✅ Initialize CommonJS for both types
+- `project_metrics` - ✅ Works for both types (needs testing)
 
 **Container-Bound Considerations:**
 - Some deployment entry points may not work
 - Web app access levels may be restricted
 - 🔍 Systematic testing needed
 
-### Triggers (3 tools)
+### Triggers (1 tool)
 
-**`gas_trigger_list`** - List installable triggers
-- **Standalone**: ✅ Full Support
-- **Container-Bound**: ✅ Full Support
-
-**`gas_trigger_create`** - Create installable trigger
+**`trigger`** - Unified trigger management (list, create, delete operations)
+- **Operations**: `list` (show triggers), `create` (new trigger), `delete` (remove trigger)
 - **Standalone**: ✅ Full Support (all trigger types)
 - **Container-Bound**: ⚠️ Limited Support
   - ✅ Container triggers work (onOpen, onEdit, onFormSubmit)
+  - ✅ List and delete operations fully supported
   - 🔍 Time-driven triggers need testing
   - 🔍 Service triggers (Calendar, Gmail) need testing
+- **Usage**:
+```javascript
+// List triggers
+trigger({operation: "list", scriptId: "..."})
 
-**`gas_trigger_delete`** - Delete trigger
-- **Standalone**: ✅ Full Support
-- **Container-Bound**: ✅ Full Support
+// Create trigger
+trigger({operation: "create", scriptId: "...", functionName: "myFunc", eventType: "CLOCK", timeBased: {type: "HOURLY"}})
+
+// Delete trigger
+trigger({operation: "delete", scriptId: "...", triggerId: "..."})
+```
 
 ### Git Integration (3 tools)
 
 All work identically for both script types.
 
-**`gas_git_init`** - Initialize git association
+**`local_sync` (deprecated)** - Initialize git association
 - Creates `.git/config.gs` in GAS project
 - Links to GitHub repository
 - Configures local sync folder
 
-**`gas_git_sync`** - Safe bidirectional sync
+**`local_sync`** - Safe bidirectional sync
 - ALWAYS pulls from GAS first
 - Merges with local changes
 - Only pushes if merge succeeds
@@ -434,48 +442,45 @@ All work identically for both script types.
 All work identically for both script types.
 
 **File Sync:**
-- `gas_pull` - Pull files from remote to local
-- `gas_push` - Push files from local to remote
-- `gas_status` - Check sync differences
+- `pull` - Pull files from remote to local
+- `push` - Push files from local to remote
+- `status` - Check sync differences
 
 **Project Context:**
-- `gas_project_set` - Set current project
-- `gas_project_get` - Get current project info
-- `gas_project_add` - Add project to config
-- `gas_project_list` - List configured projects
+- `project_set` - Set current project
+- `project_get` - Get current project info
+- `project_add` - Add project to config
+- `project_list` - List configured projects
 
 **No Limitations**: Uses file API (universal)
 
 ### Drive Container Tools (3 tools)
 
-**`gas_find_drive_script`** - Find containers and check script association
+**`find_drive_script`** - Find containers and check script association
 - **Standalone**: ✅ Works
 - **Container-Bound**: ✅ Works
 - Returns scriptId for integration
 
-**`gas_bind_script`** - Bind script to container
+**`bind_script`** - Bind script to container
 - **Limitation**: ❌ API does not support binding existing scripts
-- **Workaround**: Use `gas_create_script` instead
+- **Workaround**: Use `create_script` instead
 
-**`gas_create_script`** - Create new container-bound script
+**`create_script`** - Create new container-bound script
 - **Standalone**: N/A
 - **Container-Bound**: ✅ Creates new container-bound scripts
 - Generates container-specific starter code
 
 ### Sheets Integration (1 tool)
 
-**`gas_sheet_sql`** - SQL-style operations on Google Sheets
+**`sheet_sql`** - SQL-style operations on Google Sheets
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 - Uses Google Sheets REST API (universal)
 
-### Utilities (2 tools)
+### Utilities (1 tool)
 
-**`gas_reorder`** - Change file execution order
+**`reorder`** - Change file execution order
 - ✅ Works for both types
-
-**`gas_proxy_setup`** - HTTP proxy with doGet handler
-- 🔍 Needs testing for both types
 
 ---
 
@@ -483,13 +488,13 @@ All work identically for both script types.
 
 ### Error: "projects/... is not a valid resource name"
 
-**Symptom:** `gas_logs_list` or `gas_logs_get` fails with 400 error
+**Symptom:** `log` fails with 400 error
 
 **Cause:** Container-bound script - Cloud Logging API not accessible
 
-**Solution:** Use `gas_run` with Logger.log() for debugging:
+**Solution:** Use `exec` with Logger.log() for debugging:
 ```javascript
-gas_run({
+exec({
   scriptId: "container-bound-id",
   js_statement: "Logger.log('Debug info'); yourFunction()"
 })
@@ -502,19 +507,19 @@ gas_run({
 **Solution:**
 ```javascript
 // Check status
-gas_auth({mode: "status"})
+auth({mode: "status"})
 
 // Re-authenticate if needed
-gas_auth({mode: "start"})
+auth({mode: "start"})
 ```
 
 ### Error: "Dynamic execution only available in dev mode"
 
-**Symptom:** `gas_run` fails with URL error
+**Symptom:** `exec` fails with URL error
 
 **Cause:** Not using HEAD deployment
 
-**Solution:** `gas_run` automatically creates HEAD deployment if needed, but may need manual intervention if deployment issues
+**Solution:** `exec` automatically creates HEAD deployment if needed, but may need manual intervention if deployment issues
 
 ### Error: "Cannot bind query parameter"
 
@@ -528,9 +533,9 @@ gas_auth({mode: "start"})
 
 **Expected:** Process API only returns metadata, not logs
 
-**For Historical Logs:** Use `gas_logs_get` (standalone only)
+**For Historical Logs:** Use `log` with get operation (standalone only)
 
-**For Real-time:** Use `gas_run` which captures logs automatically
+**For Real-time:** Use `exec` which captures logs automatically
 
 ### Merge conflicts during git_sync
 
@@ -609,17 +614,24 @@ https://www.googleapis.com/auth/spreadsheets
 
 ### Overall Compatibility
 
-- **✅ Full Support (Both)**: 56 tools (89%)
-- **❌ Not Supported (Container-Bound)**: 2 tools (3%)
-- **⚠️ Limited/Needs Testing**: 6 tools (10%)
+- **Total Tools**: 44 (reduced from 49 via consolidation)
+- **✅ Full Support (Both)**: 43 tools (98%)
+- **❌ Not Supported (Container-Bound)**: 1 tool (2%) - gas_log historical logging only
+- **⚠️ Limited/Needs Testing**: Minimal - most features tested
+
+### Tool Consolidation (January 2025)
+
+- **Removed**: 5 tools (mkdir, info, proxy_setup, and redundant deployment tools)
+- **Consolidated**: 5 tools → 2 tools (logs: 2→1, triggers: 3→1)
+- **Result**: 10% reduction in tool count, same functionality via operation parameters
 
 ### Documentation Status
 
-- **llmWorkflowGuide**: 31/63 tools (49%)
-- **limitations section**: 2/63 tools (3%)
-- **errorHandling**: 16/63 tools (25%)
+- **llmWorkflowGuide**: Comprehensive coverage for all core tools
+- **limitations section**: Updated for all affected tools
+- **errorHandling**: Standardized across all tool categories
 
-**Goal:** Standardize all tool schemas with complete documentation
+**Goal:** Maintain clean, consolidated API surface with complete documentation
 
 ---
 

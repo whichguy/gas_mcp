@@ -423,9 +423,9 @@ export class InProcessTestClient {
       { name: 'auth', description: 'OAuth authentication' },
       { name: 'gas_project_list', description: 'List GAS projects' },
       { name: 'gas_project_create', description: 'Create new GAS project' },
-      { name: 'gas_cat', description: 'Read file contents' },
-      { name: 'gas_write', description: 'Write file contents' },
-      { name: 'gas_ls', description: 'List files in project' },
+      { name: 'cat', description: 'Read file contents' },
+      { name: 'write', description: 'Write file contents' },
+      { name: 'ls', description: 'List files in project' },
       { name: 'exec', description: 'Execute code in GAS environment' }
     ];
   }

@@ -171,7 +171,23 @@ export class RegexProcessor {
 
     const modifiedText = text.replace(regex, (...args) => {
       count++;
-      return replacement;
+
+      // args = [fullMatch, captureGroup1, captureGroup2, ..., offset, fullString, groups]
+      const fullMatch = args[0];
+      const offset = args[args.length - 2];
+      const captureGroups = args.slice(1, args.length - 2);
+
+      // Replace $1, $2, etc. with actual capture groups
+      let result = replacement;
+      captureGroups.forEach((group, index) => {
+        const groupNum = index + 1;
+        result = result.replace(new RegExp(`\\$${groupNum}`, 'g'), group || '');
+      });
+
+      // Also support $& for full match
+      result = result.replace(/\$&/g, fullMatch);
+
+      return result;
     });
 
     return { text: modifiedText, count };

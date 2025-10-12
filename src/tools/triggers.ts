@@ -5,101 +5,49 @@ import { ExecTool } from './execution.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
- * Trigger management tool for Google Apps Script projects
- * Provides comprehensive trigger operations via gas_run
+ * Unified trigger management tool for Google Apps Script projects
+ * Provides comprehensive trigger operations: list, create, delete
  */
-export class TriggerListTool extends BaseTool {
-  public name = 'trigger_list';
-  public description = 'List all installable triggers for a Google Apps Script project';
-  
+export class TriggerTool extends BaseTool {
+  public name = 'trigger';
+  public description = 'Manage installable triggers for Google Apps Script projects with operations: list, create, delete';
+
   public inputSchema = {
     type: 'object' as const,
     properties: {
+      operation: {
+        type: 'string',
+        enum: ['list', 'create', 'delete'],
+        description: 'Trigger operation: list (show all triggers), create (new trigger), delete (remove trigger)'
+      },
       ...SchemaFragments.accessToken,
       ...SchemaFragments.scriptId,
+      // List operation parameters
       detailed: {
         type: 'boolean',
         default: false,
-        description: 'Include detailed trigger information (function names, sources, IDs)'
-      }
-    },
-    required: ['scriptId']
-  };
-
-  async execute(args: any): Promise<any> {
-    const { scriptId, detailed = false, accessToken } = args;
-
-    try {
-      // Create the JavaScript statement to list triggers
-      const jsStatement = `
-        (function() {
-          const triggers = ScriptApp.getProjectTriggers();
-          const result = {
-            totalTriggers: triggers.length,
-            triggers: []
-          };
-          
-          if (triggers.length > 0) {
-            for (let i = 0; i < triggers.length; i++) {
-              const trigger = triggers[i];
-              const triggerInfo = {
-                uniqueId: trigger.getUniqueId(),
-                handlerFunction: trigger.getHandlerFunction(),
-                triggerSource: trigger.getTriggerSource().toString(),
-                ${detailed ? `
-                triggerSourceId: trigger.getTriggerSourceId() || null,
-                eventType: trigger.getEventType() ? trigger.getEventType().toString() : null,
-                ` : ''}
-              };
-              result.triggers.push(triggerInfo);
-            }
-          }
-          
-          return JSON.stringify(result, null, 2);
-        })()
-      `;
-
-      // Execute using gas_exec
-      const gasExecTool = new ExecTool(this.sessionAuthManager);
-      const runResult = await gasExecTool.execute({
-        scriptId,
-        js_statement: jsStatement,
-        accessToken
-      });
-
-      return {
-        success: true,
-        ...JSON.parse(runResult.result)
-      };
-
-    } catch (error: any) {
-      throw new GASApiError(
-        `Failed to list triggers: ${error.message}`,
-        undefined,
-        { scriptId, error: error.message }
-      );
-    }
-  }
-}
-
-export class TriggerCreateTool extends BaseTool {
-  public name = 'trigger_create';
-  public description = 'Create a new installable trigger for a Google Apps Script project';
-  
-  public inputSchema = {
-    type: 'object' as const,
-    properties: {
-      ...SchemaFragments.accessToken,
-      ...SchemaFragments.scriptId,
+        description: 'Include detailed trigger information (function names, sources, IDs) - for list operation'
+      },
+      // Create operation parameters
       functionName: {
         type: 'string',
-        description: 'Name of the function to be executed by the trigger',
+        description: 'Name of the function to be executed by the trigger - required for create operation, optional for delete',
         minLength: 1
       },
       triggerType: {
         type: 'string',
         enum: ['time', 'spreadsheet', 'form', 'calendar', 'document', 'addon', 'gmail'],
-        description: 'Type of trigger to create'
+        description: 'Type of trigger to create - required for create operation'
+      },
+      // Delete operation parameters
+      triggerId: {
+        type: 'string',
+        description: 'Unique ID of the trigger to delete - for delete operation (optional if functionName provided)'
+      },
+      deleteAll: {
+        type: 'boolean',
+        default: false,
+        description: 'Delete ALL triggers in the project - for delete operation (use with caution)'
       },
       // Enhanced time-based trigger options
       timeOptions: {
@@ -259,22 +207,94 @@ export class TriggerCreateTool extends BaseTool {
         required: ['eventType']
       }
     },
-    required: ['scriptId', 'functionName', 'triggerType']
+    required: ['operation', 'scriptId']
   };
 
   async execute(args: any): Promise<any> {
-    const { 
-      scriptId, 
-      functionName, 
-      triggerType, 
-      timeOptions, 
+    const { operation, scriptId, accessToken } = args;
+
+    // Route to appropriate operation
+    switch (operation) {
+      case 'list':
+        return this.listTriggers(args);
+      case 'create':
+        return this.createTrigger(args);
+      case 'delete':
+        return this.deleteTrigger(args);
+      default:
+        throw new ValidationError('operation', operation, 'one of: list, create, delete');
+    }
+  }
+
+  private async listTriggers(args: any): Promise<any> {
+    const { scriptId, detailed = false, accessToken } = args;
+
+    try {
+      // Create the JavaScript statement to list triggers
+      const jsStatement = `
+        (function() {
+          const triggers = ScriptApp.getProjectTriggers();
+          const result = {
+            totalTriggers: triggers.length,
+            triggers: []
+          };
+
+          if (triggers.length > 0) {
+            for (let i = 0; i < triggers.length; i++) {
+              const trigger = triggers[i];
+              const triggerInfo = {
+                uniqueId: trigger.getUniqueId(),
+                handlerFunction: trigger.getHandlerFunction(),
+                triggerSource: trigger.getTriggerSource().toString(),
+                ${detailed ? `
+                triggerSourceId: trigger.getTriggerSourceId() || null,
+                eventType: trigger.getEventType() ? trigger.getEventType().toString() : null,
+                ` : ''}
+              };
+              result.triggers.push(triggerInfo);
+            }
+          }
+
+          return JSON.stringify(result, null, 2);
+        })()
+      `;
+
+      // Execute using gas_exec
+      const gasExecTool = new ExecTool(this.sessionAuthManager);
+      const runResult = await gasExecTool.execute({
+        scriptId,
+        js_statement: jsStatement,
+        accessToken
+      });
+
+      return {
+        success: true,
+        operation: 'list',
+        ...JSON.parse(runResult.result)
+      };
+
+    } catch (error: any) {
+      throw new GASApiError(
+        `Failed to list triggers: ${error.message}`,
+        undefined,
+        { scriptId, error: error.message }
+      );
+    }
+  }
+
+  private async createTrigger(args: any): Promise<any> {
+    const {
+      scriptId,
+      functionName,
+      triggerType,
+      timeOptions,
       spreadsheetOptions,
       formOptions,
       calendarOptions,
       documentOptions,
       addonOptions,
       gmailOptions,
-      accessToken 
+      accessToken
     } = args;
 
     try {
@@ -316,6 +336,7 @@ export class TriggerCreateTool extends BaseTool {
 
       return {
         success: true,
+        operation: 'create',
         message: `Successfully created ${triggerType} trigger for function '${functionName}'`,
         result: runResult.result
       };
@@ -329,6 +350,134 @@ export class TriggerCreateTool extends BaseTool {
     }
   }
 
+  private async deleteTrigger(args: any): Promise<any> {
+    const { scriptId, triggerId, functionName, deleteAll = false, accessToken } = args;
+
+    if (!triggerId && !functionName && !deleteAll) {
+      throw new ValidationError(
+        'parameters',
+        { triggerId, functionName, deleteAll },
+        'either triggerId, functionName, or deleteAll to be true'
+      );
+    }
+
+    try {
+      let jsStatement = '';
+
+      if (deleteAll) {
+        jsStatement = `
+          (function() {
+            try {
+              const triggers = ScriptApp.getProjectTriggers();
+              let deletedCount = 0;
+
+              triggers.forEach(trigger => {
+                ScriptApp.deleteTrigger(trigger);
+                deletedCount++;
+              });
+
+              return {
+                success: true,
+                deletedCount: deletedCount,
+                message: \`Deleted \${deletedCount} triggers\`
+              };
+            } catch (error) {
+              return {
+                success: false,
+                error: error.toString()
+              };
+            }
+          })()
+        `;
+      } else if (triggerId) {
+        jsStatement = `
+          (function() {
+            try {
+              const triggers = ScriptApp.getProjectTriggers();
+              const trigger = triggers.find(t => t.getUniqueId() === '${triggerId}');
+
+              if (!trigger) {
+                return {
+                  success: false,
+                  error: 'Trigger with ID ${triggerId} not found'
+                };
+              }
+
+              ScriptApp.deleteTrigger(trigger);
+              return {
+                success: true,
+                message: 'Trigger deleted successfully',
+                deletedTriggerId: '${triggerId}'
+              };
+            } catch (error) {
+              return {
+                success: false,
+                error: error.toString()
+              };
+            }
+          })()
+        `;
+      } else if (functionName) {
+        jsStatement = `
+          (function() {
+            try {
+              const triggers = ScriptApp.getProjectTriggers();
+              const matchingTriggers = triggers.filter(t => t.getHandlerFunction() === '${functionName}');
+
+              if (matchingTriggers.length === 0) {
+                return {
+                  success: false,
+                  error: 'No triggers found for function ${functionName}'
+                };
+              }
+
+              matchingTriggers.forEach(trigger => {
+                ScriptApp.deleteTrigger(trigger);
+              });
+
+              return {
+                success: true,
+                deletedCount: matchingTriggers.length,
+                message: \`Deleted \${matchingTriggers.length} triggers for function ${functionName}\`
+              };
+            } catch (error) {
+              return {
+                success: false,
+                error: error.toString()
+              };
+            }
+          })()
+        `;
+      }
+
+      // Execute using gas_exec
+      const gasExecTool = new ExecTool(this.sessionAuthManager);
+      const runResult = await gasExecTool.execute({
+        scriptId,
+        js_statement: jsStatement,
+        accessToken
+      });
+
+      const result = JSON.parse(runResult.result);
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      return {
+        ...result,
+        operation: 'delete'
+      };
+
+    } catch (error: any) {
+      throw new GASApiError(
+        `Failed to delete trigger(s): ${error.message}`,
+        undefined,
+        { scriptId, triggerId, functionName, deleteAll, error: error.message }
+      );
+    }
+  }
+
+  // Helper methods for building trigger creation statements
   private buildTimeBasedTrigger(functionName: string, options: any): string {
     if (!options) {
       throw new Error('timeOptions are required for time-based triggers');
@@ -446,8 +595,8 @@ export class TriggerCreateTool extends BaseTool {
     }
 
     const { spreadsheetId, sheetName, eventType, range } = options;
-    
-    let spreadsheetRef = spreadsheetId 
+
+    let spreadsheetRef = spreadsheetId
       ? `SpreadsheetApp.openById('${spreadsheetId}')`
       : 'SpreadsheetApp.getActive()';
 
@@ -482,7 +631,7 @@ export class TriggerCreateTool extends BaseTool {
           // The trigger function should check: if (e.source.getSheetName() !== '${sheetName}') return;
           ` : ''}
           ${range ? `
-          // Note: Range-specific targeting requires custom logic in the trigger function  
+          // Note: Range-specific targeting requires custom logic in the trigger function
           // The trigger function should check if the edit is within range '${range}'
           ` : ''}
           return {
@@ -555,10 +704,10 @@ export class TriggerCreateTool extends BaseTool {
     }
 
     const { calendarId, calendarName, eventType } = options;
-    
+
     let calendarRef;
     if (calendarId) {
-      calendarRef = calendarId === 'primary' 
+      calendarRef = calendarId === 'primary'
         ? 'CalendarApp.getDefaultCalendar()'
         : `CalendarApp.getCalendarById('${calendarId}')`;
     } else if (calendarName) {
@@ -660,7 +809,7 @@ export class TriggerCreateTool extends BaseTool {
     }
 
     const { eventType } = options;
-    
+
     // Add-on triggers are typically handled through manifest configuration
     // But we can create simple triggers for lifecycle events
     return `
@@ -702,7 +851,7 @@ export class TriggerCreateTool extends BaseTool {
     }
 
     const { eventType, labelName } = options;
-    
+
     // Gmail add-on triggers are configured through manifest
     return `
       (function() {
@@ -745,154 +894,3 @@ export class TriggerCreateTool extends BaseTool {
     `;
   }
 }
-
-export class TriggerDeleteTool extends BaseTool {
-  public name = 'trigger_delete';
-  public description = 'Delete an installable trigger from a Google Apps Script project';
-  
-  public inputSchema = {
-    type: 'object' as const,
-    properties: {
-      ...SchemaFragments.accessToken,
-      ...SchemaFragments.scriptId,
-      triggerId: {
-        type: 'string',
-        description: 'Unique ID of the trigger to delete (optional - if not provided, will delete by function name)'
-      },
-      functionName: {
-        type: 'string',
-        description: 'Name of the function - delete all triggers for this function (optional if triggerId provided)'
-      },
-      deleteAll: {
-        type: 'boolean',
-        default: false,
-        description: 'Delete ALL triggers in the project (use with caution)'
-      }
-    },
-    required: ['scriptId']
-  };
-
-  async execute(args: any): Promise<any> {
-    const { scriptId, triggerId, functionName, deleteAll = false, accessToken } = args;
-
-    if (!triggerId && !functionName && !deleteAll) {
-      throw new ValidationError(
-        'parameters',
-        { triggerId, functionName, deleteAll },
-        'either triggerId, functionName, or deleteAll to be true'
-      );
-    }
-
-    try {
-      let jsStatement = '';
-
-      if (deleteAll) {
-        jsStatement = `
-          (function() {
-            try {
-              const triggers = ScriptApp.getProjectTriggers();
-              let deletedCount = 0;
-              
-              triggers.forEach(trigger => {
-                ScriptApp.deleteTrigger(trigger);
-                deletedCount++;
-              });
-              
-              return {
-                success: true,
-                deletedCount: deletedCount,
-                message: \`Deleted \${deletedCount} triggers\`
-              };
-            } catch (error) {
-              return {
-                success: false,
-                error: error.toString()
-              };
-            }
-          })()
-        `;
-      } else if (triggerId) {
-        jsStatement = `
-          (function() {
-            try {
-              const triggers = ScriptApp.getProjectTriggers();
-              const trigger = triggers.find(t => t.getUniqueId() === '${triggerId}');
-              
-              if (!trigger) {
-                return {
-                  success: false,
-                  error: 'Trigger with ID ${triggerId} not found'
-                };
-              }
-              
-              ScriptApp.deleteTrigger(trigger);
-              return {
-                success: true,
-                message: 'Trigger deleted successfully',
-                deletedTriggerId: '${triggerId}'
-              };
-            } catch (error) {
-              return {
-                success: false,
-                error: error.toString()
-              };
-            }
-          })()
-        `;
-      } else if (functionName) {
-        jsStatement = `
-          (function() {
-            try {
-              const triggers = ScriptApp.getProjectTriggers();
-              const matchingTriggers = triggers.filter(t => t.getHandlerFunction() === '${functionName}');
-              
-              if (matchingTriggers.length === 0) {
-                return {
-                  success: false,
-                  error: 'No triggers found for function ${functionName}'
-                };
-              }
-              
-              matchingTriggers.forEach(trigger => {
-                ScriptApp.deleteTrigger(trigger);
-              });
-              
-              return {
-                success: true,
-                deletedCount: matchingTriggers.length,
-                message: \`Deleted \${matchingTriggers.length} triggers for function ${functionName}\`
-              };
-            } catch (error) {
-              return {
-                success: false,
-                error: error.toString()
-              };
-            }
-          })()
-        `;
-      }
-
-      // Execute using gas_exec
-      const gasExecTool = new ExecTool(this.sessionAuthManager);
-      const runResult = await gasExecTool.execute({
-        scriptId,
-        js_statement: jsStatement,
-        accessToken
-      });
-
-      const result = JSON.parse(runResult.result);
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-
-      return result;
-
-    } catch (error: any) {
-      throw new GASApiError(
-        `Failed to delete trigger(s): ${error.message}`,
-        undefined,
-        { scriptId, triggerId, functionName, deleteAll, error: error.message }
-      );
-    }
-  }
-} 

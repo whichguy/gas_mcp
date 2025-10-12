@@ -13,10 +13,10 @@ import { ArgumentTestHelper } from './helpers/argument-test-helper.js';
  * - Git tools (2 tools: local_sync, config)
  * - Project management (1 tool: project_list)
  * - Process tools (2 tools)
- * - Log tools (2 tools)
- * - Trigger tools (3 tools)
+ * - Log tools (1 tool: log with list/get operations)
+ * - Trigger tools (1 tool: trigger with list/create/delete operations)
  * - Advanced tools (context, summary, deps, tree)
- * - Project info tools (info, reorder)
+ * - Project info tools (reorder only, info removed)
  *
  * Performance: ~5 minutes (vs 20+ minutes with per-test projects)
  */
@@ -161,7 +161,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
 
   // ===== PROCESS TOOLS =====
   describe('Process Tools', function() {
-    describe('gas_process_list', function() {
+    describe('process_list', function() {
       it('should accept no arguments', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -237,80 +237,97 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   });
 
   // ===== LOG TOOLS =====
+  // Consolidated to single 'log' tool with 'operation' parameter
   describe('Log Tools', function() {
-    describe('gas_logs_list', function() {
-      it('should accept no arguments', async function() {
+    describe('gas_log (list operation)', function() {
+      it('should accept scriptId with list operation', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'logs_list',
-          {},
+          'log',
+          {
+            operation: 'list',
+            scriptId: sharedProjectId
+          },
           'list execution logs'
         );
 
-        expect(result).to.have.property('logs');
+        expect(result).to.have.property('processes');
       });
 
-      it('should accept with filter parameter', async function() {
+      it('should accept with statusFilter parameter', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'logs_list',
+          'log',
           {
-            filter: 'severity=ERROR'
+            operation: 'list',
+            scriptId: sharedProjectId,
+            statusFilter: 'ALL'
           },
-          'list logs with filter'
+          'list logs with status filter'
         );
 
-        expect(result).to.have.property('logs');
+        expect(result).to.have.property('processes');
       });
 
       it('should accept with pageSize parameter', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'logs_list',
+          'log',
           {
+            operation: 'list',
+            scriptId: sharedProjectId,
             pageSize: 10
           },
           'list logs with pageSize'
         );
 
-        expect(result).to.have.property('logs');
+        expect(result).to.have.property('processes');
       });
     });
 
-    describe('gas_logs_get', function() {
-      it('should accept processId only', async function() {
+    describe('gas_log (get operation)', function() {
+      it('should accept scriptId and processId', async function() {
         // Note: This might fail if no processes exist, but tests parameter validation
         try {
-          const result = await context.client.callAndParse('logs_get', {
+          const result = await context.client.callAndParse('log', {
+            operation: 'get',
+            scriptId: sharedProjectId,
             processId: 'test-process-id-123'
           });
           expect(result).to.exist;
         } catch (error: any) {
           // Should fail with "not found" not "required parameter"
-          expect(error.message).to.not.match(/required|parameter/i);
+          expect(error.message).to.not.match(/operation.*required|scriptId.*required/i);
         }
       });
 
       it('should reject missing processId', async function() {
         await ArgumentTestHelper.expectError(
           context.client,
-          'logs_get',
-          {},
+          'log',
+          {
+            operation: 'get',
+            scriptId: sharedProjectId
+          },
           /processId|required/i,
-          'processId is required'
+          'processId is required for get operation'
         );
       });
     });
   });
 
   // ===== TRIGGER TOOLS =====
+  // Consolidated to single 'trigger' tool with 'operation' parameter
   describe('Trigger Tools', function() {
-    describe('gas_trigger_list', function() {
-      it('should accept scriptId only', async function() {
+    describe('gas_trigger (list operation)', function() {
+      it('should accept scriptId with list operation', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'trigger_list',
-          { scriptId: sharedProjectId },
+          'trigger',
+          {
+            operation: 'list',
+            scriptId: sharedProjectId
+          },
           'list triggers'
         );
 
@@ -318,12 +335,13 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_trigger_create', function() {
+    describe('gas_trigger (create operation)', function() {
       it('should accept time-based trigger arguments', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'trigger_create',
+          'trigger',
           {
+            operation: 'create',
             scriptId: sharedProjectId,
             functionName: 'testFunc',
             eventType: 'CLOCK',
@@ -340,21 +358,23 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       it('should reject missing functionName', async function() {
         await ArgumentTestHelper.expectError(
           context.client,
-          'trigger_create',
+          'trigger',
           {
+            operation: 'create',
             scriptId: sharedProjectId,
             eventType: 'CLOCK'
           },
           /functionName|required/i,
-          'functionName is required'
+          'functionName is required for create operation'
         );
       });
 
       it('should reject invalid eventType enum', async function() {
         await ArgumentTestHelper.expectError(
           context.client,
-          'trigger_create',
+          'trigger',
           {
+            operation: 'create',
             scriptId: sharedProjectId,
             functionName: 'testFunc',
             eventType: 'INVALID_EVENT'
@@ -365,10 +385,11 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_trigger_delete', function() {
+    describe('gas_trigger (delete operation)', function() {
       it('should accept scriptId and triggerId', async function() {
         // Create a trigger first
-        const trigger = await context.client.callAndParse('trigger_create', {
+        const trigger = await context.client.callAndParse('trigger', {
+          operation: 'create',
           scriptId: sharedProjectId,
           functionName: 'testFunc',
           eventType: 'CLOCK',
@@ -377,26 +398,28 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
 
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
-          'trigger_delete',
+          'trigger',
           {
+            operation: 'delete',
             scriptId: sharedProjectId,
             triggerId: trigger.triggerId
           },
           'delete trigger'
         );
 
-        expect(result).to.have.property('success');
+        expect(result).to.have.property('status');
       });
 
       it('should reject missing triggerId', async function() {
         await ArgumentTestHelper.expectError(
           context.client,
-          'trigger_delete',
+          'trigger',
           {
+            operation: 'delete',
             scriptId: sharedProjectId
           },
           /triggerId|required/i,
-          'triggerId is required'
+          'triggerId is required for delete operation'
         );
       });
     });
@@ -517,22 +540,8 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   });
 
   // ===== PROJECT INFO TOOLS =====
+  // REMOVED: gas_info, gas_mkdir, gas_project_metrics
   describe('Project Info Tools', function() {
-    describe('gas_info', function() {
-      it('should accept scriptId only', async function() {
-        const result = await ArgumentTestHelper.expectSuccess(
-          context.client,
-          'info',
-          { scriptId: sharedProjectId },
-          'get project info'
-        );
-
-        expect(result).to.have.property('title');
-      });
-    });
-
-    // REMOVED: gas_project_metrics (niche monitoring tool, rarely used)
-
     describe('gas_reorder', function() {
       it('should accept scriptId and fileIds', async function() {
         const result = await ArgumentTestHelper.expectSuccess(

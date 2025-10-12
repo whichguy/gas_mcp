@@ -78,12 +78,12 @@ npm run test:all-verify          # Run all verification tests
 **Pattern:** Calculator.js `module.exports = {add, multiply}` → Main.js `require('Calculator').add(5,6)`
 **Infra:** CommonJS.js handles resolution/caching → transparent to user
 
-**Module Loading (gas_write moduleOptions):**
+**Module Loading (write moduleOptions):**
 - `loadNow: true` (eager) → _main() at startup → use for: doGet/doPost, onOpen/onEdit/onInstall triggers, __events__ registration
 - `loadNow: false` (lazy) → _main() on first require() → use for: utils, helpers, internal logic
 - `omit` (preserve) → reads existing setting (~200-500ms) | defaults lazy for new files → use for: updating existing, bulk ops (set explicit to skip lookup)
 
-**Response Enhancement (gas_write):**
+**Response Enhancement (write):**
 - Returns `local: {path, exists}` when file written locally
 - Returns `git: {associated, syncFolder}` when `.git/config.gs` breadcrumbs found
 - Git association signals local sync folder available for standard git commands
@@ -143,7 +143,7 @@ npm run test:all-verify          # Run all verification tests
 **Concepts:** .git/config.gs breadcrumb (REQUIRED, manually created) + sync folders (LLM git commands) + pull-merge-push (never blind push) + auto-transforms (README.md ↔ .html, dotfiles)
 
 **Workflow:**
-1. Manually create .git/config.gs in GAS using gas_write
+1. Manually create .git/config.gs in GAS using write
 2. Create local git repo: git init && git remote add origin <url>
 3. Run local_sync({scriptId}) to sync files
 4. Standard git: git add/commit/push
@@ -205,7 +205,7 @@ npm run test:all-verify          # Run all verification tests
 ## Key Changes (January 2025)
 
 **Deployment Tool Consolidation:**
-- Old: `gas_version_create`, `gas_version_list`, `gas_version_get`, `gas_deploy_create`, `gas_deploy_list`, `gas_deploy_get_details`, `gas_deploy_delete`, `gas_deploy_update`
+- Old: `version_create`, `version_list`, `version_get`, `deploy_create`, `deploy_list`, `deploy_get_details`, `deploy_delete`, `deploy_update`
 - New: Single `deploy` tool with operations: promote/rollback/status/reset
 - Benefit: Simplified workflows, atomic operations, environment-aware management
 

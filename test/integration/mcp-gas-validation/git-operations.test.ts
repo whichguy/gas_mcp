@@ -156,7 +156,7 @@ describe('Git Operations Validation Tests', () => {
 \tlocalPath = ${tempSyncFolder}`;
 
       // Write .git/config.gs to GAS using gas_write
-      const result = await client.callTool('gas_write', {
+      const result = await client.callTool('write', {
         scriptId: testProjectId,
         fileName: '.git/config.gs',
         content: gitConfig
@@ -171,7 +171,7 @@ describe('Git Operations Validation Tests', () => {
       expect(testProjectId).to.not.be.null;
 
       // Read .git.gs file (note: .git → .git.gs transformation)
-      const result = await client.callTool('gas_cat', {
+      const result = await client.callTool('cat', {
         scriptId: testProjectId,
         fileName: '.git/config.gs'
       });

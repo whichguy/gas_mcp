@@ -30,12 +30,12 @@ describe('MCP Server Basic Connection Tests', () => {
       const toolNames = tools.map(tool => tool.name);
       
       expect(toolNames).to.include('auth');
-      expect(toolNames).to.include('gas_ls');
-      expect(toolNames).to.include('gas_cat');
-      expect(toolNames).to.include('gas_write');
-      expect(toolNames).to.include('gas_rm');
-      expect(toolNames).to.include('gas_mv');
-      expect(toolNames).to.include('gas_cp');
+      expect(toolNames).to.include('ls');
+      expect(toolNames).to.include('cat');
+      expect(toolNames).to.include('write');
+      expect(toolNames).to.include('rm');
+      expect(toolNames).to.include('mv');
+      expect(toolNames).to.include('cp');
       expect(toolNames).to.include('gas_mkdir');
       expect(toolNames).to.include('gas_info');
       expect(toolNames).to.include('gas_reorder');
@@ -81,7 +81,7 @@ describe('MCP Server Basic Connection Tests', () => {
 
     it('should handle missing required parameters', async () => {
       try {
-        await client.callTool('gas_cat'); // Missing required path parameter
+        await client.callTool('cat'); // Missing required path parameter
         expect.fail('Should have thrown an error for missing parameters');
       } catch (error: any) {
         // Enhanced validation may include auth-related responses or validation errors
@@ -97,7 +97,7 @@ describe('MCP Server Basic Connection Tests', () => {
 
     it('should handle invalid parameter types', async () => {
       try {
-        await client.callTool('gas_ls', { path: 123 }); // Invalid type
+        await client.callTool('ls', { path: 123 }); // Invalid type
         expect.fail('Should have thrown an error for invalid parameter type');
       } catch (error: any) {
         // Enhanced validation provides more detailed error messages

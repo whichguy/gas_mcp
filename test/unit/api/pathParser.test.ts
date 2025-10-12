@@ -71,8 +71,8 @@ describe('Path Parser', () => {
     });
 
     it('should parse file paths', () => {
-      const result = parsePath('project123/Code.gs');
-      expect(result.scriptId).to.equal('project123');
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/Code.gs');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
       expect(result.filename).to.equal('Code.gs');
       expect(result.directory).to.be.undefined;
       expect(result.isProject).to.be.false;
@@ -81,24 +81,24 @@ describe('Path Parser', () => {
     });
 
     it('should parse nested file paths', () => {
-      const result = parsePath('project123/models/User.ts');
-      expect(result.scriptId).to.equal('project123');
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/models/User.ts');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
       expect(result.filename).to.equal('models/User.ts');
       expect(result.directory).to.equal('models');
       expect(result.isFile).to.be.true;
     });
 
     it('should parse deeply nested file paths', () => {
-      const result = parsePath('project123/src/models/User.gs');
-      expect(result.scriptId).to.equal('project123');
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/src/models/User.gs');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
       expect(result.filename).to.equal('src/models/User.gs');
       expect(result.directory).to.equal('src/models');
       expect(result.isFile).to.be.true;
     });
 
     it('should parse directory paths', () => {
-      const result = parsePath('project123/models');
-      expect(result.scriptId).to.equal('project123');
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/models');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
       expect(result.directory).to.equal('models');
       expect(result.isProject).to.be.false;
       expect(result.isFile).to.be.false;
@@ -106,8 +106,8 @@ describe('Path Parser', () => {
     });
 
     it('should parse nested directory paths', () => {
-      const result = parsePath('project123/src/models');
-      expect(result.scriptId).to.equal('project123');
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/src/models');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
       expect(result.directory).to.equal('src/models');
       expect(result.isDirectory).to.be.true;
     });
@@ -122,15 +122,15 @@ describe('Path Parser', () => {
 
     it('should throw ValidationError for too long filenames', () => {
       const longFilename = 'a'.repeat(101) + '.gs';
-      expect(() => parsePath(`project123/${longFilename}`)).to.throw(ValidationError);
+      expect(() => parsePath(`1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/${longFilename}`)).to.throw(ValidationError);
     });
 
     it('should handle boundary cases for filename length', () => {
       const filename100 = 'a'.repeat(97) + '.gs'; // Exactly 100 chars
-      expect(() => parsePath(`project123/${filename100}`)).to.not.throw();
-      
+      expect(() => parsePath(`1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/${filename100}`)).to.not.throw();
+
       const filename101 = 'a'.repeat(98) + '.gs'; // 101 chars
-      expect(() => parsePath(`project123/${filename101}`)).to.throw(ValidationError);
+      expect(() => parsePath(`1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/${filename101}`)).to.throw(ValidationError);
     });
 
     it('should handle very long project IDs', () => {
@@ -317,7 +317,7 @@ describe('Path Parser', () => {
   describe('validation edge cases', () => {
     it('should handle Unicode in filenames', () => {
       expect(() => getFileType('测试文件.gs')).to.not.throw();
-      expect(() => parsePath('project123/测试文件.gs')).to.not.throw();
+      expect(() => parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/测试文件.gs')).to.not.throw();
     });
 
     it('should handle very long project IDs', () => {
@@ -327,10 +327,10 @@ describe('Path Parser', () => {
 
     it('should handle boundary cases for filename length', () => {
       const filename100 = 'a'.repeat(97) + '.gs'; // Exactly 100 chars
-      expect(() => parsePath(`project123/${filename100}`)).to.not.throw();
-      
+      expect(() => parsePath(`1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/${filename100}`)).to.not.throw();
+
       const filename101 = 'a'.repeat(98) + '.gs'; // 101 chars
-      expect(() => parsePath(`project123/${filename101}`)).to.throw(ValidationError);
+      expect(() => parsePath(`1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/${filename101}`)).to.throw(ValidationError);
     });
   });
 }); 

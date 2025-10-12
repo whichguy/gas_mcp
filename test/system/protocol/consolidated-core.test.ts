@@ -46,9 +46,9 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       // Verify all expected GAS tools are present
       const toolNames = tools.map(tool => tool.name);
       const expectedTools = [
-        'auth', 'gas_ls', 'gas_cat', 'gas_write',
-        'gas_rm', 'gas_mv', 'gas_cp', 'gas_mkdir',
-        'gas_info', 'gas_reorder', 'gas_run',
+        'auth', 'ls', 'cat', 'write',
+        'rm', 'mv', 'cp', 'gas_mkdir',
+        'gas_info', 'gas_reorder', 'exec',
         'deploy', 'project_create', 'project_init'
       ];
       
@@ -182,7 +182,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
 
       // Test invalid parameters
       try {
-        await client.callTool('gas_ls', { invalidParam: 'value' });
+        await client.callTool('ls', { invalidParam: 'value' });
         expect.fail('Should have thrown error for invalid parameters');
       } catch (error: any) {
         // May get auth error instead of validation error due to enhanced handling
@@ -212,7 +212,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       
       for (const { path, reason } of restrictions) {
         try {
-          await client.callTool('gas_cat', { path });
+          await client.callTool('cat', { path });
           console.log(`Warning: ${reason} restriction not enforced for ${path}`);
         } catch (error: any) {
           // Count any kind of error (validation or auth) as restriction working
@@ -255,7 +255,7 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
         
         // Now test unauthenticated access
         try {
-          await client.callTool('gas_ls', { path: 'some_project' });
+          await client.callTool('ls', { path: 'some_project' });
           expect.fail('Should have thrown authentication error');
         } catch (error: any) {
           // Enhanced error responses include OAuth URLs and instructions

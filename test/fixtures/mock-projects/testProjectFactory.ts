@@ -400,7 +400,7 @@ function getAPIData(action) {
     // Add all files from template
     for (const file of template.files) {
       const filePath = `${projectId.scriptId}/${file.name}`;
-      await context.client.callAndParse('gas_write', {
+      await context.client.callAndParse('write', {
         path: filePath,
         content: file.content
       });

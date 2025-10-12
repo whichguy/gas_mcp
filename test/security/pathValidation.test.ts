@@ -24,7 +24,7 @@ describe('Path Validation Tests', () => {
       it(`should accept valid path: ${validPath}`, async () => {
         // This should fail with authentication error, not path validation error
         await TestAssertionHelpers.expectAuthenticationRequired(
-          () => client.callTool('gas_cat', { path: validPath })
+          () => client.callTool('cat', { path: validPath })
         );
       });
     });
@@ -35,7 +35,7 @@ describe('Path Validation Tests', () => {
       const longPath = 'project/' + 'a'.repeat(500) + '.gs';
       
       await TestAssertionHelpers.expectValidationError(
-        () => client.callTool('gas_cat', { path: longPath }),
+        () => client.callTool('cat', { path: longPath }),
         'path'
       );
     });
@@ -52,7 +52,7 @@ describe('Path Validation Tests', () => {
 
       for (const projectId of invalidProjectIds) {
         await TestAssertionHelpers.expectValidationError(
-          () => client.callTool('gas_cat', { path: `${projectId}/file.gs` }),
+          () => client.callTool('cat', { path: `${projectId}/file.gs` }),
           'path'
         );
       }
