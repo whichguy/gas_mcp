@@ -329,11 +329,11 @@ export class InProcessTestClient {
     }
 
     // For tools we haven't implemented, throw error
-    const supportedTools = ['auth', 'gas_deploy', 'local_sync', 'config', 'cat', 'raw_cat', 'ls'];
+    const supportedTools = ['auth', 'deploy', 'local_sync', 'config', 'cat', 'raw_cat', 'ls'];
     throw new Error(
       `Tool '${name}' not yet supported in direct execution mode.\n` +
       `Supported tools: ${supportedTools.join(', ')}\n` +
-      `Use direct methods instead (e.g., client.listProjects() instead of callTool('gas_project_list'))`
+      `Use direct methods instead (e.g., client.listProjects() instead of callTool('project_list'))`
     );
   }
 
@@ -421,8 +421,8 @@ export class InProcessTestClient {
     // This is mainly for test compatibility
     return [
       { name: 'auth', description: 'OAuth authentication' },
-      { name: 'gas_project_list', description: 'List GAS projects' },
-      { name: 'gas_project_create', description: 'Create new GAS project' },
+      { name: 'project_list', description: 'List GAS projects' },
+      { name: 'project_create', description: 'Create new GAS project' },
       { name: 'cat', description: 'Read file contents' },
       { name: 'write', description: 'Write file contents' },
       { name: 'ls', description: 'List files in project' },
@@ -660,27 +660,27 @@ export class InProcessGASTestHelper {
    * Copy a file within a project or between projects
    */
   async copyFile(sourceProjectId: string, sourceFilename: string, destProjectId: string, destFilename: string): Promise<any> {
-    throw new Error('copyFile() not yet implemented in InProcessGASTestHelper. Use callTool("gas_cp") instead.');
+    throw new Error('copyFile() not yet implemented in InProcessGASTestHelper. Use callTool("cp") instead.');
   }
 
   /**
    * Move/rename a file within a project or between projects
    */
   async moveFile(sourceProjectId: string, sourceFilename: string, destProjectId: string, destFilename: string): Promise<any> {
-    throw new Error('moveFile() not yet implemented in InProcessGASTestHelper. Use callTool("gas_mv") instead.');
+    throw new Error('moveFile() not yet implemented in InProcessGASTestHelper. Use callTool("mv") instead.');
   }
 
   /**
    * Delete a file from a project
    */
   async deleteFile(projectId: string, filename: string): Promise<any> {
-    throw new Error('deleteFile() not yet implemented in InProcessGASTestHelper. Use callTool("gas_rm") instead.');
+    throw new Error('deleteFile() not yet implemented in InProcessGASTestHelper. Use callTool("rm") instead.');
   }
 
   /**
    * Reorder files in a project
    */
   async reorderFiles(projectId: string, fileOrder: string[]): Promise<any> {
-    throw new Error('reorderFiles() not yet implemented in InProcessGASTestHelper. Use callTool("gas_reorder") instead.');
+    throw new Error('reorderFiles() not yet implemented in InProcessGASTestHelper. Use callTool("reorder") instead.');
   }
 }

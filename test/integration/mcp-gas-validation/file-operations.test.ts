@@ -107,7 +107,7 @@ describe('File Operations Validation Tests', () => {
     const testContent = 'function test() { return "Hello from test"; }';
     const updatedContent = 'function test() { return "Updated test"; }';
 
-    it('should create file with gas_write', async function() {
+    it('should create file with write', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
@@ -118,7 +118,7 @@ describe('File Operations Validation Tests', () => {
       expect(result.filePath).to.include(testFileName);
     });
 
-    it('should read file with gas_cat', async function() {
+    it('should read file with cat', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
@@ -139,7 +139,7 @@ describe('File Operations Validation Tests', () => {
       expect(readResult).to.include('Updated test');
     });
 
-    it('should verify file via gas_ls', async function() {
+    it('should verify file via ls', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
@@ -150,7 +150,7 @@ describe('File Operations Validation Tests', () => {
       expect(result.content[0].text).to.include(testFileName);
     });
 
-    it('should delete file with gas_rm', async function() {
+    it('should delete file with rm', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
@@ -183,7 +183,7 @@ describe('File Operations Validation Tests', () => {
       }
     });
 
-    it('should copy file with gas_cp', async function() {
+    it('should copy file with cp', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
@@ -204,7 +204,7 @@ describe('File Operations Validation Tests', () => {
       expect(lsResult.content[0].text).to.include(copyTarget);
     });
 
-    it('should move/rename file with gas_mv', async function() {
+    it('should move/rename file with mv', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 

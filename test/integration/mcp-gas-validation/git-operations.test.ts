@@ -155,7 +155,7 @@ describe('Git Operations Validation Tests', () => {
 [sync]
 \tlocalPath = ${tempSyncFolder}`;
 
-      // Write .git/config.gs to GAS using gas_write
+      // Write .git/config.gs to GAS using write
       const result = await client.callTool('write', {
         scriptId: testProjectId,
         fileName: '.git/config.gs',
@@ -187,7 +187,7 @@ describe('Git Operations Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('gas_raw_cat', {
+      const result = await client.callTool('raw_cat', {
         scriptId: testProjectId,
         fileName: '.git/config.gs'
       });

@@ -47,14 +47,14 @@ describe('Real doGet() Proxy Integration Tests', () => {
         
         // Test the tool availability and structure
         const tools = await client.listTools();
-        const proxySetupTool = tools.find(tool => tool.name === 'gas_proxy_setup');
+        const proxySetupTool = tools.find(tool => tool.name === 'proxy_setup');
         
         expect(proxySetupTool).to.exist;
-        console.log('✅ gas_proxy_setup tool available');
+        console.log('✅ proxy_setup tool available');
         
         // Test error handling without auth
         try {
-          await client.callTool('gas_proxy_setup', {
+          await client.callTool('proxy_setup', {
             scriptId: 'test-script-id',
             deployAsWebApp: true
           });
@@ -279,9 +279,9 @@ function testDataProcessing() {
         
         // Test infrastructure without real project
         const tools = await client.listTools();
-        const proxySetupTool = tools.find(tool => tool.name === 'gas_proxy_setup');
+        const proxySetupTool = tools.find(tool => tool.name === 'proxy_setup');
         expect(proxySetupTool).to.exist;
-        console.log('✅ gas_proxy_setup tool verified available');
+        console.log('✅ proxy_setup tool verified available');
         console.log('✅ Infrastructure test completed (real project creation failed)');
       }
     });

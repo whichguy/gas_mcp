@@ -46,7 +46,7 @@ describe('Complete Auth Flow with Polling (Claude Code MCP Session)', () => {
     console.log('  - Refresh token is present\n');
 
     console.log('📋 Step 5: Test authenticated API call');
-    console.log('In Claude Code, run: gas_ls({scriptId: "..."})');
+    console.log('In Claude Code, run: ls({scriptId: "..."})');
     console.log('Expected: Successfully lists files using cached token\n');
 
     console.log('⏳ Waiting for authentication to complete...');
@@ -127,7 +127,7 @@ describe('Complete Auth Flow with Polling (Claude Code MCP Session)', () => {
     console.log('✅ Filesystem token caching verified!');
     console.log('\nNext steps:');
     console.log('  - Run: auth({mode: "status"}) to see authenticated status');
-    console.log('  - Run: gas_ls({scriptId: "..."}) to test API calls with cached token');
+    console.log('  - Run: ls({scriptId: "..."}) to test API calls with cached token');
   });
 
   it('should explain blocking vs non-blocking auth modes', async function() {

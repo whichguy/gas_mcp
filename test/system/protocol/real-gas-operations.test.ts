@@ -127,7 +127,7 @@ describe('Real GAS Operations - End-to-End Tests', () => {
       await globalAuthState.gas!.writeTestFile(testProjectId!, 'file2.gs', '// Test 2');
 
       const files = await globalAuthState.gas!.listFiles(testProjectId!);
-      expect(files.length).to.be.at.least(5); // CommonJS + __mcp_gas_run + hello + file1 + file2
+      expect(files.length).to.be.at.least(5); // CommonJS + __mcp_exec + hello + file1 + file2
       console.log(`✅ Listed ${files.length} files`);
     });
   });

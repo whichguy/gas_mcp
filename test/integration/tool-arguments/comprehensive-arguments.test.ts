@@ -79,7 +79,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   // ===== GIT SYNC TOOLS =====
   // NOTE: git_init tool was removed - users must manually create .git/config.gs breadcrumbs
   describe('Git Sync Tools', function() {
-    describe('gas_config - sync_folder get', function() {
+    describe('config - sync_folder get', function() {
       it('should accept scriptId only for get action', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -96,7 +96,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_config - sync_folder set', function() {
+    describe('config - sync_folder set', function() {
       it('should accept valid sync folder path for set action', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -145,7 +145,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   // ===== PROJECT CONTEXT TOOLS =====
   // REMOVED: project_set, project_add, project_metrics (unused state management)
   describe('Project Context Tools', function() {
-    describe('gas_project_list', function() {
+    describe('project_list', function() {
       it('should accept no arguments', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -195,7 +195,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_process_list_script', function() {
+    describe('process_list_script', function() {
       it('should accept scriptId only', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -239,7 +239,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   // ===== LOG TOOLS =====
   // Consolidated to single 'log' tool with 'operation' parameter
   describe('Log Tools', function() {
-    describe('gas_log (list operation)', function() {
+    describe('log (list operation)', function() {
       it('should accept scriptId with list operation', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -285,7 +285,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_log (get operation)', function() {
+    describe('log (get operation)', function() {
       it('should accept scriptId and processId', async function() {
         // Note: This might fail if no processes exist, but tests parameter validation
         try {
@@ -319,7 +319,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   // ===== TRIGGER TOOLS =====
   // Consolidated to single 'trigger' tool with 'operation' parameter
   describe('Trigger Tools', function() {
-    describe('gas_trigger (list operation)', function() {
+    describe('trigger (list operation)', function() {
       it('should accept scriptId with list operation', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -335,7 +335,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_trigger (create operation)', function() {
+    describe('trigger (create operation)', function() {
       it('should accept time-based trigger arguments', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -385,7 +385,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_trigger (delete operation)', function() {
+    describe('trigger (delete operation)', function() {
       it('should accept scriptId and triggerId', async function() {
         // Create a trigger first
         const trigger = await context.client.callAndParse('trigger', {
@@ -431,7 +431,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
 
   // ===== ADVANCED ANALYSIS TOOLS =====
   describe('Advanced Analysis Tools', function() {
-    describe('gas_context', function() {
+    describe('context', function() {
       it('should accept scriptId only', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -458,7 +458,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_summary', function() {
+    describe('summary', function() {
       it('should accept scriptId only', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -485,7 +485,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_deps', function() {
+    describe('deps', function() {
       it('should accept scriptId only', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -498,7 +498,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
       });
     });
 
-    describe('gas_tree', function() {
+    describe('tree', function() {
       it('should accept scriptId only', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,
@@ -542,7 +542,7 @@ describe('MCP Tools: Comprehensive Argument Validation', function() {
   // ===== PROJECT INFO TOOLS =====
   // REMOVED: gas_info, gas_mkdir, gas_project_metrics
   describe('Project Info Tools', function() {
-    describe('gas_reorder', function() {
+    describe('reorder', function() {
       it('should accept scriptId and fileIds', async function() {
         const result = await ArgumentTestHelper.expectSuccess(
           context.client,

@@ -16,7 +16,7 @@ export const TEST_TIMEOUTS = {
   /**
    * STANDARD (30 seconds)
    * Use for: File operations, ls, grep, info, find
-   * Examples: gas_write, gas_cat, gas_ls, gas_rm, gas_grep
+   * Examples: write, cat, ls, rm, grep
    */
   STANDARD: 30000,
 

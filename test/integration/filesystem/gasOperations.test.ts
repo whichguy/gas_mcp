@@ -435,7 +435,6 @@ describe('MCP Server Google Apps Script Operations', () => {
           
           // Verify required tools exist
           expect(toolNames).to.include('ls');
-          expect(toolNames).to.include('gas_info');
           console.log('✅ Project management tools available');
           
           // Test that it properly requires authentication
@@ -502,11 +501,11 @@ describe('MCP Server Google Apps Script Operations', () => {
         if (!authStatus.authenticated || !testProjectId) {
           // Test infrastructure when not authenticated or no test project
           console.log('🔍 Testing project info infrastructure...');
-          
+
           const tools = await client.listTools();
-          const infoTool = tools.find(tool => tool.name === 'gas_info');
-          expect(infoTool).to.exist;
-          console.log('✅ Project info infrastructure available');
+          const lsTool = tools.find(tool => tool.name === 'ls');
+          expect(lsTool).to.exist;
+          console.log('✅ Project info infrastructure available (using ls)');
           return;
         }
         
@@ -908,7 +907,7 @@ function getData() {
           console.log('🔍 Testing file reorder infrastructure...');
           
           const tools = await client.listTools();
-          const reorderTool = tools.find(tool => tool.name === 'gas_reorder');
+          const reorderTool = tools.find(tool => tool.name === 'reorder');
           expect(reorderTool).to.exist;
           console.log('✅ File reorder infrastructure available');
           return;
@@ -955,7 +954,7 @@ function getData() {
           console.log('🔍 Testing comprehensive workflow infrastructure...');
 
           const tools = await client.listTools();
-          const requiredTools = ['write', 'exec', 'gas_reorder', 'deploy', 'project_create'];
+          const requiredTools = ['write', 'exec', 'reorder', 'deploy', 'project_create'];
 
           for (const toolName of requiredTools) {
             const tool = tools.find(t => t.name === toolName);

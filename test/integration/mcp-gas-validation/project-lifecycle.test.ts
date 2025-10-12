@@ -65,11 +65,11 @@ describe('Project Lifecycle Validation Tests', () => {
       console.log(`✅ Created test project: ${testProjectId}`);
     });
 
-    it('should verify project exists via gas_info', async function() {
+    it('should verify project exists via ls', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__info', {
+      const result = await client.callTool('ls', {
         scriptId: testProjectId
       });
 
@@ -94,7 +94,7 @@ describe('Project Lifecycle Validation Tests', () => {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('mcp__gas__info', {
+      const result = await client.callTool('ls', {
         scriptId: testProjectId
       });
 

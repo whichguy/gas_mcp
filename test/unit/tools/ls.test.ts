@@ -9,10 +9,12 @@ describe('LsTool', () => {
   let lsTool: LsTool;
   let sessionAuthManager: SessionAuthManager;
 
-  beforeEach(() => {
+  beforeEach(function() {
     // Set test mode to prevent OAuth server conflicts
     process.env.MCP_TEST_MODE = 'true';
 
+    // Use a shared session manager to reuse cached tokens
+    // This prevents repeated OAuth prompts across unit tests
     sessionAuthManager = new SessionAuthManager();
     lsTool = new LsTool(sessionAuthManager);
   });

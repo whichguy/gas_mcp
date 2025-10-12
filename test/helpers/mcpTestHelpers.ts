@@ -149,7 +149,7 @@ export class MCPTestHelper {
     const projectName = name || `Test Project ${Date.now()}`;
     console.log(`📂 Creating test project: ${projectName}`);
     
-    const result = await context.client.callAndParse('gas_project_create', { 
+    const result = await context.client.callAndParse('project_create', { 
       title: projectName 
     });
     

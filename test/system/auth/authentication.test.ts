@@ -292,9 +292,11 @@ describe('MCP Server Authentication Tests', () => {
         try {
           // Test that we can make authenticated requests to Google APIs
           const tools = await client.listTools();
-          const gasTools = tools.filter(tool => tool.name.startsWith('gas_'));
+          const gasTools = tools.filter(tool =>
+            ['ls', 'cat', 'write', 'exec', 'deploy', 'project_list', 'project_create'].includes(tool.name)
+          );
           expect(gasTools.length).to.be.greaterThan(5);
-          
+
           console.log(`✅ Google Apps Script tools available: ${gasTools.length} tools`);
           console.log('✅ Live integration infrastructure confirmed working');
           

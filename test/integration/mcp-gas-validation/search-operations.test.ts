@@ -2,11 +2,11 @@
  * Search Operations Validation Tests
  *
  * Tests search and text processing tools with real GAS projects:
- * - Basic search (gas_grep)
- * - Advanced search (gas_ripgrep)
- * - Text processing (gas_sed)
- * - File finding (gas_find)
- * - Fuzzy matching (gas_aider)
+ * - Basic search (grep)
+ * - Advanced search (ripgrep)
+ * - Text processing (sed)
+ * - File finding (find)
+ * - Fuzzy matching (aider)
  */
 
 import { expect } from 'chai';
@@ -82,7 +82,7 @@ function calculateValue(x, y) {
     }
   });
 
-  describe('Basic Search (gas_grep)', () => {
+  describe('Basic Search (grep)', () => {
     it('should find simple pattern', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
@@ -142,7 +142,7 @@ function calculateValue(x, y) {
     });
   });
 
-  describe('Advanced Search (gas_ripgrep)', () => {
+  describe('Advanced Search (ripgrep)', () => {
     it('should perform multi-pattern search', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
@@ -232,7 +232,7 @@ function calculateValue(x, y) {
     });
   });
 
-  describe('Text Processing (gas_sed)', () => {
+  describe('Text Processing (sed)', () => {
     it('should perform simple find/replace', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
@@ -319,7 +319,7 @@ function anotherFunction() {
     });
   });
 
-  describe('Find Operations (gas_find)', () => {
+  describe('Find Operations (find)', () => {
     it('should find files by name pattern', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
@@ -364,7 +364,7 @@ function anotherFunction() {
     });
   });
 
-  describe('Fuzzy Matching (gas_aider)', () => {
+  describe('Fuzzy Matching (aider)', () => {
     it('should create file with whitespace variations', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
@@ -381,7 +381,7 @@ function   renderStateItem(container,   key,   value,   depth)   {
       expect(result).to.have.property('success', true);
     });
 
-    it('should match with whitespace variations using gas_aider', async function() {
+    it('should match with whitespace variations using aider', async function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
