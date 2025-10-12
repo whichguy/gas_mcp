@@ -52,23 +52,20 @@ npm run test:all-verify          # Run all verification tests
 
 ## Architecture Overview
 
-**MCP server:** AI ↔ GAS → ~50 tools for create/manage/execute GAS projects
+**MCP server:** AI ↔ GAS → 40 tools for create/manage/execute GAS projects
 
-**Session:** In-memory Map → lost on restart → re-auth required → no filesystem/locking (MCP half-duplex)
+**Session:** File-based (.auth/) → 24hr timeout → per-client isolation → auto-refresh tokens
 
-**Flow:** MCP Client ↔ stdio ↔ mcpServer.ts → tools → gasClient.js → GAS API v1
+**Flow:** Client ↔ stdio ↔ mcpServer → tools → gasClient → GAS API
 
-**Layers:**
-1. **Protocol** (index.ts → mcpServer.ts) → stdio + tool dispatch + error handling
-2. **Tools** (src/tools/) → BaseTool extends → validate + auth + execute → smart (cache) vs raw (direct API)
-3. **Auth** (src/auth/) → OAuth PKCE (oauthClient.ts) + session refresh (sessionManager.ts) + in-memory tokens
-4. **API** (gasClient.ts) → rate limit + retry + path parse + error transform
+**Layers:** Protocol (stdio + dispatch) → Tools (validate + auth + execute) → Auth (OAuth PKCE + refresh) → API (rate limit + retry)
 
-**Tool Consolidation** (Completed 2025-01-10):
-- Removed 7 redundant/low-level tools (~1,200 lines)
-- Eliminated: `bind_script`, `project_set`, `project_get`, `project_add`, `project_metrics`, `run`, `pull`, `push`, `status`
-- Replaced with: Unified `deploy` tool (promote/rollback/status/reset operations)
-- Result: Cleaner API surface, fewer integration points, simplified workflows
+**Tool Consolidation** (Jan 2025 - 39% reduction):
+- **66 → 40 tools** via strategic consolidation
+- **Analysis**: Removed context/summary/tree (LLMs read files directly with cat/grep/ripgrep)
+- **Deployment**: Unified deploy tool (promote/rollback/status/reset operations)
+- **Sync**: Removed pull/push/status (cat/write already provide auto-sync)
+- **Management**: Removed bind_script, project_*, run (redundant wrappers)
 
 ### Core Capabilities
 
@@ -109,13 +106,10 @@ npm run test:all-verify          # Run all verification tests
 **Integration:** Compare with `git hash-object` → detect changes → selective sync → build optimization
 **Performance:** checksums=false (default, fast) | checksums=true (~50-100ms/file) | file_status (200 files max, 50 default)
 
-#### 5. Metadata Caching (Extended Attributes)
-**Purpose:** Eliminate redundant API calls by caching GAS metadata in filesystem xattr
-**Performance:** 85-95% faster reads (fast path: ~5-50ms vs slow path: ~800-1200ms)
-**Storage:** `user.gas.updateTime` + `user.gas.fileType` stored in extended attributes
-**Sync Detection:** Compare local mtime with cached updateTime → fast path if match (no API call)
-**Tools:** cat (fast path read) | write/raw_write (cache on write) | local_sync (cache on sync) | cache_clear (debug utility)
-**Docs:** See docs/METADATA_CACHING.md for complete architecture and usage examples
+#### 5. Metadata Caching
+**Fast Path:** 85-95% faster (5-50ms vs 800-1200ms) via extended attributes caching
+**Storage:** updateTime + fileType cached in xattr → skip API call if local mtime matches
+**See:** docs/METADATA_CACHING.md for complete architecture
 
 #### 6. Deployment & Version Control
 **Unified Tool:** deploy({operation, environment, scriptId}) → single interface for all deployment ops
@@ -144,22 +138,12 @@ npm run test:all-verify          # Run all verification tests
 
 **Sync Layers:** Local cache (./src/) → Remote GAS → Git mirror (~/gas-repos/project-[scriptId]/) → smart tools check local first → auto-sync
 
-### Git Sync (2 tools, safe merge, LOCAL-FIRST)
+### Git Sync (LOCAL-FIRST, safe merge)
 
-**Tools:** local_sync (ALWAYS pull→merge→push) → config (manage sync_folder and settings)
-
-**Concepts:** .git/config.gs breadcrumb (REQUIRED, manually created) + sync folders (LLM git commands) + pull-merge-push (never blind push) + auto-transforms (README.md ↔ .html, dotfiles)
-
-**Workflow:**
-1. Manually create .git/config.gs in GAS using write
-2. Create local git repo: git init && git remote add origin <url>
-3. Run local_sync({scriptId}) to sync files
-4. Standard git: git add/commit/push
-5. See docs/GIT_SYNC_WORKFLOWS.md for details
-
-**Git Refs Breadcrumbs:** `.git/refs/heads/main` and `.git/refs/remotes/origin/main` stored in GAS for repository connection tracking
-
-**NO AUTO-BOOTSTRAP:** .git/config.gs must exist in GAS before running local_sync
+**Pattern:** pull→merge→push (never blind push) | Requires .git/config.gs breadcrumb
+**Tools:** local_sync + config (sync_folder management)
+**Breadcrumbs:** .git/config.gs + .git/refs/heads/main + .git/refs/remotes/origin/main
+**See:** docs/GIT_SYNC_WORKFLOWS.md for complete workflow
 
 ### Project Management + Errors
 
@@ -169,17 +153,23 @@ npm run test:all-verify          # Run all verification tests
 
 ## Config + Tools
 
-**Config:** gas-config.json (OAuth + projects + envs + paths) | oauth-config.json (GCP credentials, desktop app) | .auth/ (session tokens, auto-refresh)
+**Config:** gas-config.json (OAuth + projects) | oauth-config.json (GCP creds) | .auth/ (tokens)
 
-**Smart Tools** (auto CommonJS): cat/write/cp (wrap/unwrap) + ls/rm/mv/mkdir (paths) + file_status (SHA checksums) + exec/info/reorder (exec/mgmt) + grep/find/ripgrep/sed (search) + deploy (unified deployment)
+**Tools (40 total):**
+| Category | Count | Tools |
+|----------|-------|-------|
+| **File (Smart)** | 14 | cat, write, ls, rm, mv, cp, file_status, grep, find, ripgrep, sed, edit, aider, cache_clear |
+| **File (Raw)** | 9 | raw_cat, raw_write, raw_cp, raw_grep, raw_find, raw_ripgrep, raw_sed, raw_edit, raw_aider |
+| **Analysis** | 1 | deps (dependency graphs) |
+| **Execution** | 2 | exec, exec_api |
+| **Deployment** | 3 | deploy, project_create, project_init |
+| **Management** | 6 | auth, project_list, reorder, process_list |
+| **Logging** | 1 | log (list + get operations) |
+| **Triggers** | 1 | trigger (list + create + delete operations) |
+| **Git Sync** | 2 | local_sync, config |
+| **Sheets** | 1 | sheet_sql |
 
-**Raw Tools** (exact content): raw_cat/raw_write/raw_cp (preserve wrappers) + raw_ls/raw_rm/raw_mv + raw_find/raw_grep/raw_ripgrep/raw_sed
-
-**Git Tools:** local_sync + config (sync_folder management) — Breadcrumb files: .git/config.gs + .git/refs/heads/main + .git/refs/remotes/origin/main
-
-**Project Tools:** project_list/project_create/project_init + auth (OAuth)
-
-**Design:** Flat architecture + smart (process) vs raw (preserve) + naming (mcp__gas__* vs mcp__gas__raw_*) + period prefix (.gitignore.gs) + unified paths (~/gas-repos/project-[scriptId]/)
+**Design:** smart (unwrap) vs raw (preserve) | mcp__gas__* naming | period prefix (.gitignore.gs) | ~/gas-repos/project-[scriptId]/
 
 ## Development
 
@@ -189,7 +179,7 @@ npm run test:all-verify          # Run all verification tests
 
 **Tests:** unit (mock) + integration (real GAS API + auth) + system (MCP protocol) + security (validation) + verification (API schema) + performance (benchmarks) → mocha + chai + .mocharc.json (15s timeout) + globalAuth.ts
 
-**Test Organization:** Functional domain-based test files (project-lifecycle, file-operations, search-operations, module-system, code-execution, deployment, error-handling, performance) → See test/integration/mcp-gas-validation/TEST-SUITE-ORGANIZATION.md
+**Test Organization:** Domain-based (project-lifecycle, file-operations, search-operations, module-system, code-execution, deployment) → See test/integration/mcp-gas-validation/TEST-SUITE-ORGANIZATION.md
 
 **Security:** OAuth (OS-secure storage) + PKCE (intercept prevention) + input validation + scriptId (25-60 alphanumeric) + path traversal prevention + array-based git (injection prevention)
 
@@ -199,7 +189,7 @@ npm run test:all-verify          # Run all verification tests
 
 ## MCP Integration
 
-**Server:** MCP protocol → AI assistants (Claude) → ~50 GAS tools
+**Server:** MCP protocol → AI assistants (Claude) → 40 GAS tools
 
 **Claude Desktop Config** (`~/.claude_desktop_config.json`):
 ```json
