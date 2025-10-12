@@ -100,9 +100,9 @@ export class ProcessListTool extends BaseTool {
     required: [],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: ['1.auth→start if needed'],
-      useCases: {monitoring: 'process_list({pageSize:50})→all recent execs', debugging: 'process_list({userProcessFilter:{scriptId:"..."}})→specific script', analysis: 'process_list({userProcessFilter:{functionName:"myFunction"}})→fn performance'},
-      errorHandling: {AuthenticationError: 'auth→start first', PermissionError: 'check GCP Console→Apps Script API perms'}
+      prereq: 'auth→start if needed',
+      usage: 'monitoring: process_list({pageSize:50}) | debugging: userProcessFilter.scriptId | analysis: userProcessFilter.functionName',
+      errors: 'AuthenticationError: auth→start | PermissionError: check GCP Console'
     }
   };
 
@@ -215,9 +215,9 @@ export class ProcessListScriptTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmWorkflowGuide: {
-      prerequisites: ['1.auth→start if needed', '2.scriptId from project_create|ls'],
-      useCases: {debugging: 'process_list_script({scriptId:"...",scriptProcessFilter:{functionName:"myFunction"}})→specific fn', monitoring: 'process_list_script({scriptId:"..."})→all execs', performance: 'process_list_script({scriptId:"...",scriptProcessFilter:{startTime:"2024-01-01T00:00:00Z"}})→analysis'},
-      errorHandling: {AuthenticationError: 'auth→start first', ScriptNotFound: 'verify scriptId correct+accessible', PermissionError: 'check GCP Console→Apps Script API perms'}
+      prereq: 'auth→start | scriptId from project_create|ls',
+      usage: 'debugging: scriptProcessFilter.functionName | monitoring: all execs | performance: scriptProcessFilter.startTime',
+      errors: 'AuthenticationError: auth→start | ScriptNotFound: verify scriptId | PermissionError: check GCP Console'
     }
   };
 
