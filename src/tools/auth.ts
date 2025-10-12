@@ -629,7 +629,7 @@ export class AuthTool extends BaseTool {
       openBrowser: {
         type: 'boolean',
         default: true,
-        description: 'Automatically open browser for OAuth authentication. LLM GUIDANCE: Set to false in automated/headless environments or testing. Set to true for interactive user sessions.',
+        description: 'Automatically open browser for OAuth authentication. Set to false in automated/headless environments or testing. Set to true for interactive user sessions.',
         llmHints: {
           false: 'Automated/CI/CD/testing (no browser)',
           true: 'Interactive user auth (default)'
@@ -638,7 +638,7 @@ export class AuthTool extends BaseTool {
       waitForCompletion: {
         type: 'boolean',
         default: true,
-        description: 'Wait for OAuth flow to complete before returning. LLM CRITICAL: Default true waits until authentication completes. Set false to return immediately with auth URL (5-minute timeout).',
+        description: 'Wait for OAuth flow to complete before returning. Default true waits until authentication completes. Set false to return immediately with auth URL (5-minute timeout).',
         llmHints: {
           true: 'Waits for OAuth completion (default, 5min timeout)',
           false: 'Returns URL immediately (async completion)',

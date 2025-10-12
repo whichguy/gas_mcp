@@ -8,7 +8,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
  */
 export class VersionGetTool extends BaseTool {
   public name = 'version_get';
-  public description = 'Get details of a specific version of a script project. LLM USE: Examine specific code versions and their metadata.';
+  public description = 'Get details of a specific version of a script project. Examine specific code versions and their metadata.';
   
   public inputSchema = {
     type: 'object',
@@ -16,7 +16,7 @@ export class VersionGetTool extends BaseTool {
       ...SchemaFragments.scriptId,
       versionNumber: {
         type: 'number',
-        description: 'Version number to retrieve. LLM USE: Get this from version_list or deploy_list responses.',
+        description: 'Version number to retrieve. Get this from version_list or deploy_list responses.',
         minimum: 1,
         llmHints: {
           obtaining: 'Use version_list to see all available version numbers',
@@ -63,7 +63,7 @@ export class VersionGetTool extends BaseTool {
  */
 export class VersionListTool extends BaseTool {
   public name = 'version_list';
-  public description = 'List all versions of a script project. LLM USE: See version history and select versions for deployment or comparison.';
+  public description = 'List all versions of a script project. See version history and select versions for deployment or comparison.';
   
   public inputSchema = {
     type: 'object',
@@ -71,7 +71,7 @@ export class VersionListTool extends BaseTool {
       ...SchemaFragments.scriptId,
       pageSize: {
         type: 'number',
-        description: 'Maximum number of versions to return (default: 50). LLM RECOMMENDATION: Use larger values to see complete version history.',
+        description: 'Maximum number of versions to return (default: 50). Use larger values to see complete version history.',
         minimum: 1,
         default: 50,
         llmHints: {
@@ -82,7 +82,7 @@ export class VersionListTool extends BaseTool {
       },
       pageToken: {
         type: 'string',
-        description: 'Token for pagination (optional). LLM USE: Include token from previous response to get next page.',
+        description: 'Token for pagination (optional). Include token from previous response to get next page.',
         llmHints: {
           workflow: 'Get this from previous version_list response.nextPageToken',
           iteration: 'Keep calling with pageToken until nextPageToken is null'

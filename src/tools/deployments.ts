@@ -974,14 +974,14 @@ export class DeployListTool extends BaseTool {
  */
 export class ProjectCreateTool extends BaseTool {
   public name = 'project_create';
-  public description = 'Creates a new Google Apps Script project. LLM WORKFLOW: This is typically the FIRST step when building new automation or when you need a fresh project for code execution.';
+  public description = 'Creates a new Google Apps Script project. This is typically the FIRST step when building new automation or when you need a fresh project for code execution.';
   
   public inputSchema = {
     type: 'object',
     properties: {
       title: {
         type: 'string',
-        description: 'Human-readable title for the new project. LLM GUIDANCE: Use descriptive names that indicate the project purpose. This appears in Google Drive and Apps Script dashboard.',
+        description: 'Human-readable title for the new project. Use descriptive names that indicate the project purpose. This appears in Google Drive and Apps Script dashboard.',
         minLength: 1,
         examples: [
           'Fibonacci Calculator',
@@ -1003,7 +1003,7 @@ export class ProjectCreateTool extends BaseTool {
       },
       parentId: {
         type: 'string',
-        description: 'Google Drive folder ID to create the project in. LLM USE: Organize projects in specific Drive folders. Omit to create in root Drive folder.',
+        description: 'Google Drive folder ID to create the project in. Organize projects in specific Drive folders. Omit to create in root Drive folder.',
         pattern: '^[a-zA-Z0-9_-]{25,50}$',
         llmHints: {
           organization: 'Use to organize related projects in specific Drive folders',
@@ -1018,7 +1018,7 @@ export class ProjectCreateTool extends BaseTool {
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation. LLM TYPICAL: Omit this - tool uses session authentication from auth.',
+        description: 'Access token for stateless operation. Omit this - tool uses session authentication from auth.',
         pattern: '^ya29\\.[a-zA-Z0-9_-]+$',
         llmHints: {
           typical: 'Usually omitted - tool uses session authentication',

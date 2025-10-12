@@ -34,7 +34,7 @@ export class SummaryTool extends BaseTool {
       contentMode: CONTENT_MODE_SCHEMA,
       tokenBudget: {
         type: 'number',
-        description: 'Maximum tokens for response content (default: 8000). LLM USE: Adjust based on context window size.',
+        description: 'Maximum tokens for response content (default: 8000). Adjust based on context window size.',
         minimum: 1000,
         maximum: 50000,
         default: 8000
