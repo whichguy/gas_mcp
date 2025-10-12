@@ -15,30 +15,19 @@ npm run clean                    # Clean dist/ directory
 ```
 
 ### Testing
-```bash
-npm test                         # Run core system tests (30s timeout)
-npm run test:unit                # Unit tests for individual modules
-npm run test:integration         # Real GAS API tests (requires auth, 5min timeout)
-npm run test:system              # System-level MCP protocol tests
-npm run test:security            # Security and validation tests
-npm run test:performance         # Performance tests (60s timeout)
-npm run test:verification        # API schema and compliance verification
-npm run test:all                 # Run unit + system tests
-
-# Specialized verification tests
-npm run test:git                 # Verify git sync operations
-npm run test:auth                # Verify authentication flow
-npm run test:files               # Verify file operations
-npm run test:project             # Verify project management
-npm run test:execution           # Verify code execution
-npm run test:server              # Verify MCP server functionality
-
-# Run single test file
-npx mocha test/system/protocol/consolidated-core.test.ts --timeout 30000
-
-# Debug test with logging
-DEBUG=mcp:* npm test
-```
+| Category | Command | Purpose |
+|----------|---------|---------|
+| **Core** | `npm test` | System tests (30s timeout) |
+| | `npm run test:unit` | Unit tests (mocked) |
+| | `npm run test:integration` | Real GAS API (auth required, 5min) |
+| | `npm run test:system` | MCP protocol tests |
+| | `npm run test:all` | Unit + system combined |
+| **Quality** | `npm run test:security` | Security & validation |
+| | `npm run test:performance` | Performance benchmarks (60s) |
+| | `npm run test:verification` | API schema compliance |
+| **Verify** | `npm run test:git/auth/files/project/execution/server` | Domain-specific verification |
+| **Debug** | `DEBUG=mcp:* npm test` | Enable debug logging |
+| | `npx mocha test/path/file.test.ts --timeout 30000` | Single test file |
 
 ### Code Quality
 ```bash
@@ -53,8 +42,6 @@ npm run test:all-verify          # Run all verification tests
 ## Architecture Overview
 
 **MCP server:** AI ↔ GAS → 40 tools for create/manage/execute GAS projects
-
-**Session:** File-based (.auth/) → 24hr timeout → per-client isolation → auto-refresh tokens
 
 **Flow:** Client ↔ stdio ↔ mcpServer → tools → gasClient → GAS API
 
@@ -112,37 +99,21 @@ npm run test:all-verify          # Run all verification tests
 **See:** docs/METADATA_CACHING.md for complete architecture
 
 #### 6. Deployment & Version Control
-**Unified Tool:** deploy({operation, environment, scriptId}) → single interface for all deployment ops
-**Operations:**
-- `promote` → dev→staging (creates version) or staging→prod (updates deployment)
-- `rollback` → revert to previous tagged version (staging or prod)
-- `status` → view all 3 environments (dev/staging/prod)
-- `reset` → recreate 3 standard deployments
-
-**Environments:**
-- dev: Always HEAD (latest code, auto-updated)
-- staging: Versioned snapshots (promote from dev)
-- prod: Production versions (promote from staging)
-
-**Version Tags:** Automatic `[DEV]`, `[STAGING]`, `[PROD]` tags in descriptions
+**Tool:** deploy({operation, environment, scriptId}) → promote/rollback/status/reset operations
+**Environments:** dev (HEAD, auto) | staging (versioned) | prod (tagged) → automatic [DEV]/[STAGING]/[PROD] tags
 
 ---
 
 ### Architectural Patterns
 
-**Tool Pattern:** `class extends BaseTool` → name (mcp__gas__*) + description + inputSchema (JSON) → `execute()` → validate → getAuthToken → operation → formatSuccess | handleApiError
-
-**CommonJS Auto-wrap:** Write (wrap in _main) → Read (unwrap for editing) → Execute (CommonJS.js + __mcp_exec.js runtime) → __defineModule__(_main) registration
-
-**Virtual Files:** `.git` ↔ `.git.gs` | `.gitignore` ↔ `.gitignore.gs` | `.env` ↔ `.env.gs` → period prefix → bidirectional (fileTransformations.ts handles MD ↔ HTML too)
-
-**Sync Layers:** Local cache (./src/) → Remote GAS → Git mirror (~/gas-repos/project-[scriptId]/) → smart tools check local first → auto-sync
+**Tool:** BaseTool → name (mcp__gas__*) + inputSchema → execute (validate → auth → operation) → formatSuccess/handleApiError
+**Virtual Files:** .git/.gitignore/.env ↔ .gs suffix → period prefix handling → MD ↔ HTML transforms
+**Sync:** Local (./src/) → Remote GAS → Git mirror (~/gas-repos/project-[scriptId]/) → local-first auto-sync
 
 ### Git Sync (LOCAL-FIRST, safe merge)
 
 **Pattern:** pull→merge→push (never blind push) | Requires .git/config.gs breadcrumb
 **Tools:** local_sync + config (sync_folder management)
-**Breadcrumbs:** .git/config.gs + .git/refs/heads/main + .git/refs/remotes/origin/main
 **See:** docs/GIT_SYNC_WORKFLOWS.md for complete workflow
 
 ### Project Management + Errors
@@ -152,8 +123,6 @@ npm run test:all-verify          # Run all verification tests
 **Errors:** MCPGasError → ValidationError | AuthenticationError | FileOperationError | QuotaError | ApiError → MCP-compatible transform
 
 ## Config + Tools
-
-**Config:** gas-config.json (OAuth + projects) | oauth-config.json (GCP creds) | .auth/ (tokens)
 
 **Tools (40 total):**
 | Category | Count | Tools |
@@ -169,23 +138,20 @@ npm run test:all-verify          # Run all verification tests
 | **Git Sync** | 2 | local_sync, config |
 | **Sheets** | 1 | sheet_sql |
 
+**Config:** gas-config.json (OAuth + projects) | oauth-config.json (GCP creds) | .auth/ (tokens)
 **Design:** smart (unwrap) vs raw (preserve) | mcp__gas__* naming | period prefix (.gitignore.gs) | ~/gas-repos/project-[scriptId]/
 
 ## Development
 
-**New Tool:** src/tools/ extend BaseTool (base.ts) → name (mcp__gas__*) + description + inputSchema → execute (validate → auth → operation) → register in mcpServer.ts → tests (unit/integration/system/security)
-
-**TypeScript:** .js imports (ESM) | named exports | type imports `import type` | kebab-case files + PascalCase classes | strict ES2022 | tsconfig.production.json (no maps/declarations)
-
-**Tests:** unit (mock) + integration (real GAS API + auth) + system (MCP protocol) + security (validation) + verification (API schema) + performance (benchmarks) → mocha + chai + .mocharc.json (15s timeout) + globalAuth.ts
-
-**Test Organization:** Domain-based (project-lifecycle, file-operations, search-operations, module-system, code-execution, deployment) → See test/integration/mcp-gas-validation/TEST-SUITE-ORGANIZATION.md
-
-**Security:** OAuth (OS-secure storage) + PKCE (intercept prevention) + input validation + scriptId (25-60 alphanumeric) + path traversal prevention + array-based git (injection prevention)
-
-**Performance:** Local cache (reduce API) + incremental TS builds + concurrent asset copy + smart local-first + rate limiting (quota protection)
-
-**Debug:** `DEBUG=mcp:* | mcp:auth | mcp:execution | mcp:sync npm start`
+| Area | Details |
+|------|---------|
+| **New Tool** | Extend BaseTool → name (mcp__gas__*) + inputSchema → execute (validate → auth → operation) → register in mcpServer.ts → tests |
+| **TypeScript** | ESM imports (.js) \| named exports \| type imports \| kebab-case files \| PascalCase classes \| strict ES2022 |
+| **Tests** | unit (mock) + integration (real API) + system (MCP) + security + verification + performance → mocha/chai (15s timeout) |
+| **Test Org** | Domain-based: project-lifecycle, file-operations, search-operations, module-system, code-execution, deployment |
+| **Security** | OAuth (OS-secure) + PKCE + input validation + scriptId pattern (25-60 alphanumeric) + path traversal prevention |
+| **Performance** | Local cache + incremental builds + concurrent copy + local-first + rate limiting |
+| **Debug** | `DEBUG=mcp:* \| mcp:auth \| mcp:execution \| mcp:sync npm start` |
 
 ## MCP Integration
 
@@ -195,19 +161,3 @@ npm run test:all-verify          # Run all verification tests
 ```json
 {"mcpServers": {"gas": {"command": "node", "args": ["/path/to/mcp_gas/dist/src/index.js"], "env": {"NODE_ENV": "production"}}}}
 ```
-
-**Files:** gas-config.json (projects + OAuth + paths) + oauth-config.json (GCP creds) + .auth/ (tokens)
-
-**Capabilities:** OAuth flow + file ops (CommonJS wrap) + cloud exec + git sync + project mgmt + unified deployment
-
-## Key Changes (January 2025)
-
-**Deployment Tool Consolidation:**
-- Old: `version_create`, `version_list`, `version_get`, `deploy_create`, `deploy_list`, `deploy_get_details`, `deploy_delete`, `deploy_update`
-- New: Single `deploy` tool with operations: promote/rollback/status/reset
-- Benefit: Simplified workflows, atomic operations, environment-aware management
-
-**Git Refs Support:**
-- Added `.git/refs/heads/main` and `.git/refs/remotes/origin/main` to GIT_FILE_MAP
-- Enables complete repository connection tracking in GAS projects
-- Plain text files (40-char SHA-1 hashes), no encoding needed
