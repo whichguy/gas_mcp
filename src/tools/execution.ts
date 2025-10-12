@@ -364,58 +364,32 @@ export class ExecTool extends BaseTool {
         type: 'string',
         enum: ['dev', 'staging', 'prod'],
         description: 'Execution environment (default: dev). dev=HEAD (latest), staging=snapshot, prod=stable.',
-        default: 'dev',
-        llmHints: {
-          dev: 'HEAD (latest code, default)',
-          staging: 'Latest snapshot version',
-          prod: 'Stable production version'
-        }
+        default: 'dev'
       },
       js_statement: {
         type: 'string',
         description: 'JavaScript to execute in GAS. Supports: ES6+ expressions, require("Module").func() for project code, all GAS services (DriveApp/SpreadsheetApp/etc), Logger.log() auto-captured. CommonJS resolves dependencies automatically.',
         minLength: 1,
-        examples: ['Math.PI * 2', 'require("Utils").myFunc()', 'DriveApp.createFile("x","y").getId()'],
-        llmHints: {
-          capability: 'Full ES6+ JavaScript + ALL GAS services + CommonJS modules',
-          projectFunctions: 'require("Module").func() calls your project code',
-          logCapture: 'Logger.log() auto-captured | logFilter:"ERROR|WARN" | logTail:50',
-          size: '500k chars max | 1hr timeout configurable'
-        }
+        examples: ['Math.PI * 2', 'require("Utils").myFunc()', 'DriveApp.createFile("x","y").getId()']
       },
       autoRedeploy: {
         type: 'boolean',
         description: 'Auto-deploy setup. true (default)=create as needed, false=use existing, "force"=always new. Set false for speed on pre-configured projects.',
-        default: true,
-        llmHints: {
-          true: 'Auto-deploy (default, seamless)',
-          false: 'Use existing deployment (faster)',
-          force: 'Always create new deployment'
-        }
+        default: true
       },
       executionTimeout: {
         type: 'number',
         description: 'Max execution timeout in seconds (default: 780=13min, max: 3600=1hr). Increase for long-running ops.',
         default: 780,
         minimum: 780,
-        maximum: 3600,
-        llmHints: {
-          default: '13min (780s)',
-          max: '1hr (3600s)',
-          increase: 'For long-running ops'
-        }
+        maximum: 3600
       },
       responseTimeout: {
-        type: 'number', 
+        type: 'number',
         description: 'Max response timeout in seconds (default: 780=13min, max: 3600=1hr). Increase for large payloads.',
         default: 780,
         minimum: 780,
-        maximum: 3600,
-        llmHints: {
-          default: '13min (780s)',
-          max: '1hr (3600s) for large data',
-          increase: 'For large response payloads'
-        }
+        maximum: 3600
       },
       ...SchemaFragments.accessToken,
       logFilter: {
@@ -438,47 +412,26 @@ export class ExecTool extends BaseTool {
     },
     required: ['scriptId', 'js_statement'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      prerequisites: ['auth if needed', 'scriptId from project_list'],
-      limitations: '6min free | 30min workspace (adjust executionTimeout)',
-      quickStart: ['Math.pow(2,10)', 'require("Calc").add(5,3)', 'DriveApp.getRootFolder().getName()']
+    llmGuidance: {
+      whenToUse: 'Execute JavaScript expressions and project functions. Auto-deploys infrastructure. Use logFilter/logTail to manage verbose output.',
+      capabilities: 'ES6+ JavaScript | require() for project code | all GAS services (Drive/Sheets/Gmail/etc) | Logger.log() captured',
+      examples: ['Math: Math.pow(2,10)', 'Module: require("Utils").process(data)', 'GAS: DriveApp.getRootFolder().getName()']
     },
     responseSchema: {
       type: 'object',
-      description: 'Response from raw_run execution with result and logger output',
       properties: {
-        status: {
-          type: 'string',
-          enum: ['success', 'error'],
-          description: 'Execution status indicator'
-        },
-        result: {
-          description: 'The actual result of the JavaScript execution (any type)'
-        },
-        logger_output: {
-          type: 'string',
-          description: 'Logger output from console.log()/Logger.log(). May include filter metadata if logFilter/logTail used.'
-        },
-        scriptId: {
-          type: 'string',
-          description: 'The Google Apps Script project ID that was executed'
-        },
-        js_statement: {
-          type: 'string',
-          description: 'The JavaScript statement that was executed'
-        },
-        executedAt: {
-          type: 'string',
-          format: 'date-time',
-          description: 'ISO timestamp of when the execution occurred'
-        },
+        status: { type: 'string', enum: ['success', 'error'] },
+        result: {},
+        logger_output: { type: 'string' },
+        scriptId: { type: 'string' },
+        js_statement: { type: 'string' },
+        executedAt: { type: 'string', format: 'date-time' },
         error: {
           type: 'object',
-          description: 'Error details (only when status="error")',
           properties: {
-            type: { type: 'string', description: 'Error type' },
-            message: { type: 'string', description: 'Error message' },
-            originalError: { type: 'string', description: 'Original error if available' }
+            type: { type: 'string' },
+            message: { type: 'string' },
+            originalError: { type: 'string' }
           }
         }
       },

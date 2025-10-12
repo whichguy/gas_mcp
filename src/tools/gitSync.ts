@@ -122,12 +122,10 @@ export class LocalSyncTool extends BaseTool {
     },
     required: ['scriptId'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      model: '.git/config.gs REQUIRED in GAS | NO auto-bootstrap | Multi-repo supported',
-      setup: ['1. write .git/config.gs in GAS', '2. mkdir+git init+remote', '3. local_sync', '4. git add+commit+push'],
-      usage: 'firstTime: .git/config.gs→git init→local_sync | after GAS edit: local_sync | directions: sync|pull-only|push-only',
-      behavior: 'ALWAYS pull first | merge intelligently | push only if merge succeeds | stop on conflicts',
-      conflicts: '.git-gas/ folder | manual edit | local_sync again | forceOverwrite (dangerous)'
+    llmGuidance: {
+      workflow: 'ALWAYS pull→merge→push (never blind push) | Requires .git/config.gs breadcrumb',
+      setup: 'write .git/config.gs in GAS → git init+remote → local_sync → git add+commit+push',
+      conflicts: 'stop on conflicts → manual edit in .git-gas/ → local_sync again (or forceOverwrite)'
     }
   };
 

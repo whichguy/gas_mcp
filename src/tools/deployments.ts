@@ -1028,12 +1028,10 @@ export class ProjectCreateTool extends BaseTool {
     },
     required: ['title'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      sequence: 'auth→start | project_create({title}) | write | exec | deploy_create',
-      compat: 'standalone only (container-bound: use UI/create_script)',
-      return: 'scriptId=SAVE (required) | localName | webAppUrl=null→deploy | driveUrl',
-      next: 'save scriptId | write code | exec test | deploy_create',
-      errors: 'AuthenticationError: auth→start | PermissionError: check Drive/API | QuotaExceeded: limit reached'
+    llmGuidance: {
+      workflow: 'auth → project_create → write code → exec test → deploy_create',
+      critical: '⚠️ SAVE scriptId from response for all subsequent operations',
+      limitation: 'Standalone scripts only (container-bound: use create_script tool)'
     }
   };
 
@@ -1230,13 +1228,10 @@ export class ProjectInitTool extends BaseTool {
     },
     required: ['scriptId'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      when: 'exec fails __defineModule__ | projects not via project_create | missing infra',
-      prereq: 'auth→start | scriptId from ls',
-      sha: 'Git SHA-1 | force=false: warn on mismatch | force=true: auto-repair',
-      usage: 'basic: project_init({scriptId}) | verify: force=false | repair: force=true',
-      return: 'status | scriptId | filesInstalled/Skipped | verificationWarnings (force=false) | errors',
-      next: 'exec test | __defineModule__ pattern | require("Module")'
+    llmGuidance: {
+      whenToUse: 'Retrofit existing projects | exec fails with __defineModule__ error | missing infrastructure',
+      verification: 'Git SHA-1 checksums | force=false: warn only | force=true: auto-repair mismatches',
+      workflow: 'project_init({scriptId}) → verify infrastructure → exec test'
     }
   };
 

@@ -62,10 +62,9 @@ export class DeployTool extends BaseTool {
       ...SchemaFragments.accessToken
     },
     required: ['operation', 'scriptId'],
-    llmWorkflowGuide: {
-      flow: ['dev (HEAD) → promote → staging (versioned) → promote → prod (versioned)'],
-      environments: 'dev: HEAD | staging: latest snapshot | prod: stable version',
-      rollback: 'staging/prod only (not from HEAD)'
+    llmGuidance: {
+      workflow: 'dev (HEAD) → promote → staging (versioned) → promote → prod (versioned)',
+      environments: 'dev: HEAD | staging: snapshot | prod: stable'
     }
   };
 

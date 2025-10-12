@@ -100,12 +100,10 @@ export class LogTool extends BaseTool {
     },
     required: ['operation', 'scriptId'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      prereq: 'auth→start | scriptId | standalone+GCP only (NOT container-bound)',
-      limits: 'Container-bound→Cloud Logging rejects | Use exec for container-bound+realtime',
-      usage: 'list: errors={statusFilter:"FAILED"} | debug={functionName,minutes} | historical={timeRange} | get: {processId}',
-      alternative: 'Container-bound→exec({js_statement:"Logger.log();yourCode()"}) auto-captures output',
-      perf: 'functionName→fast Cloud Logging | no functionName→slower Process API'
+    llmGuidance: {
+      limitation: '⚠️ Standalone scripts only (NOT container-bound) | Use exec for real-time logging',
+      workflow: 'list: find executions by status/function/time → get: detailed logs with processId',
+      performance: 'functionName parameter triggers optimized Cloud Logging query (2-3x faster)'
     }
   };
 

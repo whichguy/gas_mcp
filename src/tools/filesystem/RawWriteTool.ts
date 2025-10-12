@@ -54,12 +54,10 @@ export class RawWriteTool extends BaseFileSystemTool {
     },
     required: ['path', 'content', 'fileType'],
     additionalProperties: false,
-    llmWorkflowGuide: {
-      prereq: 'auth→start if needed | scriptId via project_create|ls | ⚠️ VERIFY: intend to OVERWRITE file',
-      danger: 'CLOBBERS entire file without merge→content LOST | Use write for safe merging instead',
-      usage: 'newFile: from scratch | replace: entire contents | config: appsscript.json | ⚠️ AVOID: updating existing, collab',
-      types: 'JS→.gs (SERVER_JS) | HTML→.html | JSON→.json',
-      after: 'run to exec | cat to verify | ls to see structure'
+    llmGuidance: {
+      danger: '⚠️ OVERWRITES entire file without merge → data loss risk | Use write for safe merging',
+      whenToUse: 'new files from scratch | replace entire contents | appsscript.json manifest',
+      whenToAvoid: 'updating existing code | collaborative editing (use write/edit/aider instead)'
     }
   };
 
