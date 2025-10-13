@@ -1128,7 +1128,7 @@ export class ProjectCreateTool extends BaseTool {
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
-        path: `${scriptId}/common-js/require`,
+        path: `${scriptId}/common-js/require.gs`,
         content: SHIM_TEMPLATE,
         fileType: 'SERVER_JS' as const,
         position: 0,
@@ -1141,7 +1141,7 @@ export class ProjectCreateTool extends BaseTool {
       console.error(`🔍 [GAS_PROJECT_CREATE] Verifying CommonJS integrity...`);
       const verification = await verifyInfrastructureFile(
         scriptId,
-        'common-js/require',
+        'common-js/require.gs',
         this.sessionAuthManager,
         accessToken
       );
@@ -1350,7 +1350,7 @@ export class ProjectInitTool extends BaseTool {
    * Install CommonJS module system
    */
   private async installCommonJS(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const fileName = 'common-js/require';
+    const fileName = 'common-js/require.gs';
 
     // Check if file exists and verify if needed
     if (existingFiles.has(fileName)) {
@@ -1395,7 +1395,7 @@ export class ProjectInitTool extends BaseTool {
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
       const writeParams = {
-        path: `${scriptId}/common-js/require`,
+        path: `${scriptId}/common-js/require.gs`,
         content: SHIM_TEMPLATE,
         fileType: 'SERVER_JS' as const,
         position: 0, // Execute first
@@ -1432,7 +1432,7 @@ export class ProjectInitTool extends BaseTool {
    * Install execution infrastructure (__mcp_exec.js)
    */
   private async installExecutionInfrastructure(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const fileName = 'common-js/__mcp_exec';
+    const fileName = 'common-js/__mcp_exec.gs';
 
     // Check if file exists and verify if needed
     if (existingFiles.has(fileName)) {
@@ -1479,7 +1479,7 @@ export class ProjectInitTool extends BaseTool {
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
       const writeParams = {
-        path: `${scriptId}/common-js/__mcp_exec`,
+        path: `${scriptId}/common-js/__mcp_exec.gs`,
         content: executionTemplate,
         fileType: 'SERVER_JS' as const,
         position: 1, // Execute after CommonJS
@@ -1516,8 +1516,8 @@ export class ProjectInitTool extends BaseTool {
    * Install HTML templates (__mcp_exec_success.html and __mcp_exec_error.html)
    */
   private async installHtmlTemplates(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const successFileName = 'common-js/__mcp_exec_success';
-    const errorFileName = 'common-js/__mcp_exec_error';
+    const successFileName = 'common-js/__mcp_exec_success.html';
+    const errorFileName = 'common-js/__mcp_exec_error.html';
     const results: any[] = [];
 
     // Install success template
@@ -1534,7 +1534,7 @@ export class ProjectInitTool extends BaseTool {
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
-          path: `${scriptId}/common-js/__mcp_exec_success`,
+          path: `${scriptId}/common-js/__mcp_exec_success.html`,
           content: successTemplate,
           fileType: 'HTML' as const,
           accessToken
@@ -1565,7 +1565,7 @@ export class ProjectInitTool extends BaseTool {
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
-          path: `${scriptId}/common-js/__mcp_exec_error`,
+          path: `${scriptId}/common-js/__mcp_exec_error.html`,
           content: errorTemplate,
           fileType: 'HTML' as const,
           accessToken

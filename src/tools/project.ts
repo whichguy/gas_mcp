@@ -69,19 +69,19 @@ export class ReorderTool extends BaseTool {
     reorderedFiles.splice(newPosition, 0, movedFile);
 
     // Enforce critical file ordering:
-    // Position 0: common-js/require (always first)
-    // Position 1: common-js/__mcp_exec (always second, right after require)
-    const commonJsIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/require');
-    const mcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec');
+    // Position 0: common-js/require.gs (always first)
+    // Position 1: common-js/__mcp_exec.gs (always second, right after require)
+    const commonJsIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/require.gs');
+    const mcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec.gs');
 
-    // Move common-js/require to position 0 if not already there
+    // Move common-js/require.gs to position 0 if not already there
     if (commonJsIndex !== -1 && commonJsIndex !== 0) {
       const [commonJsFile] = reorderedFiles.splice(commonJsIndex, 1);
       reorderedFiles.unshift(commonJsFile);
     }
 
-    // Move common-js/__mcp_exec to position 1 if not already there (right after require)
-    const updatedMcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec');
+    // Move common-js/__mcp_exec.gs to position 1 if not already there (right after require)
+    const updatedMcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec.gs');
     if (updatedMcpRunIndex !== -1 && updatedMcpRunIndex !== 1) {
       const [mcpRunFile] = reorderedFiles.splice(updatedMcpRunIndex, 1);
       reorderedFiles.splice(1, 0, mcpRunFile);
@@ -97,7 +97,7 @@ export class ReorderTool extends BaseTool {
       oldPosition: currentIndex,
       newPosition,
       totalFiles: files.length,
-      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. common-js/require enforced at position 0, common-js/__mcp_exec at position 1.`
+      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. common-js/require.gs enforced at position 0, common-js/__mcp_exec.gs at position 1.`
     };
   }
 }

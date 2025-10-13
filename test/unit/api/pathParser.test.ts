@@ -105,11 +105,14 @@ describe('Path Parser', () => {
       expect(result.isDirectory).to.be.true;
     });
 
-    it('should parse nested directory paths', () => {
+    it('should parse nested paths as files (GAS has no real directories)', () => {
+      // After fix: Multi-level paths with "/" are treated as files, not directories
       const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/src/models');
       expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
-      expect(result.directory).to.equal('src/models');
-      expect(result.isDirectory).to.be.true;
+      expect(result.filename).to.equal('src/models');
+      expect(result.directory).to.equal('src');
+      expect(result.isFile).to.be.true;
+      expect(result.isDirectory).to.be.false;
     });
 
 
@@ -331,6 +334,69 @@ describe('Path Parser', () => {
 
       const filename101 = 'a'.repeat(98) + '.gs'; // 101 chars
       expect(() => parsePath(`1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/${filename101}`)).to.throw(ValidationError);
+    });
+  });
+
+  describe('files with directory-like prefixes (with extensions)', () => {
+    // Bug fix: GAS has no real directories - files can have "/" in their names
+    // Files like "common-js/require.gs" should be treated as files, not directories
+    // Infrastructure files now include proper extensions (.gs and .html)
+
+    it('should parse common-js/require.gs as a file', () => {
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/common-js/require.gs');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.filename).to.equal('common-js/require.gs');
+      expect(result.directory).to.equal('common-js');
+      expect(result.isFile).to.be.true;
+      expect(result.isDirectory).to.be.false;
+    });
+
+    it('should parse common-js/__mcp_exec.gs as a file', () => {
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/common-js/__mcp_exec.gs');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.filename).to.equal('common-js/__mcp_exec.gs');
+      expect(result.directory).to.equal('common-js');
+      expect(result.isFile).to.be.true;
+      expect(result.isDirectory).to.be.false;
+    });
+
+    it('should parse common-js/__mcp_exec_success.html as a file', () => {
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/common-js/__mcp_exec_success.html');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.filename).to.equal('common-js/__mcp_exec_success.html');
+      expect(result.isFile).to.be.true;
+    });
+
+    it('should parse common-js/__mcp_exec_error.html as a file', () => {
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/common-js/__mcp_exec_error.html');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.filename).to.equal('common-js/__mcp_exec_error.html');
+      expect(result.isFile).to.be.true;
+    });
+
+    it('should parse any multi-level path as a file', () => {
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/api/handlers/user');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.filename).to.equal('api/handlers/user');
+      expect(result.directory).to.equal('api/handlers');
+      expect(result.isFile).to.be.true;
+      expect(result.isDirectory).to.be.false;
+    });
+
+    it('should still treat single-level lowercase paths as directories for backward compatibility', () => {
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/models');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.directory).to.equal('models');
+      expect(result.isFile).to.be.false;
+      expect(result.isDirectory).to.be.true;
+    });
+
+    it('should still treat single-level paths as directories', () => {
+      const result = parsePath('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/utils');
+      expect(result.scriptId).to.equal('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+      expect(result.directory).to.equal('utils');
+      expect(result.isFile).to.be.false;
+      expect(result.isDirectory).to.be.true;
     });
   });
 }); 
