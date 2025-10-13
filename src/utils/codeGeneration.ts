@@ -33,7 +33,7 @@ export interface CodeGenerationResult {
 
 /**
  * Simple template reader that reads template content from src directory
- * @param templateName - The template filename (e.g., '__mcp_exec.js', 'CommonJS.js')
+ * @param templateName - The template filename (e.g., '__mcp_exec.js', 'require.js')
  * @returns Template content as string
  */
 function getTemplate(templateName: string): string {
@@ -86,7 +86,7 @@ export class CodeGenerator {
     // Always include the MCP system file
     const mcpSystemContent = this.generateMcpClassFile(timezone, mcpVersion);
     files.push({
-      name: '__mcp_exec',
+      name: 'common-js/__mcp_exec',
       type: 'SERVER_JS',
       source: mcpSystemContent
     });
@@ -95,8 +95,8 @@ export class CodeGenerator {
     // Always include the CommonJS module system
     const shimContent = this.generateShimFile();
     files.push({
-      name: 'CommonJS',
-      type: 'SERVER_JS', 
+      name: 'common-js/require',
+      type: 'SERVER_JS',
       source: shimContent
     });
     totalLines += shimContent.split('\n').length;
@@ -147,7 +147,7 @@ export class CodeGenerator {
    * Contains the module loading and require() system
    */
   private static generateShimFile(): string {
-    return getTemplate('CommonJS.js');
+    return getTemplate('require.js');
   }
 
   /**

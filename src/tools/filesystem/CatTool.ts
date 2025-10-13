@@ -58,7 +58,7 @@ export class CatTool extends BaseFileSystemTool {
       scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→auto-unwraps CommonJS for clean edit'},
       limitations: {fileTypes: 'SERVER_JS (.gs)|HTML (.html)|JSON (appsscript.json only)', moduleWrapping: 'auto-unwraps _main()→raw_cat for complete+wrappers', localCacheDependency: 'prefers ./src/→preferLocal:false force remote'},
       pathRequirement: 'scriptId param+filename OR embed scriptId in path',
-      commonJsIntegration: 'SERVER_JS auto-integrated (CommonJS.js)→_main() wrapper removed→clean code for edit (require()/module/exports available at exec)',
+      commonJsIntegration: 'SERVER_JS auto-integrated (require.js)→_main() wrapper removed→clean code for edit (require()/module/exports available at exec)',
       moduleAccess: 'require("ModuleName")|module.exports={...}|exports.func=... (CommonJS handles loading+caching+deps)',
       editingWorkflow: 'unwrapped for edit→auto-rewrapped on write',
       examples: ['module: cat({scriptId:"1abc2def...",path:"Utils.gs"})', 'embedded: cat({scriptId:"",path:"1abc2def.../Calculator.gs"})', 'HTML: cat({scriptId:"1abc2def...",path:"sidebar.html"})', 'manifest: cat({scriptId:"1abc2def...",path:"appsscript.json"})']

@@ -1063,7 +1063,7 @@ export class ProjectCreateTool extends BaseTool {
     try {
       const project = await this.gasClient.createProject(title, parentId, accessToken);
 
-      // Create the CommonJS.js file
+      // Create the require.js file
       const shimResult = await this.create0ShimFile(project.scriptId, accessToken);
 
       // Git initialization removed - users must manually create .git/config.gs breadcrumb
@@ -1106,7 +1106,7 @@ export class ProjectCreateTool extends BaseTool {
   }
 
   /**
-   * Create the CommonJS.js file in a new project using RawWriteTool
+   * Create the require.js file in a new project using RawWriteTool
    * @param scriptId - The script ID of the project
    * @param accessToken - Access token for API calls
    * @returns Promise with success status and any error details
@@ -1127,20 +1127,20 @@ export class ProjectCreateTool extends BaseTool {
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
       
       const writeParams = {
-        path: `${scriptId}/CommonJS`,
+        path: `${scriptId}/common-js/require`,
         content: SHIM_TEMPLATE,
         fileType: 'SERVER_JS' as const,
         position: 0,
         accessToken
       };
-      
+
       const result = await rawWriteTool.execute(writeParams);
 
       // Verify CommonJS SHA after creation
       console.error(`🔍 [GAS_PROJECT_CREATE] Verifying CommonJS integrity...`);
       const verification = await verifyInfrastructureFile(
         scriptId,
-        'CommonJS',
+        'common-js/require',
         this.sessionAuthManager,
         accessToken
       );
@@ -1349,7 +1349,7 @@ export class ProjectInitTool extends BaseTool {
    * Install CommonJS module system
    */
   private async installCommonJS(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const fileName = 'CommonJS';
+    const fileName = 'common-js/require';
 
     // Check if file exists and verify if needed
     if (existingFiles.has(fileName)) {
@@ -1394,7 +1394,7 @@ export class ProjectInitTool extends BaseTool {
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
       const writeParams = {
-        path: `${scriptId}/CommonJS`,
+        path: `${scriptId}/common-js/require`,
         content: SHIM_TEMPLATE,
         fileType: 'SERVER_JS' as const,
         position: 0, // Execute first
@@ -1431,7 +1431,7 @@ export class ProjectInitTool extends BaseTool {
    * Install execution infrastructure (__mcp_exec.js)
    */
   private async installExecutionInfrastructure(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const fileName = '__mcp_exec';
+    const fileName = 'common-js/__mcp_exec';
 
     // Check if file exists and verify if needed
     if (existingFiles.has(fileName)) {
@@ -1478,7 +1478,7 @@ export class ProjectInitTool extends BaseTool {
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
       const writeParams = {
-        path: `${scriptId}/__mcp_exec`,
+        path: `${scriptId}/common-js/__mcp_exec`,
         content: executionTemplate,
         fileType: 'SERVER_JS' as const,
         position: 1, // Execute after CommonJS
@@ -1515,8 +1515,8 @@ export class ProjectInitTool extends BaseTool {
    * Install HTML templates (__mcp_exec_success.html and __mcp_exec_error.html)
    */
   private async installHtmlTemplates(scriptId: string, existingFiles: Set<string>, force: boolean, accessToken?: string): Promise<any> {
-    const successFileName = '__mcp_exec_success';
-    const errorFileName = '__mcp_exec_error';
+    const successFileName = 'common-js/__mcp_exec_success';
+    const errorFileName = 'common-js/__mcp_exec_error';
     const results: any[] = [];
 
     // Install success template
@@ -1533,7 +1533,7 @@ export class ProjectInitTool extends BaseTool {
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
-          path: `${scriptId}/__mcp_exec_success`,
+          path: `${scriptId}/common-js/__mcp_exec_success`,
           content: successTemplate,
           fileType: 'HTML' as const,
           accessToken
@@ -1564,7 +1564,7 @@ export class ProjectInitTool extends BaseTool {
         const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
         const writeParams = {
-          path: `${scriptId}/__mcp_exec_error`,
+          path: `${scriptId}/common-js/__mcp_exec_error`,
           content: errorTemplate,
           fileType: 'HTML' as const,
           accessToken

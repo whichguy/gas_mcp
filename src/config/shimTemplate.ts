@@ -1,7 +1,7 @@
 /**
- * CommonJS.js template for Google Apps Script projects
+ * require.js template for Google Apps Script projects
  * This file contains the module system that gets automatically added to new GAS projects.
- * 
+ *
  * CRITICAL: This implements LAZY LOADING where _main is called only when require() is first invoked,
  * not when __defineModule__ is called.
  */
@@ -17,7 +17,7 @@ export function getShimTemplate(): string {
   try {
     // Get the directory of this file - when compiled, this will be in dist/src/config/
     const currentDir = path.dirname(new URL(import.meta.url).pathname);
-    
+
     // Determine if we're running from compiled code (dist/) or source code (src/)
     let srcDir: string;
     if (currentDir.includes('/dist/')) {
@@ -28,13 +28,13 @@ export function getShimTemplate(): string {
       // Running from source code: src/config -> go up to src
       srcDir = path.join(currentDir, '..');
     }
-    
-    const templatePath = path.join(srcDir, 'CommonJS.js');
-    
+
+    const templatePath = path.join(srcDir, 'require.js');
+
     return fs.readFileSync(templatePath, 'utf8');
   } catch (error) {
-    console.error('Error reading CommonJS template:', error);
-    throw new Error(`Failed to read CommonJS template: ${error instanceof Error ? error.message : String(error)}`);
+    console.error('Error reading require.js template:', error);
+    throw new Error(`Failed to read require.js template: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

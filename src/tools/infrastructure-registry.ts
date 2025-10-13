@@ -109,32 +109,32 @@ function getErrorHtmlTemplate(): string {
  * SHA-1 checksums are computed at runtime from template content.
  */
 export const INFRASTRUCTURE_REGISTRY: Record<string, InfrastructureFile> = {
-  'CommonJS': {
-    name: 'CommonJS',
+  'common-js/require': {
+    name: 'common-js/require',
     getTemplate: getCommonJSTemplate,
     computeSHA: () => computeGitSHA(getCommonJSTemplate()),
     category: 'universal',
     description: 'CommonJS module system providing require(), module.exports, and exports'
   },
 
-  '__mcp_exec': {
-    name: '__mcp_exec',
+  'common-js/__mcp_exec': {
+    name: 'common-js/__mcp_exec',
     getTemplate: getExecutionInfraTemplate,
     computeSHA: () => computeGitSHA(getExecutionInfraTemplate()),
     category: 'optional',
     description: 'Execution infrastructure for exec tool with dynamic function execution'
   },
 
-  '__mcp_exec_success': {
-    name: '__mcp_exec_success',
+  'common-js/__mcp_exec_success': {
+    name: 'common-js/__mcp_exec_success',
     getTemplate: getSuccessHtmlTemplate,
     computeSHA: () => computeGitSHA(getSuccessHtmlTemplate()),
     category: 'optional',
     description: 'HTML template for successful exec execution results'
   },
 
-  '__mcp_exec_error': {
-    name: '__mcp_exec_error',
+  'common-js/__mcp_exec_error': {
+    name: 'common-js/__mcp_exec_error',
     getTemplate: getErrorHtmlTemplate,
     computeSHA: () => computeGitSHA(getErrorHtmlTemplate()),
     category: 'optional',

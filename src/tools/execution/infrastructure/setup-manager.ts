@@ -56,9 +56,9 @@ export async function setupInfrastructure(
       15000, // 15-second timeout
       'Get project content'
     );
-    shimExists = existingFiles.some((file: GASFile) => file.name === '__mcp_exec');
-    const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_exec_success');
-    const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === '__mcp_exec_error');
+    shimExists = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec');
+    const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec_success');
+    const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec_error');
     htmlTemplatesExist = hasSuccessHtml && hasErrorHtml;
     console.error(`Shim exists: ${shimExists}, HTML templates exist: ${htmlTemplatesExist}`);
   } catch (error: any) {
@@ -80,14 +80,14 @@ export async function setupInfrastructure(
       mcpVersion: '1.0.0'
     });
 
-    const shimFile = shimCode.files.find((file: GASFile) => file.name === '__mcp_exec');
+    const shimFile = shimCode.files.find((file: GASFile) => file.name === 'common-js/__mcp_exec');
     if (!shimFile?.source) {
       throw new Error('Failed to generate execution shim code');
     }
 
     try {
       await withTimeout(
-        gasClient.updateFile(scriptId, '__mcp_exec', shimFile.source, 0, accessToken),
+        gasClient.updateFile(scriptId, 'common-js/__mcp_exec', shimFile.source, 0, accessToken),
         20000, // 20-second timeout for file upload
         'Update shim file'
       );
@@ -98,7 +98,7 @@ export async function setupInfrastructure(
       try {
         const verification = await verifyInfrastructureFile(
           scriptId,
-          '__mcp_exec',
+          'common-js/__mcp_exec',
           sessionAuthManager,
           accessToken
         );
@@ -130,7 +130,7 @@ export async function setupInfrastructure(
     try {
       const verification = await verifyInfrastructureFile(
         scriptId,
-        '__mcp_exec',
+        'common-js/__mcp_exec',
         sessionAuthManager,
         accessToken
       );
@@ -158,7 +158,7 @@ export async function setupInfrastructure(
     try {
       const successHtml = getSuccessHtmlTemplate();
       await withTimeout(
-        gasClient.updateFile(scriptId, '__mcp_exec_success', successHtml, 0, accessToken, 'HTML'),
+        gasClient.updateFile(scriptId, 'common-js/__mcp_exec_success', successHtml, 0, accessToken, 'HTML'),
         20000,
         'Update success HTML template'
       );
@@ -166,7 +166,7 @@ export async function setupInfrastructure(
 
       const errorHtml = getErrorHtmlTemplate();
       await withTimeout(
-        gasClient.updateFile(scriptId, '__mcp_exec_error', errorHtml, 0, accessToken, 'HTML'),
+        gasClient.updateFile(scriptId, 'common-js/__mcp_exec_error', errorHtml, 0, accessToken, 'HTML'),
         20000,
         'Update error HTML template'
       );

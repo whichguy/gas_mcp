@@ -1,5 +1,5 @@
 /**
- * Google Apps Script CommonJS Module System (CommonJS.js)
+ * Google Apps Script CommonJS Module System (require.js)
  *
  * This file provides a CommonJS-like module system for Google Apps Script,
  * enabling the use of require() to import modules and manage dependencies.

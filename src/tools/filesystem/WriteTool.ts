@@ -94,11 +94,38 @@ export class WriteTool extends BaseFileSystemTool {
     );
     const originalContent = params.content;
 
+    // Auto-initialize CommonJS infrastructure if needed
+    const fileType = params.fileType || this.determineFileType(filename, originalContent);
+    if (!localOnly && shouldWrapContent(fileType, filename)) {
+      try {
+        const accessToken = await this.getAuthToken(params);
+        const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        const hasCommonJS = existingFiles.some((f: any) => f.name === 'common-js/require');
+
+        if (!hasCommonJS) {
+          console.error(`🔧 [AUTO-INIT] CommonJS not found in project ${scriptId}, initializing...`);
+          const { ProjectInitTool } = await import('../deployments.js');
+          const initTool = new ProjectInitTool(this.sessionAuthManager);
+          await initTool.execute({
+            scriptId,
+            includeCommonJS: true,
+            includeExecutionInfrastructure: false,
+            updateManifest: false,
+            force: false,
+            accessToken
+          });
+          console.error(`✅ [AUTO-INIT] CommonJS infrastructure initialized successfully`);
+        }
+      } catch (initError: any) {
+        console.error(`⚠️ [AUTO-INIT] Failed to auto-initialize CommonJS: ${initError.message}`);
+        // Continue with write operation even if initialization fails
+      }
+    }
+
     // CommonJS integration - process content for module system
     let processedContent = originalContent;
     let commonJsProcessing: any = {};
     let preservationDebug: any = null;
-    const fileType = params.fileType || this.determineFileType(filename, originalContent);
 
     if (shouldWrapContent(fileType, filename)) {
       const commonJsAnalysis = analyzeCommonJsUsage(originalContent);
@@ -170,7 +197,7 @@ export class WriteTool extends BaseFileSystemTool {
           userModuleExports: commonJsAnalysis.moduleExports,
           userExportsUsage: commonJsAnalysis.exportsUsage
         },
-        systemNote: 'require(), module, and exports are provided by the CommonJS module system (see CommonJS.js)',
+        systemNote: 'require(), module, and exports are provided by the CommonJS module system (see require.js)',
         moduleOptionsDebug: {
           paramsModuleOptions: params.moduleOptions,
           paramsModuleOptionsType: typeof params.moduleOptions,
