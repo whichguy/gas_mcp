@@ -169,7 +169,7 @@ export class SchemaFragments {
         type: 'string' as const
       },
       examples: [
-        ['*/test/*', '*/CommonJS'],
+        ['*/test/*', 'common-js/require'],
         ['scriptId/dist/*', 'scriptId/node_modules/*']
       ]
     }
@@ -343,6 +343,24 @@ export class SchemaFragments {
         'new Date().toISOString()',
         'DriveApp.getRootFolder().getName()',
         'require("Calculator").add(5, 3)'
+      ]
+    }
+  };
+
+  /**
+   * Module name parameter for CommonJS module execution
+   * Used in exec_api tool for calling module functions
+   */
+  static readonly moduleName = {
+    moduleName: {
+      type: 'string' as const,
+      description: 'Optional CommonJS module name. If provided, calls require(moduleName)[functionName](parameters). Supports paths like "Utils", "models/User", "api/client".',
+      minLength: 1,
+      examples: [
+        'Utils',
+        'Calculator',
+        'models/User',
+        'api/client'
       ]
     }
   };

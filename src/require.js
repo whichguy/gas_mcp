@@ -694,7 +694,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
-              fullPath !== 'CommonJS') {
+              fullPath !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fullPath}"`);
             return fullPath;
           }
@@ -708,7 +708,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
-              fullPath !== 'CommonJS') {
+              fullPath !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fullPath}"`);
             return fullPath;
           }
@@ -722,7 +722,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fileName !== 'eval' &&
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
-              fileName !== 'CommonJS') {
+              fileName !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
@@ -736,7 +736,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fileName !== 'eval' &&
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
-              fileName !== 'CommonJS') {
+              fileName !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
@@ -750,7 +750,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fileName !== 'eval' &&
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
-              fileName !== 'CommonJS') {
+              fileName !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
@@ -764,7 +764,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fileName !== 'eval' &&
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
-              fileName !== 'CommonJS') {
+              fileName !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
@@ -778,7 +778,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fileName !== 'eval' &&
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
-              fileName !== 'CommonJS') {
+              fileName !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
@@ -792,7 +792,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fileName !== 'eval' &&
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
-              fileName !== 'CommonJS') {
+              fileName !== 'common-js/require') {
             Logger.log(`[OK] Module detected: "${fileName}"`);
             return fileName;
           }
@@ -851,7 +851,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
-              fullPath !== 'CommonJS') {
+              fullPath !== 'common-js/require') {
             return modules[fullPath] || __createModule__(fullPath);
           }
         }
@@ -867,7 +867,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fullPath !== 'eval' &&
               fullPath !== 'anonymous' &&
               (fullPath === '__mcp_exec' || !fullPath.startsWith('__')) &&
-              fullPath !== 'CommonJS') {
+              fullPath !== 'common-js/require') {
             return modules[fullPath] || __createModule__(fullPath);
           }
         }
@@ -880,7 +880,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
               fileName !== 'eval' &&
               fileName !== 'anonymous' &&
               !fileName.startsWith('__') &&
-              fileName !== 'CommonJS') {
+              fileName !== 'common-js/require') {
             return modules[fileName] || __createModule__(fileName);
           }
         }
@@ -924,7 +924,7 @@ function __defineModule__(moduleFactory, explicitName, options) {
       __defineModule__: __defineModule__,
       __getCurrentModule__: __getCurrentModule__
     };
-      }, 'CommonJS');
+      }, 'common-js/require');
 
   Logger.log('[INIT] Module system initialized');
 })();

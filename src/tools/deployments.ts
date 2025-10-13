@@ -119,6 +119,7 @@ export function getErrorHtmlTemplate(): string {
   }
 }
 
+
 /**
  * Verify infrastructure file integrity using SHA-1 checksums
  *

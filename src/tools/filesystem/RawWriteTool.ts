@@ -135,7 +135,8 @@ export class RawWriteTool extends BaseFileSystemTool {
       try {
         // Get remote metadata to check sync
         const remoteFiles = await this.gasClient.getProjectMetadata(parsedPath.scriptId, accessToken);
-        await checkSyncOrThrow(localPath, filename, remoteFiles);
+        // Allow write even if file exists remotely but not locally (user intent to write)
+        await checkSyncOrThrow(localPath, filename, remoteFiles, true);
       } catch (syncError: any) {
         // Only throw if it's an actual sync conflict, not "file doesn't exist"
         if (syncError.message && syncError.message.includes('out of sync')) {

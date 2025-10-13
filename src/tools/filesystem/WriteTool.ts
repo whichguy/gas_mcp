@@ -71,9 +71,18 @@ export class WriteTool extends BaseFileSystemTool {
       whenToUse: 'Normal file write with auto CommonJS wrapping. Use edit/aider for small changes (95%+ token savings).',
       alternatives: 'edit: exact text match, aider: fuzzy match, raw_write: no CommonJS processing',
       commonJs: 'Auto-wraps SERVER_JS with require(), module, exports. Never manually add _main() or __defineModule__.',
-      moduleOptions: 'loadNow: true=eager startup, false=lazy on require(). hoistedFunctions: [{name,params}] for Sheets autocomplete.',
+      moduleOptions: {
+        loadNow: 'true=eager startup, false=lazy on require()',
+        eventHandlerPattern: 'If code contains module.exports.__events__, MUST include moduleOptions: { loadNow: true }',
+        troubleshooting: 'Log "[WARN] No X handlers found" means missing loadNow: true',
+        hoistedFunctions: '[{name,params,jsdoc}] for Sheets autocomplete'
+      },
       gitHooks: '.git exists → local write+hooks → remote sync (atomic rollback on failure). No git → remote-first.',
-      examples: ['Basic: {path:"utils",content:"function add(a,b){return a+b}"}', 'Module: {path:"calc",content:"module.exports={add,multiply}"}', 'WebApp: {path:"doGet",content:"...",moduleOptions:{loadNow:true}}']
+      examples: [
+        'Basic: {path:"utils",content:"function add(a,b){return a+b}"}',
+        'Module: {path:"calc",content:"module.exports={add,multiply}"}',
+        'Event: {path:"Menu",content:"module.exports.__events__={onOpen:\\"onOpen\\"}",moduleOptions:{loadNow:true}}'
+      ]
     }
   };
 
@@ -282,7 +291,7 @@ export class WriteTool extends BaseFileSystemTool {
     let results: any = {};
 
     if (!localOnly) {
-      // Mtime-based write-protection check
+      // Mtime-based write-protection check (allow writes to remote files not yet local)
       try {
         const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
         const fullFilename = filename + fileExtension;
@@ -290,7 +299,8 @@ export class WriteTool extends BaseFileSystemTool {
         const localFilePath = join(projectPath, fullFilename);
 
         const remoteFilesWithMeta = await this.gasClient.getProjectMetadata(scriptId, accessToken);
-        await checkSyncOrThrow(localFilePath, filename, remoteFilesWithMeta);
+        // Allow write even if file exists remotely but not locally (user intent to write)
+        await checkSyncOrThrow(localFilePath, filename, remoteFilesWithMeta, true);
       } catch (syncError: any) {
         // Re-throw sync errors (from checkSyncOrThrow)
         if (syncError.message &&
@@ -535,7 +545,8 @@ export class WriteTool extends BaseFileSystemTool {
     if (!localOnly) {
       const accessToken = await this.getAuthToken(params);
       const remoteFiles = await this.gasClient.getProjectMetadata(scriptId, accessToken);
-      await checkSyncOrThrow(filePath, filename, remoteFiles);
+      // Allow write even if file exists remotely but not locally (user intent to write)
+      await checkSyncOrThrow(filePath, filename, remoteFiles, true);
     }
 
     // PHASE 1: Local validation with hooks
