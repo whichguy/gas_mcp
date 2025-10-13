@@ -9,7 +9,7 @@
  * - require() function (globally available - no parameter needed!)
  * - module object for module metadata and exports management
  * - exports object as shorthand for module.exports
- * See CommonJS.js for the underlying implementation details.
+ * See require.js for the underlying implementation details.
  *
  * MODULE SIGNATURE:
  * - NEW (2-param): function _main(module, exports) { ... }
@@ -287,7 +287,7 @@ export function extractDefineModuleOptions(wrappedContent: string): ModuleOption
 
 /**
  * Detects and cleans accidentally included CommonJS wrappers from user content.
- * The CommonJS system (see CommonJS.js) automatically provides require(), module, and exports
+ * The CommonJS system (see require.js) automatically provides require(), module, and exports
  * to all user code, so manual wrappers are redundant and can cause conflicts.
  * 
  * @param content - User provided content that may contain accidental wrappers
@@ -627,10 +627,12 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
     }
     
     // Don't wrap special system files
-    const specialFiles = ['appsscript', 'CommonJS', '__mcp_exec'];
-    const baseFileName = fileName.split('/').pop()?.split('.')[0] || '';
-    
-    return !specialFiles.includes(baseFileName);
+    const specialFiles = ['appsscript', 'common-js/require', 'common-js/__mcp_exec'];
+
+    // For paths with pseudo-directories, use full path; otherwise use base filename
+    const fileIdentifier = fileName.includes('/') ? fileName.split('.')[0] : fileName.split('/').pop()?.split('.')[0] || '';
+
+    return !specialFiles.includes(fileIdentifier);
 }
 
 /**

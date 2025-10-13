@@ -95,7 +95,7 @@ export class GasDependencyAnalyzer {
   }
   
   private static getModuleType(fileName: string): 'internal' | 'external' | 'system' {
-    if (fileName === 'CommonJS' || fileName === '__mcp_exec' || fileName === 'appsscript') {
+    if (fileName === 'common-js/require' || fileName === 'common-js/__mcp_exec' || fileName === 'appsscript') {
       return 'system';
     }
     
