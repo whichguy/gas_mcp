@@ -219,26 +219,34 @@ export function parsePath(path: string): ParsedPath {
   const lastPart = parts[parts.length - 1];
   const filename = parts.slice(1).join('/');
   const directory = parts.length > 2 ? parts.slice(1, -1).join('/') : undefined;
-  
+
   // Validate filename length (GAS has file size limits)
   if (filename.length > 100) {
     throw new ValidationError('filename', filename, 'filename under 100 characters');
   }
 
   // Determine if this looks like a file or directory
+  //
+  // IMPORTANT: GAS has NO real directories - all "directories" are just filename prefixes.
+  // However, for backward compatibility with tools that list "directories", we need to
+  // distinguish between:
+  //   - File paths: scriptId/common-js/require, scriptId/models/User.gs
+  //   - Directory-like paths: scriptId/models, scriptId/utils (for listing operations)
+  //
   // Consider it a file if:
   // 1. It has a known extension (.gs, .ts, .html, .json)
   // 2. It has any extension (contains a dot)
   // 3. It looks like a code file (starts with uppercase or contains camelCase)
   // 4. It's a special Google Apps Script file (appsscript manifest or Code)
-  // Default to directory if none of the above match (e.g., "models", "utils", "src")
+  // 5. The path contains a "/" in the filename part (e.g., common-js/require)
+  //    This indicates a file with a directory-like prefix, not a directory listing
   const hasKnownExtension = /\.(gs|ts|html|json)$/i.test(lastPart);
   const hasAnyExtension = lastPart.includes('.');
   const looksLikeCodeFile = /^[A-Z]/.test(lastPart) || /[a-z][A-Z]/.test(lastPart);
   const isSpecialGASFile = lastPart === 'appsscript' || lastPart === 'Code';
+  const hasDirectoryPrefix = filename.includes('/');  // NEW: Files like "common-js/require"
 
-  // ✅ FIXED: Default to directory for simple lowercase names like "models", "utils", "src"
-  const isFile = hasKnownExtension || hasAnyExtension || looksLikeCodeFile || isSpecialGASFile;
+  const isFile = hasKnownExtension || hasAnyExtension || looksLikeCodeFile || isSpecialGASFile || hasDirectoryPrefix;
 
   if (isFile) {
     return {

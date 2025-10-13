@@ -109,7 +109,7 @@ export class WriteTool extends BaseFileSystemTool {
       try {
         const accessToken = await this.getAuthToken(params);
         const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-        const hasCommonJS = existingFiles.some((f: any) => f.name === 'common-js/require');
+        const hasCommonJS = existingFiles.some((f: any) => f.name === 'common-js/require.gs');
 
         if (!hasCommonJS) {
           console.error(`🔧 [AUTO-INIT] CommonJS not found in project ${scriptId}, initializing...`);
@@ -291,6 +291,14 @@ export class WriteTool extends BaseFileSystemTool {
     let results: any = {};
 
     if (!localOnly) {
+      // Auto-pull remote file if it exists remotely but not locally
+      try {
+        await this.pullRemoteFileIfNeeded(projectName, filename, remoteFiles, workingDir);
+      } catch (pullError: any) {
+        console.error(`⚠️ [AUTO-PULL] Failed to pull remote file: ${pullError.message}`);
+        // Continue with operation - checkSyncOrThrow will handle sync validation
+      }
+
       // Mtime-based write-protection check (allow writes to remote files not yet local)
       try {
         const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
@@ -544,6 +552,16 @@ export class WriteTool extends BaseFileSystemTool {
     // PHASE 0: Verify sync with remote (before local write)
     if (!localOnly) {
       const accessToken = await this.getAuthToken(params);
+
+      // Auto-pull remote file if it exists remotely but not locally
+      try {
+        const remoteFilesWithContent = await this.gasClient.getProjectContent(scriptId, accessToken);
+        await this.pullRemoteFileIfNeeded(projectName, filename, remoteFilesWithContent, workingDir);
+      } catch (pullError: any) {
+        console.error(`⚠️ [AUTO-PULL] Failed to pull remote file: ${pullError.message}`);
+        // Continue with operation - checkSyncOrThrow will handle sync validation
+      }
+
       const remoteFiles = await this.gasClient.getProjectMetadata(scriptId, accessToken);
       // Allow write even if file exists remotely but not locally (user intent to write)
       await checkSyncOrThrow(filePath, filename, remoteFiles, true);
@@ -709,5 +727,54 @@ export class WriteTool extends BaseFileSystemTool {
     } else {
       return 'SERVER_JS';
     }
+  }
+
+  /**
+   * Pull a specific remote file to local if it exists remotely but not locally
+   * This prevents data loss by ensuring remote content is visible before overwriting
+   *
+   * @returns true if file was pulled, false if no pull was needed
+   */
+  private async pullRemoteFileIfNeeded(
+    projectName: string,
+    filename: string,
+    remoteFiles: any[],
+    workingDir: string
+  ): Promise<boolean> {
+    const { LocalFileManager } = await import('../../utils/localFileManager.js');
+
+    // Check if file exists in remote
+    const remoteFile = remoteFiles.find((f: any) => f.name === filename);
+    if (!remoteFile) {
+      return false; // File doesn't exist remotely, nothing to pull
+    }
+
+    // Check if file exists locally
+    const localContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
+    if (localContent !== null) {
+      return false; // File already exists locally, no pull needed
+    }
+
+    // File exists remotely but not locally - pull it
+    console.error(`📥 [AUTO-PULL] Pulling remote file before write: ${filename}`);
+
+    await LocalFileManager.copyRemoteToLocal(
+      projectName,
+      [remoteFile], // Pull only this specific file
+      workingDir
+    );
+
+    // Set mtime to match remote for proper sync tracking
+    const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+    const fullFilename = filename + fileExtension;
+    const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+    const localFilePath = join(projectPath, fullFilename);
+
+    if (remoteFile.updateTime) {
+      await setFileMtimeToRemote(localFilePath, remoteFile.updateTime, remoteFile.type);
+    }
+
+    console.error(`✅ [AUTO-PULL] Successfully pulled ${filename} to local cache`);
+    return true;
   }
 }

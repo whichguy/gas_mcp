@@ -395,7 +395,7 @@ function htmlAuthSuccessResponse(executionResult) {
 
   try {
     // Load HTML template
-    const template = HtmlService.createTemplateFromFile('__mcp_exec_success');
+    const template = HtmlService.createTemplateFromFile('common-js/__mcp_exec_success');
     template.projectName = projectName;
     template.deploymentUrl = deploymentUrl;
     template.scriptId = scriptId;
@@ -551,7 +551,7 @@ function htmlAuthErrorResponse(errorData) {
 
   try {
     // Load HTML template
-    const template = HtmlService.createTemplateFromFile('__mcp_exec_error');
+    const template = HtmlService.createTemplateFromFile('common-js/__mcp_exec_error');
     template.projectName = projectName;
     template.scriptId = scriptId;
     template.errorMessage = errorData.error || 'Unknown error';
