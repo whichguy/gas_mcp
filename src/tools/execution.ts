@@ -7,6 +7,7 @@ import { GASFile } from '../api/gasClient.js';
 import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
 import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './deployments.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { buildFunctionCall } from '../utils/parameterSerializer.js';
 import open from 'open';
 
 // Import extracted utilities
@@ -20,294 +21,122 @@ import { setupInfrastructure } from './execution/infrastructure/setup-manager.js
 import { performDomainAuth } from './execution/auth/domain-auth.js';
 
 /**
- * Execute functions in Google Apps Script projects via API executable
- * 
- * Requirements:
- * - Script project must be deployed for API use
- * - Must have script.scriptapp OAuth scope (or function-specific scopes)
- * - Cloud Platform project must match between calling app and script
+ * Execute functions in Google Apps Script projects - delegates to exec with function call syntax
+ *
+ * This tool provides a function-centric API that transforms function calls into JavaScript statements
+ * and delegates to the exec tool for actual execution. This provides:
+ * - Unified execution path (everything uses exec's web app infrastructure)
+ * - No need for separate API executable deployment
+ * - Access to all exec features (logFilter, logTail, timeouts, environment selection)
+ * - Simpler architecture with single execution implementation
  */
 export class ExecApiTool extends BaseTool {
   public name = 'exec_api';
-  public description = 'Execute a function in a Google Apps Script project via API executable. CRITICAL: Functions must be deployed as API executable before execution. Use version_create → deploy_create → exec_api_exec workflow for new/modified functions.';
-  
+  public description = 'Execute a function in a Google Apps Script project. Supports direct function calls or CommonJS module functions via moduleName parameter. Transforms calls into JavaScript and delegates to exec for execution.';
+
   public inputSchema = {
     type: 'object',
     properties: {
       ...SchemaFragments.scriptId,
+      environment: {
+        type: 'string',
+        enum: ['dev', 'staging', 'prod'],
+        description: 'Execution environment (default: dev). dev=HEAD (latest), staging=snapshot, prod=stable.',
+        default: 'dev'
+      },
+      ...SchemaFragments.moduleName,
       functionName: {
         type: 'string',
         description: 'Name of the function to execute'
       },
       parameters: {
         type: 'array',
-        items: {
-          type: 'object'
-        },
-        description: 'Array of parameters to pass to the function. Must be primitive types (string, number, boolean, array, object). Cannot be Apps Script-specific objects. (optional)',
+        description: 'Array of parameters to pass to the function. Supports primitives (string, number, boolean), arrays, and plain objects. (optional)',
         default: []
       },
-      devMode: {
+      autoRedeploy: {
         type: 'boolean',
-        description: 'Run in development mode (default: true)',
+        description: 'Auto-deploy setup. true (default)=create as needed, false=use existing. Set false for speed on pre-configured projects.',
         default: true
+      },
+      executionTimeout: {
+        type: 'number',
+        description: 'Max execution timeout in seconds (default: 780=13min, max: 3600=1hr). Increase for long-running ops.',
+        default: 780,
+        minimum: 780,
+        maximum: 3600
+      },
+      responseTimeout: {
+        type: 'number',
+        description: 'Max response timeout in seconds (default: 780=13min, max: 3600=1hr). Increase for large payloads.',
+        default: 780,
+        minimum: 780,
+        maximum: 3600
+      },
+      logFilter: {
+        type: 'string',
+        description: 'Optional regex to filter logger_output lines (ripgrep-style). Only matching lines included. Unspecified=all output.',
+        examples: [
+          'ERROR|WARN',
+          '^\\[.*\\]',
+          'TODO|FIXME',
+          'result.*:',
+        ]
+      },
+      logTail: {
+        type: 'number',
+        description: 'Optional: Return last N lines of logger_output. Useful for overwhelming logs. Applied after logFilter.',
+        minimum: 1,
+        maximum: 10000,
+        examples: [10, 50, 100]
       },
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'functionName']
   };
 
-  private gasClient: GASClient;
+  private execTool: ExecTool;
 
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);
-    this.gasClient = new GASClient();
-  }
-
-  /**
-   * Try to get auth token without throwing errors (optimistic approach)
-   */
-  private async tryGetAuthToken(): Promise<string | null> {
-    try {
-      return await this.getAuthToken({});
-    } catch (error: any) {
-      // Return null if authentication fails, so we can try without auth first
-      return null;
-    }
+    this.execTool = new ExecTool(sessionAuthManager);
   }
 
   async execute(params: any): Promise<any> {
-    // Optimistic approach: validate inputs first, then try without authentication
-    const scriptId = this.validate.scriptId(params.scriptId, 'API function execution');
-    const functionName = this.validate.functionName(params.functionName, 'API function execution');
+    // Validate inputs
+    const scriptId = this.validate.scriptId(params.scriptId, 'function execution');
+    const moduleName = params.moduleName ? this.validate.string(params.moduleName, 'module name') : undefined;
+    const functionName = this.validate.functionName(params.functionName, 'function execution');
     const parameters = params.parameters || [];
-    const devMode = params.devMode !== false; // Default to true
 
     // Validate parameters is an array
     if (!Array.isArray(parameters)) {
       throw new ValidationError('parameters', parameters, 'array of function parameters');
     }
 
-    // Try operation first with provided access token (if any) or session auth
-    let accessToken: string | null = null;
-    
-    try {
-      // First try: Use provided token or attempt to get from session (optimistic)
-      accessToken = params.accessToken || await this.tryGetAuthToken();
-      
-      if (!accessToken) {
-        throw new AuthenticationError(
-          `Authentication required for exec_api_exec operation. Use auth(mode="start") to authenticate and retry.`
-        );
-      }
-      console.error(`Executing function: ${functionName} in script: ${scriptId}`);
-      console.error(`📋 Parameters: ${JSON.stringify(parameters)}`);
-      console.error(`Dev mode: ${devMode}`);
+    // Build JavaScript statement from function call
+    const js_statement = buildFunctionCall(functionName, parameters, moduleName);
 
-      const result = await this.gasClient.executeFunction(scriptId, functionName, parameters, accessToken);
+    console.error(`[EXEC_API] Transforming function call to JavaScript:`);
+    console.error(`  Module: ${moduleName || '(direct call)'}`);
+    console.error(`  Function: ${functionName}`);
+    console.error(`  Parameters: ${JSON.stringify(parameters)}`);
+    console.error(`  JS Statement: ${js_statement}`);
 
-      if (result.error) {
-        console.error(`Function execution failed:`, result.error);
-        
-        return {
-          status: 'error',
-          scriptId,
-          functionName,
-          parameters,
-          error: {
-            type: result.error.type,
-            message: result.error.message,
-            stackTrace: result.error.scriptStackTraceElements || []
-          },
-          executedAt: new Date().toISOString()
-        };
-      }
+    // Delegate to exec with transformed parameters
+    const execParams = {
+      scriptId,
+      js_statement,
+      environment: params.environment || 'dev',
+      autoRedeploy: params.autoRedeploy !== false,
+      executionTimeout: params.executionTimeout,
+      responseTimeout: params.responseTimeout,
+      logFilter: params.logFilter,
+      logTail: params.logTail,
+      accessToken: params.accessToken
+    };
 
-      console.error(`Function executed successfully`);
-      console.error(`📤 Result:`, result.result);
-
-      return {
-        status: 'success',
-        scriptId,
-        functionName,
-        parameters,
-        result: result.result,
-        executedAt: new Date().toISOString(),
-        sessionId: this.sessionAuthManager?.getSessionId(),
-        apiInfo: {
-          apiVersion: 'v1',
-          executionTime: 'See Apps Script quotas for maximum execution time',
-          resultType: typeof result.result
-        }
-      };
-
-    } catch (error: any) {
-      console.error(`💥 Execution error:`, error);
-      
-      // Check for authentication errors (401/403)
-      const authStatusCode = error.statusCode || error.response?.status || error.data?.statusCode;
-      
-      if (authStatusCode === 401 || authStatusCode === 403) {
-        // Include detailed HTTP response information in the error
-        const httpDetails = {
-          statusCode: authStatusCode,
-          statusText: error.response?.statusText || (authStatusCode === 401 ? 'Unauthorized' : 'Forbidden'),
-          url: error.response?.url || 'Unknown URL',
-          headers: error.response?.headers ? Object.fromEntries(error.response.headers.entries()) : {},
-          responseBody: error.response?.text || error.message
-        };
-
-        const authError = new AuthenticationError(
-          `Authentication required for exec_api_exec operation (HTTP ${authStatusCode}). Use auth(mode="start") to authenticate and retry.`
-        );
-        
-        // Add HTTP response details to error data
-        authError.data = {
-          ...authError.data,
-          statusCode: authStatusCode,
-          operation: 'exec_api_exec',
-          scriptId,
-          httpResponse: httpDetails,
-          instructions: [
-            'Use auth with mode="start" to begin authentication',
-            'Complete the OAuth flow in your browser',
-            'Then retry your exec_api_exec request'
-          ],
-          command: 'auth({"mode": "start"})',
-          statusCheck: 'auth({"mode": "status"})'
-        };
-        
-        throw authError;
-      }
-      
-      // Log detailed error information for debugging
-      console.error(`Error details:`, {
-        name: error.name,
-        message: error.message,
-        errorData: error.data,
-        responseStatus: error.response?.status,
-        errorCode: error.code,
-        isGASApiError: error instanceof GASApiError
-      });
-      
-      // Handle specific Google Apps Script API errors with detailed guidance
-      if (error instanceof GASApiError) {
-        const statusCode = (error.data as any)?.statusCode;
-        let helpMessage = '';
-        let setupInstructions: string[] = [];
-
-        // Provide specific guidance based on error codes from API documentation
-        if (statusCode === 404) {
-          helpMessage = 'Function not found - likely not deployed as API executable or function name incorrect';
-          setupInstructions = [
-            'REQUIRED: Deploy your functions before execution',
-            '1. Create version: version_create(scriptId="your-project", description="Latest changes")',
-            '2. Deploy API: deploy_create(scriptId="your-project", description="API deployment")',
-            '3. Then retry: exec_api_exec(scriptId="your-project", functionName="yourFunction")',
-            '',
-            'Alternative: Manual deployment via Google Apps Script editor:',
-            '• Open https://script.google.com → your project',
-            '• Click "Deploy" → "New deployment"',
-            '• Choose type "API executable"',
-            '• Deploy and use deployment ID as scriptId'
-          ];
-        } else if (statusCode === 403) {
-          helpMessage = 'Permission denied - Cloud Platform project mismatch or insufficient scopes';
-          setupInstructions = [
-            '1. Ensure your Google Cloud Project is linked to the Apps Script project',
-            '2. Check that you have sufficient OAuth scopes:',
-            '   - https://www.googleapis.com/auth/script.scriptapp (required)',
-            '   - Additional scopes based on script functionality',
-            '3. Re-authenticate with updated scopes: auth(mode="logout") then auth(mode="start")',
-            '4. Verify the script project is deployed for API use'
-          ];
-        } else if (statusCode === 401) {
-          helpMessage = 'Authentication required or token expired';
-          setupInstructions = [
-            '1. Re-authenticate: auth(mode="logout") then auth(mode="start")',
-            '2. Ensure you have the required OAuth scopes for script execution'
-          ];
-        }
-
-        return {
-          status: 'error',
-          scriptId,
-          functionName,
-          parameters,
-          error: {
-            type: 'GASApiError',
-            message: error.message,
-            statusCode,
-            helpMessage,
-            setupInstructions
-          },
-          troubleshooting: {
-            deploymentWorkflow: [
-              '1. write(path="project/file.gs", content="function myFunc() {...}")',
-              '2. version_create(scriptId="project", description="Added myFunc")',
-              '3. deploy_create(scriptId="project", description="API deployment")',
-              '4. exec_api_exec(scriptId="project", functionName="myFunc")'
-            ],
-            apiRequirements: [
-              'Functions must be deployed as API executable before execution',
-              'New/modified functions require redeployment',
-              'Calling application must share same Cloud Platform project',
-              'Requires script.scriptapp OAuth scope or function-specific scopes'
-            ],
-            deploymentGuide: 'https://developers.google.com/apps-script/api/how-tos/execute',
-            mcpDocumentation: 'See docs/FUNCTION_EXECUTION_DEPLOYMENT.md for complete workflow',
-            scopesGuide: 'Open script Overview page → scroll to "Project OAuth Scopes"'
-          },
-          executedAt: new Date().toISOString(),
-          sessionId: this.sessionAuthManager?.getSessionId()
-        };
-      }
-
-      // Handle other types of errors and extract HTTP status codes
-      const statusCode = error.data?.statusCode || 
-                         error.response?.status || 
-                         error.statusCode ||
-                         error.code || 
-                         500;
-
-      console.error(`Non-GASApiError execution error - HTTP ${statusCode}:`, error.message);
-
-      // Return structured error response for any error type
-      return {
-        status: 'error',
-        scriptId,
-        functionName,
-        parameters,
-        error: {
-          type: error.name || 'ExecutionError',
-          message: error.message,
-          statusCode,
-          helpMessage: `HTTP ${statusCode}: ${error.message || 'Unknown execution error'}`,
-          setupInstructions: [
-            'Unexpected error occurred during function execution',
-            'Check console logs for detailed error information',
-            'Verify function exists and is deployed correctly',
-            'Ensure proper authentication and OAuth scopes'
-          ]
-        },
-        troubleshooting: {
-          deploymentWorkflow: [
-            '1. write(path="project/file.gs", content="function myFunc() {...}")',
-            '2. version_create(scriptId="project", description="Added myFunc")',
-            '3. deploy_create(scriptId="project", description="API deployment")',
-            '4. exec_api_exec(scriptId="project", functionName="myFunc")'
-          ],
-          apiRequirements: [
-            'Functions must be deployed as API executable before execution',
-            'New/modified functions require redeployment',
-            'Calling application must share same Cloud Platform project',
-            'Requires script.scriptapp OAuth scope or function-specific scopes'
-          ]
-        },
-        executedAt: new Date().toISOString(),
-        sessionId: this.sessionAuthManager?.getSessionId()
-      };
-    }
+    return await this.execTool.execute(execParams);
   }
 }
 

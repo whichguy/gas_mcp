@@ -90,14 +90,15 @@ export function findRemoteFile(files: GASFile[], filename: string): GASFile | un
  *
  * Sync Rules:
  * 1. File doesn't exist in GAS → Allow (new file creation)
- * 2. File exists in GAS but not locally → Error (must cat first to download)
+ * 2. File exists in GAS but not locally → Allow if allowNewLocalFile=true (intentional write)
  * 3. File exists in both + dates match → Allow (in sync)
  * 4. File exists in both + dates mismatch → Error (must cat first to sync)
  */
 export async function checkSyncOrThrow(
   localPath: string,
   filename: string,
-  remoteFiles: GASFile[]
+  remoteFiles: GASFile[],
+  allowNewLocalFile: boolean = false
 ): Promise<void> {
   const remoteFile = findRemoteFile(remoteFiles, filename);
 
@@ -121,7 +122,7 @@ export async function checkSyncOrThrow(
     const inSync = await isFileInSyncWithCache(localPath, updateTime);
 
     if (!inSync) {
-      // Rule 4: Dates mismatch - must sync first
+      // Rule 4: Dates mismatch - must sync first (strict enforcement)
       throw new Error(
         `File out of sync: ${filename}\n` +
         `Local and remote versions differ. Run cat to sync before writing.\n` +
@@ -136,6 +137,11 @@ export async function checkSyncOrThrow(
     // Check if it's a file-not-found error
     if (error.code === 'ENOENT') {
       // Rule 2: File exists in GAS but not locally
+      if (allowNewLocalFile) {
+        // Allow write - user explicitly provided content for remote file
+        return;
+      }
+
       throw new Error(
         `File exists in GAS but not locally: ${filename}\n` +
         `Run cat to download before writing.\n` +

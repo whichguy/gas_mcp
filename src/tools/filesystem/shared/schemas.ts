@@ -22,13 +22,13 @@ export const FILE_TYPE_SCHEMA = {
 
 export const MODULE_OPTIONS_SCHEMA = {
   type: 'object',
-  description: 'CommonJS module config: loadNow (eager/lazy loading), hoistedFunctions (Sheets autocomplete). Omit to preserve existing (~200ms overhead).',
+  description: 'CommonJS module configuration. ⚠️ CRITICAL: Event handlers require loadNow: true. Omit to preserve existing (~200ms overhead).',
   nullable: true,
   additionalProperties: true,
   properties: {
     loadNow: {
       type: 'boolean',
-      description: 'true=execute at startup (doGet/doPost/triggers), false=lazy on first require() (utils/libs). Omit=preserve existing.',
+      description: 'Module loading strategy:\n  • true: Execute at script startup (REQUIRED for event handlers: doGet, doPost, onOpen, onEdit, and __events__ registration)\n  • false: Execute on first require() call (for utility modules)\n  • omit: Preserve existing setting (~200ms API overhead)\n\n⚠️ Common error: Event handlers fail silently without loadNow: true',
       examples: [true, false]
     },
     hoistedFunctions: {
