@@ -576,6 +576,16 @@
       "scriptId": "1MBS-3_GBNE_xy6kFSEm-lXukd8vabA9RL64s8-vR2eHyzbA0BF4ZiiKh",
       "name": "claude-api-client-library",
       "description": "Created: 10/12/2025"
+    },
+    "claude-api-client": {
+      "scriptId": "1ZBRZi2C6D5cnw5mCJCeel83-_LauFIqoVPGnzfhPu8UTybjtUUd3gO_I",
+      "name": "claude-api-client",
+      "description": "Created: 10/12/2025"
+    },
+    "claude-chat-for-google-sheets": {
+      "scriptId": "1DBaQGbTbSmLu0_LQEDXX507Mg2JlFo4qOtF75UQOxqNF5Hfbx7_ijCit",
+      "name": "claude-chat-for-google-sheets",
+      "description": "Created: 10/12/2025"
     }
   },
   "localRoot": {
@@ -585,7 +595,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-12T17:16:10.613Z"
+    "lastModified": "2025-10-13T04:07:19.752Z"
   },
   "debug": true,
   "currentProject": {
