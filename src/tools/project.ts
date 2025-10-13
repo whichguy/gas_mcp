@@ -39,14 +39,14 @@ export class ReorderTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    
+
     const scriptId = this.validate.scriptId(params.scriptId, 'project operation');
     const fileName = this.validate.string(params.fileName, 'fileName', 'project operation');
     const newPosition = this.validate.number(params.newPosition, 'newPosition', 'project operation', 0);
 
     // Get current files
     const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-    
+
     // Find the target file
     const targetFile = files.find((f: any) => f.name === fileName);
     if (!targetFile) {
@@ -58,9 +58,31 @@ export class ReorderTool extends BaseTool {
       throw new ValidationError('newPosition', newPosition, `position between 0 and ${files.length - 1}`);
     }
 
+    // Get current position of the file being moved
+    const currentIndex = files.findIndex((f: any) => f.name === fileName);
+
+    // CRITICAL: Prevent moving common-js/require.gs away from position 0
+    // Only allow moving it TO position 0 if it's currently out of place
+    if (fileName === 'common-js/require.gs') {
+      if (currentIndex === 0 && newPosition !== 0) {
+        throw new ValidationError(
+          'newPosition',
+          newPosition,
+          'common-js/require.gs must always remain at position 0 (first file). It cannot be moved to any other position.'
+        );
+      }
+      // Allow moving it back to position 0 if it's currently elsewhere
+      if (currentIndex !== 0 && newPosition !== 0) {
+        throw new ValidationError(
+          'newPosition',
+          newPosition,
+          'common-js/require.gs can only be moved to position 0. To fix file order, set newPosition to 0.'
+        );
+      }
+    }
+
     // Create new file order
     const reorderedFiles = [...files];
-    const currentIndex = reorderedFiles.findIndex((f: any) => f.name === fileName);
 
     // Remove file from current position
     const [movedFile] = reorderedFiles.splice(currentIndex, 1);

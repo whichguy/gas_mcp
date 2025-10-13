@@ -1184,8 +1184,8 @@ export class ProjectCreateTool extends BaseTool {
  */
 export class ProjectInitTool extends BaseTool {
   public name = 'project_init';
-  public description = 'Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with project_create or are missing required infrastructure files.';
-  
+  public description = 'Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with project_create or are missing required infrastructure files. Automatically enforces critical file ordering: require.gs at position 0, __mcp_exec.gs at position 1.';
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -1232,7 +1232,8 @@ export class ProjectInitTool extends BaseTool {
     llmGuidance: {
       whenToUse: 'Retrofit existing projects | exec fails with __defineModule__ error | missing infrastructure',
       verification: 'Git SHA-1 checksums | force=false: warn only | force=true: auto-repair mismatches',
-      workflow: 'project_init({scriptId}) → verify infrastructure → exec test'
+      workflow: 'project_init({scriptId}) → verify infrastructure → exec test',
+      fileOrdering: 'Automatically enforces: require.gs at position 0 (MUST execute first), __mcp_exec.gs at position 1 (MUST execute second). Reorder tool prevents manual changes that break this ordering.'
     }
   };
 
@@ -1329,6 +1330,10 @@ export class ProjectInitTool extends BaseTool {
           result.errors.push(manifestResult.error);
         }
       }
+
+      // Enforce file ordering: require.gs MUST be at position 0, __mcp_exec.gs at position 1
+      console.error(`🔧 [GAS_PROJECT_INIT] Enforcing file order: require.gs at position 0, __mcp_exec.gs at position 1...`);
+      await this.enforceFileOrdering(scriptId, accessToken);
 
       // Determine overall status
       if (result.errors.length > 0) {
@@ -1632,15 +1637,15 @@ export class ProjectInitTool extends BaseTool {
     const errors = result.errors.length;
 
     let message = `Project initialization ${result.status}`;
-    
+
     if (installed > 0) {
       message += ` - installed ${installed} file(s): ${result.filesInstalled.join(', ')}`;
     }
-    
+
     if (skipped > 0) {
       message += ` - skipped ${skipped} existing file(s): ${result.filesSkipped.join(', ')}`;
     }
-    
+
     if (errors > 0) {
       message += ` - ${errors} error(s) occurred`;
     }
@@ -1654,6 +1659,49 @@ export class ProjectInitTool extends BaseTool {
     }
 
     return message;
+  }
+
+  /**
+   * Enforce critical file ordering after installation
+   * Ensures common-js/require.gs is always at position 0
+   * Ensures common-js/__mcp_exec.gs is always at position 1
+   */
+  private async enforceFileOrdering(scriptId: string, accessToken?: string): Promise<void> {
+    try {
+      // Get current files
+      const files = await this.gasClient.getProjectContent(scriptId, accessToken);
+
+      // Find infrastructure files
+      const requireIndex = files.findIndex((f: any) => f.name === 'common-js/require.gs');
+      const execIndex = files.findIndex((f: any) => f.name === 'common-js/__mcp_exec.gs');
+
+      // Check if reordering is needed
+      if ((requireIndex !== -1 && requireIndex !== 0) || (execIndex !== -1 && execIndex !== 1)) {
+        const reorderedFiles = [...files];
+
+        // Move require.gs to position 0
+        if (requireIndex !== -1 && requireIndex !== 0) {
+          const [requireFile] = reorderedFiles.splice(requireIndex, 1);
+          reorderedFiles.unshift(requireFile);
+        }
+
+        // Move __mcp_exec.gs to position 1
+        const updatedExecIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec.gs');
+        if (updatedExecIndex !== -1 && updatedExecIndex !== 1) {
+          const [execFile] = reorderedFiles.splice(updatedExecIndex, 1);
+          reorderedFiles.splice(1, 0, execFile);
+        }
+
+        // Update project with new order
+        await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
+        console.error(`✅ [GAS_PROJECT_INIT] File order enforced: require.gs at position 0, __mcp_exec.gs at position 1`);
+      } else {
+        console.error(`✅ [GAS_PROJECT_INIT] File order already correct`);
+      }
+    } catch (error: any) {
+      console.error(`⚠️ [GAS_PROJECT_INIT] Failed to enforce file ordering: ${error.message}`);
+      // Don't throw - this is a best-effort operation
+    }
   }
 }
 
