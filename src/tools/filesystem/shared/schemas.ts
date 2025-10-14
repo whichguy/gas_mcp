@@ -88,3 +88,9 @@ export const CONTENT_SCHEMA = {
     toolChoice: 'write: new/large changes | edit: exact text (~10 tok) | aider: fuzzy (~10 tok) | 95%+ savings for small edits'
   }
 } as const;
+
+export const FORCE_SCHEMA = {
+  type: 'boolean',
+  description: '⚠️ Force write even if local and remote are out of sync (WARNING: may overwrite remote changes)',
+  default: false
+} as const;

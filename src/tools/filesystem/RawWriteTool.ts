@@ -48,6 +48,11 @@ export class RawWriteTool extends BaseFileSystemTool {
         ...FILE_TYPE_SCHEMA,
         description: 'File type for Google Apps Script. REQUIRED: Must be explicitly specified.'
       },
+      skipSyncCheck: {
+        type: 'boolean',
+        description: 'Skip sync validation check (use with caution - for internal tools like project_init with force=true)',
+        default: false
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -124,25 +129,27 @@ export class RawWriteTool extends BaseFileSystemTool {
     // After validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
-    // ✅ NEW: Write-protection - check sync before writing
-    const { LocalFileManager } = await import('../../utils/localFileManager.js');
-    const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+    // ✅ NEW: Write-protection - check sync before writing (unless skipSyncCheck is true)
+    if (!params.skipSyncCheck) {
+      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+      const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
 
-    if (localRoot) {
-      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-      const localPath = join(localRoot, filename + fileExtension);
+      if (localRoot) {
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+        const localPath = join(localRoot, filename + fileExtension);
 
-      try {
-        // Get remote metadata to check sync
-        const remoteFiles = await this.gasClient.getProjectMetadata(parsedPath.scriptId, accessToken);
-        // Allow write even if file exists remotely but not locally (user intent to write)
-        await checkSyncOrThrow(localPath, filename, remoteFiles, true);
-      } catch (syncError: any) {
-        // Only throw if it's an actual sync conflict, not "file doesn't exist"
-        if (syncError.message && syncError.message.includes('out of sync')) {
-          throw syncError;
+        try {
+          // Get remote metadata to check sync
+          const remoteFiles = await this.gasClient.getProjectMetadata(parsedPath.scriptId, accessToken);
+          // Allow write even if file exists remotely but not locally (user intent to write)
+          await checkSyncOrThrow(localPath, filename, remoteFiles, true);
+        } catch (syncError: any) {
+          // Only throw if it's an actual sync conflict, not "file doesn't exist"
+          if (syncError.message && syncError.message.includes('out of sync')) {
+            throw syncError;
+          }
+          // File doesn't exist locally or remotely - that's fine for raw_write
         }
-        // File doesn't exist locally or remotely - that's fine for raw_write
       }
     }
 

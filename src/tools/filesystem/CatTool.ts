@@ -215,21 +215,47 @@ export class CatTool extends BaseFileSystemTool {
       throw new ValidationError('filename', filename, 'existing file in the project');
     }
 
-    // Check if local file needs sync
-    if (preferLocal && remoteFile.updateTime) {
-      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-      const fullFilename = filename + fileExtension;
-      const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
-      const localFilePath = join(projectPath, fullFilename);
+    // Always sync local file to match remote (regardless of preferLocal)
+    // This ensures local cache stays up-to-date for write operations
 
-      const inSync = await isFileInSync(localFilePath, remoteFile.updateTime);
+    // Fetch updateTime - try from content API first, fall back to metadata API
+    let updateTime = remoteFile.updateTime;
 
-      if (!inSync) {
-        const content = remoteFile.source || remoteFile.content || '';
-        await mkdir(dirname(localFilePath), { recursive: true });
-        await writeFile(localFilePath, content, 'utf-8');
-        await setFileMtimeToRemote(localFilePath, remoteFile.updateTime, remoteFile.type);
+    if (!updateTime) {
+      console.error(`⚠️ [SYNC] No updateTime from getProjectContent, fetching from metadata API...`);
+      try {
+        const metadata = await this.gasClient.getProjectMetadata(scriptId, accessToken);
+        const fileMetadata = metadata.find((f: any) => f.name === filename);
+
+        if (fileMetadata?.updateTime) {
+          updateTime = fileMetadata.updateTime;
+          console.error(`✅ [SYNC] Got updateTime from metadata: ${updateTime}`);
+        } else {
+          console.error(`❌ [SYNC] No updateTime in metadata either - using current time as fallback`);
+          updateTime = new Date().toISOString();
+        }
+      } catch (metadataError: any) {
+        console.error(`❌ [SYNC] Failed to fetch metadata: ${metadataError.message}`);
+        updateTime = new Date().toISOString();
       }
+    }
+
+    // Now sync local file with the updateTime we have
+    const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+    const fullFilename = filename + fileExtension;
+    const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+    const localFilePath = join(projectPath, fullFilename);
+
+    const inSync = await isFileInSync(localFilePath, updateTime);
+
+    if (!inSync) {
+      const content = remoteFile.source || remoteFile.content || '';
+      await mkdir(dirname(localFilePath), { recursive: true });
+      await writeFile(localFilePath, content, 'utf-8');
+      await setFileMtimeToRemote(localFilePath, updateTime, remoteFile.type);
+      console.error(`📥 [SYNC] Updated local cache for ${filename} (mtime: ${updateTime})`);
+    } else {
+      console.error(`✅ [SYNC] Local file already in sync with remote (mtime: ${updateTime})`);
     }
 
     let result: any;
