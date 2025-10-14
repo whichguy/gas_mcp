@@ -8,8 +8,8 @@ import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { writeLocalAndValidateWithHooks, revertGitCommit } from '../../utils/hookIntegration.js';
 import { join, dirname } from 'path';
-import { mkdir } from 'fs/promises';
-import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA } from './shared/schemas.js';
+import { mkdir, stat } from 'fs/promises';
+import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA } from './shared/schemas.js';
 import type { WriteParams, WriteResult } from './shared/types.js';
 
 /**
@@ -63,6 +63,9 @@ export class WriteTool extends BaseFileSystemTool {
       },
       moduleOptions: {
         ...MODULE_OPTIONS_SCHEMA
+      },
+      force: {
+        ...FORCE_SCHEMA
       }
     },
     required: ['scriptId', 'path', 'content'],
@@ -78,10 +81,12 @@ export class WriteTool extends BaseFileSystemTool {
         hoistedFunctions: '[{name,params,jsdoc}] for Sheets autocomplete'
       },
       gitHooks: '.git exists → local write+hooks → remote sync (atomic rollback on failure). No git → remote-first.',
+      force: '⚠️ DANGEROUS: Skips sync validation. Use only when intentionally discarding remote changes.',
       examples: [
         'Basic: {path:"utils",content:"function add(a,b){return a+b}"}',
         'Module: {path:"calc",content:"module.exports={add,multiply}"}',
-        'Event: {path:"Menu",content:"module.exports.__events__={onOpen:\\"onOpen\\"}",moduleOptions:{loadNow:true}}'
+        'Event: {path:"Menu",content:"module.exports.__events__={onOpen:\\"onOpen\\"}",moduleOptions:{loadNow:true}}',
+        'Force: {path:"Code",content:"...",force:true}  // ⚠️ Overwrites remote even if out of sync'
       ]
     }
   };
@@ -279,46 +284,30 @@ export class WriteTool extends BaseFileSystemTool {
       }
     }
 
-    // Read current local content for comparison
+    // Read current local content for comparison and capture original mtime
     let previousLocalContent: string | null = null;
+    let originalLocalMtime: Date | null = null;
     try {
       previousLocalContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
+
+      // ✅ Capture original local mtime before any writes
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const fullFilename = filename + fileExtension;
+      const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+      const localFilePath = join(projectPath, fullFilename);
+
+      const fileStats = await stat(localFilePath);
+      originalLocalMtime = fileStats.mtime;
+      console.error(`📅 [SYNC] Captured original local mtime: ${originalLocalMtime.toISOString()}`);
     } catch (error: any) {
       // No existing local file
+      console.error(`📄 [SYNC] New file, no original mtime`);
     }
 
     // Remote-first workflow: Push to remote FIRST
     let results: any = {};
 
     if (!localOnly) {
-      // Auto-pull remote file if it exists remotely but not locally
-      try {
-        await this.pullRemoteFileIfNeeded(projectName, filename, remoteFiles, workingDir);
-      } catch (pullError: any) {
-        console.error(`⚠️ [AUTO-PULL] Failed to pull remote file: ${pullError.message}`);
-        // Continue with operation - checkSyncOrThrow will handle sync validation
-      }
-
-      // Mtime-based write-protection check (allow writes to remote files not yet local)
-      try {
-        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-        const fullFilename = filename + fileExtension;
-        const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
-        const localFilePath = join(projectPath, fullFilename);
-
-        const remoteFilesWithMeta = await this.gasClient.getProjectMetadata(scriptId, accessToken);
-        // Allow write even if file exists remotely but not locally (user intent to write)
-        await checkSyncOrThrow(localFilePath, filename, remoteFilesWithMeta, true);
-      } catch (syncError: any) {
-        // Re-throw sync errors (from checkSyncOrThrow)
-        if (syncError.message &&
-            (syncError.message.includes('out of sync') ||
-             syncError.message.includes('exists in GAS but not locally'))) {
-          throw syncError;
-        }
-        // Ignore other errors (e.g., network issues during metadata fetch)
-      }
-
       try {
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
@@ -344,13 +333,31 @@ export class WriteTool extends BaseFileSystemTool {
         const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
         const updatedFile = remoteResult.find((f: any) => f.name === filename);
 
+        // ✅ Fetch authoritative remote updateTime (with fallback to metadata)
+        const authoritativeUpdateTime = await this.fetchRemoteUpdateTime(
+          scriptId,
+          filename,
+          updatedFile,
+          accessToken
+        );
+
+        if (authoritativeUpdateTime) {
+          console.error(`📊 [SYNC] Remote updateTime: ${authoritativeUpdateTime}`);
+          if (originalLocalMtime) {
+            console.error(`📊 [SYNC] Mtime transition: ${originalLocalMtime.toISOString()} → ${authoritativeUpdateTime}`);
+          }
+        } else {
+          console.error(`⚠️ [SYNC] WARNING: Could not determine remote updateTime for ${filename}`);
+        }
+
         results.remoteFile = {
           scriptId,
           filename,
           type: fileType,
           size: content.length,
           updated: true,
-          updateTime: updatedFile?.updateTime
+          updateTime: authoritativeUpdateTime,
+          originalLocalMtime: originalLocalMtime?.toISOString()
         };
 
       } catch (remoteError: any) {
@@ -413,6 +420,15 @@ export class WriteTool extends BaseFileSystemTool {
         await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
 
+        // ✅ IMMEDIATELY set mtime to match remote (close race window)
+        const authoritativeUpdateTime = results.remoteFile?.updateTime;
+        if (authoritativeUpdateTime) {
+          await setFileMtimeToRemote(filePath, authoritativeUpdateTime, fileType);
+          console.error(`⏰ [SYNC] Set mtime after git write: ${authoritativeUpdateTime}`);
+        } else {
+          console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
+        }
+
         gitCommitResult = await LocalFileManager.autoCommitChanges(
           projectName,
           [filename],
@@ -439,13 +455,13 @@ export class WriteTool extends BaseFileSystemTool {
         await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
 
-        // Set mtime to match remote updateTime
-        if (results.remoteFile?.updateTime) {
-          try {
-            await setFileMtimeToRemote(filePath, results.remoteFile.updateTime, results.remoteFile.type);
-          } catch (mtimeError) {
-            // Non-fatal error
-          }
+        // ✅ IMMEDIATELY set mtime to match remote (close race window)
+        const authoritativeUpdateTime = results.remoteFile?.updateTime;
+        if (authoritativeUpdateTime) {
+          await setFileMtimeToRemote(filePath, authoritativeUpdateTime, fileType);
+          console.error(`⏰ [SYNC] Set mtime after final write: ${authoritativeUpdateTime}`);
+        } else {
+          console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
         }
 
         results.localFile = {
@@ -549,24 +565,6 @@ export class WriteTool extends BaseFileSystemTool {
     const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
     const filePath = join(projectPath, fullFilename);
 
-    // PHASE 0: Verify sync with remote (before local write)
-    if (!localOnly) {
-      const accessToken = await this.getAuthToken(params);
-
-      // Auto-pull remote file if it exists remotely but not locally
-      try {
-        const remoteFilesWithContent = await this.gasClient.getProjectContent(scriptId, accessToken);
-        await this.pullRemoteFileIfNeeded(projectName, filename, remoteFilesWithContent, workingDir);
-      } catch (pullError: any) {
-        console.error(`⚠️ [AUTO-PULL] Failed to pull remote file: ${pullError.message}`);
-        // Continue with operation - checkSyncOrThrow will handle sync validation
-      }
-
-      const remoteFiles = await this.gasClient.getProjectMetadata(scriptId, accessToken);
-      // Allow write even if file exists remotely but not locally (user intent to write)
-      await checkSyncOrThrow(filePath, filename, remoteFiles, true);
-    }
-
     // PHASE 1: Local validation with hooks
     const hookResult = await writeLocalAndValidateWithHooks(
       content,
@@ -612,13 +610,20 @@ export class WriteTool extends BaseFileSystemTool {
         const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
         const updatedFile = remoteResult.find((f: any) => f.name === filename);
 
-        // Set mtime to match remote
-        if (updatedFile?.updateTime) {
-          try {
-            await setFileMtimeToRemote(filePath, updatedFile.updateTime, fileType);
-          } catch (mtimeError) {
-            // Non-fatal error
-          }
+        // ✅ Fetch authoritative remote updateTime (with fallback to metadata)
+        const authoritativeUpdateTime = await this.fetchRemoteUpdateTime(
+          scriptId,
+          filename,
+          updatedFile,
+          accessToken
+        );
+
+        // ✅ IMMEDIATELY set mtime to match remote (close race window)
+        if (authoritativeUpdateTime) {
+          await setFileMtimeToRemote(filePath, authoritativeUpdateTime, fileType);
+          console.error(`⏰ [SYNC] Set mtime after hook validation write: ${authoritativeUpdateTime}`);
+        } else {
+          console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
         }
 
         results.remoteFile = {
@@ -627,7 +632,7 @@ export class WriteTool extends BaseFileSystemTool {
           type: fileType,
           size: finalContent.length,
           updated: true,
-          updateTime: updatedFile?.updateTime
+          updateTime: authoritativeUpdateTime
         };
 
       } catch (remoteError: any) {
@@ -733,7 +738,14 @@ export class WriteTool extends BaseFileSystemTool {
    * Pull a specific remote file to local if it exists remotely but not locally
    * This prevents data loss by ensuring remote content is visible before overwriting
    *
+   * @param projectName - Project name
+   * @param filename - File name to pull
+   * @param remoteFiles - Remote file metadata (must include name, updateTime, type, source)
+   * @param workingDir - Working directory
    * @returns true if file was pulled, false if no pull was needed
+   *
+   * NOTE: Callers should pass fresh metadata from getProjectMetadata() to ensure
+   * atomic consistency with subsequent checkSyncOrThrow() calls
    */
   private async pullRemoteFileIfNeeded(
     projectName: string,
@@ -776,5 +788,45 @@ export class WriteTool extends BaseFileSystemTool {
 
     console.error(`✅ [AUTO-PULL] Successfully pulled ${filename} to local cache`);
     return true;
+  }
+
+  /**
+   * Fetch remote updateTime with fallback to getProjectMetadata if not returned
+   * This ensures we always have the authoritative remote timestamp after write
+   *
+   * @param scriptId - Project ID
+   * @param filename - File name to fetch updateTime for
+   * @param updatedFile - File object from updateProjectContent (may have updateTime)
+   * @param accessToken - Auth token
+   * @returns Remote updateTime or undefined if unavailable
+   */
+  private async fetchRemoteUpdateTime(
+    scriptId: string,
+    filename: string,
+    updatedFile: any,
+    accessToken?: string
+  ): Promise<string | undefined> {
+    // Fast path: updateTime returned by updateProjectContent
+    if (updatedFile?.updateTime) {
+      return updatedFile.updateTime;
+    }
+
+    // Slow path: Fetch metadata to get updateTime
+    console.error(`⚠️ [SYNC] updateTime not returned by updateProjectContent, fetching metadata...`);
+    try {
+      const metadata = await this.gasClient.getProjectMetadata(scriptId, accessToken);
+      const fileMetadata = metadata.find((f: any) => f.name === filename);
+
+      if (fileMetadata?.updateTime) {
+        console.error(`✅ [SYNC] Retrieved updateTime via metadata: ${fileMetadata.updateTime}`);
+        return fileMetadata.updateTime;
+      } else {
+        console.error(`❌ [SYNC] Could not retrieve updateTime for ${filename}`);
+        return undefined;
+      }
+    } catch (error: any) {
+      console.error(`❌ [SYNC] Failed to fetch metadata: ${error.message}`);
+      return undefined;
+    }
   }
 }

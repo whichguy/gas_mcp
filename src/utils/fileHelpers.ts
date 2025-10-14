@@ -43,8 +43,25 @@ export async function isFileInSync(localPath: string, remoteUpdateTime: string):
 }
 
 /**
+ * Diagnostic information from sync check
+ */
+export interface SyncCheckResult {
+  inSync: boolean;
+  diagnosis: {
+    localMtime: Date | null;
+    remoteTime: Date;
+    timeDiffMs: number;
+    cacheExists: boolean;
+    cachedUpdateTime?: string;
+    cacheMatched: boolean;
+    syncMethod: 'cache-exact' | 'cache-fallback-ok' | 'mtime-ok' | 'mtime-fail' | 'no-local-file';
+    reason?: string;
+  };
+}
+
+/**
  * Check sync using cached metadata first (fast path), then mtime (fallback)
- * Returns true if file is in sync with remote
+ * Returns detailed diagnostic information about sync status
  *
  * This provides a performance optimization by checking xattr cache before
  * doing the more expensive mtime comparison
@@ -52,17 +69,128 @@ export async function isFileInSync(localPath: string, remoteUpdateTime: string):
 export async function isFileInSyncWithCache(
   localPath: string,
   remoteUpdateTime: string
-): Promise<boolean> {
+): Promise<SyncCheckResult> {
+  const remoteTime = new Date(remoteUpdateTime);
+
   // Try cached metadata first (fast path - no filesystem stat needed)
   const { getCachedGASMetadata } = await import('./gasMetadataCache.js');
   const cachedMeta = await getCachedGASMetadata(localPath);
 
-  if (cachedMeta && cachedMeta.updateTime === remoteUpdateTime) {
-    return true; // Fast path: cached metadata matches exactly
+  const cacheExists = !!cachedMeta;
+  const cacheMatched = cachedMeta?.updateTime === remoteUpdateTime;
+
+  if (cachedMeta && cacheMatched) {
+    // Fast path: cached metadata matches exactly
+    return {
+      inSync: true,
+      diagnosis: {
+        localMtime: null, // Not checked in fast path
+        remoteTime,
+        timeDiffMs: 0,
+        cacheExists: true,
+        cachedUpdateTime: cachedMeta.updateTime,
+        cacheMatched: true,
+        syncMethod: 'cache-exact',
+        reason: 'xattr cache matches remote updateTime exactly'
+      }
+    };
   }
 
   // Fallback to mtime check (slower but still reliable)
-  return await isFileInSync(localPath, remoteUpdateTime);
+  try {
+    const stats = await stat(localPath);
+    const localMtime = stats.mtime;
+    const timeDiffMs = Math.abs(localMtime.getTime() - remoteTime.getTime());
+    const inSync = timeDiffMs < 1000; // Within 1 second = synced
+
+    if (inSync) {
+      return {
+        inSync: true,
+        diagnosis: {
+          localMtime,
+          remoteTime,
+          timeDiffMs,
+          cacheExists,
+          cachedUpdateTime: cachedMeta?.updateTime,
+          cacheMatched,
+          syncMethod: 'cache-fallback-ok',
+          reason: cacheExists
+            ? 'xattr cache outdated but filesystem mtime within 1s tolerance'
+            : 'xattr cache not found but filesystem mtime within 1s tolerance'
+        }
+      };
+    } else {
+      // Out of sync
+      let reason: string;
+      if (cacheExists && !cacheMatched) {
+        reason = 'Both xattr cache and filesystem mtime indicate file is out of sync (remote modified in GAS editor or elsewhere)';
+      } else if (!cacheExists && localMtime < remoteTime) {
+        reason = 'xattr cache not found and local file is older than remote (remote was modified after last sync)';
+      } else if (!cacheExists && localMtime > remoteTime) {
+        reason = 'xattr cache not found and local file is newer than remote (possible clock skew or local modifications not synced)';
+      } else {
+        reason = 'Filesystem mtime does not match remote updateTime';
+      }
+
+      return {
+        inSync: false,
+        diagnosis: {
+          localMtime,
+          remoteTime,
+          timeDiffMs,
+          cacheExists,
+          cachedUpdateTime: cachedMeta?.updateTime,
+          cacheMatched,
+          syncMethod: 'mtime-fail',
+          reason
+        }
+      };
+    }
+  } catch (error: any) {
+    // File doesn't exist locally
+    return {
+      inSync: false,
+      diagnosis: {
+        localMtime: null,
+        remoteTime,
+        timeDiffMs: -1,
+        cacheExists,
+        cachedUpdateTime: cachedMeta?.updateTime,
+        cacheMatched,
+        syncMethod: 'no-local-file',
+        reason: 'Local file does not exist'
+      }
+    };
+  }
+}
+
+/**
+ * Format time difference in human-readable format
+ */
+export function formatTimeDifference(diffMs: number): string {
+  const absDiff = Math.abs(diffMs);
+
+  if (absDiff < 1000) {
+    return `${diffMs}ms`;
+  }
+
+  const seconds = diffMs / 1000;
+  if (Math.abs(seconds) < 60) {
+    return `${seconds.toFixed(2)}s`;
+  }
+
+  const minutes = seconds / 60;
+  if (Math.abs(minutes) < 60) {
+    return `${minutes.toFixed(2)}m`;
+  }
+
+  const hours = minutes / 60;
+  if (Math.abs(hours) < 24) {
+    return `${hours.toFixed(2)}h`;
+  }
+
+  const days = hours / 24;
+  return `${days.toFixed(2)}d`;
 }
 
 /**
@@ -119,14 +247,35 @@ export async function checkSyncOrThrow(
     await stat(localPath);
 
     // Local file exists - check if dates match using cache-aware check (Rule 3 vs Rule 4)
-    const inSync = await isFileInSyncWithCache(localPath, updateTime);
+    const syncResult = await isFileInSyncWithCache(localPath, updateTime);
 
-    if (!inSync) {
+    if (!syncResult.inSync) {
       // Rule 4: Dates mismatch - must sync first (strict enforcement)
+      const diag = syncResult.diagnosis;
+      const localMtimeStr = diag.localMtime ? diag.localMtime.toISOString() : 'N/A';
+      const timeDiffFormatted = diag.timeDiffMs >= 0 ? formatTimeDifference(diag.timeDiffMs) : 'N/A';
+
       throw new Error(
         `File out of sync: ${filename}\n` +
-        `Local and remote versions differ. Run cat to sync before writing.\n` +
-        `Remote updateTime: ${updateTime}`
+        `\n` +
+        `SYNC STATUS:\n` +
+        `  Local file:  ${localPath}\n` +
+        `  Local mtime: ${localMtimeStr}${diag.localMtime ? ` (${diag.localMtime.getTime()})` : ''}\n` +
+        `  Remote time: ${updateTime} (${diag.remoteTime.getTime()})\n` +
+        `  Difference:  ${diag.timeDiffMs}ms (${timeDiffFormatted})\n` +
+        `\n` +
+        `CACHE DIAGNOSTICS:\n` +
+        `  xattr cached: ${diag.cacheExists ? 'Yes' : 'No'}\n` +
+        `${diag.cacheExists ? `  Cache value:  ${diag.cachedUpdateTime}\n` : `  Cache status: Not found or not readable\n`}` +
+        `${diag.cacheExists ? `  Cache match:  ${diag.cacheMatched ? 'Yes (but mtime differs)' : 'No'}\n` : ''}` +
+        `  Sync method:  ${diag.syncMethod}\n` +
+        `\n` +
+        `DIAGNOSIS:\n` +
+        `  ${diag.reason}\n` +
+        `\n` +
+        `ACTION REQUIRED:\n` +
+        `  Run 'cat' to download latest remote version and sync timestamps\n` +
+        `  Remote was last modified: ${updateTime}`
       );
     }
 

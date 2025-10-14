@@ -1784,7 +1784,35 @@ export class ProjectInitTool extends BaseTool {
         }
 
         // Update project with new order
-        await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
+        const updatedFiles = await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
+
+        // ✅ Sync local cache with updated remote mtimes
+        try {
+          const { LocalFileManager } = await import('../utils/localFileManager.js');
+          const { setFileMtimeToRemote } = await import('../utils/fileHelpers.js');
+          const { join } = await import('path');
+
+          const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
+
+          if (localRoot) {
+            // Update mtimes for all files since reordering changes updateTime for all files
+            for (const file of updatedFiles) {
+              if (file.updateTime) {
+                const fileExtension = LocalFileManager.getFileExtensionFromName(file.name);
+                const localPath = join(localRoot, file.name + fileExtension);
+                try {
+                  await setFileMtimeToRemote(localPath, file.updateTime, file.type);
+                } catch (mtimeError) {
+                  // File might not exist locally - that's okay
+                }
+              }
+            }
+            console.error(`⏰ [SYNC] Updated local mtimes after file reordering`);
+          }
+        } catch (syncError) {
+          // Don't fail the operation if local sync fails - remote update succeeded
+        }
+
         console.error(`✅ [GAS_PROJECT_INIT] File order enforced: require.gs at position 0, __mcp_exec.gs at position 1`);
       } else {
         console.error(`✅ [GAS_PROJECT_INIT] File order already correct`);
