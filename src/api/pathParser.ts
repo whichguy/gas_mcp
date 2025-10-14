@@ -309,32 +309,9 @@ export function matchesDirectory(filename: string, directory: string): boolean {
  * Sort files for GAS execution order (dependencies first)
  */
 export function sortFilesForExecution<T extends { name: string; order?: number }>(files: T[]): T[] {
-  return files.sort((a, b) => {
-    const aHasOrder = a.order !== undefined;
-    const bHasOrder = b.order !== undefined;
-
-    if (aHasOrder && !bHasOrder) return -1;
-    if (!aHasOrder && bHasOrder) return 1;
-    if (aHasOrder && bHasOrder) {
-      return a.order! - b.order!;
-    }
-
-    // Libraries and utilities first (common prefixes)
-    const aIsLib = /^(lib|util|common|shared)/i.test(a.name);
-    const bIsLib = /^(lib|util|common|shared)/i.test(b.name);
-    
-    if (aIsLib && !bIsLib) return -1;
-    if (!aIsLib && bIsLib) return 1;
-    
-    // Dependencies by directory depth (shallower first)
-    const aDepth = (a.name.match(/\//g) || []).length;
-    const bDepth = (b.name.match(/\//g) || []).length;
-    
-    if (aDepth !== bDepth) return aDepth - bDepth;
-    
-    // Alphabetical as fallback
-    return a.name.localeCompare(b.name);
-  });
+  // ✅ PRESERVE API ORDER: Don't sort - respect the order returned by the API
+  // The Google Apps Script API should maintain file order after updateContent operations
+  return files;
 }
 
 /**
