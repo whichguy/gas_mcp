@@ -960,23 +960,34 @@ export class GASClient {
    */
   async updateProjectContent(scriptId: string, files: GASFile[], accessToken?: string): Promise<GASFile[]> {
     await this.initializeClient(accessToken);
-    
+
     return this.makeApiCall(async () => {
       // Let Google Apps Script API be the authority for validation
       // Remove arbitrary client-side limits and let the API return its own errors
-      
+
+      console.error(`📤 [GAS_API] Sending ${files.length} files in order:`);
+      files.forEach((f, i) => console.error(`  ${i}: ${f.name} (${f.type})`));
+
       const response = await this.scriptApi.projects.updateContent({
         scriptId,
         requestBody: {
           files: files.map(file => ({
             name: file.name,
             type: file.type,
-            source: file.source
+            source: file.source,
+            // ✅ Preserve metadata to maintain file history and ordering
+            ...(file.createTime && { createTime: file.createTime }),
+            ...(file.updateTime && { updateTime: file.updateTime }),
+            ...(file.lastModifyUser && { lastModifyUser: file.lastModifyUser })
           }))
         }
       });
-      
-      return response.data.files || [];
+
+      const returnedFiles = response.data.files || [];
+      console.error(`📥 [GAS_API] Received ${returnedFiles.length} files in order:`);
+      returnedFiles.forEach((f: any, i: number) => console.error(`  ${i}: ${f.name} (${f.type})`));
+
+      return returnedFiles;
     }, accessToken);
   }
 
@@ -1012,15 +1023,31 @@ export class GASClient {
     };
 
     let updatedFiles: GASFile[];
-    
+
     if (existingIndex >= 0) {
       // Update existing file
       updatedFiles = [...currentFiles];
-      updatedFiles[existingIndex] = newFile;
+
+      // ✅ FIX: Honor position parameter even for existing files
+      // If position is specified and different from current position, move the file
+      if (position !== undefined && position >= 0 && position !== existingIndex && position < updatedFiles.length) {
+        console.error(`🔄 [GAS_CLIENT] Moving ${fileName} from position ${existingIndex} to ${position}`);
+        // Remove old file from current position FIRST (before updating)
+        updatedFiles.splice(existingIndex, 1);
+        // Insert new file at desired position
+        updatedFiles.splice(position, 0, newFile);
+        console.error(`✅ [GAS_CLIENT] File moved from ${existingIndex} to ${position}`);
+      } else {
+        // No position specified or same position - just update content in place
+        updatedFiles[existingIndex] = newFile;
+        if (position !== undefined) {
+          console.error(`⚠️ [GAS_CLIENT] Position parameter ignored for ${fileName}: pos=${position}, existingIdx=${existingIndex}, len=${updatedFiles.length}`);
+        }
+      }
     } else {
       // Add new file
       updatedFiles = [...currentFiles];
-      
+
       // Insert at specified position or append
       if (position !== undefined && position >= 0 && position < updatedFiles.length) {
         updatedFiles.splice(position, 0, newFile);

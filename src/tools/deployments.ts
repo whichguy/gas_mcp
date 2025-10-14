@@ -1132,6 +1132,7 @@ export class ProjectCreateTool extends BaseTool {
         content: SHIM_TEMPLATE,
         fileType: 'SERVER_JS' as const,
         position: 0,
+        skipSyncCheck: true,
         accessToken
       };
 
@@ -1396,6 +1397,23 @@ export class ProjectInitTool extends BaseTool {
     try {
       console.error(`🔧 [GAS_PROJECT_INIT] Installing CommonJS module system...`);
 
+      // Sync cache by reading file first (prevents "file out of sync" errors)
+      if (existingFiles.has(fileName)) {
+        console.error(`🔄 [GAS_PROJECT_INIT] Syncing cache for ${fileName}...`);
+        const { CatTool } = await import('./filesystem/index.js');
+        const catTool = new CatTool(this.sessionAuthManager);
+        try {
+          await catTool.execute({
+            scriptId,
+            path: 'common-js/require',
+            accessToken
+          });
+        } catch (error: any) {
+          console.error(`⚠️ [GAS_PROJECT_INIT] Cache sync warning: ${error.message}`);
+          // Continue anyway - write will handle this
+        }
+      }
+
       const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
 
@@ -1404,6 +1422,7 @@ export class ProjectInitTool extends BaseTool {
         content: SHIM_TEMPLATE,
         fileType: 'SERVER_JS' as const,
         position: 0, // Execute first
+        skipSyncCheck: true,
         accessToken
       };
 
@@ -1478,6 +1497,23 @@ export class ProjectInitTool extends BaseTool {
     try {
       console.error(`🔧 [GAS_PROJECT_INIT] Installing execution infrastructure...`);
 
+      // Sync cache by reading file first (prevents "file out of sync" errors)
+      if (existingFiles.has(fileName)) {
+        console.error(`🔄 [GAS_PROJECT_INIT] Syncing cache for ${fileName}...`);
+        const { CatTool } = await import('./filesystem/index.js');
+        const catTool = new CatTool(this.sessionAuthManager);
+        try {
+          await catTool.execute({
+            scriptId,
+            path: 'common-js/__mcp_exec',
+            accessToken
+          });
+        } catch (error: any) {
+          console.error(`⚠️ [GAS_PROJECT_INIT] Cache sync warning: ${error.message}`);
+          // Continue anyway - write will handle this
+        }
+      }
+
       const executionTemplate = getExecutionTemplate();
 
       const { RawWriteTool } = await import('./filesystem/index.js');
@@ -1488,6 +1524,7 @@ export class ProjectInitTool extends BaseTool {
         content: executionTemplate,
         fileType: 'SERVER_JS' as const,
         position: 1, // Execute after CommonJS
+        skipSyncCheck: true,
         accessToken
       };
 
@@ -1533,6 +1570,23 @@ export class ProjectInitTool extends BaseTool {
       try {
         console.error(`🔧 [GAS_PROJECT_INIT] Installing success HTML template...`);
 
+        // Sync cache by reading file first (prevents "file out of sync" errors)
+        if (existingFiles.has(successFileName)) {
+          console.error(`🔄 [GAS_PROJECT_INIT] Syncing cache for ${successFileName}...`);
+          const { CatTool } = await import('./filesystem/index.js');
+          const catTool = new CatTool(this.sessionAuthManager);
+          try {
+            await catTool.execute({
+              scriptId,
+              path: 'common-js/__mcp_exec_success',
+              accessToken
+            });
+          } catch (error: any) {
+            console.error(`⚠️ [GAS_PROJECT_INIT] Cache sync warning: ${error.message}`);
+            // Continue anyway - write will handle this
+          }
+        }
+
         const successTemplate = getSuccessHtmlTemplate();
 
         const { RawWriteTool } = await import('./filesystem/index.js');
@@ -1542,6 +1596,7 @@ export class ProjectInitTool extends BaseTool {
           path: `${scriptId}/common-js/__mcp_exec_success.html`,
           content: successTemplate,
           fileType: 'HTML' as const,
+          skipSyncCheck: true,
           accessToken
         };
 
@@ -1564,6 +1619,23 @@ export class ProjectInitTool extends BaseTool {
       try {
         console.error(`🔧 [GAS_PROJECT_INIT] Installing error HTML template...`);
 
+        // Sync cache by reading file first (prevents "file out of sync" errors)
+        if (existingFiles.has(errorFileName)) {
+          console.error(`🔄 [GAS_PROJECT_INIT] Syncing cache for ${errorFileName}...`);
+          const { CatTool } = await import('./filesystem/index.js');
+          const catTool = new CatTool(this.sessionAuthManager);
+          try {
+            await catTool.execute({
+              scriptId,
+              path: 'common-js/__mcp_exec_error',
+              accessToken
+            });
+          } catch (error: any) {
+            console.error(`⚠️ [GAS_PROJECT_INIT] Cache sync warning: ${error.message}`);
+            // Continue anyway - write will handle this
+          }
+        }
+
         const errorTemplate = getErrorHtmlTemplate();
 
         const { RawWriteTool } = await import('./filesystem/index.js');
@@ -1573,6 +1645,7 @@ export class ProjectInitTool extends BaseTool {
           path: `${scriptId}/common-js/__mcp_exec_error.html`,
           content: errorTemplate,
           fileType: 'HTML' as const,
+          skipSyncCheck: true,
           accessToken
         };
 
@@ -1604,19 +1677,37 @@ export class ProjectInitTool extends BaseTool {
 
     try {
       console.error(`🔧 [GAS_PROJECT_INIT] Updating project manifest...`);
-      
+
+      // Sync cache by reading file first (prevents "file out of sync" errors)
+      if (existingFiles.has(fileName)) {
+        console.error(`🔄 [GAS_PROJECT_INIT] Syncing cache for ${fileName}...`);
+        const { CatTool } = await import('./filesystem/index.js');
+        const catTool = new CatTool(this.sessionAuthManager);
+        try {
+          await catTool.execute({
+            scriptId,
+            path: 'appsscript',
+            accessToken
+          });
+        } catch (error: any) {
+          console.error(`⚠️ [GAS_PROJECT_INIT] Cache sync warning: ${error.message}`);
+          // Continue anyway - write will handle this
+        }
+      }
+
       const manifestTemplate = getManifestTemplate();
-      
+
       const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
-      
+
       const writeParams = {
         path: `${scriptId}/appsscript`,
         content: JSON.stringify(manifestTemplate, null, 2),
         fileType: 'JSON' as const,
+        skipSyncCheck: true,
         accessToken
       };
-      
+
       await rawWriteTool.execute(writeParams);
       
       console.error(`✅ [GAS_PROJECT_INIT] Project manifest updated`);

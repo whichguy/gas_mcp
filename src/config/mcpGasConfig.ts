@@ -82,11 +82,11 @@ const DEFAULT_CONFIG: McpGasConfig = {
   },
   projects: {},
   localRoot: {
-    // PRODUCTION-READY: Use persistent directory
-    rootPath: process.env.MCP_GAS_PROJECTS_ROOT || 
-      (process.platform === 'win32' 
-        ? path.join(process.env.USERPROFILE || 'C:\\Users\\Default', '.mcp-gas', 'projects')
-        : path.join(process.env.HOME || '/var/lib/mcp-gas', '.mcp-gas', 'projects')),
+    // PRODUCTION-READY: Use ~/gas-repos for all projects (consistent with git sync)
+    rootPath: process.env.MCP_GAS_PROJECTS_ROOT ||
+      (process.platform === 'win32'
+        ? path.join(process.env.USERPROFILE || 'C:\\Users\\Default', 'gas-repos')
+        : path.join(process.env.HOME || '/var/lib/mcp-gas', 'gas-repos')),
     lastUpdated: new Date().toISOString()
   },
   server: {

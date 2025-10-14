@@ -653,13 +653,15 @@ function htmlAuthErrorResponse(errorData) {
   ///////// END USER CODE /////////
 }
 
-__defineModule__(_main, '__mcp_exec', { loadNow: true });
-
 /**
  * Hoisted bridge function for google.script.run compatibility
  * Delegates to the module's invoke function
+ * CRITICAL: Must be declared BEFORE __defineModule__ with loadNow: true
+ * because loadNow immediately loads the module which exports invoke to global
  * @customfunction
  */
 function invoke(modulePath, ...args) {
-  return require('__mcp_exec').invoke(modulePath, ...args);
+  return require('common-js/__mcp_exec').invoke(modulePath, ...args);
 }
+
+__defineModule__(_main, 'common-js/__mcp_exec', { loadNow: true });
