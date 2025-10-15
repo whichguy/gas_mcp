@@ -56,9 +56,12 @@ export class GASAuthClient {
     // RACE CONDITION FIX: Callback processing guard
     private callbackProcessed = false;
     private callbackProcessing = false;
-    
+
     // RACE CONDITION FIX: Server cleanup protection
     private cleanupInProgress = false;
+
+    // MEMORY LEAK FIX: Timeout registry for long-running sessions
+    private activeTimeouts: Set<NodeJS.Timeout> = new Set();
 
     constructor(config: AuthConfig) {
         this.config = config;
@@ -81,6 +84,33 @@ export class GASAuthClient {
     }
 
     /**
+     * Register a timeout for tracking (MEMORY LEAK FIX)
+     * Ensures all timeouts are cleared on cleanup
+     */
+    private registerTimeout(timeout: NodeJS.Timeout): void {
+        this.activeTimeouts.add(timeout);
+    }
+
+    /**
+     * Clear a specific timeout and remove from registry (MEMORY LEAK FIX)
+     */
+    private clearRegisteredTimeout(timeout: NodeJS.Timeout): void {
+        clearTimeout(timeout);
+        this.activeTimeouts.delete(timeout);
+    }
+
+    /**
+     * Clear all active timeouts (MEMORY LEAK FIX)
+     * Called during cleanup to prevent timeout leaks in long-running sessions
+     */
+    private clearAllTimeouts(): void {
+        for (const timeout of this.activeTimeouts) {
+            clearTimeout(timeout);
+        }
+        this.activeTimeouts.clear();
+    }
+
+    /**
      * Start the OAuth authentication flow with race condition protection
      * 
      * This method sets up a local callback server, generates PKCE parameters and state,
@@ -98,6 +128,9 @@ export class GASAuthClient {
             this.callbackProcessed = false;
             this.callbackProcessing = false;
             this.cleanupInProgress = false;
+
+            // Clear any lingering timeouts from previous flows (MEMORY LEAK FIX)
+            this.clearAllTimeouts();
             
             // Generate PKCE parameters using the imported helper
             const pkceChallenge = PKCEGenerator.generateChallenge();
@@ -227,20 +260,26 @@ export class GASAuthClient {
                 const errorMsg = 'Invalid state parameter - possible CSRF attack detected';
                 console.error('', errorMsg);
                 res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
-                
+
                 if (this.currentAuthKey) {
                     signalAuthError(this.currentAuthKey, new OAuthError(errorMsg, 'authorization'));
                 }
+
+                // MEMORY LEAK FIX: Clear timeouts on error path
+                this.clearAllTimeouts();
                 return;
             }
 
             if (error) {
                 console.error('OAuth error:', error);
                 res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(`OAuth Error: ${error}`));
-                
+
                 if (this.currentAuthKey) {
                     signalAuthError(this.currentAuthKey, new OAuthError(`OAuth error: ${error}`, 'authorization'));
                 }
+
+                // MEMORY LEAK FIX: Clear timeouts on error path
+                this.clearAllTimeouts();
                 return;
             }
 
@@ -248,10 +287,13 @@ export class GASAuthClient {
                 const errorMsg = 'No authorization code found';
                 console.error('', errorMsg);
                 res.writeHead(400, { 'Content-Type': 'text/html' }).end(this.createErrorPage(errorMsg));
-                
+
                 if (this.currentAuthKey) {
                     signalAuthError(this.currentAuthKey, new OAuthError(errorMsg, 'authorization'));
                 }
+
+                // MEMORY LEAK FIX: Clear timeouts on error path
+                this.clearAllTimeouts();
                 return;
             }
 
@@ -272,15 +314,16 @@ export class GASAuthClient {
                 if (this.currentAuthKey) {
                     console.error('Signaling auth completion and waiting for session setup...');
                     const completionPromise = new Promise<void>((resolve, reject) => {
-                        // Set a timeout for session setup
+                        // Set a timeout for session setup (MEMORY LEAK FIX: registered)
                         const sessionTimeout = setTimeout(() => {
                             console.error('Session setup timeout, proceeding anyway...');
                             resolve();
                         }, 5000); // 5 second timeout for session setup
-                        
+                        this.registerTimeout(sessionTimeout);
+
                         // Store the resolver for the signalAuthCompletion to use
                         (tokenResponse as any).sessionSetupComplete = () => {
-                            clearTimeout(sessionTimeout);
+                            this.clearRegisteredTimeout(sessionTimeout);
                             resolve();
                         };
                     });
@@ -351,14 +394,15 @@ export class GASAuthClient {
             console.error(`OAuth callback server on port ${port} closed successfully`);
             this.cleanupInProgress = false;
         });
-        
-        // Force close after timeout to prevent hanging
-        setTimeout(() => {
+
+        // Force close after timeout to prevent hanging (MEMORY LEAK FIX: registered)
+        const forceCloseTimeout = setTimeout(() => {
             if (!server.listening && this.cleanupInProgress) {
                 console.error('Force completing cleanup after timeout');
                 this.cleanupInProgress = false;
             }
         }, 2000);
+        this.registerTimeout(forceCloseTimeout);
     }
 
     /**

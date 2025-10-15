@@ -156,10 +156,31 @@ export class WriteTool extends BaseFileSystemTool {
       const hoistedFunctions = params.moduleOptions?.hoistedFunctions;
 
       if (hasExplicitLoadNow) {
-        resolvedOptions = {
-          loadNow: params.moduleOptions!.loadNow,
-          hoistedFunctions
-        };
+        // When loadNow is explicit but hoistedFunctions is not provided,
+        // preserve existing hoistedFunctions from the current wrapper
+        try {
+          const accessToken = await this.getAuthToken(params);
+          const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+          const existingFile = existingFiles.find((f: any) => f.name === filename);
+
+          let existingHoistedFunctions = undefined;
+          if (existingFile && existingFile.source) {
+            const { existingOptions } = unwrapModuleContent(existingFile.source);
+            existingHoistedFunctions = existingOptions?.hoistedFunctions;
+          }
+
+          resolvedOptions = {
+            loadNow: params.moduleOptions!.loadNow,
+            // Use explicit hoistedFunctions if provided, otherwise preserve existing
+            hoistedFunctions: hoistedFunctions !== undefined ? hoistedFunctions : existingHoistedFunctions
+          };
+        } catch (error: any) {
+          // If we can't fetch existing file, use what was explicitly provided
+          resolvedOptions = {
+            loadNow: params.moduleOptions!.loadNow,
+            hoistedFunctions
+          };
+        }
       } else {
         // Inherit from existing file
         try {
@@ -618,10 +639,24 @@ export class WriteTool extends BaseFileSystemTool {
           accessToken
         );
 
-        // ✅ IMMEDIATELY set mtime to match remote (close race window)
+        // ✅ Verify local file matches what we sent to remote
+        const { readFile: fsReadFile } = await import('fs/promises');
+        const currentLocalContent = await fsReadFile(filePath, 'utf-8');
+
+        if (currentLocalContent !== finalContent) {
+          console.error(`⚠️ [SYNC] Local file changed after hooks - re-writing with remote content`);
+          console.error(`   Expected: ${finalContent.length} bytes`);
+          console.error(`   Found: ${currentLocalContent.length} bytes`);
+
+          // Re-write with the content that's on the server
+          const { writeFile: fsWriteFile } = await import('fs/promises');
+          await fsWriteFile(filePath, finalContent, 'utf-8');
+        }
+
+        // ✅ Now set mtime to match remote (local file verified to match)
         if (authoritativeUpdateTime) {
           await setFileMtimeToRemote(filePath, authoritativeUpdateTime, fileType);
-          console.error(`⏰ [SYNC] Set mtime after hook validation write: ${authoritativeUpdateTime}`);
+          console.error(`⏰ [SYNC] Set mtime after verifying local matches remote: ${authoritativeUpdateTime}`);
         } else {
           console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
         }
