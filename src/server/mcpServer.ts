@@ -157,9 +157,12 @@ export class MCPGasServer {
   /** Core MCP server instance from the SDK */
   private server: Server;
 
+  /** PERFORMANCE FIX: Cached tool schemas to avoid creating 40+ tool instances per ListTools request */
+  private cachedToolSchemas?: any[];
+
   /**
    * Initialize MCP Gas Server with session isolation support
-   * 
+   *
    * Sets up the core MCP server with capabilities and request handlers.
    * Session creation is deferred until first client connection.
    */
@@ -368,19 +371,26 @@ export class MCPGasServer {
    * Setup MCP protocol handlers
    */
   private setupHandlers(): void {
-    // List available tools
+    // List available tools with schema caching (PERFORMANCE FIX)
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      // Create tools with temporary auth manager just to get schemas
+      // Return cached schemas if available (avoids creating 40+ tool instances)
+      if (this.cachedToolSchemas) {
+        return { tools: this.cachedToolSchemas };
+      }
+
+      // First request: create tools to extract schemas, then cache
       const authManager = new SessionAuthManager();
       const tools = this.createSessionTools(authManager);
 
-      const toolSchemas = Array.from(tools.values()).map(tool => ({
+      this.cachedToolSchemas = Array.from(tools.values()).map(tool => ({
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema
       }));
 
-      return { tools: toolSchemas };
+      console.error(`[PERFORMANCE] Cached schemas for ${this.cachedToolSchemas.length} tools`);
+
+      return { tools: this.cachedToolSchemas };
     });
 
     // Execute tool calls

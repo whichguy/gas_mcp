@@ -105,6 +105,7 @@ export interface WriteParams extends FileParams {
       jsdoc?: string;
     }>;
   };
+  force?: boolean;
 }
 
 export interface ListParams {

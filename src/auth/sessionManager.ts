@@ -7,6 +7,10 @@ import { OAuth2Client } from 'google-auth-library';
 // Token cache directory in process.cwd()
 const TOKEN_CACHE_DIR = path.join(process.cwd(), '.auth', 'tokens');
 
+// MEMORY LEAK FIX: Maximum deployment URLs to cache (LRU eviction)
+// Prevents unbounded growth in long-running sessions (10+ hours)
+const MAX_DEPLOYMENT_URLS = 100;
+
 /**
  * OAuth token information
  */
@@ -697,7 +701,8 @@ export class SessionAuthManager {
   }
 
   /**
-   * Cache deployment URL for a script ID
+   * Cache deployment URL for a script ID with LRU eviction
+   * MEMORY LEAK FIX: Caps at MAX_DEPLOYMENT_URLS entries for long-running sessions
    */
   async setCachedDeploymentUrl(scriptId: string, gasRunUrl: string): Promise<void> {
     const authSession = await this.findSessionById(this.sessionId);
@@ -706,7 +711,21 @@ export class SessionAuthManager {
       if (!authSession.deploymentUrls) {
         authSession.deploymentUrls = new Map();
       }
+
+      // MEMORY LEAK FIX: LRU eviction for long-running sessions (10+ hours)
+      // Remove the oldest entry if we've hit the limit
+      if (authSession.deploymentUrls.size >= MAX_DEPLOYMENT_URLS && !authSession.deploymentUrls.has(scriptId)) {
+        const firstKey = authSession.deploymentUrls.keys().next().value;
+        if (firstKey) {
+          authSession.deploymentUrls.delete(firstKey);
+          console.error(`[LRU] Evicted oldest deployment URL: ${firstKey} (limit: ${MAX_DEPLOYMENT_URLS})`);
+        }
+      }
+
+      // For LRU: delete and re-add to move to end (most recent)
+      authSession.deploymentUrls.delete(scriptId);
       authSession.deploymentUrls.set(scriptId, gasRunUrl);
+
       await TokenCacheHelpers.writeTokenCache(authSession.user.email, authSession);
       console.error(`Cached deployment URL for ${scriptId}: ${gasRunUrl}`);
     }
@@ -714,12 +733,20 @@ export class SessionAuthManager {
 
   /**
    * Get cached deployment URL for a script ID
+   * MEMORY LEAK FIX: Updates LRU order on access
    */
   async getCachedDeploymentUrl(scriptId: string): Promise<string | null> {
     const authSession = await this.findSessionById(this.sessionId);
 
     if (authSession?.deploymentUrls) {
-      return authSession.deploymentUrls.get(scriptId) || null;
+      const url = authSession.deploymentUrls.get(scriptId);
+      if (url) {
+        // LRU: move to end (most recently used)
+        authSession.deploymentUrls.delete(scriptId);
+        authSession.deploymentUrls.set(scriptId, url);
+        await TokenCacheHelpers.writeTokenCache(authSession.user.email, authSession);
+      }
+      return url || null;
     }
 
     return null;

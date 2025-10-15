@@ -32,9 +32,9 @@ function parseArgs(): { configPath?: string } {
  */
 async function main() {
   const { configPath } = parseArgs();
-  
+
   console.error('🚀 Starting MCP Gas Server with forced desktop authentication...');
-  
+
   // Initialize configuration with explicit config file path
   if (configPath) {
     const absoluteConfigPath = path.resolve(configPath);
@@ -45,7 +45,7 @@ async function main() {
     console.error(`   Example: node dist/index.js --config ./gas-config.json`);
     process.exit(1);
   }
-  
+
   // FORCE CLEAR ALL CACHED TOKENS ON STARTUP (skip in test mode)
   if (process.env.MCP_TEST_MODE !== 'true') {
     console.error('🗑️  Clearing all cached authentication tokens (forced restart behavior)...');
@@ -54,12 +54,22 @@ async function main() {
   } else {
     console.error('🧪 Test mode: preserving cached authentication tokens');
   }
-  
+
   const server = new MCPGasServer();
+
+  // MEMORY LEAK FIX: Store handler references for cleanup in long-running sessions
+  const signalHandlers = new Map<string, (...args: any[]) => void>();
 
   // Handle graceful shutdown
   const shutdown = async (signal: string) => {
     console.error(`\nReceived ${signal}, shutting down gracefully...`);
+
+    // MEMORY LEAK FIX: Remove all registered event listeners
+    for (const [eventName, handler] of signalHandlers) {
+      process.removeListener(eventName as any, handler);
+    }
+    signalHandlers.clear();
+
     try {
       await server.stop();
       process.exit(0);
@@ -69,17 +79,23 @@ async function main() {
     }
   };
 
-  // Register signal handlers
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  // Helper to register handlers with tracking (MEMORY LEAK FIX)
+  const registerSignalHandler = (event: string, handler: (...args: any[]) => void) => {
+    signalHandlers.set(event, handler);
+    process.on(event as any, handler);
+  };
 
-  // Handle uncaught exceptions and unhandled rejections
-  process.on('uncaughtException', (error) => {
+  // Register signal handlers with tracking
+  registerSignalHandler('SIGINT', () => shutdown('SIGINT'));
+  registerSignalHandler('SIGTERM', () => shutdown('SIGTERM'));
+
+  // Handle uncaught exceptions and unhandled rejections with tracking
+  registerSignalHandler('uncaughtException', (error: Error) => {
     console.error('Uncaught Exception:', error);
     shutdown('uncaughtException');
   });
 
-  process.on('unhandledRejection', (reason, promise) => {
+  registerSignalHandler('unhandledRejection', (reason: any, promise: Promise<any>) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     shutdown('unhandledRejection');
   });
