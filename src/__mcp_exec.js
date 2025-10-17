@@ -706,4 +706,19 @@ function invoke(modulePath, ...args) {
   return require('common-js/__mcp_exec').invoke(modulePath, ...args);
 }
 
+/**
+ * Hoisted bridge function for google.script.run compatibility
+ * Executes functions via CommonJS module system
+ * CRITICAL: Must be declared BEFORE __defineModule__ with loadNow: true
+ * @param {Object} options - Reserved for future use (can be null)
+ * @param {string} moduleName - CommonJS module name (e.g., "Code")
+ * @param {string} functionName - Function name to call (e.g., "getConfig")
+ * @param {...*} args - Variable arguments to pass to the function
+ * @returns {*} Raw JavaScript value from the function
+ */
+function exec_api(options, moduleName, functionName) {
+  var args = Array.prototype.slice.call(arguments);
+  return require('common-js/__mcp_exec').exec_api.apply(null, args);
+}
+
 __defineModule__(_main, 'common-js/__mcp_exec', { loadNow: true });
