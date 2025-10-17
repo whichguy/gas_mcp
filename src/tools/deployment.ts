@@ -260,7 +260,8 @@ export class DeployTool extends BaseTool {
       targetVersion = this.validate.number(params.toVersion, 'toVersion', 'rollback operation', 1);
     } else {
       // Auto-find previous tagged version for this environment
-      const versions = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
+      const response = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
+      const versions = response.versions;
       const envVersions = versions
         .filter((v: any) => v.description?.includes(envTag))
         .sort((a: any, b: any) => b.versionNumber - a.versionNumber);
@@ -327,7 +328,8 @@ export class DeployTool extends BaseTool {
    */
   private async handleStatus(scriptId: string, accessToken?: string): Promise<any> {
     const deployments = await this.findEnvironmentDeployments(scriptId, accessToken);
-    const versions = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
+    const response = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
+    const versions = response.versions;
 
     const highestVersion = versions.length > 0
       ? Math.max(...versions.map((v: any) => v.versionNumber))

@@ -117,11 +117,8 @@ export class ExecApiTool extends BaseTool {
     // Build JavaScript statement from function call
     const js_statement = buildFunctionCall(functionName, parameters, moduleName);
 
-    console.error(`[EXEC_API] Transforming function call to JavaScript:`);
-    console.error(`  Module: ${moduleName || '(direct call)'}`);
-    console.error(`  Function: ${functionName}`);
-    console.error(`  Parameters: ${JSON.stringify(parameters)}`);
-    console.error(`  JS Statement: ${js_statement}`);
+    // Compact logging
+    console.error(`[EXEC_API] ${scriptId.substring(0, 12)}... ${moduleName ? moduleName + '.' : ''}${functionName}(${parameters.map(p => JSON.stringify(p).substring(0, 30)).join(', ')}) → ${js_statement.substring(0, 50)}...`);
 
     // Delegate to exec with transformed parameters
     const execParams = {
@@ -351,6 +348,9 @@ export class ExecTool extends BaseTool {
     if (!js_statement?.trim()) {
       throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
     }
+
+    // Compact logging
+    console.error(`[EXEC] ${scriptId.substring(0, 12)}... env:${environment} ${js_statement.substring(0, 60)}...${logFilter ? ` filter:"${logFilter.substring(0, 20)}"` : ''}${logTail ? ` tail:${logTail}` : ''}`);
 
     // Try operation first with provided access token (if any) or session auth
     let accessToken: string | null = null;

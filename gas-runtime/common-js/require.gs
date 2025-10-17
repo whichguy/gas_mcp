@@ -34,14 +34,14 @@
  * function _main(module, exports, log) {
  *   // log is automatically provided - either Logger.log or no-op
  *   log('[INIT] Module initializing...');
- *
+ *   
  *   const helper = require('Helper');
  *
  *   function myFunction() {
  *     log('[CALL] myFunction called');
  *     return "Hello from module";
  *   }
- *
+ *   
  *   log('[READY] Module ready');
  *   return { myFunction };
  * }
@@ -174,8 +174,8 @@ function require(moduleName) {
   // Normalize the module name
   function normalize(name) {
     // Remove leading './' or '../'
-    name = name.replace(/^\.\//, '');
-    name = name.replace(/^\.\.\//, '');
+    name = name.replace(/^\.\/?/, '');
+    name = name.replace(/^\.\.\/?/, '');
     // Remove trailing .js
     if (name.endsWith('.js')) name = name.slice(0, -3);
     return name;
@@ -302,6 +302,12 @@ function require(moduleName) {
  * @param {boolean} [options.loadNow=false] - If true, immediately execute module via require()
  */
 function __defineModule__(moduleFactory, explicitName, options) {
+  // TODO: Add argument validation to prevent common errors:
+  // - Validate explicitName is string or undefined (not object)
+  // - Validate moduleFactory is a function
+  // - Provide helpful error messages for invalid arguments
+  // This prevents hard-to-debug issues like "[object Object]" module names
+
   // Access registries exposed by IIFE
   const moduleFactories = globalThis.__moduleFactories__;
 
@@ -348,7 +354,7 @@ const debugLog = (() => {
     const ConfigManagerClass = require('gas-properties/ConfigManager');
     const config = new ConfigManagerClass('COMMONJS');
     const enabled = config.get('REQUIRE_DEBUG', false);
-    return (enabled === 'true' || enabled === true)
+    return (enabled === 'true' || enabled === true) 
       ? (...args) => Logger.log(...args)
       : () => {};
   } catch (e) {
@@ -372,10 +378,10 @@ const debugLog = (() => {
       const config = new ConfigManagerClass('COMMONJS');
       const loggingMapJson = config.get('__Logging', '{}');
       const loggingMap = JSON.parse(loggingMapJson);
-
+      
       // Default to false if module not in map
       const enabled = loggingMap[moduleName] === true;
-
+      
       return enabled ? (...args) => Logger.log(...args) : () => {};
     } catch (e) {
       // If ConfigManager fails, return no-op
