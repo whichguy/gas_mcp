@@ -11,7 +11,7 @@
  * POST: const x = 5; const y = 10; x * y;
  */
 
-function _main(module, exports, require) {
+function _main(module, exports, log) {
   ///////// BEGIN USER CODE /////////
 
   /**
@@ -470,6 +470,46 @@ function htmlAuthSuccessResponse(executionResult) {
 }
 
   /**
+   * Execute function via CommonJS module system
+   * This is the NEW function for client-side google.script.run calls
+   * Returns raw JavaScript values (not ContentService objects)
+   *
+   * @param {Object} options - Reserved for future use (can be null)
+   * @param {string} moduleName - CommonJS module name (e.g., "Code")
+   * @param {string} functionName - Function name to call (e.g., "getConfig")
+   * @param {...*} args - Variable arguments to pass to the function
+   * @returns {*} Raw JavaScript value from the function
+   */
+  function exec_api(options, moduleName, functionName) {
+    // TODO: Add validation for moduleName and functionName parameters:
+    // - Check if moduleName is a non-empty string
+    // - Check if functionName is a non-empty string
+    // - Provide helpful error message if invalid
+    // - Prevents cryptic errors from undefined/null parameters
+
+    // Get remaining arguments after the first 3
+    var args = Array.prototype.slice.call(arguments, 3);
+
+    // Build JavaScript statement
+    var paramStr = args.map(function(p) {
+      return JSON.stringify(p);
+    }).join(',');
+
+    var js_statement = 'require("' + moduleName + '").' + functionName + '(' + paramStr + ')';
+
+    Logger.log('[exec_api] Executing: ' + JSON.stringify({
+      module: moduleName,
+      function: functionName,
+      argCount: args.length
+    }));
+
+    // Direct execution without ContentService wrapping
+    // Returns plain JavaScript value for google.script.run
+    var fn = createFunction(js_statement);
+    return fn();
+  }
+
+  /**
    * Universal invocation for google.script.run
    * Supports both:
    * - Raw JavaScript expressions: invoke('2 + 2')
@@ -636,7 +676,8 @@ function htmlAuthErrorResponse(errorData) {
     doGetHandler,
     doPostHandler,
     __gas_run,
-    invoke
+    invoke,
+    exec_api
   };
 
   // Register with event system
@@ -645,9 +686,10 @@ function htmlAuthErrorResponse(errorData) {
     doPost: 'doPostHandler'
   };
 
-  // Expose invoke to global namespace for google.script.run
+  // Expose invoke and exec_api to global namespace for google.script.run
   module.exports.__global__ = {
-    invoke: invoke
+    invoke: invoke,
+    exec_api: exec_api
   };
 
   ///////// END USER CODE /////////
