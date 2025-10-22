@@ -127,9 +127,10 @@ exec({
 - Container-specific triggers work (onOpen, onEdit)
 - Time-driven/service triggers need testing
 
-⚠️ **Execution API** - Likely Limited
-- exec_api requires API Executable deployment
-- May have restrictions for container-bound
+⚠️ **Execution API** - ✅ Now Universal
+- exec_api delegates to exec (uses web app infrastructure)
+- Works for both standalone and container-bound scripts
+- No special deployment requirements
 
 ⚠️ **Drive Container Tools**
 - bind_script: API does not support binding existing scripts
@@ -329,11 +330,34 @@ exec({
 // Returns: { result: ..., logger_output: "..." }
 ```
 
-**`exec_api`** - Execute via API Executable deployment
+**`exec_api`** - Convenient function-style execution (transforms to JavaScript and delegates to exec)
 - **Standalone**: ✅ Full Support
-- **Container-Bound**: ⚠️ Needs Testing
-- **Limitations**: Requires API Executable deployment first
-- **Parameters**: Can only pass primitive types (no Apps Script objects)
+- **Container-Bound**: ✅ Full Support
+- **Architecture**: Transforms function calls into JavaScript statements and delegates to exec
+- **Parameters**: Supports primitives (string, number, boolean), arrays, and plain objects
+- **Module Support**: Optional `moduleName` parameter enables calling CommonJS module functions
+- **Execution Features**: Inherits all exec capabilities (logFilter, logTail, timeouts, environment selection)
+- **Usage Examples**:
+```javascript
+// Direct function call
+exec_api({scriptId: "...", functionName: "myFunc", parameters: [1, 2]})
+// Transforms to: exec({scriptId: "...", js_statement: "myFunc(1,2)"})
+
+// Module function call
+exec_api({scriptId: "...", moduleName: "Utils", functionName: "processData", parameters: [[1, 2, 3]]})
+// Transforms to: exec({scriptId: "...", js_statement: 'require("Utils").processData([1,2,3,])'})
+
+// With execution options
+exec_api({
+  scriptId: "...",
+  moduleName: "models/User",
+  functionName: "create",
+  parameters: [{name: "John"}],
+  environment: "prod",
+  executionTimeout: 1800,
+  logFilter: "ERROR"
+})
+```
 
 ### Logging & Processes (3 tools)
 

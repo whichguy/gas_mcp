@@ -2,6 +2,7 @@ import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath } from '../../api/pathParser.js';
 import { ValidationError } from '../../errors/mcpErrors.js';
 import { checkSyncOrThrow, setFileMtimeToRemote } from '../../utils/fileHelpers.js';
+import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/localGitDetection.js';
 import { join, dirname } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, CONTENT_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA } from './shared/schemas.js';
@@ -55,6 +56,22 @@ export class RawWriteTool extends BaseFileSystemTool {
       },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
+      },
+      changeReason: {
+        type: 'string',
+        description: 'Optional commit message for git-enabled projects. If omitted, defaults to "Update {filename}" or "Add {filename}". Tip: Call git_feature({operation: "start"}) first for meaningful branch names.',
+        examples: [
+          'Add user authentication',
+          'Fix validation bug in form',
+          'Refactor database queries',
+          'Update API endpoint'
+        ]
+      },
+      projectPath: {
+        type: 'string',
+        default: '',
+        description: 'Optional path to nested git project within GAS (for polyrepo support). Enables independent git repositories within a single GAS project.',
+        examples: ['', 'backend', 'frontend', 'libs/shared', 'api/v2']
       }
     },
     required: ['path', 'content', 'fileType'],
@@ -129,7 +146,27 @@ export class RawWriteTool extends BaseFileSystemTool {
     // After validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
-    // ✅ NEW: Write-protection - check sync before writing (unless skipSyncCheck is true)
+    // ✅ NEW: Two-phase git discovery with projectPath support
+    const projectPath = params.projectPath || '';
+    const { discoverGit } = await import('../../utils/gitDiscovery.js');
+    const gitDiscovery = await discoverGit(parsedPath.scriptId, projectPath, this.gasClient, accessToken);
+
+    // ✅ NEW: If git discovered, use simplified atomic workflow
+    if (gitDiscovery.gitExists && !params.skipSyncCheck) {
+      return await this.executeWithGitWorkflow(
+        params,
+        parsedPath,
+        filename,
+        content,
+        gasFileType,
+        position,
+        accessToken,
+        projectPath,
+        gitDiscovery
+      );
+    }
+
+    // ✅ Fallback: Write-protection - check sync before writing (unless skipSyncCheck is true)
     if (!params.skipSyncCheck) {
       const { LocalFileManager } = await import('../../utils/localFileManager.js');
       const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
@@ -184,7 +221,46 @@ export class RawWriteTool extends BaseFileSystemTool {
       // Don't fail the operation if local sync fails - remote write succeeded
     }
 
-    return {
+    // NEW: Detect local git and check for breadcrumb
+    let gitDetection: GitDetection | undefined = undefined;
+    try {
+      const gitPath = await detectLocalGit(parsedPath.scriptId);
+
+      // Get files to check for breadcrumb
+      let files: any[] = [];
+      try {
+        files = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
+      } catch (filesError) {
+        // If we can't fetch files, we don't know breadcrumb status
+        console.error('[GIT-DETECTION] Could not fetch files for breadcrumb check:', filesError);
+      }
+
+      const breadcrumbExists = files.length > 0 ? checkBreadcrumbExists(files) : null;
+
+      if (gitPath) {
+        gitDetection = {
+          localGitDetected: true,
+          breadcrumbExists: breadcrumbExists ?? undefined  // null becomes undefined for cleaner response
+        };
+
+        // Add recommendation ONLY if we KNOW breadcrumb is missing (not unknown)
+        if (breadcrumbExists === false) {
+          gitDetection.recommendation = buildRecommendation(parsedPath.scriptId, gitPath);
+        }
+      } else {
+        gitDetection = {
+          localGitDetected: false
+        };
+      }
+    } catch (detectionError: any) {
+      // Git detection is optional - log but don't fail write
+      console.error('[GIT-DETECTION] Error during detection:', detectionError?.message ?? String(detectionError));
+      gitDetection = {
+        localGitDetected: false
+      };
+    }
+
+    const result: any = {
       status: 'success',
       path,
       scriptId: parsedPath.scriptId,
@@ -193,5 +269,135 @@ export class RawWriteTool extends BaseFileSystemTool {
       position: updatedFiles.findIndex((f: any) => f.name === filename),
       totalFiles: updatedFiles.length
     };
+
+    // Add git detection results if available
+    if (gitDetection) {
+      result.git = gitDetection;
+    }
+
+    return result;
+  }
+
+  /**
+   * Execute write with git workflow (feature branches + atomic commit)
+   *
+   * Simplified atomic workflow for raw writes:
+   * 1. Ensure feature branch
+   * 2. Write local file
+   * 3. Run hooks and commit
+   * 4. Push to remote GAS
+   * 5. Rollback if remote push fails
+   */
+  private async executeWithGitWorkflow(
+    params: any,
+    parsedPath: any,
+    filename: string,
+    content: string,
+    gasFileType: string,
+    position: number | undefined,
+    accessToken: string,
+    projectPath: string,
+    gitDiscovery: any
+  ): Promise<any> {
+    const { LocalFileManager } = await import('../../utils/localFileManager.js');
+    const { writeLocalAndValidateWithHooks, revertGitCommit } = await import('../../utils/hookIntegration.js');
+    const { ensureFeatureBranch } = await import('../../utils/gitAutoCommit.js');
+    const { log } = await import('../../utils/logger.js');
+
+    // Get project paths
+    const baseProjectPath = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+    const projectRoot = projectPath ? join(baseProjectPath, projectPath) : baseProjectPath;
+    const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+    const fullFilename = filename + fileExtension;
+    const filePath = join(projectRoot, fullFilename);
+
+    log.info(`[RAW_WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
+
+    // PHASE 0: Ensure feature branch
+    const branchResult = await ensureFeatureBranch(projectRoot);
+    log.info(
+      `[RAW_WRITE] Feature branch: ${branchResult.branch}${branchResult.created ? ' (auto-created)' : ' (existing)'}`
+    );
+
+    // PHASE 1: Write local + run hooks + commit
+    const hookResult = await writeLocalAndValidateWithHooks(
+      content,
+      filePath,
+      filename,
+      parsedPath.scriptId,
+      projectRoot,
+      params.changeReason  // Pass custom commit message
+    );
+
+    if (!hookResult.success) {
+      throw new Error(`Git hooks validation failed: ${hookResult.error}`);
+    }
+
+    const finalContent = hookResult.contentAfterHooks || content;
+
+    // PHASE 2: Push to remote GAS
+    try {
+      const updatedFiles = await this.gasClient.updateFile(
+        parsedPath.scriptId,
+        filename,
+        finalContent,
+        position,
+        accessToken,
+        gasFileType as 'SERVER_JS' | 'HTML' | 'JSON'
+      );
+
+      // Set local mtime to match remote
+      const remoteFile = updatedFiles.find((f: any) => f.name === filename);
+      if (remoteFile?.updateTime) {
+        await setFileMtimeToRemote(filePath, remoteFile.updateTime, remoteFile.type);
+      }
+
+      // Success - return result
+      return {
+        status: 'success',
+        path: params.path,
+        scriptId: parsedPath.scriptId,
+        filename,
+        size: finalContent.length,
+        position: updatedFiles.findIndex((f: any) => f.name === filename),
+        totalFiles: updatedFiles.length,
+        git: {
+          enabled: true,
+          source: gitDiscovery.source,
+          gitPath: gitDiscovery.gitPath,
+          branch: branchResult.branch,
+          branchCreated: branchResult.created,
+          commitHash: hookResult.commitHash,
+          commitMessage: params.changeReason || `Update ${filename}`,
+          hookModified: hookResult.hookModified,
+          breadcrumbsPulled: gitDiscovery.breadcrumbsPulled
+        }
+      };
+
+    } catch (remoteError: any) {
+      // PHASE 3: Remote failed - revert git commit
+      log.error(`[RAW_WRITE] Remote write failed, reverting commit: ${remoteError.message}`);
+
+      const revertResult = await revertGitCommit(
+        projectRoot,
+        hookResult.commitHash!,
+        filename
+      );
+
+      if (revertResult.success) {
+        throw new Error(`Remote write failed after local validation - all changes reverted: ${remoteError.message}`);
+      } else {
+        throw new Error(
+          `CRITICAL: Remote write failed AND commit revert failed.\n\n` +
+          `Manual recovery required:\n` +
+          `1. Navigate to: ${projectRoot}\n` +
+          `2. Check git status: git status\n` +
+          `3. If conflicts exist: git revert --abort\n` +
+          `4. To undo commit: git reset --hard HEAD~1 (WARNING: loses commit ${hookResult.commitHash})\n\n` +
+          `Original error: ${remoteError.message}\n` +
+          `Revert error: ${revertResult.error || 'unknown'}`
+        );
+      }
+    }
   }
 }

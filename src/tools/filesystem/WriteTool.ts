@@ -4,9 +4,12 @@ import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { setFileMtimeToRemote, checkSyncOrThrow } from '../../utils/fileHelpers.js';
+import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { writeLocalAndValidateWithHooks, revertGitCommit } from '../../utils/hookIntegration.js';
+import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitHints, type GitDetection } from '../../utils/localGitDetection.js';
+import { log } from '../../utils/logger.js';
 import { join, dirname } from 'path';
 import { mkdir, stat } from 'fs/promises';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA } from './shared/schemas.js';
@@ -66,6 +69,22 @@ export class WriteTool extends BaseFileSystemTool {
       },
       force: {
         ...FORCE_SCHEMA
+      },
+      changeReason: {
+        type: 'string',
+        description: 'Optional commit message for git-enabled projects. If omitted, defaults to "Update {filename}" or "Add {filename}". Tip: Call git_feature({operation: "start"}) first for meaningful branch names.',
+        examples: [
+          'Add user authentication',
+          'Fix validation bug in form',
+          'Refactor database queries',
+          'Update API endpoint'
+        ]
+      },
+      projectPath: {
+        type: 'string',
+        default: '',
+        description: 'Optional path to nested git project within GAS (for polyrepo support). Enables independent git repositories within a single GAS project.',
+        examples: ['', 'backend', 'frontend', 'libs/shared', 'api/v2']
       }
     },
     required: ['scriptId', 'path', 'content'],
@@ -220,6 +239,9 @@ export class WriteTool extends BaseFileSystemTool {
       const moduleName = getModuleName(fullPath);
       processedContent = wrapModuleContent(processedContent, moduleName, resolvedOptions);
 
+      // Process @hoisted annotations and generate bridge functions
+      processedContent = processHoistedAnnotations(processedContent, originalContent, moduleName);
+
       commonJsProcessing = {
         wrapperApplied: true,
         cleanedWrappers: cleaned.hadWrappers,
@@ -250,26 +272,43 @@ export class WriteTool extends BaseFileSystemTool {
 
     const content = processedContent;
 
-    // Opportunistic git detection - choose workflow based on git availability
-    const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
+    // Two-phase git discovery with projectPath support
+    const projectPath = params.projectPath || '';
+    const accessToken = await this.getAuthToken(params);
 
-    if (gitStatus.gitInitialized && !remoteOnly) {
-      // Git available → use atomic hook validation workflow
+    // Discover git (Phase A: local filesystem, Phase B: GAS breadcrumbs)
+    const { discoverGit } = await import('../../utils/gitDiscovery.js');
+    const gitDiscovery = await discoverGit(scriptId, projectPath, this.gasClient, accessToken);
+
+    if (gitDiscovery.gitExists && !remoteOnly) {
+      // Git discovered → use enhanced atomic workflow with feature branches
+      log.info(`[WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
+
+      if (gitDiscovery.breadcrumbsPulled && gitDiscovery.breadcrumbsPulled.length > 0) {
+        log.info(`[WRITE] Pulled ${gitDiscovery.breadcrumbsPulled.length} git breadcrumbs from GAS`);
+      }
+
+      // Resolve working directory with projectPath
+      const resolvedWorkingDir = projectPath ? join(workingDir, projectPath) : workingDir;
+
       return await this.executeWithHookValidation(
         params,
         scriptId,
         filename,
         content,
         projectName,
-        workingDir,
+        resolvedWorkingDir,
         localOnly,
         remoteOnly,
-        commonJsProcessing
+        commonJsProcessing,
+        params.changeReason  // Pass custom commit message
       );
     }
 
-    // No git or remoteOnly → use legacy remote-first workflow
-    const accessToken = await this.getAuthToken(params);
+    log.info('[WRITE] No git discovered, using remote-first workflow');
+
+    // Check if git repo exists locally (even if not discovered by new discovery mechanism)
+    const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
 
     // Verify sync status with remote
     let syncStatus: any = null;
@@ -498,10 +537,56 @@ export class WriteTool extends BaseFileSystemTool {
       }
     }
 
-    // Check for git association hints
-    let gitHints: any = undefined;
+    // Check for git association hints AND detect local git (single API call)
+    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken);
+
+    // Return token-efficient results with local and git hints
+    const result: any = {
+      success: true,
+      path: `${scriptId}/${filename}`,
+      size: content.length
+    };
+
+    // Add local file info if available
+    if (results.localFile && results.localFile.path) {
+      result.local = {
+        path: results.localFile.path,
+        exists: true
+      };
+    }
+
+    // Add git hints if available (merge with detection results)
+    if (gitHints || gitDetection) {
+      result.git = {
+        ...(gitHints || {}),
+        ...(gitDetection || {})
+      };
+    }
+
+    return result;
+  }
+
+  /**
+   * Detect git info and breadcrumb in a single API call
+   * Checks for git association hints (.git.gs files) and local git detection
+   *
+   * @param scriptId - GAS project ID
+   * @param accessToken - Auth token for API calls
+   * @returns Object containing gitHints and gitDetection
+   */
+  private async detectGitInfoAndBreadcrumb(
+    scriptId: string,
+    accessToken: string
+  ): Promise<{ gitHints?: GitHints; gitDetection?: GitDetection }> {
+    let gitHints: GitHints | undefined = undefined;
+    let gitDetection: GitDetection | undefined = undefined;
+    let allFiles: any[] = [];
+
     try {
-      const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      // Single API call for both git hints and breadcrumb detection
+      allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+
+      // Check for git association hints
       const gitConfigFiles = allFiles.filter((f: any) =>
         f.name === '.git.gs' || f.name.endsWith('/.git.gs')
       );
@@ -531,29 +616,38 @@ export class WriteTool extends BaseFileSystemTool {
       }
     } catch (gitCheckError) {
       // Git hints are optional - continue without them
+      console.error('[GIT-DETECTION] Could not fetch files for git hints:', gitCheckError);
     }
 
-    // Return token-efficient results with local and git hints
-    const result: any = {
-      success: true,
-      path: `${scriptId}/${filename}`,
-      size: content.length
-    };
+    // Detect local git and check for breadcrumb (reuse allFiles)
+    try {
+      const gitPath = await detectLocalGit(scriptId);
+      const breadcrumbExists = allFiles.length > 0 ? checkBreadcrumbExists(allFiles) : null;
 
-    // Add local file info if available
-    if (results.localFile && results.localFile.path) {
-      result.local = {
-        path: results.localFile.path,
-        exists: true
+      if (gitPath) {
+        gitDetection = {
+          localGitDetected: true,
+          breadcrumbExists: breadcrumbExists ?? undefined  // null becomes undefined for cleaner response
+        };
+
+        // Add recommendation ONLY if we KNOW breadcrumb is missing (not unknown)
+        if (breadcrumbExists === false) {
+          gitDetection.recommendation = buildRecommendation(scriptId, gitPath);
+        }
+      } else {
+        gitDetection = {
+          localGitDetected: false
+        };
+      }
+    } catch (detectionError: any) {
+      // Git detection is optional - log but don't fail write
+      console.error('[GIT-DETECTION] Error during detection:', detectionError?.message ?? String(detectionError));
+      gitDetection = {
+        localGitDetected: false
       };
     }
 
-    // Add git hints if available
-    if (gitHints) {
-      result.git = gitHints;
-    }
-
-    return result;
+    return { gitHints, gitDetection };
   }
 
   /**
@@ -571,7 +665,8 @@ export class WriteTool extends BaseFileSystemTool {
     workingDir: string,
     localOnly: boolean,
     remoteOnly: boolean,
-    commonJsProcessing: any
+    commonJsProcessing: any,
+    changeReason?: string
   ): Promise<any> {
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
 
@@ -586,13 +681,22 @@ export class WriteTool extends BaseFileSystemTool {
     const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
     const filePath = join(projectPath, fullFilename);
 
+    // PHASE 0: Ensure feature branch before committing
+    const { ensureFeatureBranch } = await import('../../utils/gitAutoCommit.js');
+    const branchResult = await ensureFeatureBranch(projectPath);
+
+    log.info(
+      `[WRITE] Feature branch: ${branchResult.branch}${branchResult.created ? ' (auto-created)' : ' (existing)'}`
+    );
+
     // PHASE 1: Local validation with hooks
     const hookResult = await writeLocalAndValidateWithHooks(
       content,
       filePath,
       filename,
       projectName,
-      workingDir
+      workingDir,
+      changeReason  // Pass custom commit message
     );
 
     if (!hookResult.success) {
@@ -695,40 +799,9 @@ export class WriteTool extends BaseFileSystemTool {
       }
     }
 
-    // Check for git association hints
-    let gitHints: any = undefined;
-    try {
-      const allFiles = await this.gasClient.getProjectContent(scriptId, await this.getAuthToken(params));
-      const gitConfigFiles = allFiles.filter((f: any) =>
-        f.name === '.git.gs' || f.name.endsWith('/.git.gs')
-      );
-
-      if (gitConfigFiles.length > 0) {
-        // Parse git configuration to provide hints
-        const hints: any[] = [];
-
-        for (const gitFile of gitConfigFiles) {
-          try {
-            const config = JSON.parse(gitFile.source || '{}');
-            const projectPath = gitFile.name === '.git.gs' ? '' : gitFile.name.replace('/.git.gs', '');
-            const localPath = config.local?.path || `~/gas-repos/project-${scriptId}`;
-
-            hints.push(localPath);
-          } catch (parseError) {
-            // Skip invalid git config files
-          }
-        }
-
-        if (hints.length > 0) {
-          gitHints = {
-            associated: true,
-            syncFolder: hints[0]  // Primary sync folder
-          };
-        }
-      }
-    } catch (gitCheckError) {
-      // Git hints are optional - continue without them
-    }
+    // Check for git association hints AND detect local git (single API call)
+    const accessToken = await this.getAuthToken(params);
+    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken);
 
     // Build result with local and git hints
     const result: any = {
@@ -743,9 +816,19 @@ export class WriteTool extends BaseFileSystemTool {
       exists: true
     };
 
-    // Add git hints if available
-    if (gitHints) {
-      result.git = gitHints;
+    // Add git hints if available (merge with detection results and branch info)
+    if (gitHints || gitDetection || branchResult) {
+      result.git = {
+        ...(gitHints || {}),
+        ...(gitDetection || {}),
+        ...(branchResult ? {
+          branch: branchResult.branch,
+          branchCreated: branchResult.created,
+          commitMessage: changeReason || (hookResult.previousContent !== null
+            ? `Update ${filename}`
+            : `Add ${filename}`)
+        } : {})
+      };
     }
 
     return result;

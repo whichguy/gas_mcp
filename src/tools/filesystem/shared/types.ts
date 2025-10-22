@@ -106,6 +106,8 @@ export interface WriteParams extends FileParams {
     }>;
   };
   force?: boolean;
+  changeReason?: string;
+  projectPath?: string;
 }
 
 export interface ListParams {

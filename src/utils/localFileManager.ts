@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { FileOperationError, ValidationError } from '../errors/mcpErrors.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
+import { ensureGitInitialized } from './gitInit.js';
 
 /**
  * Local file representation
@@ -888,72 +889,33 @@ export class LocalFileManager {
     repoPath: string;
   }> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
-    
+
     // 🔧 CRITICAL FIX: Ensure the project directory exists BEFORE git operations
     const projectPath = await this.ensureProjectDirectory(projectName, actualWorkingDir);
-    
+
     try {
-      // Check if .git directory exists
-      const gitPath = path.join(projectPath, '.git');
-      const gitExists = await fs.access(gitPath).then(() => true).catch(() => false);
-      
-      if (gitExists) {
-        return {
-          gitInitialized: true,
-          isNewRepo: false,
-          repoPath: projectPath
-        };
-      }
-      
-      // Initialize git repository
-      console.error(`🔧 [GIT INIT] Initializing git repository for project: ${projectName}`);
-      const { spawn } = await import('child_process');
-      
-      await new Promise<void>((resolve, reject) => {
-        const gitInit = spawn('git', ['init'], { 
-          cwd: projectPath,
-          stdio: ['ignore', 'pipe', 'pipe']
-        });
-        
-        let stdout = '';
-        let stderr = '';
-        
-        gitInit.stdout?.on('data', (data) => {
-          stdout += data.toString();
-        });
-        
-        gitInit.stderr?.on('data', (data) => {
-          stderr += data.toString();
-        });
-        
-        gitInit.on('close', (code) => {
-          if (code === 0) {
-            console.error(`✅ [GIT INIT] Repository initialized: ${projectPath}`);
-            resolve();
-          } else {
-            console.error(`❌ [GIT INIT] Failed: ${stderr}`);
-            reject(new Error(`Git init failed: ${stderr}`));
-          }
-        });
-      });
-      
-      // Create initial .gitignore
-      const gitignoreContent = `# MCP Gas Server
+      // Use shared git initialization utility
+      const gitResult = await ensureGitInitialized(projectPath);
+
+      // Create initial .gitignore if this is a new repository
+      if (gitResult.isNew) {
+        const gitignoreContent = `# MCP Gas Server
 .env
 .env.local
 *.log
 node_modules/
 .DS_Store
 `;
-      
-      await fs.writeFile(path.join(projectPath, '.gitignore'), gitignoreContent);
-      
+
+        await fs.writeFile(path.join(projectPath, '.gitignore'), gitignoreContent);
+      }
+
       return {
-        gitInitialized: true,
-        isNewRepo: true,
-        repoPath: projectPath
+        gitInitialized: gitResult.initialized,
+        isNewRepo: gitResult.isNew,
+        repoPath: gitResult.repoPath
       };
-      
+
     } catch (error: any) {
       console.error(`⚠️ [GIT INIT] Failed to initialize git repo: ${error.message}`);
       return {

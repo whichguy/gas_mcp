@@ -583,6 +583,398 @@ function htmlAuthSuccessResponse(executionResult) {
     }
   }
 
+  /**
+   * Get deployment URLs for dev/staging/prod environments
+   * Queries Apps Script API to list deployments filtered by ENV_TAGS
+   * @returns {{dev: string|null, staging: string|null, prod: string|null, error?: string}}
+   */
+  function getDeploymentUrls() {
+    var scriptId = ScriptApp.getScriptId();
+    var token = ScriptApp.getOAuthToken();
+
+    try {
+      var url = 'https://script.googleapis.com/v1/projects/' + scriptId + '/deployments';
+      var response = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        muteHttpExceptions: true
+      });
+
+      if (response.getResponseCode() !== 200) {
+        throw new Error('API error: ' + response.getResponseCode());
+      }
+
+      var data = JSON.parse(response.getContentText());
+      var deployments = data.deployments || [];
+      var urls = { dev: null, staging: null, prod: null };
+
+      deployments.forEach(function(d) {
+        var desc = d.description || '';
+        var webAppEntry = (d.entryPoints || []).find(function(ep) {
+          return ep.entryPointType === 'WEB_APP';
+        });
+        var deploymentUrl = webAppEntry ? webAppEntry.webApp.url : null;
+
+        if (desc.indexOf('[DEV]') === 0) urls.dev = deploymentUrl;
+        else if (desc.indexOf('[STAGING]') === 0) urls.staging = deploymentUrl;
+        else if (desc.indexOf('[PROD]') === 0) urls.prod = deploymentUrl;
+      });
+
+      return urls;
+    } catch (error) {
+      Logger.log('[getDeploymentUrls] Error: ' + error.toString());
+      return {
+        dev: ScriptApp.getService().getUrl(),
+        staging: null,
+        prod: null,
+        error: error.toString()
+      };
+    }
+  }
+
+  /**
+   * Determine which deployment environment is currently running
+   * @returns {'dev' | 'staging' | 'prod' | 'unknown'}
+   */
+  function getCurrentDeploymentType() {
+    var currentUrl = ScriptApp.getService().getUrl();
+
+    // Fast path: HEAD deployments end with /dev
+    if (currentUrl && currentUrl.endsWith('/dev')) {
+      return 'dev';
+    }
+
+    try {
+      var urls = getDeploymentUrls();
+      if (currentUrl === urls.dev) return 'dev';
+      if (currentUrl === urls.staging) return 'staging';
+      if (currentUrl === urls.prod) return 'prod';
+      return 'unknown';
+    } catch (error) {
+      Logger.log('[getCurrentDeploymentType] Error: ' + error.toString());
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Get basic script information for debugger header
+   * @returns {Object} Script metadata {scriptId, projectName}
+   */
+  function getScriptInfo() {
+    try {
+      const scriptId = ScriptApp.getScriptId();
+      const projectName = DriveApp.getFileById(scriptId).getName();
+      return {
+        scriptId: scriptId,
+        projectName: projectName
+      };
+    } catch (e) {
+      Logger.log('[ERROR] getScriptInfo failed: ' + e.toString());
+      return {
+        scriptId: 'Error',
+        projectName: 'Unable to load'
+      };
+    }
+  }
+
+  /**
+   * Get recent script execution processes
+   * @returns {Object} {success: boolean, processes: Array, error?: string}
+   */
+  function getRecentProcesses() {
+    try {
+      const allProcesses = Script.listScriptProcesses();
+
+      // Filter and format recent processes (last 24 hours)
+      const oneDayAgo = new Date().getTime() - (24 * 60 * 60 * 1000);
+      const recentProcesses = allProcesses
+        .filter(p => new Date(p.startTime).getTime() > oneDayAgo)
+        .slice(0, 10)  // Limit to 10 most recent
+        .map(p => ({
+          functionName: p.functionName,
+          startTime: p.startTime,
+          status: p.status,
+          duration: p.duration
+        }));
+
+      return {
+        success: true,
+        processes: recentProcesses
+      };
+    } catch (e) {
+      Logger.log('[ERROR] getRecentProcesses failed: ' + e.toString());
+      return {
+        success: false,
+        error: e.toString(),
+        processes: []
+      };
+    }
+  }
+
+  /**
+   * Get script execution logs from the past N minutes
+   * @param {number} minutes - Number of minutes to look back (0 = all logs)
+   * @returns {Object} {success: boolean, logs: Array, error?: string}
+   */
+  function getScriptLogs(minutes) {
+    try {
+      // Calculate time range
+      const now = new Date();
+      const startTime = minutes === 0
+        ? new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000))  // 30 days ago for "all"
+        : new Date(now.getTime() - (minutes * 60 * 1000));
+
+      // Fetch logs using Apps Script API
+      const logs = Script.getProjectLogs({
+        startTime: startTime,
+        endTime: now,
+        pageSize: 100
+      });
+
+      // Format logs for display
+      const formattedLogs = logs.map(log => ({
+        timestamp: log.time,
+        severity: log.severity || 'INFO',
+        message: log.message || log.textPayload || '',
+        functionName: log.functionName || 'N/A'
+      }));
+
+      return {
+        success: true,
+        logs: formattedLogs
+      };
+    } catch (e) {
+      Logger.log('[ERROR] getScriptLogs failed: ' + e.toString());
+      return {
+        success: false,
+        error: e.toString(),
+        logs: []
+      };
+    }
+  }
+
+  /**
+   * Promote deployment between environments
+   * @param {string} environment - 'staging' or 'prod'
+   * @param {string} description - Version description (required for staging)
+   * @returns {Object} {success: boolean, message: string, version?: number, error?: string}
+   */
+  function promoteDeployment(environment, description) {
+    var scriptId = ScriptApp.getScriptId();
+    var token = ScriptApp.getOAuthToken();
+
+    try {
+      Logger.log('[promoteDeployment] Promoting to: ' + environment);
+
+      if (environment !== 'staging' && environment !== 'prod') {
+        return {
+          success: false,
+          error: 'Invalid environment. Must be "staging" or "prod"'
+        };
+      }
+
+      if (environment === 'staging') {
+        // Promote dev→staging: Create version from HEAD
+        if (!description || description.trim() === '') {
+          return {
+            success: false,
+            error: 'Description is required when promoting to staging'
+          };
+        }
+
+        var taggedDescription = '[STAGING] ' + description;
+
+        // Create version from HEAD
+        var versionPayload = {
+          description: taggedDescription
+        };
+
+        var versionResponse = UrlFetchApp.fetch(
+          'https://script.googleapis.com/v1/projects/' + scriptId + '/versions',
+          {
+            method: 'post',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            contentType: 'application/json',
+            payload: JSON.stringify(versionPayload),
+            muteHttpExceptions: true
+          }
+        );
+
+        if (versionResponse.getResponseCode() !== 200) {
+          throw new Error('Failed to create version: ' + versionResponse.getContentText());
+        }
+
+        var version = JSON.parse(versionResponse.getContentText());
+        Logger.log('[promoteDeployment] Created version: ' + version.versionNumber);
+
+        // Find staging deployment
+        var deploymentsResponse = UrlFetchApp.fetch(
+          'https://script.googleapis.com/v1/projects/' + scriptId + '/deployments',
+          {
+            method: 'get',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            },
+            muteHttpExceptions: true
+          }
+        );
+
+        if (deploymentsResponse.getResponseCode() !== 200) {
+          throw new Error('Failed to get deployments: ' + deploymentsResponse.getContentText());
+        }
+
+        var deploymentsData = JSON.parse(deploymentsResponse.getContentText());
+        var deployments = deploymentsData.deployments || [];
+        var stagingDeployment = deployments.find(function(d) {
+          return (d.description || '').indexOf('[STAGING]') === 0;
+        });
+
+        if (!stagingDeployment) {
+          return {
+            success: false,
+            error: 'Staging deployment not found. Run deploy({operation: "reset"}) via MCP to create deployments'
+          };
+        }
+
+        // Update staging deployment to new version
+        var updatePayload = {
+          deploymentConfig: {
+            versionNumber: version.versionNumber,
+            description: '[STAGING] ' + description + ' (v' + version.versionNumber + ')'
+          }
+        };
+
+        var updateResponse = UrlFetchApp.fetch(
+          'https://script.googleapis.com/v1/projects/' + scriptId + '/deployments/' + stagingDeployment.deploymentId,
+          {
+            method: 'put',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            contentType: 'application/json',
+            payload: JSON.stringify(updatePayload),
+            muteHttpExceptions: true
+          }
+        );
+
+        if (updateResponse.getResponseCode() !== 200) {
+          throw new Error('Failed to update staging deployment: ' + updateResponse.getContentText());
+        }
+
+        Logger.log('[promoteDeployment] Updated staging deployment to v' + version.versionNumber);
+
+        return {
+          success: true,
+          message: 'Successfully promoted to staging',
+          version: version.versionNumber,
+          environment: 'staging'
+        };
+
+      } else if (environment === 'prod') {
+        // Promote staging→prod: Update prod deployment to staging's version
+
+        // Get current deployments
+        var deploymentsResponse = UrlFetchApp.fetch(
+          'https://script.googleapis.com/v1/projects/' + scriptId + '/deployments',
+          {
+            method: 'get',
+            headers: {
+              'Authorization': 'Bearer ' + token
+            },
+            muteHttpExceptions: true
+          }
+        );
+
+        if (deploymentsResponse.getResponseCode() !== 200) {
+          throw new Error('Failed to get deployments: ' + deploymentsResponse.getContentText());
+        }
+
+        var deploymentsData = JSON.parse(deploymentsResponse.getContentText());
+        var deployments = deploymentsData.deployments || [];
+
+        var stagingDeployment = deployments.find(function(d) {
+          return (d.description || '').indexOf('[STAGING]') === 0;
+        });
+
+        var prodDeployment = deployments.find(function(d) {
+          return (d.description || '').indexOf('[PROD]') === 0;
+        });
+
+        if (!stagingDeployment) {
+          return {
+            success: false,
+            error: 'Staging deployment not found. Cannot promote to prod without staging deployment'
+          };
+        }
+
+        if (!prodDeployment) {
+          return {
+            success: false,
+            error: 'Production deployment not found. Run deploy({operation: "reset"}) via MCP to create deployments'
+          };
+        }
+
+        var stagingVersion = stagingDeployment.deploymentConfig.versionNumber;
+
+        if (!stagingVersion || stagingVersion === '@HEAD') {
+          return {
+            success: false,
+            error: 'Staging is not on a versioned deployment. Promote to staging first.'
+          };
+        }
+
+        // Update prod deployment to staging's version
+        var updatePayload = {
+          deploymentConfig: {
+            versionNumber: stagingVersion,
+            description: '[PROD] Promoted from staging (v' + stagingVersion + ')'
+          }
+        };
+
+        var updateResponse = UrlFetchApp.fetch(
+          'https://script.googleapis.com/v1/projects/' + scriptId + '/deployments/' + prodDeployment.deploymentId,
+          {
+            method: 'put',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            contentType: 'application/json',
+            payload: JSON.stringify(updatePayload),
+            muteHttpExceptions: true
+          }
+        );
+
+        if (updateResponse.getResponseCode() !== 200) {
+          throw new Error('Failed to update production deployment: ' + updateResponse.getContentText());
+        }
+
+        Logger.log('[promoteDeployment] Updated production deployment to v' + stagingVersion);
+
+        return {
+          success: true,
+          message: 'Successfully promoted to production',
+          version: stagingVersion,
+          environment: 'prod'
+        };
+      }
+
+    } catch (error) {
+      Logger.log('[ERROR] promoteDeployment failed: ' + error.toString());
+      return {
+        success: false,
+        error: error.toString()
+      };
+    }
+  }
+
   // Export handlers
 
 function htmlAuthErrorResponse(errorData) {
@@ -677,7 +1069,13 @@ function htmlAuthErrorResponse(errorData) {
     doPostHandler,
     __gas_run,
     invoke,
-    exec_api
+    exec_api,
+    getDeploymentUrls,
+    getCurrentDeploymentType,
+    getScriptInfo,
+    getRecentProcesses,
+    getScriptLogs,
+    promoteDeployment
   };
 
   // Register with event system
@@ -689,7 +1087,11 @@ function htmlAuthErrorResponse(errorData) {
   // Expose invoke and exec_api to global namespace for google.script.run
   module.exports.__global__ = {
     invoke: invoke,
-    exec_api: exec_api
+    exec_api: exec_api,
+    getScriptInfo: getScriptInfo,
+    getRecentProcesses: getRecentProcesses,
+    getScriptLogs: getScriptLogs,
+    promoteDeployment: promoteDeployment
   };
 
   ///////// END USER CODE /////////

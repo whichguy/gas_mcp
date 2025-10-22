@@ -24,6 +24,7 @@ export interface HookValidationResult {
  * @param filename - File name for commit message
  * @param projectName - Project name for git operations
  * @param workingDir - Working directory
+ * @param changeReason - Optional custom commit message. If omitted, defaults to "Update {filename}" or "Add {filename}"
  * @returns HookValidationResult with success status and final content
  */
 export async function writeLocalAndValidateWithHooks(
@@ -31,7 +32,8 @@ export async function writeLocalAndValidateWithHooks(
   filePath: string,
   filename: string,
   projectName: string,
-  workingDir?: string
+  workingDir?: string,
+  changeReason?: string
 ): Promise<HookValidationResult> {
   let previousContent: string | null = null;
 
@@ -56,9 +58,10 @@ export async function writeLocalAndValidateWithHooks(
     // Step 3: Attempt git commit (hooks execute here)
     console.error(`🔧 [HOOK_VALIDATION] Running git commit with hooks: ${filename}`);
 
-    const commitMessage = previousContent !== null
+    // Use custom changeReason or default message
+    const commitMessage = changeReason || (previousContent !== null
       ? `Update ${filename}`
-      : `Add ${filename}`;
+      : `Add ${filename}`);
 
     const gitResult = await LocalFileManager.autoCommitChanges(
       projectName,

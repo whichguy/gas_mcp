@@ -842,6 +842,12 @@ interface GasWriteInput {
   remoteOnly?: boolean; // Write only to remote (skip local sync)
   workingDir?: string;  // Working directory (defaults to current directory)
   accessToken?: string;
+  changeReason?: string; // **NEW**: Custom commit message for git-enabled projects
+                        // Example: "feat: Add user authentication"
+                        // Default: "Update {filename}" or "Add {filename}"
+  projectPath?: string; // **NEW**: Path to nested git project within GAS (polyrepo support)
+                        // Example: "backend", "frontend", "libs/shared"
+                        // Enables multiple independent git repositories in single GAS project
 }
 ```
 
@@ -2440,6 +2446,139 @@ interface GasProjectCreateInput {
 
 ---
 
+### Built-in Deployment Utilities
+
+The `common-js/__mcp_exec` module provides built-in utility functions for deployment environment detection and URL lookup. These functions are designed to be called from within your Google Apps Script code (e.g., toolbar logic, onOpen handlers).
+
+#### `getDeploymentUrls()` - Get Environment URLs
+
+Query the Apps Script API to retrieve deployment URLs for dev, staging, and prod environments.
+
+**Function Signature:**
+```javascript
+function getDeploymentUrls(): {
+  dev: string | null,
+  staging: string | null,
+  prod: string | null,
+  error?: string
+}
+```
+
+**Usage:**
+```javascript
+// From server-side GAS code
+const urls = require('common-js/__mcp_exec').getDeploymentUrls();
+
+// Example response:
+{
+  dev: "https://script.google.com/macros/s/abc123.../dev",
+  staging: "https://script.google.com/macros/s/def456.../exec",
+  prod: "https://script.google.com/macros/s/ghi789.../exec"
+}
+```
+
+**Behavior:**
+- Queries Apps Script API using `UrlFetchApp` with OAuth token
+- Filters deployments by ENV_TAGS: `[DEV]`, `[STAGING]`, `[PROD]`
+- Returns `null` for environments without deployments
+- Falls back to current URL for dev if API call fails
+- Requires OAuth scope: `https://www.googleapis.com/auth/script.deployments.readonly`
+
+**Convention:**
+- Dev environment always uses HEAD deployment (versionNumber = null)
+- Staging and prod use versioned deployments
+
+#### `getCurrentDeploymentType()` - Detect Current Environment
+
+Determine which deployment environment is currently executing.
+
+**Function Signature:**
+```javascript
+function getCurrentDeploymentType(): 'dev' | 'staging' | 'prod' | 'unknown'
+```
+
+**Usage:**
+```javascript
+// From server-side GAS code
+const env = require('common-js/__mcp_exec').getCurrentDeploymentType();
+
+// Use for environment-specific logic
+if (env === 'prod') {
+  // Production-only behavior
+  Logger.log('Running in production');
+} else if (env === 'dev') {
+  // Development-only behavior
+  Logger.log('Running in development');
+}
+```
+
+**Behavior:**
+- Fast path: HEAD deployments end with `/dev` → returns `'dev'` immediately
+- Otherwise: Compares `ScriptApp.getService().getUrl()` with deployment URLs
+- Returns `'unknown'` if current URL doesn't match any environment
+
+**Example: Environment-Aware Menu**
+```javascript
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  const urls = require('common-js/__mcp_exec').getDeploymentUrls();
+
+  const menu = ui.createMenu('My App');
+
+  // Add environment-specific menu items
+  if (urls.dev) {
+    menu.addItem('Open Chat (Dev)', 'openChatDev');
+  }
+  if (urls.staging) {
+    menu.addItem('Open Chat (Staging)', 'openChatStaging');
+  }
+  if (urls.prod) {
+    menu.addItem('Open Chat', 'openChatProd');  // Production without label
+  }
+
+  menu.addToUi();
+}
+
+function openChatDev() {
+  const urls = require('common-js/__mcp_exec').getDeploymentUrls();
+  const html = HtmlService.createHtmlOutputFromFile('chat')
+    .setWidth(400)
+    .setHeight(600);
+  html.setContent(html.getContent().replace('{{DEPLOY_URL}}', urls.dev));
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function openChatStaging() {
+  const urls = require('common-js/__mcp_exec').getDeploymentUrls();
+  const html = HtmlService.createHtmlOutputFromFile('chat')
+    .setWidth(400)
+    .setHeight(600);
+  html.setContent(html.getContent().replace('{{DEPLOY_URL}}', urls.staging));
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function openChatProd() {
+  const urls = require('common-js/__mcp_exec').getDeploymentUrls();
+  const html = HtmlService.createHtmlOutputFromFile('chat')
+    .setWidth(400)
+    .setHeight(600);
+  html.setContent(html.getContent().replace('{{DEPLOY_URL}}', urls.prod));
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+```
+
+**OAuth Scope Required:**
+Add to `appsscript.json`:
+```json
+{
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.deployments.readonly"
+  ]
+}
+```
+
+---
+
 ## 📋 Drive Container Tools
 
 ### `gas_find_drive_script` - Find Drive Container Scripts
@@ -2865,6 +3004,336 @@ const dryRunResult = await callTool('gas_git_commit', {
   "workingDirectory": "/Users/user/src/mcp_gas"
 }
 ```
+
+### `git_feature` - Feature Branch Workflow Management
+
+**NEW**: Consolidated tool for managing feature branches with 5 operations: start, finish, rollback, list, and switch.
+
+#### Key Features
+- **🌿 Auto Feature Branches**: Create branches with `llm-feature-{name}` naming convention
+- **🚀 Auto Git Init**: Automatically initializes git repository if .git directory missing
+- **⚙️ Smart Config Detection**: Uses global git config when available, falls back to sensible defaults
+- **🔀 Squash Merge**: Squash all commits when finishing features
+- **🧹 Branch Cleanup**: Delete branches after merge or rollback
+- **📋 Branch Listing**: View all feature branches and current branch
+- **🔄 Branch Switching**: Switch between branches safely
+- **🛡️ Safety Checks**: Validates uncommitted changes, branch existence, naming patterns
+- **🎯 Dynamic Detection**: Auto-detects main vs master as default branch
+- **🔒 Security**: Branch name sanitization prevents shell injection
+
+#### Input Schema
+```typescript
+interface GitFeatureInput {
+  operation: 'start' | 'finish' | 'rollback' | 'list' | 'switch';
+  scriptId: string;
+  projectPath?: string;        // Optional path to nested git project (polyrepo support)
+  featureName?: string;        // Required for 'start' - alphanumeric and hyphens only
+  branch?: string;             // Optional for 'finish'/'switch', required for 'rollback'
+  deleteAfterMerge?: boolean;  // For 'finish' operation (default: true)
+}
+```
+
+#### Usage Examples
+
+**Start New Feature Branch**
+```typescript
+const startResult = await callTool('git_feature', {
+  operation: 'start',
+  scriptId: 'abc123def456...',
+  featureName: 'user-auth'
+});
+
+// Response:
+{
+  "status": "success",
+  "operation": "start",
+  "branch": "llm-feature-user-auth",
+  "created": true,
+  "previousBranch": "main"
+}
+```
+
+**List All Feature Branches**
+```typescript
+const listResult = await callTool('git_feature', {
+  operation: 'list',
+  scriptId: 'abc123def456...'
+});
+
+// Response:
+{
+  "status": "success",
+  "operation": "list",
+  "branches": [
+    "llm-feature-user-auth",
+    "llm-feature-api-refactor",
+    "llm-feature-auto-20250121143022"
+  ],
+  "current": "llm-feature-user-auth",
+  "total": 3
+}
+```
+
+**Switch Between Branches**
+```typescript
+const switchResult = await callTool('git_feature', {
+  operation: 'switch',
+  scriptId: 'abc123def456...',
+  branch: 'llm-feature-api-refactor'
+});
+
+// Response:
+{
+  "status": "success",
+  "operation": "switch",
+  "branch": "llm-feature-api-refactor",
+  "switched": true,
+  "isFeatureBranch": true
+}
+```
+
+**Finish Feature (Squash Merge to Main)**
+```typescript
+const finishResult = await callTool('git_feature', {
+  operation: 'finish',
+  scriptId: 'abc123def456...',
+  deleteAfterMerge: true  // Default: true
+});
+
+// Response:
+{
+  "status": "success",
+  "operation": "finish",
+  "branch": "llm-feature-user-auth",
+  "squashCommit": "abc123d",
+  "commitMessage": "Feature: user-auth",
+  "deleted": true,
+  "currentBranch": "main"
+}
+```
+
+**Rollback Feature (Delete Without Merging)**
+```typescript
+const rollbackResult = await callTool('git_feature', {
+  operation: 'rollback',
+  scriptId: 'abc123def456...',
+  branch: 'llm-feature-user-auth'
+});
+
+// Response:
+{
+  "status": "success",
+  "operation": "rollback",
+  "branch": "llm-feature-user-auth",
+  "deleted": true,
+  "uncommittedChangesLost": false,
+  "currentBranch": "main"
+}
+```
+
+**Polyrepo Support (Nested Git Repositories)**
+```typescript
+// Work with nested git repo in "backend" subdirectory
+const polyrepoResult = await callTool('git_feature', {
+  operation: 'start',
+  scriptId: 'abc123def456...',
+  featureName: 'auth-service',
+  projectPath: 'backend'  // Enables polyrepo support
+});
+
+// Response:
+{
+  "status": "success",
+  "operation": "start",
+  "branch": "llm-feature-auth-service",
+  "created": true,
+  "previousBranch": "main"
+}
+```
+
+#### Git Auto-Initialization Behavior
+
+**Automatic Repository Setup**: The `git_feature` tool automatically initializes git repositories when the `.git` directory is missing, providing a seamless development experience.
+
+**Initialization Strategy**:
+1. **Check for .git directory** - If exists, skip initialization
+2. **Run git init** - Creates new git repository
+3. **Detect global config** - Checks `git config --global user.name` and `user.email`
+4. **Apply configuration**:
+   - **If global config exists**: Uses global settings automatically
+   - **If no global config**: Sets local defaults (`user.name="MCP Gas"`, `user.email="mcp@gas.local"`)
+
+**Example Scenarios**:
+
+**Scenario 1: Global Git Config Available**
+```bash
+# User has global git config
+$ git config --global user.name
+"John Doe"
+
+$ git config --global user.email
+"john@example.com"
+```
+
+When `git_feature` auto-initializes:
+```
+[GIT-INIT] Initializing git repository at /path/to/repo
+[GIT-INIT] ✓ Git repository initialized
+[GIT-INIT] Using global git config (name="John Doe", email="john@example.com")
+```
+
+**Scenario 2: No Global Git Config**
+```bash
+# No global git config set
+$ git config --global user.name
+# (empty)
+```
+
+When `git_feature` auto-initializes:
+```
+[GIT-INIT] Initializing git repository at /path/to/repo
+[GIT-INIT] ✓ Git repository initialized
+[GIT-INIT] No global git config found, setting local defaults
+[GIT-INIT] Set default git config (user.name="MCP Gas", user.email="mcp@gas.local")
+```
+
+**Shared with Write Operations**: The auto-initialization logic is shared between `git_feature` and `write`/`raw_write` tools via the `ensureGitInitialized()` utility in `src/utils/gitInit.ts`, ensuring consistent behavior across all git operations.
+
+**Benefits**:
+- ✅ No manual `git init` required
+- ✅ Respects user's global git configuration
+- ✅ Graceful fallback to sensible defaults
+- ✅ Automatic .gitignore creation for new repositories
+- ✅ Consistent experience across all tools
+
+#### Operation Details
+
+**start**: Create New Feature Branch
+- **Requirements**:
+  - Not already on a feature branch
+  - No uncommitted changes
+  - Valid feature name (alphanumeric + hyphens only)
+- **Behavior**: Creates `llm-feature-{featureName}` branch from current branch
+- **Example**: `featureName: "user-auth"` → creates `llm-feature-user-auth`
+
+**finish**: Squash Merge to Main/Master
+- **Requirements**:
+  - Currently on a feature branch (or specify with `branch` parameter)
+  - No uncommitted changes
+- **Behavior**:
+  - Auto-detects default branch (main or master)
+  - Squash merges all feature commits into single commit
+  - Creates commit message: `"Feature: {description}"`
+  - Optionally deletes branch (default: true)
+
+**rollback**: Delete Branch Without Merging
+- **Requirements**:
+  - Branch must be a feature branch (starts with `llm-feature-`)
+  - Branch must exist
+- **Behavior**:
+  - Switches to default branch if currently on target branch
+  - Force deletes branch (discards all commits)
+  - Warns if uncommitted changes will be lost
+
+**list**: Show All Feature Branches
+- **Requirements**: None
+- **Behavior**: Lists all branches starting with `llm-feature-`
+- **Returns**: Branch list, current branch, total count
+
+**switch**: Switch Between Branches
+- **Requirements**:
+  - Branch must exist
+  - No uncommitted changes
+- **Behavior**: Checks out specified branch
+
+#### Error Handling
+
+**Invalid Feature Name**
+```json
+{
+  "error": {
+    "type": "ValidationError",
+    "message": "featureName must contain only alphanumeric characters and hyphens",
+    "field": "featureName",
+    "value": "invalid name with spaces"
+  }
+}
+```
+
+**Already on Feature Branch**
+```json
+{
+  "error": {
+    "message": "Already on feature branch: llm-feature-user-auth. Finish or switch branches before starting new feature.",
+    "type": "OperationError"
+  }
+}
+```
+
+**Uncommitted Changes Detected**
+```json
+{
+  "error": {
+    "message": "Uncommitted changes detected. Commit or stash changes before switching branches.",
+    "type": "GitStateError"
+  }
+}
+```
+
+**Branch Not Found**
+```json
+{
+  "error": {
+    "type": "ValidationError",
+    "message": "Branch 'non-existent' not found. Available branches: main, llm-feature-user-auth",
+    "field": "branch",
+    "value": "non-existent"
+  }
+}
+```
+
+---
+
+### Git Auto-Commit Integration
+
+**Automatic Feature Branch Creation**: When `write` or `raw_write` detects a git repository, it automatically creates feature branches and commits changes.
+
+**Example: Write with Automatic Commit**
+```typescript
+const writeResult = await callTool('gas_write', {
+  path: 'abc123def456.../UserAuth',
+  content: 'function authenticate() { return true; }',
+  changeReason: 'feat: Add user authentication'  // Custom commit message
+});
+
+// Response includes git information:
+{
+  "success": true,
+  "path": "abc123def456.../UserAuth",
+  "size": 45,
+  "git": {
+    "enabled": true,
+    "source": "breadcrumb",
+    "gitPath": "/Users/user/gas-repos/project-abc123def456",
+    "branch": "llm-feature-auto-20250121143022",  // Auto-created
+    "branchCreated": true,
+    "commitHash": "def456a",
+    "commitMessage": "feat: Add user authentication",
+    "hookModified": false
+  }
+}
+```
+
+**Git Discovery Process**:
+1. **Phase A (Local Filesystem)**: Scans for git repo at `~/gas-repos/project-{scriptId}/`
+2. **Phase B (GAS Breadcrumbs)**: Reads `.git/config.gs` from GAS project
+
+**Workflow**:
+1. Write operation detects git repository
+2. Auto-creates feature branch if on main/master: `llm-feature-auto-{timestamp}`
+3. Writes file locally → runs git hooks → commits atomically
+4. Pushes to remote GAS
+5. Rolls back on failure (atomic operation)
 
 ---
 ## 🚨 Error Handling
