@@ -71,6 +71,9 @@ import {
   LocalSyncTool
 } from '../tools/gitSync.js';
 
+// Import git feature workflow tool
+import { GitFeatureTool } from '../tools/git/GitFeatureTool.js';
+
 // Import generic configuration tool
 import { ConfigTool } from '../tools/config.js';
 
@@ -347,8 +350,9 @@ export class MCPGasServer {
       // Trigger management - AUTOMATION tools (consolidated: list + create + delete operations)
       new TriggerTool(authManager),        // List, create, and delete installable triggers
       
-      // Git Sync - SAFE GIT INTEGRATION (2 tools - LOCAL-FIRST, no auto-bootstrap)
+      // Git Sync - SAFE GIT INTEGRATION (3 tools - LOCAL-FIRST, no auto-bootstrap)
       new LocalSyncTool(authManager),         // Sync entire GAS project to local with git-aware organization
+      new GitFeatureTool(authManager),        // Feature branch workflow (start/finish/rollback/list/switch)
       new ConfigTool(authManager),            // Generic configuration (sync_folder get/set)
 
       // Google Sheets SQL - SQL-STYLE OPERATIONS on Google Sheets

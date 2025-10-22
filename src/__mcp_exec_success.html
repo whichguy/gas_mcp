@@ -723,6 +723,327 @@
       padding: 40px 20px;
       font-size: 13px;
     }
+
+    /* Environment Badge in Header */
+    .env-badge-container {
+      position: relative;
+      margin-left: 8px;
+    }
+
+    .env-badge {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+
+    .env-badge:hover {
+      background: var(--bg-primary);
+      border-color: var(--accent-blue);
+    }
+
+    .env-badge-icon {
+      font-size: 8px;
+    }
+
+    .env-badge.dev { border-left: 3px solid var(--warning-yellow); }
+    .env-badge.dev .env-badge-icon { color: var(--warning-yellow); }
+
+    .env-badge.staging { border-left: 3px solid var(--accent-blue); }
+    .env-badge.staging .env-badge-icon { color: var(--accent-blue); }
+
+    .env-badge.prod { border-left: 3px solid var(--success-green); }
+    .env-badge.prod .env-badge-icon { color: var(--success-green); }
+
+    .env-badge-arrow {
+      font-size: 8px;
+      opacity: 0.5;
+    }
+
+    /* Environment Dropdown */
+    .env-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      min-width: 320px;
+      z-index: 1000;
+      overflow: hidden;
+    }
+
+    .env-dropdown.hidden {
+      display: none;
+    }
+
+    .env-dropdown-header {
+      padding: 10px 12px;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .env-dropdown-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .env-dropdown-item:last-of-type {
+      border-bottom: none;
+    }
+
+    .env-dropdown-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .env-dot {
+      font-size: 8px;
+    }
+
+    .dev-dot { color: var(--warning-yellow); }
+    .staging-dot { color: var(--accent-blue); }
+    .prod-dot { color: var(--success-green); }
+
+    .env-current-marker {
+      color: var(--success-green);
+      font-size: 10px;
+      margin-left: auto;
+    }
+
+    .env-dropdown-url {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .env-link {
+      flex: 1;
+      font-size: 10px;
+      color: var(--accent-blue);
+      text-decoration: none;
+      font-family: 'Consolas', monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .env-link:hover {
+      text-decoration: underline;
+    }
+
+    .env-copy-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .env-copy-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .env-promote-btn {
+      background: var(--accent-blue);
+      border: none;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 3px;
+      font-size: 10px;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .env-promote-btn:hover {
+      opacity: 0.9;
+    }
+
+    .env-dropdown-footer {
+      padding: 8px 12px;
+      background: var(--bg-tertiary);
+      border-top: 1px solid var(--border-color);
+    }
+
+    .env-full-mgmt-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 6px 12px;
+      border-radius: 3px;
+      font-size: 11px;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .env-full-mgmt-btn:hover {
+      background: var(--bg-primary);
+      border-color: var(--accent-blue);
+    }
+
+    /* Deployments Tab */
+    .deployments-container {
+      padding: 16px;
+    }
+
+    .deployments-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .deployments-header h2 {
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .deployment-card {
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      border-left: 4px solid var(--border-color);
+    }
+
+    .deployment-card[data-env="dev"] {
+      border-left-color: var(--warning-yellow);
+    }
+
+    .deployment-card[data-env="staging"] {
+      border-left-color: var(--accent-blue);
+    }
+
+    .deployment-card[data-env="prod"] {
+      border-left-color: var(--success-green);
+    }
+
+    .deployment-card-header {
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .deployment-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 3px;
+      color: white;
+    }
+
+    .dev-badge { background: var(--warning-yellow); }
+    .staging-badge { background: var(--accent-blue); }
+    .prod-badge { background: var(--success-green); }
+
+    .deployment-current {
+      font-size: 11px;
+      color: var(--success-green);
+      font-weight: 500;
+    }
+
+    .deployment-card-body {
+      padding: 16px;
+    }
+
+    .deployment-url-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .deployment-url-row label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .deployment-url {
+      flex: 1;
+      font-size: 12px;
+      font-family: 'Consolas', monospace;
+      color: var(--accent-blue);
+      text-decoration: none;
+    }
+
+    .deployment-url:hover {
+      text-decoration: underline;
+    }
+
+    .copy-url-btn {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .copy-url-btn:hover {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+
+    .deployment-info {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .deployment-card-footer {
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-color);
+    }
+
+    .promote-action-btn {
+      background: var(--accent-blue);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    .promote-action-btn:hover {
+      opacity: 0.9;
+    }
+
+    .promote-action-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -740,6 +1061,64 @@
       <div class="info-item">
         <span class="info-label">Session:</span>
         <span class="info-value" id="sessionTime">Just now</span>
+      </div>
+
+      <!-- Environment Badge with Dropdown -->
+      <div class="env-badge-container">
+        <button class="env-badge" id="envBadge" title="Click for deployment URLs">
+          <span class="env-badge-icon">●</span>
+          <span class="env-badge-text">Loading...</span>
+          <span class="env-badge-arrow">▾</span>
+        </button>
+
+        <div class="env-dropdown hidden" id="envDropdown">
+          <div class="env-dropdown-header">Deployments</div>
+
+          <div class="env-dropdown-item" data-env="dev">
+            <div class="env-dropdown-label">
+              <span class="env-dot dev-dot">●</span> DEV
+              <span class="env-current-marker" style="display:none">← current</span>
+            </div>
+            <div class="env-dropdown-url">
+              <a href="#" target="_blank" class="env-link">Loading...</a>
+              <button class="env-copy-btn" title="Copy URL">📋</button>
+            </div>
+          </div>
+
+          <div class="env-dropdown-item" data-env="staging">
+            <div class="env-dropdown-label">
+              <span class="env-dot staging-dot">●</span> STAGING
+              <span class="env-current-marker" style="display:none">← current</span>
+            </div>
+            <div class="env-dropdown-url">
+              <a href="#" target="_blank" class="env-link">Not deployed</a>
+              <button class="env-copy-btn" title="Copy URL">📋</button>
+            </div>
+            <button class="env-promote-btn" data-from="dev" data-to="staging">
+              Promote from Dev →
+            </button>
+          </div>
+
+          <div class="env-dropdown-item" data-env="prod">
+            <div class="env-dropdown-label">
+              <span class="env-dot prod-dot">●</span> PROD
+              <span class="env-current-marker" style="display:none">← current</span>
+            </div>
+            <div class="env-dropdown-url">
+              <a href="#" target="_blank" class="env-link">Not deployed</a>
+              <button class="env-copy-btn" title="Copy URL">📋</button>
+            </div>
+            <button class="env-promote-btn" data-from="staging" data-to="prod">
+              Promote from Staging →
+            </button>
+          </div>
+
+          <div class="env-dropdown-footer">
+            <button class="env-full-mgmt-btn" data-tab="deployments">
+              ⚙️ Full Management
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -776,6 +1155,7 @@
       <div class="tab-bar">
         <button class="tab active" data-tab="console">Console</button>
         <button class="tab" data-tab="logs">Logs</button>
+        <button class="tab" data-tab="deployments">Deployments</button>
       </div>
 
       <div class="tab-content active" id="console"></div>
@@ -792,6 +1172,76 @@
           <span class="logs-status" id="logsStatus"></span>
         </div>
         <div id="logsContent"></div>
+      </div>
+
+      <div class="tab-content" id="deployments">
+        <div class="deployments-container">
+          <div class="deployments-header">
+            <h2>Deployment Management</h2>
+            <button class="panel-btn" id="refreshDeploymentsTab">Refresh</button>
+          </div>
+
+          <div class="deployment-card" data-env="dev">
+            <div class="deployment-card-header">
+              <span class="deployment-badge dev-badge">DEV</span>
+              <span class="deployment-current" style="display:none">Current Environment</span>
+            </div>
+            <div class="deployment-card-body">
+              <div class="deployment-url-row">
+                <label>URL:</label>
+                <a href="#" target="_blank" class="deployment-url">Loading...</a>
+                <button class="copy-url-btn">Copy</button>
+              </div>
+              <div class="deployment-info">
+                <p>HEAD deployment - always reflects latest code</p>
+              </div>
+            </div>
+            <div class="deployment-card-footer">
+              <button class="promote-action-btn" data-to="staging">
+                Promote to Staging →
+              </button>
+            </div>
+          </div>
+
+          <div class="deployment-card" data-env="staging">
+            <div class="deployment-card-header">
+              <span class="deployment-badge staging-badge">STAGING</span>
+              <span class="deployment-current" style="display:none">Current Environment</span>
+            </div>
+            <div class="deployment-card-body">
+              <div class="deployment-url-row">
+                <label>URL:</label>
+                <a href="#" target="_blank" class="deployment-url">Not deployed</a>
+                <button class="copy-url-btn">Copy</button>
+              </div>
+              <div class="deployment-info">
+                <p>Versioned deployment - snapshot for testing</p>
+              </div>
+            </div>
+            <div class="deployment-card-footer">
+              <button class="promote-action-btn" data-to="prod">
+                Promote to Production →
+              </button>
+            </div>
+          </div>
+
+          <div class="deployment-card" data-env="prod">
+            <div class="deployment-card-header">
+              <span class="deployment-badge prod-badge">PROD</span>
+              <span class="deployment-current" style="display:none">Current Environment</span>
+            </div>
+            <div class="deployment-card-body">
+              <div class="deployment-url-row">
+                <label>URL:</label>
+                <a href="#" target="_blank" class="deployment-url">Not deployed</a>
+                <button class="copy-url-btn">Copy</button>
+              </div>
+              <div class="deployment-info">
+                <p>Production deployment - stable release</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="input-area">
@@ -1376,6 +1826,157 @@
       }
     };
 
+    window.DeploymentManager = {
+      currentEnv: 'unknown',
+      urls: { dev: null, staging: null, prod: null },
+
+      init: function() {
+        this.loadDeploymentInfo();
+        this.setupEventHandlers();
+      },
+
+      loadDeploymentInfo: function() {
+        if (!google || !google.script || !google.script.run) {
+          console.error('google.script.run not available');
+          return;
+        }
+
+        // Load URLs
+        google.script.run
+          .withSuccessHandler(function(urls) {
+            window.DeploymentManager.urls = urls;
+            window.DeploymentManager.updateUI();
+          })
+          .withFailureHandler(function(error) {
+            console.error('Failed to load deployment URLs:', error);
+          })
+          .getDeploymentUrls();
+
+        // Load current environment
+        google.script.run
+          .withSuccessHandler(function(envType) {
+            window.DeploymentManager.currentEnv = envType;
+            window.DeploymentManager.updateUI();
+          })
+          .withFailureHandler(function(error) {
+            console.error('Failed to load current environment:', error);
+          })
+          .getCurrentDeploymentType();
+      },
+
+      updateUI: function() {
+        const { currentEnv, urls } = this;
+
+        // Update header badge
+        const $badge = $('#envBadge');
+        $badge.removeClass('dev staging prod').addClass(currentEnv);
+        $badge.find('.env-badge-text').text(currentEnv.toUpperCase());
+
+        // Update dropdown and tab
+        ['dev', 'staging', 'prod'].forEach(env => {
+          const url = urls[env] || 'Not deployed';
+          const isCurrent = env === currentEnv;
+
+          // Update dropdown
+          const $dropdownItem = $(`.env-dropdown-item[data-env="${env}"]`);
+          $dropdownItem.find('.env-link').attr('href', url).text(url);
+          $dropdownItem.find('.env-current-marker').toggle(isCurrent);
+
+          // Update tab
+          const $card = $(`.deployment-card[data-env="${env}"]`);
+          $card.find('.deployment-url').attr('href', url).text(url);
+          $card.find('.deployment-current').toggle(isCurrent);
+        });
+      },
+
+      setupEventHandlers: function() {
+        // Toggle dropdown
+        $('#envBadge').on('click', function(e) {
+          e.stopPropagation();
+          $('#envDropdown').toggleClass('hidden');
+        });
+
+        // Close dropdown when clicking outside
+        $(document).on('click', function() {
+          $('#envDropdown').addClass('hidden');
+        });
+
+        $('#envDropdown').on('click', function(e) {
+          e.stopPropagation();
+        });
+
+        // Copy URL buttons
+        $('.env-copy-btn, .copy-url-btn').on('click', function() {
+          const url = $(this).siblings('.env-link, .deployment-url').attr('href');
+          navigator.clipboard.writeText(url).then(() => {
+            const $btn = $(this);
+            const originalText = $btn.text();
+            $btn.text('✓');
+            setTimeout(() => $btn.text(originalText), 1500);
+          });
+        });
+
+        // Promote buttons (dropdown)
+        $('.env-promote-btn').on('click', function() {
+          const toEnv = $(this).data('to');
+          window.DeploymentManager.promoteDeployment(toEnv);
+        });
+
+        // Promote buttons (tab)
+        $('.promote-action-btn').on('click', function() {
+          const toEnv = $(this).data('to');
+          window.DeploymentManager.promoteDeployment(toEnv);
+        });
+
+        // Full management button
+        $('.env-full-mgmt-btn').on('click', function() {
+          $('.tab').removeClass('active');
+          $('.tab[data-tab="deployments"]').addClass('active');
+          $('.tab-content').removeClass('active');
+          $('#deployments').addClass('active');
+          $('#envDropdown').addClass('hidden');
+        });
+
+        // Refresh button
+        $('#refreshDeploymentsTab').on('click', function() {
+          window.DeploymentManager.loadDeploymentInfo();
+        });
+      },
+
+      promoteDeployment: function(toEnv) {
+        let description = '';
+
+        if (toEnv === 'staging') {
+          description = prompt('Enter version description for staging promotion:');
+          if (!description) return; // User cancelled
+        } else {
+          if (!confirm(`Promote staging to production?\n\nThis will update the production deployment.`)) {
+            return;
+          }
+        }
+
+        // Show loading state
+        window.UI.addOutput('Promoting to ' + toEnv + '...', 'info');
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              window.UI.addOutput(
+                '✅ ' + result.message + (result.version ? ' (v' + result.version + ')' : ''),
+                'success'
+              );
+              window.DeploymentManager.loadDeploymentInfo(); // Refresh
+            } else {
+              window.UI.addOutput('❌ Promotion failed: ' + result.error, 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            window.UI.addOutput('❌ Promotion failed: ' + error.message, 'error');
+          })
+          .promoteDeployment(toEnv, description);
+      }
+    };
+
     $(document).ready(function() {
       // Load script info
       window.DataLoader.loadScriptInfo();
@@ -1563,6 +2164,7 @@
       });
 
       window.DataLoader.loadProcesses();
+      window.DeploymentManager.init();
       window.UI.addOutput('Debugger initialized', 'info');
     });
   </script>

@@ -8,6 +8,7 @@ import { GASClient, EntryPointType, WebAppAccess } from '../api/gasClient.js';
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { ExecTool } from './execution.js';
 
 /**
  * Environment tags for deployment identification
@@ -69,10 +70,12 @@ export class DeployTool extends BaseTool {
   };
 
   private gasClient: GASClient;
+  private execTool: ExecTool;
 
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);
     this.gasClient = new GASClient();
+    this.execTool = new ExecTool(sessionAuthManager);
   }
 
   async execute(params: any): Promise<any> {
@@ -146,6 +149,30 @@ export class DeployTool extends BaseTool {
 
       console.error(`✅ Updated staging deployment to version ${version.versionNumber}`);
 
+      // Get updated deployment details to extract URL
+      const updatedStaging = await this.gasClient.getDeployment(
+        scriptId,
+        deployments.staging.deploymentId,
+        accessToken
+      );
+      const stagingUrl = this.extractWebAppUrl(updatedStaging);
+
+      // Store in ConfigManager
+      if (stagingUrl) {
+        try {
+          await this.setDeploymentInConfigManager(
+            scriptId,
+            'staging',
+            deployments.staging.deploymentId,
+            stagingUrl,
+            accessToken
+          );
+          console.error('✅ Updated staging URL in ConfigManager');
+        } catch (configError: any) {
+          console.error(`⚠️  Failed to update ConfigManager: ${configError.message}`);
+        }
+      }
+
       return {
         operation: 'promote',
         from: 'dev',
@@ -158,7 +185,7 @@ export class DeployTool extends BaseTool {
         deployment: {
           deploymentId: deployments.staging.deploymentId,
           versionNumber: version.versionNumber,
-          url: this.extractWebAppUrl(deployments.staging)
+          url: stagingUrl
         }
       };
 
@@ -191,6 +218,30 @@ export class DeployTool extends BaseTool {
 
       console.error(`✅ Updated production deployment to version ${stagingVersion}`);
 
+      // Get updated deployment details to extract URL
+      const updatedProd = await this.gasClient.getDeployment(
+        scriptId,
+        deployments.prod.deploymentId,
+        accessToken
+      );
+      const prodUrl = this.extractWebAppUrl(updatedProd);
+
+      // Store in ConfigManager
+      if (prodUrl) {
+        try {
+          await this.setDeploymentInConfigManager(
+            scriptId,
+            'prod',
+            deployments.prod.deploymentId,
+            prodUrl,
+            accessToken
+          );
+          console.error('✅ Updated prod URL in ConfigManager');
+        } catch (configError: any) {
+          console.error(`⚠️  Failed to update ConfigManager: ${configError.message}`);
+        }
+      }
+
       // Get version details
       const version = await this.gasClient.getVersion(scriptId, stagingVersion, accessToken);
 
@@ -206,7 +257,7 @@ export class DeployTool extends BaseTool {
         deployment: {
           deploymentId: deployments.prod.deploymentId,
           versionNumber: stagingVersion,
-          url: this.extractWebAppUrl(deployments.prod)
+          url: prodUrl
         },
         note: 'Staging and prod now serve the same version'
       };
@@ -420,6 +471,36 @@ export class DeployTool extends BaseTool {
 
       console.error('✅ All 3 standard deployments created successfully');
 
+      // Step 2.5: Store all deployment URLs and IDs in ConfigManager
+      console.error('💾 Storing deployment info in ConfigManager...');
+      try {
+        await this.setDeploymentInConfigManager(
+          scriptId,
+          'dev',
+          devDeployment.deploymentId,
+          devDeployment.webAppUrl || '',
+          accessToken
+        );
+        await this.setDeploymentInConfigManager(
+          scriptId,
+          'staging',
+          stagingDeployment.deploymentId,
+          stagingDeployment.webAppUrl || '',
+          accessToken
+        );
+        await this.setDeploymentInConfigManager(
+          scriptId,
+          'prod',
+          prodDeployment.deploymentId,
+          prodDeployment.webAppUrl || '',
+          accessToken
+        );
+        console.error('✅ Deployment info stored in ConfigManager');
+      } catch (configError: any) {
+        // Don't fail the operation if ConfigManager fails - deployments are still created
+        console.error(`⚠️  Failed to store deployment info in ConfigManager: ${configError.message}`);
+      }
+
     } catch (error: any) {
       // Rollback: Delete any deployments we created
       console.error(`❌ Failed to create all deployments: ${error.message}`);
@@ -504,6 +585,35 @@ export class DeployTool extends BaseTool {
       staging: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.staging)),
       prod: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.prod))
     };
+  }
+
+  /**
+   * Store deployment URL and ID in ConfigManager (script scope)
+   * @private
+   */
+  private async setDeploymentInConfigManager(
+    scriptId: string,
+    environment: 'dev' | 'staging' | 'prod',
+    deploymentId: string,
+    url: string,
+    accessToken?: string
+  ): Promise<void> {
+    const envUpper = environment.toUpperCase();
+
+    const js_statement = `
+      const ConfigManager = require('gas-properties/ConfigManager');
+      const config = new ConfigManager('DEPLOY');
+      config.setScript('${envUpper}_URL', '${url}');
+      config.setScript('${envUpper}_DEPLOYMENT_ID', '${deploymentId}');
+      Logger.log('[Deploy] Stored ${environment}: ${url}');
+    `;
+
+    await this.execTool.execute({
+      scriptId,
+      js_statement,
+      autoRedeploy: false,
+      accessToken
+    });
   }
 
   /**

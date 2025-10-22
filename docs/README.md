@@ -38,6 +38,15 @@ Version control integration workflows and patterns for Google Apps Script.
 - **[GIT_WORKFLOWS.md](git/GIT_WORKFLOWS.md)** - Complete Git sync workflows, tool reference, and best practices
 - **[archive/](git/archive/)** - Historical development, testing docs, and proposals
 
+### 📦 Archive (`archive/`)
+Historical session documentation and development records.
+
+- **[2025-october/](archive/2025-october/)** - October 2025 session archive (18 documents):
+  - CRAFT enhancement sessions (12 docs)
+  - Bug fixes and test setup
+  - Optimization and schema work
+  - Deployment documentation
+
 ## 🎯 Quick Navigation
 
 ### For Users

@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: #fafafa;
+      color: #1f1f1f;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #4285f4 0%, #8ab4f8 100%);
+      color: white;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .tab {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .tab:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .tab.active {
+      background: white;
+      color: #4285f4;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      background: white;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+
+    button:hover {
+      background: #f1f3f4;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button.primary {
+      background: #4285f4;
+      color: white;
+      border: none;
+    }
+
+    button.primary:hover {
+      background: #3367d6;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .tab-content {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .tab-content.active {
+      display: flex;
+    }
+
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .config-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .config-section {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border: 1px solid #e8eaed;
+    }
+
+    .config-section h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #5f6368;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #1f1f1f;
+      margin-bottom: 8px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 14px;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #4285f4;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+    }
+
+    .help-text {
+      font-size: 12px;
+      color: #5f6368;
+      margin-top: 4px;
+    }
+
+    .message {
+      background: white;
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border: 1px solid #e8eaed;
+    }
+
+    .message.user {
+      background: #e8f0fe;
+      border-color: #d2e3fc;
+      margin-left: 20px;
+    }
+
+    .message.assistant {
+      background: white;
+      margin-right: 20px;
+    }
+
+    .message-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #5f6368;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .message-content {
+      color: #1f1f1f;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .thinking-container {
+      background: #fef7e0;
+      border: 1px solid #f9e79f;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .thinking-header {
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+      background: #fcf3cf;
+    }
+
+    .thinking-header:hover {
+      background: #fbeaa5;
+    }
+
+    .thinking-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #7d6608;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .thinking-content {
+      padding: 12px;
+      font-size: 13px;
+      color: #5f4d00;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      border-top: 1px solid #f9e79f;
+    }
+
+    .thinking-content.collapsed {
+      display: none;
+    }
+
+    .chevron {
+      transition: transform 0.2s;
+      font-size: 16px;
+    }
+
+    .chevron.expanded {
+      transform: rotate(180deg);
+    }
+
+    .input-container {
+      padding: 16px;
+      background: white;
+      border-top: 1px solid #e8eaed;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+    }
+
+    textarea {
+      width: 100%;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: vertical;
+      min-height: 60px;
+      max-height: 200px;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #4285f4;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+    }
+
+    .input-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .status {
+      font-size: 12px;
+      color: #5f6368;
+    }
+
+    .status.sending {
+      color: #4285f4;
+      font-weight: 500;
+    }
+
+    .status.error {
+      color: #d93025;
+    }
+
+    .status.success {
+      color: #1e8e3e;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #e8eaed;
+      border-top-color: #4285f4;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-right: 6px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>💬 Claude Chat</h1>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('chat')">Chat</button>
+      <button class="tab" onclick="switchTab('config')">Config</button>
+    </div>
+    <div class="header-actions">
+      <button onclick="clearChat()">Clear</button>
+    </div>
+  </div>
+
+  <!-- Chat Tab -->
+  <div class="tab-content active" id="chatTab">
+    <div class="chat-container" id="chatContainer"></div>
+
+    <div class="input-container">
+      <textarea
+        id="messageInput"
+        placeholder="Type your message..."
+        onkeydown="handleKeyDown(event)"></textarea>
+      <div class="input-actions">
+        <div class="status" id="status"></div>
+        <button class="primary" onclick="sendMessage()" id="sendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config Tab -->
+  <div class="tab-content" id="configTab">
+    <div class="config-container">
+      <div class="config-section">
+        <h3>Claude API Configuration</h3>
+        <div class="form-group">
+          <label for="apiKey">API Key</label>
+          <input type="password" id="apiKey" placeholder="sk-ant-api03-...">
+          <div class="help-text">Your Anthropic API key. Get one at console.anthropic.com</div>
+        </div>
+        <button class="primary" onclick="saveConfig()">Save Configuration</button>
+      </div>
+      <div class="status" id="configStatus"></div>
+    </div>
+  </div>
+
+  <script>
+    let conversationMessages = [];
+    let isSending = false;
+    let thinkingPollInterval = null;
+    let currentThinkingContainer = null;
+    let currentTab = 'chat';
+    let lastThinkingTimestamp = 0;
+
+    // Initialize when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      loadConfig();
+    });
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+      if (tab === 'chat') {
+        document.querySelector('.tab:first-child').classList.add('active');
+        document.getElementById('chatTab').classList.add('active');
+      } else {
+        document.querySelector('.tab:last-child').classList.add('active');
+        document.getElementById('configTab').classList.add('active');
+      }
+    }
+
+    function loadConfig() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success && result.config) {
+            document.getElementById('apiKey').value = result.config.apiKey || '';
+          }
+        })
+        .withFailureHandler(function() {})
+        .invoke('Code.getConfig');
+    }
+
+    function saveConfig() {
+      const apiKey = document.getElementById('apiKey').value.trim();
+      if (!apiKey) {
+        updateConfigStatus('error', 'API key is required');
+        return;
+      }
+
+      updateConfigStatus('sending', 'Saving...');
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result.success) {
+            updateConfigStatus('success', 'Configuration saved!');
+            setTimeout(() => updateConfigStatus('', ''), 3000);
+          } else {
+            updateConfigStatus('error', result.error || 'Failed to save');
+          }
+        })
+        .withFailureHandler(function(error) {
+          updateConfigStatus('error', 'Error: ' + error);
+        })
+        .invoke('Code.saveConfig', { apiKey: apiKey });
+    }
+
+    function updateConfigStatus(type, text) {
+      const status = document.getElementById('configStatus');
+      status.className = `status ${type}`;
+      status.innerHTML = type === 'sending'
+        ? '<span class="spinner"></span>' + text
+        : text;
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function sendMessage() {
+      if (isSending) return;
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      isSending = true;
+      updateStatus('sending', 'Sending...');
+      document.getElementById('sendBtn').disabled = true;
+      addMessage('user', text);
+      input.value = '';
+      startThinkingPoll();
+
+      google.script.run
+        .withSuccessHandler(handleResponse)
+        .withFailureHandler(handleError)
+        .invoke('Code.sendMessageToClaude', {
+          messages: conversationMessages,
+          text: text,
+          enableThinking: true
+        });
+    }
+
+    function startThinkingPoll() {
+      lastThinkingTimestamp = 0;
+      currentThinkingContainer = createThinkingContainer();
+      thinkingPollInterval = setInterval(() => {
+        google.script.run
+          .withSuccessHandler(handleThinkingMessages)
+          .withFailureHandler(() => {})
+          .invoke('Code.pollThinkingMessages', lastThinkingTimestamp);
+      }, 300);
+    }
+
+    function stopThinkingPoll() {
+      if (thinkingPollInterval) {
+        clearInterval(thinkingPollInterval);
+        thinkingPollInterval = null;
+      }
+      if (currentThinkingContainer) {
+        const content = currentThinkingContainer.querySelector('.thinking-content');
+        // Only collapse if there's no content
+        if (content && content.textContent.trim() === '') {
+          const chevron = currentThinkingContainer.querySelector('.chevron');
+          content.classList.add('collapsed');
+          chevron.classList.remove('expanded');
+        }
+        currentThinkingContainer = null;
+      }
+    }
+
+    function createThinkingContainer() {
+      const container = document.getElementById('chatContainer');
+      const thinking = document.createElement('div');
+      thinking.className = 'thinking-container';
+      thinking.innerHTML = `
+        <div class="thinking-header" onclick="toggleThinking(this)">
+          <div class="thinking-title">
+            <span>🤔</span>
+            <span>Thinking...</span>
+          </div>
+          <span class="chevron expanded">▼</span>
+        </div>
+        <div class="thinking-content"></div>
+      `;
+      container.appendChild(thinking);
+      container.scrollTop = container.scrollHeight;
+      return thinking;
+    }
+
+    function handleThinkingMessages(result) {
+      if (result.success && result.messages && result.messages.length > 0) {
+        // Only process if we have a thinking container
+        if (!currentThinkingContainer) return;
+
+        const thinkingContent = currentThinkingContainer.querySelector('.thinking-content');
+        if (!thinkingContent) return;
+
+        result.messages.forEach(msg => {
+          const text = document.createTextNode(msg.text + '\n\n');
+          thinkingContent.appendChild(text);
+        });
+
+        // Update timestamp to get only new messages next time
+        if (result.latestTimestamp) {
+          lastThinkingTimestamp = result.latestTimestamp;
+        }
+
+        document.getElementById('chatContainer').scrollTop =
+          document.getElementById('chatContainer').scrollHeight;
+      }
+    }
+
+    function toggleThinking(header) {
+      const content = header.nextElementSibling;
+      const chevron = header.querySelector('.chevron');
+      content.classList.toggle('collapsed');
+      chevron.classList.toggle('expanded');
+    }
+
+    function handleResponse(result) {
+      stopThinkingPoll();
+      isSending = false;
+      document.getElementById('sendBtn').disabled = false;
+      updateStatus('', '');
+
+      if (result.success) {
+        const data = result.data;
+        conversationMessages = data.messages;
+        addMessage('assistant', data.response);
+        if (data.usage) {
+          updateStatus('', `${data.usage.input_tokens + data.usage.output_tokens} tokens`);
+        }
+      } else {
+        handleError(result.error || 'Unknown error');
+      }
+    }
+
+    function handleError(error) {
+      stopThinkingPoll();
+      isSending = false;
+      document.getElementById('sendBtn').disabled = false;
+      updateStatus('error', 'Error: ' + error);
+    }
+
+    function addMessage(role, content) {
+      const container = document.getElementById('chatContainer');
+      const message = document.createElement('div');
+      message.className = `message ${role}`;
+      message.innerHTML = `
+        <div class="message-label">${role === 'user' ? 'You' : 'Claude'}</div>
+        <div class="message-content">${escapeHtml(content)}</div>
+      `;
+      container.appendChild(message);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function updateStatus(type, text) {
+      const status = document.getElementById('status');
+      status.className = `status ${type}`;
+      status.innerHTML = type === 'sending'
+        ? '<span class="spinner"></span>' + text
+        : text;
+    }
+
+    function clearChat() {
+      conversationMessages = [];
+      document.getElementById('chatContainer').innerHTML = '';
+      updateStatus('', '');
+      google.script.run
+        .withSuccessHandler(() => {})
+        .withFailureHandler(() => {})
+        .invoke('Code.clearChat');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

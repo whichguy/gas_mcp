@@ -325,6 +325,36 @@ function __defineModule__(moduleFactory, explicitName, options) {
   moduleFactories[moduleName] = moduleFactory;
   debugLog(`   Factory stored for: ${moduleName}`);
 
+  // Auto-detect __global__ exports and enable loadNow if present
+  if (!opts.loadNow) {
+    try {
+      debugLog(`[DETECT] Checking ${moduleName} for __global__ exports...`);
+
+      // Execute factory temporarily to inspect exports
+      const tempModule = { exports: {} };
+      const tempLog = () => {}; // No-op log for detection
+
+      const result = moduleFactory.length === 3
+        ? moduleFactory(tempModule, tempModule.exports, tempLog)
+        : moduleFactory(tempModule, tempModule.exports);
+
+      if (result !== undefined) {
+        tempModule.exports = result;
+      }
+
+      // Check for __global__ exports
+      if (tempModule.exports.__global__ && typeof tempModule.exports.__global__ === 'object') {
+        opts.loadNow = true;
+        debugLog(`[AUTOLOAD] Module ${moduleName} has __global__ exports, auto-enabling loadNow`);
+      } else {
+        debugLog(`[LAZY] Module ${moduleName} will lazy-load (no __global__ detected)`);
+      }
+    } catch (error) {
+      debugLog(`[WARN] Error detecting __global__ for ${moduleName}: ${error.message}`);
+      // Continue with lazy loading if detection fails
+    }
+  }
+
   // If loadNow=true, immediately execute module via require()
   if (opts.loadNow) {
     debugLog(`[LOADNOW] Load-now enabled for ${moduleName}, executing immediately...`);

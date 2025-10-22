@@ -102,10 +102,12 @@ From `gasClient.ts`, the GAS REST API provides:
 | Tool | REST API Endpoint | Purpose |
 |------|------------------|---------|
 | `exec` | POST /scripts/{scriptId}:run via HEAD deployment | JavaScript execution with explicit scriptId |
-| `exec_api` | POST /scripts/{scriptId}:run | Direct API execution |
+| `exec_api` | Delegates to `exec` | Function-style execution (transforms to js_statement) |
 | `proxy_setup` | PUT /content + POST /deployments | Web app proxy config |
 
-**✅ COMPLETED**: `run` tool removed - was redundant wrapper that delegated 100% to `exec` (~203 lines saved).
+**✅ COMPLETED**:
+- `run` tool removed - was redundant wrapper that delegated 100% to `exec` (~203 lines saved)
+- `exec_api` refactored to delegate to `exec` with parameter transformation (no longer uses scripts.run API directly)
 
 ### 📦 Deployment (8 tools) - **ESSENTIAL**
 | Tool | REST API Endpoint |

@@ -591,6 +591,61 @@
       "scriptId": "1aUpDkdM0Pw_qCYDjTsZWTEM1JpXNuIGm5diirb3t0c-wCTX2C1zqw9V-",
       "name": "claude-chat-google-sheets-side",
       "description": "Created: 10/13/2025"
+    },
+    "claude-chat-for-sheets-fixed": {
+      "scriptId": "1yhX_5xNyUt4MJ8zJNNMJw29lISq6juc9Ogf4GnWUOQ23YYNSK5dfc0gm",
+      "name": "claude-chat-for-sheets-fixed",
+      "description": "Created: 10/13/2025"
+    },
+    "thenrunlater-test-project": {
+      "scriptId": "18BsrJhI7rD47nauxd5kudwYgRfGwuEuKYUm4TdDaUUHsuPVXdUSnNhV3",
+      "name": "thenrunlater-test-project",
+      "description": "Created: 10/14/2025"
+    },
+    "thenrunlater-test-v2": {
+      "scriptId": "1rRfLy3OO4v-33pywB-1vnSHgPeAKRcaD-7OOj_PmlYkPv_EA130mVJc8",
+      "name": "thenrunlater-test-v2",
+      "description": "Created: 10/14/2025"
+    },
+    "mcp-test-project-exec-validati": {
+      "scriptId": "1MySbuxeNq34vu1jGLuelNLTjt5Fa_Ac9SXiVkU-LF_POqKwTLF6i4UDR",
+      "name": "mcp-test-project-exec-validati",
+      "description": "Created: 10/14/2025"
+    },
+    "mcp-test-project-fresh-start": {
+      "scriptId": "1sDLQgi1tanDrDfiO0XPm-q41pphwetx5J9Yj129lcSGBI1gsL-z_UykP",
+      "name": "mcp-test-project-fresh-start",
+      "description": "Created: 10/14/2025"
+    },
+    "file-order-test": {
+      "scriptId": "12xNjhACEr6aUoN1PzeXNYwi_GY-nNCIFGBrqvn3BxaxlQvX2oqM2O5_C",
+      "name": "file-order-test",
+      "description": "Created: 10/14/2025"
+    },
+    "complete-workflow-test-sort-fi": {
+      "scriptId": "1elnAdUmJ_9t2loppQNVsuUGDdwqNJxOLYCOhp4396z6grHIHgt9MQsWk",
+      "name": "complete-workflow-test-sort-fi",
+      "description": "Created: 10/14/2025"
+    },
+    "exec-api-validation-test": {
+      "scriptId": "1Qv8JQj0fXjwPybyTCjoR8jNYx_Y9tW7ucULWpoyXwypplPaRhy5AudnJ",
+      "name": "exec-api-validation-test",
+      "description": "Created: 10/17/2025"
+    },
+    "js-sql-llm-query-engine": {
+      "scriptId": "1kI0h2GvfPNt75yYgdHhnebeUd2Rgyc_84Gg6OhvX6LkWKa0RQH2atWHV",
+      "name": "js-sql-llm-query-engine",
+      "description": "Created: 10/19/2025"
+    },
+    "mcp-deployment-detection-test": {
+      "scriptId": "16LQiIPpYF1UfaRQvFJVZH_NoQj4if-7ZdvGSvW1spYyptLyohQ7eJpow",
+      "name": "mcp-deployment-detection-test",
+      "description": "Created: 10/20/2025"
+    },
+    "git-auto-init-polyrepo-test-20": {
+      "scriptId": "1RBpxvUsPopFKtOur3yDQdeOgavD5h7_e37Z__t86gg23B6Xc1XrKwv_E",
+      "name": "git-auto-init-polyrepo-test-20",
+      "description": "Created: 10/21/2025"
     }
   },
   "localRoot": {
@@ -600,7 +655,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-13T07:19:07.564Z"
+    "lastModified": "2025-10-21T16:50:17.372Z"
   },
   "debug": true,
   "currentProject": {
