@@ -3,6 +3,10 @@ import { resolveHybridScriptId } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
 import type { MoveParams, MoveResult } from './shared/types.js';
+import { GitOperationManager } from '../../core/git/GitOperationManager.js';
+import { GitPathResolver } from '../../core/git/GitPathResolver.js';
+import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
+import { MoveOperationStrategy } from '../../core/git/operations/MoveOperationStrategy.js';
 
 /**
  * Move or rename files in Google Apps Script project
@@ -39,6 +43,11 @@ export class MvTool extends BaseFileSystemTool {
           '1xyz9abc.../utils.gs'
         ]
       },
+      changeReason: {
+        type: 'string',
+        description: 'Optional commit message for git integration. If omitted, defaults to "Move {from} to {to}". Git repo is created automatically if it doesn\'t exist.',
+        examples: ['Rename utility file', 'Reorganize project structure', 'Move to backup folder']
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -64,49 +73,42 @@ export class MvTool extends BaseFileSystemTool {
       throw new ValidationError('path', 'from/to', 'valid filenames (cannot be empty)');
     }
 
-    // Get source file content
-    const sourceFiles = await this.gasClient.getProjectContent(fromProjectId, accessToken);
-    const sourceFile = sourceFiles.find((f: any) => f.name === fromFilename);
+    // Always use GitOperationManager for proper workflow:
+    // 1. Compute changes (source delete + dest create)
+    // 2. Validate with hooks (single atomic commit for both)
+    // 3. Write to remote
+    // Git repo will be created automatically if it doesn't exist
+    const operation = new MoveOperationStrategy({
+      scriptId: params.scriptId,
+      from: params.from,
+      to: params.to,
+      accessToken,
+      gasClient: this.gasClient
+    });
 
-    if (!sourceFile) {
-      throw new FileOperationError('move', params.from, 'source file not found');
-    }
+    const pathResolver = new GitPathResolver();
+    const syncFactory = new SyncStrategyFactory();
+    const gitManager = new GitOperationManager(pathResolver, syncFactory, this.gasClient);
 
-    // For cross-project moves, we copy then delete. For same-project, we can rename in place.
-    if (fromProjectId === toProjectId) {
-      // Same project: rename/move file
-      await this.gasClient.updateFile(toProjectId, toFilename, sourceFile.source || '', undefined, accessToken);
-      const updatedFiles = await this.gasClient.deleteFile(fromProjectId, fromFilename, accessToken);
+    // Use provided changeReason or generate default
+    const defaultMessage = `Move ${fromFilename} to ${toFilename}`;
 
-      return {
-        status: 'moved',
-        from: params.from,
-        to: params.to,
-        fromProjectId,
-        toProjectId,
-        isCrossProject: false,
-        totalFiles: updatedFiles.length,
-        message: `Moved ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`
-      };
-    } else {
-      // Cross-project: copy to destination, then delete from source
-      await this.gasClient.updateFile(toProjectId, toFilename, sourceFile.source || '', undefined, accessToken);
-      const updatedSourceFiles = await this.gasClient.deleteFile(fromProjectId, fromFilename, accessToken);
+    const result = await gitManager.executeWithGit(operation, {
+      scriptId: fromProjectId,  // Use source project for git operations
+      files: [fromFilename, toFilename],
+      changeReason: params.changeReason || defaultMessage,
+      accessToken
+    });
 
-      // Get destination file count
-      const destFiles = await this.gasClient.getProjectContent(toProjectId, accessToken);
+    // Add message field required by tool's MoveResult type
+    const moveResult = result.result;
+    const isCrossProject = fromProjectId !== toProjectId;
 
-      return {
-        status: 'moved',
-        from: params.from,
-        to: params.to,
-        fromProjectId,
-        toProjectId,
-        isCrossProject: true,
-        sourceFilesRemaining: updatedSourceFiles.length,
-        destFilesTotal: destFiles.length,
-        message: `Moved ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
-      };
-    }
+    return {
+      ...moveResult,
+      message: isCrossProject
+        ? `Moved ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
+        : `Moved ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`
+    };
   }
 }

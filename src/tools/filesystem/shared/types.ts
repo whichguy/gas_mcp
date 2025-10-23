@@ -121,12 +121,15 @@ export interface ListParams {
   accessToken?: string;
 }
 
-export interface RemoveParams extends FileParams {}
+export interface RemoveParams extends FileParams {
+  changeReason?: string;
+}
 
 export interface MoveParams {
   scriptId: string;
   from: string;
   to: string;
+  changeReason?: string;
   workingDir?: string;
   accessToken?: string;
 }
@@ -135,6 +138,7 @@ export interface CopyParams {
   scriptId: string;
   from: string;
   to: string;
+  changeReason?: string;
   workingDir?: string;
   accessToken?: string;
 }

@@ -8,6 +8,10 @@ import { translatePathForOperation } from '../utils/virtualFileTranslation.js';
 import { FuzzyMatcher, type EditOperation } from '../utils/fuzzyMatcher.js';
 import { DiffGenerator } from '../utils/diffGenerator.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { GitOperationManager } from '../core/git/GitOperationManager.js';
+import { GitPathResolver } from '../core/git/GitPathResolver.js';
+import { SyncStrategyFactory } from '../core/git/SyncStrategyFactory.js';
+import { AiderOperationStrategy } from '../core/git/operations/AiderOperationStrategy.js';
 
 interface AiderOperation {
   searchText: string;
@@ -20,6 +24,7 @@ interface AiderParams {
   path: string;
   edits: AiderOperation[];
   dryRun?: boolean;
+  changeReason?: string;
   workingDir?: string;
   accessToken?: string;
 }
@@ -83,6 +88,11 @@ export class AiderTool extends BaseTool {
         maxItems: 20
       },
       ...SchemaFragments.dryRun,
+      changeReason: {
+        type: 'string',
+        description: 'Optional commit message for git integration. If omitted, defaults to "Refactor {filename}". Git repo is created automatically if it doesn\'t exist.',
+        examples: ['Fix fuzzy matching logic', 'Update formatting', 'Refactor whitespace handling']
+      },
       ...SchemaFragments.workingDir,
       ...SchemaFragments.accessToken
     },
@@ -237,14 +247,32 @@ export class AiderTool extends BaseTool {
       };
     }
 
-    // Wrap CommonJS if needed before writing
-    let finalContent = modifiedContent;
-    if (fileContent.type === 'SERVER_JS' && shouldWrapContent(fileContent.type, filename)) {
-      finalContent = wrapModuleContent(modifiedContent, filename);
-    }
+    // Always use GitOperationManager for proper workflow:
+    // 1. Compute changes
+    // 2. Validate with hooks
+    // 3. Write to remote
+    // Git repo will be created automatically if it doesn't exist
+    const operation = new AiderOperationStrategy({
+      scriptId,
+      path: params.path,
+      edits: params.edits,
+      accessToken,
+      gasClient: this.gasClient
+    });
 
-    // Write modified content back to remote
-    await this.gasClient.updateFile(scriptId, filename, finalContent, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
+    const pathResolver = new GitPathResolver();
+    const syncFactory = new SyncStrategyFactory();
+    const gitManager = new GitOperationManager(pathResolver, syncFactory, this.gasClient);
+
+    // Use provided changeReason or generate default
+    const defaultMessage = `Refactor ${filename}`;
+
+    await gitManager.executeWithGit(operation, {
+      scriptId,
+      files: [filename],
+      changeReason: params.changeReason || defaultMessage,
+      accessToken
+    });
 
     // Return minimal response for token efficiency
     return {

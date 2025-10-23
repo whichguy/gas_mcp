@@ -5,6 +5,10 @@ import { join } from 'path';
 import { unlink } from 'fs/promises';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
 import type { RemoveParams, RemoveResult } from './shared/types.js';
+import { GitOperationManager } from '../../core/git/GitOperationManager.js';
+import { GitPathResolver } from '../../core/git/GitPathResolver.js';
+import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
+import { DeleteOperationStrategy } from '../../core/git/operations/DeleteOperationStrategy.js';
 
 /**
  * Remove files from Google Apps Script project
@@ -26,6 +30,11 @@ export class RmTool extends BaseFileSystemTool {
         ...PATH_SCHEMA,
         description: 'File path (filename only, or scriptId/filename if scriptId parameter is empty). Extensions are auto-detected and should not be included.'
       },
+      changeReason: {
+        type: 'string',
+        description: 'Optional commit message for git integration. If omitted, defaults to "Delete {filename}". Git repo is created automatically if it doesn\'t exist.',
+        examples: ['Remove unused utility', 'Delete deprecated file', 'Clean up old backup']
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -45,37 +54,39 @@ export class RmTool extends BaseFileSystemTool {
     }
 
     const accessToken = await this.getAuthToken(params);
+    const filename = parsedPath.filename!;
 
-    const updatedFiles = await this.gasClient.deleteFile(parsedPath.scriptId, parsedPath.filename!, accessToken);
+    // Always use GitOperationManager for proper workflow:
+    // 1. Compute changes (read file for backup)
+    // 2. Validate with hooks (commit deletion)
+    // 3. Write to remote (delete file)
+    // Git repo will be created automatically if it doesn't exist
+    const operation = new DeleteOperationStrategy({
+      scriptId: parsedPath.scriptId,
+      path: params.path,
+      accessToken,
+      gasClient: this.gasClient
+    });
 
-    // Remove from local cache if it exists
-    let localDeleted = false;
-    try {
-      const { LocalFileManager } = await import('../../utils/localFileManager.js');
-      const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+    const pathResolver = new GitPathResolver();
+    const syncFactory = new SyncStrategyFactory();
+    const gitManager = new GitOperationManager(pathResolver, syncFactory, this.gasClient);
 
-      if (localRoot && parsedPath.filename) {
-        const fileExtension = LocalFileManager.getFileExtensionFromName(parsedPath.filename);
-        const localPath = join(localRoot, parsedPath.filename + fileExtension);
+    // Use provided changeReason or generate default
+    const defaultMessage = `Delete ${filename}`;
 
-        try {
-          await unlink(localPath);
-          localDeleted = true;
-        } catch (unlinkError: any) {
-          if (unlinkError.code !== 'ENOENT') {
-            // File doesn't exist locally
-          }
-        }
-      }
-    } catch (cacheError) {
-      // Local cache cleanup failed (non-fatal)
-    }
+    const result = await gitManager.executeWithGit(operation, {
+      scriptId: parsedPath.scriptId,
+      files: [filename],
+      changeReason: params.changeReason || defaultMessage,
+      accessToken
+    });
 
     return {
       success: true,
       path,
-      localDeleted,
-      remoteDeleted: true
+      localDeleted: true,  // GitOperationManager handles local deletion
+      remoteDeleted: result.result.remoteDeleted
     };
   }
 }

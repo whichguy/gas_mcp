@@ -5,6 +5,10 @@ import { translatePathForOperation } from '../../utils/virtualFileTranslation.js
 import { shouldWrapContent, unwrapModuleContent, wrapModuleContent, getModuleName } from '../../utils/moduleWrapper.js';
 import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
 import type { CopyParams, CopyResult } from './shared/types.js';
+import { GitOperationManager } from '../../core/git/GitOperationManager.js';
+import { GitPathResolver } from '../../core/git/GitPathResolver.js';
+import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
+import { CopyOperationStrategy } from '../../core/git/operations/CopyOperationStrategy.js';
 
 /**
  * Copy files in Google Apps Script project with CommonJS processing
@@ -40,6 +44,11 @@ export class CpTool extends BaseFileSystemTool {
           'backup/utils.gs',
           '1xyz9abc.../utils.gs'
         ]
+      },
+      changeReason: {
+        type: 'string',
+        description: 'Optional commit message for git integration. If omitted, defaults to "Copy {from} to {to}". Git repo is created automatically if it doesn\'t exist.',
+        examples: ['Create backup copy', 'Duplicate for testing', 'Copy to archive folder']
       },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
@@ -78,53 +87,45 @@ export class CpTool extends BaseFileSystemTool {
       throw new ValidationError('path', 'from/to', 'valid filenames (cannot be empty)');
     }
 
-    // Get source file content
-    const sourceFiles = await this.gasClient.getProjectContent(fromProjectId, accessToken);
-    const sourceFile = sourceFiles.find((f: any) => f.name === fromFilename);
-
-    if (!sourceFile) {
-      throw new FileOperationError('copy', params.from, 'source file not found');
-    }
-
-    // COMMONJS PROCESSING: Unwrap source content (like cat)
-    let processedContent = sourceFile.source || '';
-    const fileType = sourceFile.type || 'SERVER_JS';
-
-    if (shouldWrapContent(fileType, fromFilename)) {
-      // Unwrap CommonJS from source (like cat does)
-      const { unwrappedContent } = unwrapModuleContent(processedContent);
-      if (unwrappedContent !== processedContent) {
-        processedContent = unwrappedContent;
-      }
-
-      // Re-wrap for destination without options (user can set options manually with write)
-      const moduleName = getModuleName(toFilename);
-      processedContent = wrapModuleContent(processedContent, moduleName, undefined);
-    }
-
-    // Create copy in destination with processed content
-    const updatedFiles = await this.gasClient.updateFile(
-      toProjectId,
-      toFilename,
-      processedContent,
-      undefined,
-      accessToken,
-      fileType as 'SERVER_JS' | 'HTML' | 'JSON'
-    );
-
-    return {
-      status: 'copied',
+    // Always use GitOperationManager for proper workflow:
+    // 1. Compute changes (unwrap source, prepare dest content)
+    // 2. Validate with hooks (single commit for destination)
+    // 3. Write to remote
+    // Git repo will be created automatically if it doesn't exist
+    const operation = new CopyOperationStrategy({
+      scriptId: params.scriptId,
       from: params.from,
       to: params.to,
-      fromProjectId,
-      toProjectId,
-      isCrossProject: fromProjectId !== toProjectId,
-      commonJsProcessed: shouldWrapContent(fileType, fromFilename),
-      size: processedContent.length,
-      totalFiles: updatedFiles.length,
-      message: fromProjectId === toProjectId
-        ? `Copied ${fromFilename} to ${toFilename} with CommonJS processing within project ${fromProjectId.substring(0, 8)}...`
-        : `Copied ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}... with CommonJS processing`
+      accessToken,
+      gasClient: this.gasClient
+    });
+
+    const pathResolver = new GitPathResolver();
+    const syncFactory = new SyncStrategyFactory();
+    const gitManager = new GitOperationManager(pathResolver, syncFactory, this.gasClient);
+
+    // Use provided changeReason or generate default
+    const defaultMessage = `Copy ${fromFilename} to ${toFilename}`;
+
+    const result = await gitManager.executeWithGit(operation, {
+      scriptId: toProjectId,  // Use destination project for git operations
+      files: [toFilename],
+      changeReason: params.changeReason || defaultMessage,
+      accessToken
+    });
+
+    // Add additional fields required by tool's CopyResult type
+    const copyResult = result.result;
+    const isCrossProject = fromProjectId !== toProjectId;
+
+    return {
+      ...copyResult,
+      commonJsProcessed: true,  // CopyOperationStrategy always processes CommonJS
+      size: 0,  // We don't track size in the strategy
+      totalFiles: 0,  // We don't track this anymore
+      message: isCrossProject
+        ? `Copied ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}... with CommonJS processing`
+        : `Copied ${fromFilename} to ${toFilename} with CommonJS processing within project ${fromProjectId.substring(0, 8)}...`
     };
   }
 }
