@@ -585,47 +585,21 @@ function htmlAuthSuccessResponse(executionResult) {
 
   /**
    * Get deployment URLs for dev/staging/prod environments
-   * Queries Apps Script API to list deployments filtered by ENV_TAGS
+   * Reads from ConfigManager where mcp_gas deploy tool stores URLs
    * @returns {{dev: string|null, staging: string|null, prod: string|null, error?: string}}
    */
   function getDeploymentUrls() {
-    var scriptId = ScriptApp.getScriptId();
-    var token = ScriptApp.getOAuthToken();
-
     try {
-      var url = 'https://script.googleapis.com/v1/projects/' + scriptId + '/deployments';
-      var response = UrlFetchApp.fetch(url, {
-        method: 'get',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json'
-        },
-        muteHttpExceptions: true
-      });
+      var ConfigManager = require('gas-properties/ConfigManager');
+      var config = new ConfigManager('DEPLOY');
 
-      if (response.getResponseCode() !== 200) {
-        throw new Error('API error: ' + response.getResponseCode());
-      }
-
-      var data = JSON.parse(response.getContentText());
-      var deployments = data.deployments || [];
-      var urls = { dev: null, staging: null, prod: null };
-
-      deployments.forEach(function(d) {
-        var desc = d.description || '';
-        var webAppEntry = (d.entryPoints || []).find(function(ep) {
-          return ep.entryPointType === 'WEB_APP';
-        });
-        var deploymentUrl = webAppEntry ? webAppEntry.webApp.url : null;
-
-        if (desc.indexOf('[DEV]') === 0) urls.dev = deploymentUrl;
-        else if (desc.indexOf('[STAGING]') === 0) urls.staging = deploymentUrl;
-        else if (desc.indexOf('[PROD]') === 0) urls.prod = deploymentUrl;
-      });
-
-      return urls;
+      return {
+        dev: config.get('DEV_URL') || ScriptApp.getService().getUrl(),
+        staging: config.get('STAGING_URL'),
+        prod: config.get('PROD_URL')
+      };
     } catch (error) {
-      Logger.log('[getDeploymentUrls] Error: ' + error.toString());
+      Logger.log('[getDeploymentUrls] Error reading from ConfigManager: ' + error.toString());
       return {
         dev: ScriptApp.getService().getUrl(),
         staging: null,

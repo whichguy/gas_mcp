@@ -282,9 +282,10 @@
       padding: 12px;
       font-family: inherit;
       font-size: 14px;
-      resize: vertical;
+      resize: none;
       min-height: 60px;
-      max-height: 200px;
+      overflow-y: hidden;
+      transition: height 0.1s ease;
     }
 
     textarea:focus {
@@ -386,9 +387,46 @@
     let currentTab = 'chat';
     let lastThinkingTimestamp = 0;
 
+    // Auto-resize textarea function
+    function autoResizeTextarea(textarea) {
+      // Reset height to min-height to get accurate scrollHeight
+      textarea.style.height = '60px';
+
+      // Calculate maximum height (70% of window height)
+      const maxHeight = Math.floor(window.innerHeight * 0.7);
+
+      // Set height based on content, but respect min and max
+      const newHeight = Math.max(60, Math.min(textarea.scrollHeight, maxHeight));
+      textarea.style.height = newHeight + 'px';
+
+      // Show scrollbar if content exceeds max height
+      if (textarea.scrollHeight > maxHeight) {
+        textarea.style.overflowY = 'auto';
+      } else {
+        textarea.style.overflowY = 'hidden';
+      }
+    }
+
     // Initialize when DOM is ready
     document.addEventListener('DOMContentLoaded', function() {
       loadConfig();
+
+      // Set up auto-resize for textarea
+      const textarea = document.getElementById('messageInput');
+      if (textarea) {
+        // Auto-resize on input
+        textarea.addEventListener('input', function() {
+          autoResizeTextarea(this);
+        });
+
+        // Auto-resize on paste
+        textarea.addEventListener('paste', function() {
+          setTimeout(() => autoResizeTextarea(this), 10);
+        });
+
+        // Initial resize
+        autoResizeTextarea(textarea);
+      }
     });
 
     function switchTab(tab) {
@@ -465,6 +503,7 @@
       document.getElementById('sendBtn').disabled = true;
       addMessage('user', text);
       input.value = '';
+      autoResizeTextarea(input); // Resize back to minimum after clearing
       startThinkingPoll();
 
       google.script.run
