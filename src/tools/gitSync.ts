@@ -142,7 +142,7 @@ export class LocalSyncTool extends BaseTool {
     const gitProjectManager = new GitProjectManager();
 
     try {
-      // If specific projectPath provided (including empty string for root), sync just that repo
+      // If specific projectPath provided, sync just that repo
       if (projectPath !== undefined && params.projectPath !== undefined) {
         return await this.syncSingleRepo(
           scriptId, projectPath, direction, autoCommit,
@@ -151,63 +151,94 @@ export class LocalSyncTool extends BaseTool {
         );
       }
 
-      // Otherwise, sync ALL repos in the project
+      // TWO-PHASE SYNC: Mirror all files + manage git for breadcrumb folders
+
+      const baseProjectPath = this.expandPath(`~/gas-repos/project-${scriptId}`);
+
+      // Get all files from GAS
+      console.error(`🔍 Fetching all files from GAS project...`);
+      const allGasFiles = await gasClient.getProjectContent(scriptId, accessToken);
+      console.error(`📦 Found ${allGasFiles.length} total files in GAS`);
+
+      // PHASE 1: Mirror ALL files to local (no filtering)
+      console.error(`\n=== PHASE 1: Mirror All Files ===`);
+      await this.mirrorAllFilesToLocal(scriptId, allGasFiles, baseProjectPath);
+
+      // PHASE 2: Git operations (only for folders with breadcrumbs)
+      console.error(`\n=== PHASE 2: Git Operations ===`);
       const projects = await gitProjectManager.listGitProjects(scriptId, accessToken);
-      if (projects.length === 0) {
-        throw new ValidationError('git-link', scriptId,
-          'No .git/config.gs breadcrumb found in GAS project.\n' +
-          'You must manually create .git/config.gs in GAS first.\n' +
-          'Example: write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo\\n[branch \\"main\\"]"})'
-        );
-      }
-      
-      console.error(`🔄 Found ${projects.length} git repositories in project`);
-      const results = [];
-      
-      for (const project of projects) {
-        const repoPath = project === '(root)' ? '' : project;
-        console.error(`\n📦 Syncing repository: ${project}`);
-        
-        try {
-          const result = await this.syncSingleRepo(
-            scriptId, repoPath, direction, autoCommit,
-            mergeStrategy, forceOverwrite, gasClient,
-            accessToken, params.transformOptions
-          );
-          results.push({ 
-            projectPath: project, 
-            success: true, 
-            ...result 
-          });
-        } catch (error: any) {
-          console.error(`❌ Failed to sync ${project}: ${error.message}`);
-          results.push({ 
-            projectPath: project, 
-            success: false, 
-            error: error.message 
-          });
-          // Continue syncing other repos even if one fails
+
+      if (projects.length > 0) {
+        console.error(`🔄 Found ${projects.length} git-managed folders`);
+        const gitResults = [];
+
+        for (const project of projects) {
+          const repoPath = project === '(root)' ? '' : project;
+          console.error(`\n📦 Running git operations for: ${project}`);
+
+          try {
+            // Run git merge/commit operations for this folder
+            const result = await this.runGitOperations(
+              scriptId, repoPath, direction, autoCommit,
+              mergeStrategy, forceOverwrite, allGasFiles,
+              gasClient, accessToken, params.transformOptions
+            );
+            gitResults.push({
+              projectPath: project,
+              success: true,
+              ...result
+            });
+          } catch (error: any) {
+            console.error(`❌ Git operations failed for ${project}: ${error.message}`);
+            gitResults.push({
+              projectPath: project,
+              success: false,
+              error: error.message
+            });
+          }
         }
+      } else {
+        console.error(`⚠️  No .git breadcrumbs found - files mirrored without git management`);
       }
-      
-      // Aggregate results
-      const successCount = results.filter(r => r.success).length;
-      const failureCount = results.filter(r => !r.success).length;
-      
-      return {
-        success: failureCount === 0,
-        message: `Synced ${successCount} repositories${failureCount > 0 ? `, ${failureCount} failed` : ''}`,
-        repositories: results,
-        totalPulled: results.reduce((sum, r) => sum + (r.pulledFiles || 0), 0),
-        totalPushed: results.reduce((sum, r) => sum + (r.pushedFiles || 0), 0),
-        recommendedActions: failureCount > 0 ? {
-          primary: 'Review and resolve failures in individual repositories',
-          commands: results
-            .filter(r => !r.success)
-            .map(r => `local_sync({scriptId: '${scriptId}', projectPath: '${r.projectPath === '(root)' ? '' : r.projectPath}'})`)
-        } : undefined
-      };
-      
+
+      // PHASE 3: Push all local changes back to GAS (bidirectional)
+      if (direction !== 'pull-only') {
+        console.error(`\n=== PHASE 3: Push Changes Back ===`);
+        const pushedCount = await this.pushAllFilesToGAS(
+          scriptId,
+          baseProjectPath,
+          allGasFiles,
+          gasClient,
+          accessToken
+        );
+
+        return {
+          success: true,
+          message: `Synced ${allGasFiles.length} files (${projects.length} git-managed folders)`,
+          phase: 'complete',
+          filesFromGAS: allGasFiles.length,
+          filesPushedToGAS: pushedCount,
+          gitManagedFolders: projects.length,
+          syncFolder: baseProjectPath,
+          recommendedActions: projects.length > 0 ? {
+            primary: 'Commit and push git-managed folders to GitHub',
+            gitCommands: projects.map(p => {
+              const repoPath = p === '(root)' ? baseProjectPath : `${baseProjectPath}/${p}`;
+              return `git -C "${repoPath}" add -A && git -C "${repoPath}" commit -m "Sync from GAS" && git -C "${repoPath}" push origin main`;
+            })
+          } : undefined
+        };
+      } else {
+        return {
+          success: true,
+          message: `Pulled ${allGasFiles.length} files (pull-only mode)`,
+          phase: 'pull',
+          filesFromGAS: allGasFiles.length,
+          gitManagedFolders: projects.length,
+          syncFolder: baseProjectPath
+        };
+      }
+
     } catch (error: any) {
       throw new FileOperationError('sync', scriptId, error.message || 'Failed to synchronize project');
     }
@@ -242,13 +273,18 @@ export class LocalSyncTool extends BaseTool {
     const config = {
       repository: gitConfig.remote?.origin?.url || '',
       branch: Object.keys(gitConfig.branch || {})[0] || 'main',
-      localPath: (gitConfig as any).sync?.localPath || `~/gas-repos/project-${scriptId}${projectPath ? '-' + projectPath.replace(/\//g, '-') : ''}`,
+      localPath: (gitConfig as any).sync?.localPath || (projectPath ? `~/gas-repos/project-${scriptId}/${projectPath}` : `~/gas-repos/project-${scriptId}`),
       lastSync: (gitConfig as any).sync?.lastSync,
       projectPath: projectPath
     };
 
     const syncFolder = this.expandPath(config.localPath);
-    
+
+    // Log sync details
+    console.error(`   📂 Local path: ${syncFolder}`);
+    console.error(`   🔗 Git repo: ${config.repository || 'local only'}`);
+    console.error(`   🌿 Branch: ${config.branch}`);
+
     // Ensure sync folder exists and is a git repo
     await this.ensureGitRepo(syncFolder, config);
     
@@ -306,10 +342,79 @@ export class LocalSyncTool extends BaseTool {
         }
       }
     });
-    
+
+    // Log completion summary
+    console.error(`   ✅ Sync complete: ${gasFiles.length} files pulled, ${pushedCount} files pushed`);
+
     return this.createSuccessResponse('complete', gasFiles.length, pushedCount, syncFolder, []);
   }
   
+  /**
+   * Run git operations for a specific folder (Phase 2)
+   * Only handles git merge/commit, files already mirrored in Phase 1
+   */
+  private async runGitOperations(
+    scriptId: string,
+    projectPath: string,
+    direction: string,
+    autoCommit: boolean,
+    mergeStrategy: string,
+    forceOverwrite: boolean,
+    allGasFiles: any[],
+    gasClient: GASClient,
+    accessToken: string,
+    transformOptions?: any
+  ): Promise<any> {
+    const gitProjectManager = new GitProjectManager();
+
+    // Get git configuration for this specific repo
+    const gitConfig = await gitProjectManager.getProjectConfig(scriptId, accessToken, projectPath);
+
+    if (!gitConfig) {
+      throw new ValidationError('git-link', `${projectPath || 'root'}`,
+        `No .git/config.gs breadcrumb found for path: ${projectPath || 'root'}`
+      );
+    }
+
+    // Transform config to expected format
+    const config = {
+      repository: gitConfig.remote?.origin?.url || '',
+      branch: Object.keys(gitConfig.branch || {})[0] || 'main',
+      localPath: (gitConfig as any).sync?.localPath || (projectPath ? `~/gas-repos/project-${scriptId}/${projectPath}` : `~/gas-repos/project-${scriptId}`),
+      lastSync: (gitConfig as any).sync?.lastSync,
+      projectPath: projectPath
+    };
+
+    const syncFolder = this.expandPath(config.localPath);
+
+    console.error(`   📂 Local path: ${syncFolder}`);
+    console.error(`   🔗 Git repo: ${config.repository || 'local only'}`);
+    console.error(`   🌿 Branch: ${config.branch}`);
+
+    // Ensure git repo exists
+    await this.ensureGitRepo(syncFolder, config);
+
+    // Get files for this folder (already mirrored in Phase 1)
+    const gasFiles = this.filterFilesByPath(allGasFiles, projectPath);
+
+    // Auto-commit changes that were mirrored
+    if (autoCommit) {
+      try {
+        await execFileAsync('git', ['add', '-A'], { cwd: syncFolder });
+        await execFileAsync('git', ['commit', '-m', 'Merged changes from GAS'], { cwd: syncFolder });
+        console.error(`   ✅ Auto-committed changes`);
+      } catch {
+        // No changes to commit is fine
+        console.error(`   ℹ️  No changes to commit`);
+      }
+    }
+
+    return {
+      success: true,
+      filesProcessed: gasFiles.length
+    };
+  }
+
   private filterFilesByPath(files: any[], projectPath: string): any[] {
     if (!projectPath) {
       // Root project - exclude files that belong to sub-projects with their own .git/ folders
@@ -937,6 +1042,361 @@ export class LocalSyncTool extends BaseTool {
     };
   }
   
+  /**
+   * Mirror all files from GAS to local filesystem (Phase 1 of sync)
+   * Writes ALL files regardless of git breadcrumbs
+   */
+  private async mirrorAllFilesToLocal(
+    scriptId: string,
+    gasFiles: any[],
+    basePath: string
+  ): Promise<void> {
+    console.error(`📥 Mirroring ${gasFiles.length} files to ${basePath}...`);
+
+    const conflicts: string[] = [];
+    const mirroredFiles: any[] = []; // BUG #1 FIX: Track actually mirrored files
+    let skippedCount = 0;
+
+    for (const file of gasFiles) {
+      // Skip .git breadcrumb files - these are managed separately
+      if (file.name.startsWith('.git/')) {
+        continue;
+      }
+
+      // Transform GAS file name to local path
+      const localPath = await this.gasPathToLocal(file.name, file.type);
+      const fullPath = path.join(basePath, localPath);
+
+      // Create directory if needed
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+
+      // Transform and write content
+      let content = file.source;
+
+      // Handle transformations
+      if (file.name === 'README' && file.type === 'HTML') {
+        const result = transformHTMLToMarkdown(content, file.name);
+        content = result.content;
+      } else if (file.name.startsWith('_') || file.name === '.gitignore' || file.name === '.git') {
+        const result = transformFromGAS(content, file.name);
+        content = result.content;
+      } else if (file.type === 'SERVER_JS') {
+        content = unwrapCommonJSModule(content);
+      }
+
+      // BUG #1 FIX: Check if file exists and differs before overwriting
+      try {
+        await fs.access(fullPath);
+        // File exists - check if content differs
+        const localContent = await fs.readFile(fullPath, 'utf8');
+        if (localContent !== content) {
+          // Content differs - this is a potential conflict
+          console.error(`  ⚠️  Conflict detected: ${fullPath}`);
+          console.error(`     Local file differs from GAS version - preserving local changes`);
+          conflicts.push(fullPath);
+          skippedCount++;
+          continue; // Skip overwrite to preserve local changes
+        }
+      } catch {
+        // File doesn't exist - safe to write
+      }
+
+      await fs.writeFile(fullPath, content, 'utf8');
+
+      // Preserve GAS mtime for accurate sync detection
+      if (file.updateTime) {
+        const { setFileMtimeToRemote } = await import('../utils/fileHelpers.js');
+        await setFileMtimeToRemote(fullPath, file.updateTime, file.type);
+      }
+
+      // BUG #1 FIX: Track this file as successfully mirrored
+      mirroredFiles.push(file);
+    }
+
+    console.error(`✅ Mirrored ${gasFiles.length - skippedCount} files to local`);
+
+    if (conflicts.length > 0) {
+      console.error(`⚠️  Skipped ${conflicts.length} files with local changes:`);
+      conflicts.forEach(c => console.error(`   - ${c}`));
+      console.error(`   To overwrite local changes, delete these files and run sync again`);
+    }
+
+    // BUG #1 FIX: Create .clasp.json with only actually mirrored files
+    await this.createClaspConfig(scriptId, mirroredFiles, basePath);
+  }
+
+  /**
+   * Convert GAS path to local filesystem path
+   * Examples:
+   *   "common-js/require" → "common-js/require.js"
+   *   "tools/ToolBase" → "tools/ToolBase.js"
+   *   "appsscript" → "appsscript.json"
+   */
+  private gasPathToLocal(gasName: string, fileType: string): string {
+    // Handle special files
+    if (gasName === 'README' && fileType === 'HTML') {
+      return 'README.md';
+    }
+    if (gasName === '.gitignore') {
+      return '.gitignore';
+    }
+    if (gasName === 'appsscript') {
+      return 'appsscript.json';
+    }
+
+    // Add appropriate extension
+    let localName = gasName;
+    if (fileType === 'SERVER_JS') {
+      localName += '.js';
+    } else if (fileType === 'HTML') {
+      localName += '.html';
+    } else if (fileType === 'JSON') {
+      localName += '.json';
+    }
+
+    return localName;
+  }
+
+  /**
+   * Push all local files back to GAS (Phase 3 of sync)
+   * Bidirectional sync for all files + preserves execution order from .clasp.json
+   */
+  private async pushAllFilesToGAS(
+    scriptId: string,
+    basePath: string,
+    originalGasFiles: any[],
+    gasClient: GASClient,
+    accessToken: string
+  ): Promise<number> {
+    console.error(`📤 Pushing local changes back to GAS...`);
+
+    // BUG #2 & #4 FIX: Reorder BEFORE pushing to avoid race conditions
+    // Read .clasp.json and set correct file order before making any changes
+    const claspPath = path.join(basePath, '.clasp.json');
+    let claspConfig: any = null;
+
+    try {
+      await fs.access(claspPath);
+      const claspContent = await fs.readFile(claspPath, 'utf8');
+      claspConfig = JSON.parse(claspContent);
+
+      if (claspConfig.filePushOrder && Array.isArray(claspConfig.filePushOrder)) {
+        // BUG #3 FIX: Check for new files and regenerate if needed
+        const localFiles = await this.scanLocalFiles(basePath);
+        const claspFiles = new Set(claspConfig.filePushOrder);
+        const hasNewFiles = localFiles.some(f => !claspFiles.has(f.relativePath));
+
+        if (hasNewFiles) {
+          console.error(`   ⚠️  New files detected - regenerating .clasp.json...`);
+          const updatedGasFiles = await gasClient.getProjectContent(scriptId, accessToken);
+          await this.createClaspConfig(scriptId, updatedGasFiles, basePath);
+
+          // Reload the updated config
+          const updatedContent = await fs.readFile(claspPath, 'utf8');
+          claspConfig = JSON.parse(updatedContent);
+        }
+
+        // Convert local paths to GAS paths
+        const gasFileOrder = claspConfig.filePushOrder.map((localPath: string) => {
+          return this.localPathToGas(localPath);
+        });
+
+        console.error(`📋 Setting file execution order from .clasp.json...`);
+        await gasClient.reorderFiles(scriptId, gasFileOrder, accessToken);
+        console.error(`   ✅ File order set (${gasFileOrder.length} files)`);
+      }
+    } catch (error: any) {
+      // BUG #4 FIX: Distinguish between different error types
+      if (error.code === 'ENOENT') {
+        console.error(`   ℹ️  No .clasp.json found - file order not preserved`);
+      } else if (error instanceof SyntaxError) {
+        console.error(`   ⚠️  Invalid .clasp.json format - file order not preserved`);
+        console.error(`       ${error.message}`);
+      } else if (error.message?.includes('reorderFiles')) {
+        console.error(`   ❌ Failed to reorder files: ${error.message}`);
+        console.error(`       File order may not be preserved`);
+      } else {
+        console.error(`   ⚠️  Error reading .clasp.json - file order not preserved`);
+        console.error(`       ${error.message}`);
+      }
+      // Continue with push even if ordering failed
+    }
+
+    // Now push files - they'll maintain the positions we just set
+    let pushedCount = 0;
+    const localFiles = await this.scanLocalFiles(basePath);
+
+    for (const localFile of localFiles) {
+      const gasPath = this.localPathToGas(localFile.relativePath);
+      const gasFile = originalGasFiles.find(f => f.name === gasPath);
+
+      // Check if file should be pushed
+      if (await this.shouldPushFile(localFile, gasFile, basePath)) {
+        try {
+          await gasClient.updateFile(
+            scriptId,
+            gasPath,
+            localFile.content,
+            undefined,
+            accessToken,
+            localFile.fileType
+          );
+          pushedCount++;
+          console.error(`  ✅ Pushed: ${gasPath}`);
+        } catch (error: any) {
+          console.error(`  ❌ Failed to push ${gasPath}: ${error.message}`);
+        }
+      }
+    }
+
+    console.error(`✅ Pushed ${pushedCount} files to GAS`);
+    return pushedCount;
+  }
+
+  /**
+   * Scan local directory for all files
+   */
+  private async scanLocalFiles(basePath: string): Promise<Array<{
+    relativePath: string;
+    fullPath: string;
+    content: string;
+    fileType: 'SERVER_JS' | 'HTML' | 'JSON';
+    mtime: Date;
+  }>> {
+    const files: Array<any> = [];
+    const entries = await this.walkDirectory(basePath);
+
+    for (const fullPath of entries) {
+      const relativePath = path.relative(basePath, fullPath);
+
+      // Skip .git and .git-gas directories
+      if (relativePath.startsWith('.git')) {
+        continue;
+      }
+
+      const ext = path.extname(relativePath).toLowerCase();
+
+      // Determine file type
+      let fileType: 'SERVER_JS' | 'HTML' | 'JSON' = 'SERVER_JS';
+      if (ext === '.html') fileType = 'HTML';
+      if (ext === '.json') fileType = 'JSON';
+
+      // Read file content
+      let content = await fs.readFile(fullPath, 'utf8');
+
+      // Transform content for GAS
+      if (relativePath === 'README.md') {
+        const result = transformMarkdownToHTML(content, relativePath);
+        content = result.content;
+      } else if (fileType === 'SERVER_JS') {
+        // BUG #2 FIX: Use full path for module name to preserve directory structure
+        // e.g., "tools/ToolBase.js" → module name "tools/ToolBase"
+        const moduleName = this.localPathToGas(relativePath);
+        content = wrapAsCommonJSModule(content, moduleName);
+      }
+
+      // Get file modification time
+      const stats = await fs.stat(fullPath);
+
+      files.push({
+        relativePath,
+        fullPath,
+        content,
+        fileType,
+        mtime: stats.mtime
+      });
+    }
+
+    return files;
+  }
+
+  /**
+   * Convert local path to GAS path
+   * Examples:
+   *   "common-js/require.js" → "common-js/require"
+   *   "tools/ToolBase.js" → "tools/ToolBase"
+   *   "appsscript.json" → "appsscript"
+   */
+  private localPathToGas(localPath: string): string {
+    // Handle special files
+    if (localPath === 'README.md') {
+      return 'README';
+    }
+    if (localPath === '.gitignore') {
+      return '.gitignore';
+    }
+    if (localPath === 'appsscript.json') {
+      return 'appsscript';
+    }
+
+    // Remove extension
+    return localPath.replace(/\.(js|gs|html|json)$/i, '');
+  }
+
+  /**
+   * Determine if a local file should be pushed to GAS
+   * Returns true if:
+   * - File doesn't exist in GAS (new file)
+   * - Local file is newer than GAS file
+   * - File is in a git-managed folder and was modified in git
+   */
+  private async shouldPushFile(
+    localFile: any,
+    gasFile: any,
+    basePath: string
+  ): Promise<boolean> {
+    // New file - always push
+    if (!gasFile) {
+      return true;
+    }
+
+    // Compare modification times
+    const gasTime = new Date(gasFile.updateTime);
+    if (localFile.mtime > gasTime) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Create .clasp.json configuration with file push order
+   * Preserves Google Apps Script execution order based on file positions
+   */
+  private async createClaspConfig(
+    scriptId: string,
+    gasFiles: any[],
+    basePath: string
+  ): Promise<void> {
+    // BUG #5 FIX: Sort files by position with stable tie-breaker
+    const sortedFiles = [...gasFiles]
+      .filter(f => !f.name.startsWith('.git/')) // Exclude git breadcrumbs
+      .sort((a, b) => {
+        const posDiff = (a.position || 0) - (b.position || 0);
+        if (posDiff !== 0) return posDiff;
+        // Break ties alphabetically by name for stability
+        return a.name.localeCompare(b.name);
+      });
+
+    // Convert to local file paths (with extensions)
+    const filePushOrder = sortedFiles.map(file => {
+      return this.gasPathToLocal(file.name, file.type);
+    });
+
+    // Create .clasp.json structure
+    const claspConfig = {
+      scriptId: scriptId,
+      rootDir: ".",
+      filePushOrder: filePushOrder
+    };
+
+    // Write .clasp.json to base path
+    const claspPath = path.join(basePath, '.clasp.json');
+    await fs.writeFile(claspPath, JSON.stringify(claspConfig, null, 2), 'utf8');
+
+    console.error(`   📄 Created .clasp.json with ${filePushOrder.length} files in execution order`);
+  }
+
   private expandPath(filePath: string): string {
     if (!filePath) return '';
     if (filePath.startsWith('~/')) {
@@ -944,7 +1404,7 @@ export class LocalSyncTool extends BaseTool {
     }
     return path.resolve(filePath);
   }
-  
+
   private async isGitRepo(dir: string): Promise<boolean> {
     try {
       await execFileAsync('git', ['rev-parse', '--git-dir'], { cwd: dir });

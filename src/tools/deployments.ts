@@ -1064,8 +1064,60 @@ export class ProjectCreateTool extends BaseTool {
     try {
       const project = await this.gasClient.createProject(title, parentId, accessToken);
 
-      // Create the require.js file
-      const shimResult = await this.create0ShimFile(project.scriptId, accessToken);
+      // Install full CommonJS infrastructure (require + exec + ConfigManager)
+      console.error('📦 [GAS_PROJECT_CREATE] Installing CommonJS infrastructure...');
+      const infrastructureResults: any = {
+        require: null,
+        exec: null,
+        configManager: null
+      };
+
+      try {
+        // 1. Install require.js
+        infrastructureResults.require = await this.create0ShimFile(project.scriptId, accessToken);
+
+        // 2. Get existing files for subsequent installations
+        const existingFiles = await this.gasClient.getProjectContent(project.scriptId, accessToken);
+        const existingFileNames = new Set(existingFiles.map((f: any) => f.name));
+
+        // 3. Install __mcp_exec.gs
+        const initTool = new ProjectInitTool(this.sessionAuthManager);
+        infrastructureResults.exec = await initTool['installExecutionInfrastructure'](
+          project.scriptId,
+          existingFileNames,
+          false,  // force=false
+          accessToken
+        );
+
+        // 4. Install ConfigManager
+        infrastructureResults.configManager = await initTool['installConfigManager'](
+          project.scriptId,
+          existingFileNames,
+          false,  // force=false
+          accessToken
+        );
+
+        console.error('✅ [GAS_PROJECT_CREATE] Full CommonJS infrastructure installed');
+      } catch (infraError: any) {
+        console.error(`⚠️  [GAS_PROJECT_CREATE] Infrastructure installation partial: ${infraError.message}`);
+      }
+
+      // 5. Create deployments with ConfigManager storage
+      let deploymentResult: any = null;
+      try {
+        console.error('🚀 [GAS_PROJECT_CREATE] Creating default deployments (dev/staging/prod)...');
+        const { DeployTool } = await import('./deployment.js');
+        const deployTool = new DeployTool(this.sessionAuthManager);
+        deploymentResult = await deployTool.execute({
+          operation: 'reset',
+          scriptId: project.scriptId,
+          accessToken
+        });
+        console.error('✅ [GAS_PROJECT_CREATE] Default deployments created with ConfigManager storage');
+      } catch (deployError: any) {
+        console.error(`⚠️  [GAS_PROJECT_CREATE] Failed to create deployments: ${deployError.message}`);
+        console.error('    Run deploy({operation: "reset"}) manually to create deployments');
+      }
 
       // Git initialization removed - users must manually create .git/config.gs breadcrumb
       // See local_sync tool documentation for git workflow
@@ -1090,14 +1142,32 @@ export class ProjectCreateTool extends BaseTool {
         createTime: project.createTime,
         updateTime: project.updateTime,
         parentId: project.parentId,
-        shimCreated: shimResult.success,
-        instructions: `Project created with CommonJS module system. For git sync, manually create .git/config.gs breadcrumb in GAS and use local_sync tool. See local_sync documentation for workflow.`
+        infrastructure: {
+          require: { installed: infrastructureResults.require?.success || false },
+          exec: { installed: infrastructureResults.exec?.success || false },
+          configManager: { installed: infrastructureResults.configManager?.success || false }
+        },
+        deployments: deploymentResult?.deployments ? {
+          dev: deploymentResult.deployments.dev,
+          staging: deploymentResult.deployments.staging,
+          prod: deploymentResult.deployments.prod
+        } : null,
+        deploymentsCreated: deploymentResult !== null,
+        instructions: `Project created with full CommonJS infrastructure and deployments. For git sync, manually create .git/config.gs breadcrumb in GAS and use local_sync tool.`
       };
 
       // Add debug info if there were errors
-      if (!shimResult.success) {
-        result.shimError = shimResult.error;
-        result.shimDebug = shimResult.debug;
+      if (!infrastructureResults.require?.success) {
+        result.infraErrors = result.infraErrors || [];
+        result.infraErrors.push(`require.js: ${infrastructureResults.require?.error || 'Installation failed'}`);
+      }
+      if (!infrastructureResults.exec?.success) {
+        result.infraErrors = result.infraErrors || [];
+        result.infraErrors.push(`__mcp_exec.gs: ${infrastructureResults.exec?.error || 'Installation failed'}`);
+      }
+      if (!infrastructureResults.configManager?.success) {
+        result.infraErrors = result.infraErrors || [];
+        result.infraErrors.push(`ConfigManager: ${infrastructureResults.configManager?.error || 'Installation failed'}`);
       }
 
       return result;
@@ -1290,6 +1360,19 @@ export class ProjectInitTool extends BaseTool {
         } else {
           result.errors.push(commonJSResult.error);
         }
+
+        // Install ConfigManager with CommonJS infrastructure
+        const configManagerResult = await this.installConfigManager(scriptId, existingFileNames, force, accessToken);
+        if (configManagerResult.success) {
+          result.filesInstalled.push(configManagerResult.fileName);
+        } else if (configManagerResult.skipped) {
+          result.filesSkipped.push(configManagerResult.fileName);
+          if (configManagerResult.warning) {
+            result.verificationWarnings.push(configManagerResult.warning);
+          }
+        } else {
+          result.errors.push(configManagerResult.error || 'ConfigManager installation failed');
+        }
       }
 
       // Install execution infrastructure
@@ -1335,6 +1418,49 @@ export class ProjectInitTool extends BaseTool {
       // Enforce file ordering: require.gs MUST be at position 0, __mcp_exec.gs at position 1
       console.error(`🔧 [GAS_PROJECT_INIT] Enforcing file order: require.gs at position 0, __mcp_exec.gs at position 1...`);
       await this.enforceFileOrdering(scriptId, accessToken);
+
+      // Create default deployments if missing
+      try {
+        console.error('🔍 [GAS_PROJECT_INIT] Checking for existing deployments...');
+        const { DeployTool } = await import('./deployment.js');
+        const deployTool = new DeployTool(this.sessionAuthManager);
+
+        // Check status first
+        const statusResult = await deployTool.execute({
+          operation: 'status',
+          scriptId,
+          accessToken
+        });
+
+        const hasAllDeployments = statusResult?.environments?.dev &&
+                                   statusResult?.environments?.staging &&
+                                   statusResult?.environments?.prod;
+
+        if (!hasAllDeployments) {
+          console.error('📦 [GAS_PROJECT_INIT] Creating default deployments (dev/staging/prod)...');
+          const deploymentResult = await deployTool.execute({
+            operation: 'reset',
+            scriptId,
+            accessToken
+          });
+          console.error('✅ [GAS_PROJECT_INIT] Default deployments created with ConfigManager storage');
+
+          result.deploymentsCreated = true;
+          result.deployments = deploymentResult?.deployments ? {
+            dev: deploymentResult.deployments.dev,
+            staging: deploymentResult.deployments.staging,
+            prod: deploymentResult.deployments.prod
+          } : null;
+        } else {
+          console.error('✅ [GAS_PROJECT_INIT] Deployments already exist, skipping creation');
+          result.deploymentsCreated = false;
+          result.deployments = 'already_exist';
+        }
+      } catch (deployError: any) {
+        console.error(`⚠️  [GAS_PROJECT_INIT] Failed to check/create deployments: ${deployError.message}`);
+        console.error('    Run deploy({operation: "reset"}) manually to create deployments');
+        result.deploymentWarning = deployError.message;
+      }
 
       // Determine overall status
       if (result.errors.length > 0) {
@@ -1549,6 +1675,117 @@ export class ProjectInitTool extends BaseTool {
       return { success: true, fileName, verification };
     } catch (error: any) {
       const errorMessage = `Failed to install execution infrastructure: ${error.message}`;
+      console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
+      return { error: errorMessage, fileName };
+    }
+  }
+
+  /**
+   * Install ConfigManager infrastructure
+   */
+  private async installConfigManager(
+    scriptId: string,
+    existingFiles: Set<string>,
+    force: boolean,
+    accessToken?: string
+  ): Promise<any> {
+    const fileName = 'common-js/ConfigManager';
+
+    // Check if file exists and verify if needed
+    if (existingFiles.has(fileName)) {
+      console.error(`🔍 [GAS_PROJECT_INIT] ConfigManager already exists, verifying integrity...`);
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        fileName,
+        this.sessionAuthManager,
+        accessToken
+      );
+
+      if (verification.verified) {
+        console.error(`✅ [GAS_PROJECT_INIT] ConfigManager verified (SHA: ${verification.actualSHA})`);
+        return { skipped: true, fileName, verification };
+      }
+
+      // SHA mismatch detected
+      if (!force) {
+        const warning = `ConfigManager SHA mismatch detected but not repaired (use force=true to auto-repair). Expected: ${verification.expectedSHA}, Actual: ${verification.actualSHA}`;
+        console.error(`⚠️  [GAS_PROJECT_INIT] ${warning}`);
+        return {
+          skipped: true,
+          fileName,
+          verification,
+          warning
+        };
+      }
+
+      // force=true: Auto-repair
+      console.error(`🔧 [GAS_PROJECT_INIT] ConfigManager SHA mismatch, auto-repairing (force=true)...`);
+      console.error(`   - Expected SHA: ${verification.expectedSHA}`);
+      console.error(`   - Actual SHA: ${verification.actualSHA}`);
+      // Fall through to reinstall
+    }
+
+    try {
+      console.error(`🔧 [GAS_PROJECT_INIT] Installing ConfigManager...`);
+
+      // Sync cache by reading file first (prevents "file out of sync" errors)
+      if (existingFiles.has(fileName)) {
+        console.error(`🔄 [GAS_PROJECT_INIT] Syncing cache for ${fileName}...`);
+        const { CatTool } = await import('./filesystem/index.js');
+        const catTool = new CatTool(this.sessionAuthManager);
+        try {
+          await catTool.execute({
+            scriptId,
+            path: 'common-js/ConfigManager',
+            accessToken
+          });
+        } catch (error: any) {
+          console.error(`⚠️  [GAS_PROJECT_INIT] Cache sync warning: ${error.message}`);
+          // Continue anyway - write will handle this
+        }
+      }
+
+      // Read template
+      const { readFile } = await import('fs/promises');
+      const { fileURLToPath } = await import('url');
+      const { dirname, join } = await import('path');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+      const templatePath = join(__dirname, '..', 'templates', 'ConfigManager.template.js');
+      const content = await readFile(templatePath, 'utf-8');
+
+      const { RawWriteTool } = await import('./filesystem/index.js');
+      const rawWriteTool = new RawWriteTool(this.sessionAuthManager);
+
+      const writeParams = {
+        path: `${scriptId}/common-js/ConfigManager`,
+        content,
+        fileType: 'SERVER_JS' as const,
+        skipSyncCheck: true,
+        accessToken
+      };
+
+      await rawWriteTool.execute(writeParams);
+
+      // Verify after installation
+      console.error(`🔍 [GAS_PROJECT_INIT] Verifying ConfigManager after installation...`);
+      const verification = await verifyInfrastructureFile(
+        scriptId,
+        fileName,
+        this.sessionAuthManager,
+        accessToken
+      );
+
+      if (!verification.verified) {
+        const verifyError = `ConfigManager installed but verification failed: ${verification.error || 'SHA mismatch'}`;
+        console.error(`⚠️  [GAS_PROJECT_INIT] ${verifyError}`);
+        return { error: verifyError, fileName, verification };
+      }
+
+      console.error(`✅ [GAS_PROJECT_INIT] ConfigManager installed and verified (SHA: ${verification.actualSHA})`);
+      return { success: true, fileName, verification };
+    } catch (error: any) {
+      const errorMessage = `Failed to install ConfigManager: ${error.message}`;
       console.error(`❌ [GAS_PROJECT_INIT] ${errorMessage}`);
       return { error: errorMessage, fileName };
     }

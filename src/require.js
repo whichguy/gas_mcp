@@ -34,14 +34,14 @@
  * function _main(module, exports, log) {
  *   // log is automatically provided - either Logger.log or no-op
  *   log('[INIT] Module initializing...');
- *
+ *   
  *   const helper = require('Helper');
  *
  *   function myFunction() {
  *     log('[CALL] myFunction called');
  *     return "Hello from module";
  *   }
- *
+ *   
  *   log('[READY] Module ready');
  *   return { myFunction };
  * }
@@ -156,6 +156,18 @@
  * The dispatcher uses the first non-null response from handlers.
  */
 
+// ========== DEBUG LOGGING (must be defined before global functions) ==========
+const debugLog = (() => {
+  try {
+    // CRITICAL: Cannot use require() here as it creates circular dependency
+    // debugLog is used by require() itself, so it must be available before any modules load
+    // Default to disabled logging to prevent errors during initialization
+    return () => {};
+  } catch (e) {
+    return () => {};
+  }
+})();
+
 // ========== GLOBAL FUNCTIONS (before IIFE) ==========
 
 /**
@@ -174,8 +186,8 @@ function require(moduleName) {
   // Normalize the module name
   function normalize(name) {
     // Remove leading './' or '../'
-    name = name.replace(/^\.\//, '');
-    name = name.replace(/^\.\.\//, '');
+    name = name.replace(/^\.\/?/, '');
+    name = name.replace(/^\.\.\/?/, '');
     // Remove trailing .js
     if (name.endsWith('.js')) name = name.slice(0, -3);
     return name;
@@ -242,6 +254,10 @@ function require(moduleName) {
     } else if (factory.length === 2) {
       // LEGACY: 2 parameters (module, exports)
       result = factory(module, module.exports);
+    } else if (factory.length === 0) {
+      // DEFAULT PARAMS: function.length === 0 when first params have defaults
+      // Call with all 3 parameters, JavaScript will use passed args over defaults
+      result = factory(module, module.exports, moduleLog);
     } else {
       // UNKNOWN: Call with all parameters for safety
       result = factory(module, module.exports, moduleLog);
@@ -302,6 +318,12 @@ function require(moduleName) {
  * @param {boolean} [options.loadNow=false] - If true, immediately execute module via require()
  */
 function __defineModule__(moduleFactory, explicitName, options) {
+  // TODO: Add argument validation to prevent common errors:
+  // - Validate explicitName is string or undefined (not object)
+  // - Validate moduleFactory is a function
+  // - Provide helpful error messages for invalid arguments
+  // This prevents hard-to-debug issues like "[object Object]" module names
+
   // Access registries exposed by IIFE
   const moduleFactories = globalThis.__moduleFactories__;
 
@@ -325,35 +347,8 @@ function __defineModule__(moduleFactory, explicitName, options) {
   moduleFactories[moduleName] = moduleFactory;
   debugLog(`   Factory stored for: ${moduleName}`);
 
-  // Auto-detect __global__ exports and enable loadNow if present
-  if (!opts.loadNow) {
-    try {
-      debugLog(`[DETECT] Checking ${moduleName} for __global__ exports...`);
-
-      // Execute factory temporarily to inspect exports
-      const tempModule = { exports: {} };
-      const tempLog = () => {}; // No-op log for detection
-
-      const result = moduleFactory.length === 3
-        ? moduleFactory(tempModule, tempModule.exports, tempLog)
-        : moduleFactory(tempModule, tempModule.exports);
-
-      if (result !== undefined) {
-        tempModule.exports = result;
-      }
-
-      // Check for __global__ exports
-      if (tempModule.exports.__global__ && typeof tempModule.exports.__global__ === 'object') {
-        opts.loadNow = true;
-        debugLog(`[AUTOLOAD] Module ${moduleName} has __global__ exports, auto-enabling loadNow`);
-      } else {
-        debugLog(`[LAZY] Module ${moduleName} will lazy-load (no __global__ detected)`);
-      }
-    } catch (error) {
-      debugLog(`[WARN] Error detecting __global__ for ${moduleName}: ${error.message}`);
-      // Continue with lazy loading if detection fails
-    }
-  }
+  // Modules with __global__ exports MUST explicitly use { loadNow: true } option
+  // No auto-detection performed - this prevents cache pollution during temporary factory execution
 
   // If loadNow=true, immediately execute module via require()
   if (opts.loadNow) {
@@ -372,20 +367,6 @@ function __defineModule__(moduleFactory, explicitName, options) {
   debugLog(`[REGISTER] Module registered: ${moduleName}`);
 }
 
-// ========== DEBUG LOGGING ==========
-const debugLog = (() => {
-  try {
-    const ConfigManagerClass = require('gas-properties/ConfigManager');
-    const config = new ConfigManagerClass('COMMONJS');
-    const enabled = config.get('REQUIRE_DEBUG', false);
-    return (enabled === 'true' || enabled === true)
-      ? (...args) => Logger.log(...args)
-      : () => {};
-  } catch (e) {
-    return () => {};
-  }
-})();
-
 // ========== IIFE FOR INTERNAL INFRASTRUCTURE ==========
 
 (function() {
@@ -402,10 +383,10 @@ const debugLog = (() => {
       const config = new ConfigManagerClass('COMMONJS');
       const loggingMapJson = config.get('__Logging', '{}');
       const loggingMap = JSON.parse(loggingMapJson);
-
+      
       // Default to false if module not in map
       const enabled = loggingMap[moduleName] === true;
-
+      
       return enabled ? (...args) => Logger.log(...args) : () => {};
     } catch (e) {
       // If ConfigManager fails, return no-op
