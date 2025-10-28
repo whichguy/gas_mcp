@@ -70,6 +70,7 @@ npm run test:all-verify          # Run all verification tests
 **Tools:** cat/write auto-unwrap/wrap → edit clean code → execute with full module access
 **Pattern:** Calculator.js `module.exports = {add, multiply}` → Main.js `require('Calculator').add(5,6)`
 **Infra:** CommonJS.js handles resolution/caching → transparent to user
+**ConfigManager:** Installed as `common-js/ConfigManager` - hierarchical configuration with 5-level scope priority (userDoc → doc → user → domain → script). Automatic PropertiesService integration for deployment URLs/IDs.
 
 **Module Loading (write moduleOptions):**
 - `loadNow: true` (eager) → _main() at startup → use for: doGet/doPost, onOpen/onEdit/onInstall triggers, __events__ registration
@@ -115,6 +116,62 @@ npm run test:all-verify          # Run all verification tests
 #### 6. Deployment & Version Control
 **Tool:** deploy({operation, environment, scriptId}) → promote/rollback/status/reset operations
 **Environments:** dev (HEAD, auto) | staging (versioned) | prod (tagged) → automatic [DEV]/[STAGING]/[PROD] tags
+**Auto-Storage:** Deploy operations automatically store URLs and IDs in PropertiesService via ConfigManager. Keys: `DEV_URL`, `DEV_DEPLOYMENT_ID`, `STAGING_URL`, `STAGING_DEPLOYMENT_ID`, `PROD_URL`, `PROD_DEPLOYMENT_ID` (scope: script)
+
+**Workflow:**
+```
+dev (HEAD) → promote → staging (v1,v2,v3...) → promote → prod (stable)
+```
+
+**Operations:**
+
+1. **Promote** - Move code forward through pipeline
+   ```typescript
+   // dev → staging (creates version snapshot)
+   deploy({operation: 'promote', environment: 'staging', scriptId,
+           description: 'v1.1 Bug fixes'})
+
+   // staging → prod (updates prod to staging version)
+   deploy({operation: 'promote', environment: 'prod', scriptId})
+   ```
+
+2. **Rollback** - Revert to previous version
+   ```typescript
+   deploy({operation: 'rollback', environment: 'prod', scriptId})
+   // or specify version: toVersion: 3
+   ```
+
+3. **Status** - Check all environments
+   ```typescript
+   deploy({operation: 'status', scriptId})
+   // Returns: dev/staging/prod versions + URLs
+   ```
+
+4. **Reset** - Recreate all 3 deployments (⚠️ destructive)
+   ```typescript
+   deploy({operation: 'reset', scriptId})
+   // Creates fresh dev/staging/prod deployments
+   ```
+
+**Key Concepts:**
+- **dev**: Always points to HEAD - instant feedback during development
+- **staging**: Versioned snapshots - immutable for QA testing
+- **prod**: Production-stable - only receives tested staging versions
+
+**Typical Flow:**
+1. Develop & test in dev (HEAD updates automatically)
+2. When ready: promote dev→staging (creates v1)
+3. QA tests staging v1
+4. If approved: promote staging→prod (prod points to v1)
+5. If issues: rollback prod to previous version
+
+**Best Practices:**
+- Always test in staging before promoting to prod
+- Use descriptive version descriptions
+- Check status after each promotion
+- Keep 3+ previous versions for rollback
+
+**Full Guide:** See `docs/DEPLOYMENT_WORKFLOW.md` for complete workflow documentation
 
 ---
 
@@ -285,8 +342,27 @@ or
 | **Git** | 3 | local_sync, config, git_feature (start/finish/rollback/list/switch) |
 | **Sheets** | 1 | sheet_sql |
 
-**Config:** gas-config.json (OAuth + projects) | oauth-config.json (GCP creds) | .auth/ (tokens)
+**Config:** gas-config.json (OAuth + projects) | oauth-config.json (GCP creds) | ~/.auth/mcp-gas/tokens/ (persistent auth tokens)
 **Design:** smart (unwrap) vs raw (preserve) | mcp__gas__* naming | period prefix (.gitignore.gs) | ~/gas-repos/project-[scriptId]/
+
+### Authentication & Token Persistence
+
+**Token Storage:** `~/.auth/mcp-gas/tokens/{email}.json` - Home directory-based for consistent persistence across server restarts
+
+**Key Features:**
+- **Auto-Persistence**: Credentials survive server restarts (no forced re-authentication)
+- **Auto-Refresh**: Expired tokens automatically refreshed using refresh_token
+- **Cross-Session**: Multiple MCP clients share cached tokens via filesystem
+- **Security**: File permissions 0600 (owner-only read/write)
+- **Cleanup**: 30-day auto-cleanup of stale sessions
+
+**Workflow:**
+- **First Use**: OAuth flow required (one-time per account) → token cached
+- **Server Restart**: Credentials automatically loaded from cache → no re-auth needed
+- **Token Expiry**: Automatic refresh transparent to user
+- **Manual Clear**: `rm -rf ~/.auth/mcp-gas/tokens/` to force re-authentication
+
+**Migration Note:** Tokens previously stored at `~/src/mcp_gas/.auth/tokens/` are automatically migrated to new location on first use.
 
 ## Development
 
@@ -354,9 +430,22 @@ or
 2. Create `.git/config.gs` breadcrumb in GAS project
 3. Verify git is initialized: `cd ~/gas-repos/project-{scriptId} && git status`
 
+### Authentication Tokens Not Persisting
+**Problem**: Server requires re-authentication after every restart
+**Solution**:
+1. Verify token storage location: `ls -la ~/.auth/mcp-gas/tokens/`
+2. Check file permissions: should be 0600 (owner-only)
+3. If tokens exist but still prompting: Check server startup logs for token loading errors
+4. Manual token clear if needed: `rm -rf ~/.auth/mcp-gas/tokens/`
+
+**Note**: As of latest version, tokens persist automatically across server restarts. No re-authentication should be needed unless tokens are manually cleared or expired without refresh_token.
+
 ### Integration Tests Failing
 **Problem**: Tests fail with authentication errors
-**Solution**: Run `npm test` first to trigger OAuth flow, then run integration tests
+**Solution**:
+1. First run triggers OAuth flow automatically
+2. Tokens cached at `~/.auth/mcp-gas/tokens/` for future runs
+3. Set `MCP_TEST_MODE=true` to preserve tokens during testing
 
 ### "Cannot find module" Errors
 **Problem**: TypeScript imports not resolving

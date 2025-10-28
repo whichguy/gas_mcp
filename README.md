@@ -33,6 +33,7 @@ MCP GAS Server bridges AI assistants with Google Apps Script, enabling:
 - **AI-Driven Development**: Tell Claude/Cursor what to build, and it handles the implementation
 - **Full CommonJS Modules**: `require()`, `module.exports`, automatic dependency resolution - write GAS like Node.js
 - **Ad-hoc Execution**: Run any JavaScript expression instantly - no deployment, no wrapper functions needed
+- **Production Deployment Pipeline**: dev → staging → prod workflow with version control, promotion, and rollback
 - **Unix-inspired Interface**: Familiar commands (`cat`, `grep`, `ls`, `find`, `sed`) for intuitive GAS project management
 - **Local Development**: Write code locally with full IDE support
 - **Automatic Sync**: Bidirectional sync between local files and Google's cloud
