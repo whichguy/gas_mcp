@@ -352,19 +352,15 @@ function __defineModule__(moduleFactory, explicitName, options) {
 
   // If loadNow=true, immediately execute module via require()
   if (opts.loadNow) {
-    debugLog(`[LOADNOW] Load-now enabled for ${moduleName}, executing immediately...`);
     try {
       require(moduleName);
-      debugLog(`[OK] Module ${moduleName} loaded immediately via require()`);
       return; // Module is now cached and processed by require()
     } catch (error) {
-      debugLog(`[ERROR] Error loading module ${moduleName} immediately: ${error.message}`);
       throw error; // Re-throw to prevent silent failures
     }
   }
 
   // Module registered without execution - will execute on first require()
-  debugLog(`[REGISTER] Module registered: ${moduleName}`);
 }
 
 // ========== IIFE FOR INTERNAL INFRASTRUCTURE ==========
@@ -372,22 +368,60 @@ function __defineModule__(moduleFactory, explicitName, options) {
 (function() {
   'use strict';
 
+  // ===== MODULE LOGGING =====
+  // Direct synchronous logging (no queue - Logger.log is already buffered by GAS)
+
   /**
    * Get log function for a specific module based on ConfigManager settings
+   * Uses inclusion/exclusion logic with folder patterns support
    * @param {string} moduleName - The name of the module
    * @returns {Function} Logger.log or no-op function
    */
   function getModuleLogFunction(moduleName) {
     try {
-      const ConfigManagerClass = require('gas-properties/ConfigManager');
+      const ConfigManagerClass = require('common-js/ConfigManager');
       const config = new ConfigManagerClass('COMMONJS');
       const loggingMapJson = config.get('__Logging', '{}');
       const loggingMap = JSON.parse(loggingMapJson);
-      
-      // Default to false if module not in map
-      const enabled = loggingMap[moduleName] === true;
-      
-      return enabled ? (...args) => Logger.log(...args) : () => {};
+
+      let isIncluded = false;
+      let isExcluded = false;
+
+      // Check 1: Exact module name
+      if (loggingMap[moduleName] === true) isIncluded = true;
+      if (loggingMap[moduleName] === false) isExcluded = true;
+
+      // Check 2: Folder patterns (e.g., 'auth/*')
+      for (const key in loggingMap) {
+        if (key.endsWith('/*')) {
+          const folder = key.slice(0, -2); // Remove /*
+          if (moduleName.startsWith(folder + '/')) {
+            if (loggingMap[key] === true) isIncluded = true;
+            if (loggingMap[key] === false) isExcluded = true;
+          }
+        }
+      }
+
+      // Check 3: Wildcard
+      if (loggingMap['*'] === true) isIncluded = true;
+      if (loggingMap['*'] === false) isExcluded = true;
+
+      // Exclusion takes precedence over inclusion
+      if (isExcluded) return () => {};
+
+      if (isIncluded) {
+        // Direct synchronous logging
+        return (...args) => {
+          try {
+            Logger.log(...args);
+          } catch (e) {
+            // Silent fail - don't break on logging errors
+          }
+        };
+      }
+
+      // Default: disabled
+      return () => {};
     } catch (e) {
       // If ConfigManager fails, return no-op
       return () => {};
@@ -990,6 +1024,169 @@ function __defineModule__(moduleFactory, explicitName, options) {
 
   debugLog('[INIT] Module system initialized');
 })();
+
+// ===== MODULE LOGGING CONTROL FUNCTIONS =====
+
+/**
+ * Set logging for module(s) with inclusion/exclusion support
+ *
+ * @param {string|Array<string>} pattern - Module name(s), folder pattern (e.g., 'auth/*'), or '*' for all
+ * @param {boolean} enabled - true to enable logging, false to disable
+ * @param {string} [scope='script'] - ConfigManager scope (userDoc, document, user, domain, script)
+ * @param {boolean} [explicitDisable=false] - When disabling, use false instead of delete (even at script scope)
+ * @returns {boolean} Success status
+ *
+ * @example
+ * // Enable all modules
+ * setModuleLogging('*', true);
+ *
+ * // Explicitly exclude one module (takes precedence over wildcard)
+ * setModuleLogging('auth/NoisyModule', false, 'script', true);
+ *
+ * // Enable folder
+ * setModuleLogging('auth/*', true);
+ *
+ * // Exclude specific module from folder (takes precedence)
+ * setModuleLogging('auth/SessionManager', false);
+ *
+ * // Enable multiple specific modules
+ * setModuleLogging(['api/Handler', 'auth/Client'], true);
+ */
+function setModuleLogging(pattern, enabled, scope, explicitDisable) {
+  scope = scope || 'script';
+  explicitDisable = explicitDisable || false;
+
+  try {
+    const ConfigManagerClass = require('common-js/ConfigManager');
+    const config = new ConfigManagerClass('COMMONJS');
+
+    // Read from SPECIFIC scope (not merged!)
+    const loggingMapJson = config.get('__Logging', '{}');
+    const loggingMap = JSON.parse(loggingMapJson);
+
+    // Helper: enable or disable entry (scope-aware)
+    function setEntry(name) {
+      if (enabled) {
+        loggingMap[name] = true;
+      } else {
+        // Use false if: explicit flag OR not at script scope
+        if (explicitDisable || scope !== 'script') {
+          loggingMap[name] = false;
+        } else {
+          // At script scope without explicit flag: delete (absence = disabled)
+          delete loggingMap[name];
+        }
+      }
+    }
+
+    // Apply pattern(s)
+    if (Array.isArray(pattern)) {
+      pattern.forEach(setEntry);
+    } else {
+      setEntry(pattern);
+    }
+
+    // Write back to SAME scope
+    config.set('__Logging', JSON.stringify(loggingMap), scope);
+    return true;
+  } catch (e) {
+    Logger.log('[ERROR] setModuleLogging failed: ' + e.message);
+    return false;
+  }
+}
+
+/**
+ * Get current logging state for module(s)
+ *
+ * @param {string|Array<string>} [pattern] - Module name(s) to check, or omit for all
+ * @returns {Object} Map of module names to boolean (enabled/disabled) or undefined if not set
+ *
+ * @example
+ * getModuleLogging();                    // Get all settings
+ * getModuleLogging('auth/Client');        // Get one module
+ * getModuleLogging(['api/Handler', 'auth/Client']);  // Get multiple
+ */
+function getModuleLogging(pattern) {
+  try {
+    const ConfigManagerClass = require('common-js/ConfigManager');
+    const config = new ConfigManagerClass('COMMONJS');
+
+    const loggingMapJson = config.get('__Logging', '{}');
+    const loggingMap = JSON.parse(loggingMapJson);
+
+    if (!pattern) {
+      return loggingMap; // Return entire map
+    }
+
+    if (Array.isArray(pattern)) {
+      const result = {};
+      pattern.forEach(name => {
+        result[name] = loggingMap[name];
+      });
+      return result;
+    }
+
+    return { [pattern]: loggingMap[pattern] };
+  } catch (e) {
+    Logger.log('[ERROR] getModuleLogging failed: ' + e.message);
+    return {};
+  }
+}
+
+/**
+ * List all modules/patterns with logging explicitly enabled
+ *
+ * @returns {Array<string>} Array of enabled module patterns (exact names, folder patterns, or '*')
+ *
+ * @example
+ * listLoggingEnabled();  // Returns ['*', 'auth/NoisyModule'] etc.
+ */
+function listLoggingEnabled() {
+  try {
+    const ConfigManagerClass = require('common-js/ConfigManager');
+    const config = new ConfigManagerClass('COMMONJS');
+
+    const loggingMapJson = config.get('__Logging', '{}');
+    const loggingMap = JSON.parse(loggingMapJson);
+
+    return Object.keys(loggingMap).filter(key => loggingMap[key] === true);
+  } catch (e) {
+    Logger.log('[ERROR] listLoggingEnabled failed: ' + e.message);
+    return [];
+  }
+}
+
+/**
+ * Clear all logging configuration at specified scope
+ *
+ * @param {string} [scope='script'] - ConfigManager scope to clear
+ * @returns {boolean} Success status
+ *
+ * @example
+ * clearModuleLogging();           // Clear script scope
+ * clearModuleLogging('user');     // Clear user scope
+ */
+function clearModuleLogging(scope) {
+  scope = scope || 'script';
+
+  try {
+    const ConfigManagerClass = require('common-js/ConfigManager');
+    const config = new ConfigManagerClass('COMMONJS');
+
+    // Delete the entire __Logging key at this scope
+    config.delete('__Logging', scope);
+    return true;
+  } catch (e) {
+    Logger.log('[ERROR] clearModuleLogging failed: ' + e.message);
+    return false;
+  }
+}
+
+// Expose functions globally for use in GAS environment
+globalThis.setModuleLogging = setModuleLogging;
+globalThis.getModuleLogging = getModuleLogging;
+globalThis.listLoggingEnabled = listLoggingEnabled;
+globalThis.clearModuleLogging = clearModuleLogging;
 
 // ===== HOISTED EVENT HANDLER DECLARATIONS (for GAS compile-time detection) =====
 // These top-level function declarations delegate to CommonJS dispatchers
