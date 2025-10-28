@@ -12,10 +12,14 @@
  * See require.js for the underlying implementation details.
  *
  * MODULE SIGNATURE:
- * - NEW (2-param): function _main(module, exports) { ... }
- * - OLD (3-param): function _main(module, exports, require) { ... } (still supported for backward compat)
+ * - STANDARD (3-param): function _main(module, exports, log) { ... }
+ *   - module: Module object with exports property
+ *   - exports: Shortcut to module.exports
+ *   - log: Per-module logging function from ConfigManager
+ * - LEGACY (2-param): function _main(module, exports) { ... } (still supported)
+ * - require() is ALWAYS global - NEVER use as parameter
  *
- * The wrapping system generates the new 2-param signature.
+ * The wrapping system generates the standard 3-param signature with log.
  * The unwrapping system handles BOTH signatures transparently.
  */
 
@@ -462,7 +466,8 @@ export function wrapModuleContent(
     if (!trimmedContent) {
         return `function _main(
   module = globalThis.__getCurrentModule(),
-  exports = module.exports
+  exports = module.exports,
+  log = globalThis.__getModuleLogFunction?.(module) || (() => {})
 ) {
     // Empty module - CommonJS provides require() globally
 }
@@ -493,7 +498,8 @@ ${defineCall}`;
     // NOTE: require() is globally available - no parameter needed
     return `function _main(
   module = globalThis.__getCurrentModule(),
-  exports = module.exports
+  exports = module.exports,
+  log = globalThis.__getModuleLogFunction?.(module) || (() => {})
 ) {
 ${trimmedContent.split('\n').map(line => line ? `  ${line}` : '').join('\n')}
 }
