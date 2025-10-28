@@ -646,6 +646,51 @@
       "scriptId": "1RBpxvUsPopFKtOur3yDQdeOgavD5h7_e37Z__t86gg23B6Xc1XrKwv_E",
       "name": "git-auto-init-polyrepo-test-20",
       "description": "Created: 10/21/2025"
+    },
+    "gas-refactor-verification": {
+      "scriptId": "1X8wgd1pa0wo8g6WbGeIz9OCw566JpfC_adKllxNZn5HE7GeoXorzLqz_",
+      "name": "gas-refactor-verification",
+      "description": "Created: 10/22/2025"
+    },
+    "test-configmanager-auto-instal": {
+      "scriptId": "1y9AUg3TG_mVI6u3vtyqYp725ycwXanwHCY5rSG9pm8eOT4phx7ezHe8v",
+      "name": "test-configmanager-auto-instal",
+      "description": "Created: 10/24/2025"
+    },
+    "configmanager-integration-test": {
+      "scriptId": "1cMqWbTGF7Q90-k6Wuuh-CoIiXZOMkeyUZoQXAx7BnQE1B1Siplz_rD9C",
+      "name": "configmanager-integration-test",
+      "description": "Created: 10/24/2025"
+    },
+    "configmanager-deployment-verif": {
+      "scriptId": "18YpmoFycWfVCMftmciPnKw0z62DKnvokR-JfVjcd-iFcqUczP_RMJmD6",
+      "name": "configmanager-deployment-verif",
+      "description": "Created: 10/24/2025"
+    },
+    "deployment-url-storage-test-fi": {
+      "scriptId": "1BZqQgWtF4TvkJCuINAbDwkfjVlTTcTZNRAXEJSZst92D6nWnBn8_XRDL",
+      "name": "deployment-url-storage-test-fi",
+      "description": "Created: 10/24/2025"
+    },
+    "final-url-storage-test-with-re": {
+      "scriptId": "1dMkpN23eo4FX6CFZjwhGthy3wUSxZs7zPwkqKFqc_RREckzM1ymXSa6V",
+      "name": "final-url-storage-test-with-re",
+      "description": "Created: 10/24/2025"
+    },
+    "final-retry-test-deployment-ur": {
+      "scriptId": "11Fn2-F8QeCwbGEyd5hxJ_QUMatYna-FfCX7TpWNwEGy_PY2jr1Px2HsO",
+      "name": "final-retry-test-deployment-ur",
+      "description": "Created: 10/24/2025"
+    },
+    "css-file-server-test": {
+      "scriptId": "1bwtByy_IaML67yV6wkzfNP_5pSuX9jNpGHQSvf5N8IoH0UQYBvx-B6kh",
+      "name": "css-file-server-test",
+      "description": "Created: 10/25/2025"
+    },
+    "backup-sheets-chat-before-dupl": {
+      "scriptId": "16jZ90DAuCEqpYkR_cDASzn3MuMgKa9nGZ5hdB5cvhYQGezwzQ-hZPMC4",
+      "name": "backup-sheets-chat-before-dupl",
+      "description": "Created: 10/25/2025"
     }
   },
   "localRoot": {
@@ -655,7 +700,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2025-10-21T16:50:17.372Z"
+    "lastModified": "2025-10-25T23:15:15.239Z"
   },
   "debug": true,
   "currentProject": {

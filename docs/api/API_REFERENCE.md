@@ -2433,7 +2433,7 @@ const result = await callTool('gas_deploy_list', {
 
 ### `gas_project_create` - Create Projects
 
-Alternative method to create new Google Apps Script projects.
+Alternative method to create new Google Apps Script projects. Automatically installs full CommonJS infrastructure (require.js, __mcp_exec.gs, ConfigManager) and creates dev/staging/prod deployments with PropertiesService storage.
 
 #### Input Schema
 ```typescript
@@ -2443,6 +2443,39 @@ interface GasProjectCreateInput {
   accessToken?: string;
 }
 ```
+
+#### Response Schema
+```typescript
+interface GasProjectCreateResponse {
+  status: 'created';
+  scriptId: string;
+  title: string;
+  localName: string;
+  addedToLocalConfig: boolean;
+  createTime: string;
+  updateTime: string;
+  parentId?: string;
+  infrastructure: {
+    require: { installed: boolean };
+    exec: { installed: boolean };
+    configManager: { installed: boolean };
+  };
+  deployments: {
+    dev: { deploymentId: string; url: string; versionNumber: null };
+    staging: { deploymentId: string; url: string; versionNumber: null };
+    prod: { deploymentId: string; url: string; versionNumber: null };
+  } | null;
+  deploymentsCreated: boolean;
+  instructions: string;
+  infraErrors?: string[];  // Present if any infrastructure installation failed
+}
+```
+
+**Notes:**
+- Full infrastructure automatically installed: `common-js/require`, `common-js/__mcp_exec`, `common-js/ConfigManager`
+- Deployments automatically created with ConfigManager storage in PropertiesService
+- PropertiesService keys: `DEV_URL`, `DEV_DEPLOYMENT_ID`, `STAGING_URL`, `STAGING_DEPLOYMENT_ID`, `PROD_URL`, `PROD_DEPLOYMENT_ID`
+- Project creation succeeds even if deployment creation fails (graceful degradation)
 
 ---
 
@@ -3491,26 +3524,91 @@ const testResult = await callTool('gas_run', {
 });
 ```
 
-### 3. Deployment Workflow
+### 3. Deployment Workflow (dev → staging → prod)
+
+**New Unified Deploy Tool**: All deployment operations now use the consolidated `deploy` tool with promote/rollback/status/reset operations.
+
+#### Initial Setup
 
 ```typescript
-// 1. Create version
-const version = await callTool('gas_version_create', {
-  scriptId: 'abc123...',
-  description: 'Production release v1.0'
+// Create all 3 environments (dev, staging, prod)
+const result = await callTool('deploy', {
+  operation: 'reset',
+  scriptId: 'abc123...'
 });
 
-// 2. Deploy as web app
-const deployment = await callTool('gas_deploy_create', {
-  scriptId: 'abc123...',
-  entryPointType: 'WEB_APP',
-  versionNumber: version.versionNumber,
-  webAppAccess: 'ANYONE',
-  webAppExecuteAs: 'USER_DEPLOYING'
-});
-
-console.log('Web app URL:', deployment.entryPoints[0].webApp.url);
+// Returns deployment IDs and URLs for dev, staging, prod
+console.log('Dev URL:', result.dev.url);
+console.log('Staging URL:', result.staging.url);
+console.log('Prod URL:', result.prod.url);
 ```
+
+#### Promote dev → staging (Create Version)
+
+```typescript
+// Promote current HEAD to staging (creates version snapshot)
+const promoteToStaging = await callTool('deploy', {
+  operation: 'promote',
+  environment: 'staging',
+  scriptId: 'abc123...',
+  description: 'v1.0 Release Candidate - Bug fixes and new features'
+});
+
+// Creates version 1 and updates staging deployment
+console.log('Version:', promoteToStaging.version.versionNumber); // 1
+console.log('Staging URL:', promoteToStaging.deployment.url);
+```
+
+#### Promote staging → prod
+
+```typescript
+// Promote tested staging version to production
+const promoteToProd = await callTool('deploy', {
+  operation: 'promote',
+  environment: 'prod',
+  scriptId: 'abc123...'
+});
+
+// Updates prod to staging's version (no description needed)
+console.log('Prod Version:', promoteToProd.version.versionNumber);
+console.log('Prod URL:', promoteToProd.deployment.url);
+```
+
+#### Check Deployment Status
+
+```typescript
+// View all environments
+const status = await callTool('deploy', {
+  operation: 'status',
+  scriptId: 'abc123...'
+});
+
+// Returns current state of all 3 environments
+console.log('Dev:', status.dev.versionNumber);      // null (HEAD)
+console.log('Staging:', status.staging.versionNumber); // 1
+console.log('Prod:', status.prod.versionNumber);     // 1
+```
+
+#### Rollback Production
+
+```typescript
+// Automatic rollback to previous version
+const rollback = await callTool('deploy', {
+  operation: 'rollback',
+  environment: 'prod',
+  scriptId: 'abc123...'
+});
+
+// Or rollback to specific version
+const rollbackToVersion = await callTool('deploy', {
+  operation: 'rollback',
+  environment: 'prod',
+  scriptId: 'abc123...',
+  toVersion: 3
+});
+```
+
+**Complete Guide**: See `docs/DEPLOYMENT_WORKFLOW.md` for detailed workflow documentation
 
 ### 4. Testing and Debugging
 
