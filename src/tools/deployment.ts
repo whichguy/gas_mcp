@@ -4,7 +4,7 @@
  */
 
 import { BaseTool } from './base.js';
-import { GASClient, EntryPointType, WebAppAccess } from '../api/gasClient.js';
+import { GASClient, EntryPointType, WebAppAccess, GASDeployment } from '../api/gasClient.js';
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
@@ -147,12 +147,14 @@ export class DeployTool extends BaseTool {
         accessToken
       );
 
-      console.error(`✅ Updated staging deployment to version ${version.versionNumber}`);
+      console.error(`✅ Deployment update requested for staging → v${version.versionNumber}`);
 
-      // Get updated deployment details to extract URL
-      const updatedStaging = await this.gasClient.getDeployment(
+      // Verify deployment update propagated with polling
+      const updatedStaging = await this.verifyDeploymentUpdate(
         scriptId,
         deployments.staging.deploymentId,
+        version.versionNumber,
+        'staging',
         accessToken
       );
       const stagingUrl = this.extractWebAppUrl(updatedStaging);
@@ -216,12 +218,14 @@ export class DeployTool extends BaseTool {
         accessToken
       );
 
-      console.error(`✅ Updated production deployment to version ${stagingVersion}`);
+      console.error(`✅ Deployment update requested for prod → v${stagingVersion}`);
 
-      // Get updated deployment details to extract URL
-      const updatedProd = await this.gasClient.getDeployment(
+      // Verify deployment update propagated with polling
+      const updatedProd = await this.verifyDeploymentUpdate(
         scriptId,
         deployments.prod.deploymentId,
+        stagingVersion,
+        'prod',
         accessToken
       );
       const prodUrl = this.extractWebAppUrl(updatedProd);
@@ -437,6 +441,7 @@ export class DeployTool extends BaseTool {
     // This ensures the project is never left without deployments if creation fails
     const created: string[] = [];
     let devDeployment, stagingDeployment, prodDeployment;
+    let devUrl = '', stagingUrl = '', prodUrl = '';
 
     try {
       devDeployment = await this.gasClient.createDeployment(
@@ -471,28 +476,69 @@ export class DeployTool extends BaseTool {
 
       console.error('✅ All 3 standard deployments created successfully');
 
-      // Step 2.5: Store all deployment URLs and IDs in ConfigManager
+      // Step 2.5: Fetch deployment details to get URLs (GAS API needs time to propagate entry points)
+      console.error('🔍 Fetching deployment details to extract URLs (with retry for propagation)...');
+      try {
+        // Helper function to retry URL fetching with delays
+        const fetchUrlWithRetry = async (deploymentId: string, envName: string, maxRetries = 3): Promise<string> => {
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              if (attempt > 1) {
+                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff: 2s, 4s, 5s
+                console.error(`  Retry ${attempt}/${maxRetries} for ${envName} (waiting ${delay}ms)...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+              }
+
+              const details = await this.gasClient.getDeployment(scriptId, deploymentId, accessToken);
+              const url = this.extractWebAppUrl(details);
+
+              if (url) {
+                console.error(`  ✅ ${envName} URL: ${url}`);
+                return url;
+              }
+
+              if (attempt < maxRetries) {
+                console.error(`  ⏳ ${envName} URL not ready yet, will retry...`);
+              }
+            } catch (err: any) {
+              console.error(`  ⚠️  Error fetching ${envName} deployment: ${err.message}`);
+            }
+          }
+          console.error(`  ⚠️  ${envName} URL not available after ${maxRetries} attempts`);
+          return '';
+        };
+
+        // Fetch all deployment URLs with retry
+        devUrl = await fetchUrlWithRetry(devDeployment.deploymentId, 'Dev');
+        stagingUrl = await fetchUrlWithRetry(stagingDeployment.deploymentId, 'Staging');
+        prodUrl = await fetchUrlWithRetry(prodDeployment.deploymentId, 'Prod');
+
+      } catch (urlError: any) {
+        console.error(`⚠️  Failed to fetch deployment URLs: ${urlError.message}`);
+      }
+
+      // Step 2.6: Store all deployment URLs and IDs in ConfigManager
       console.error('💾 Storing deployment info in ConfigManager...');
       try {
         await this.setDeploymentInConfigManager(
           scriptId,
           'dev',
           devDeployment.deploymentId,
-          devDeployment.webAppUrl || '',
+          devUrl,
           accessToken
         );
         await this.setDeploymentInConfigManager(
           scriptId,
           'staging',
           stagingDeployment.deploymentId,
-          stagingDeployment.webAppUrl || '',
+          stagingUrl,
           accessToken
         );
         await this.setDeploymentInConfigManager(
           scriptId,
           'prod',
           prodDeployment.deploymentId,
-          prodDeployment.webAppUrl || '',
+          prodUrl,
           accessToken
         );
         console.error('✅ Deployment info stored in ConfigManager');
@@ -544,17 +590,17 @@ export class DeployTool extends BaseTool {
       deployments: {
         dev: {
           deploymentId: devDeployment.deploymentId,
-          url: devDeployment.webAppUrl,
+          url: devUrl,
           versionNumber: null
         },
         staging: {
           deploymentId: stagingDeployment.deploymentId,
-          url: stagingDeployment.webAppUrl,
+          url: stagingUrl,
           versionNumber: null
         },
         prod: {
           deploymentId: prodDeployment.deploymentId,
-          url: prodDeployment.webAppUrl,
+          url: prodUrl,
           versionNumber: null
         }
       },
@@ -588,6 +634,52 @@ export class DeployTool extends BaseTool {
   }
 
   /**
+   * Verify deployment update by polling until version matches expected
+   * Ensures deployment updates actually propagate before proceeding
+   * @private
+   */
+  private async verifyDeploymentUpdate(
+    scriptId: string,
+    deploymentId: string,
+    expectedVersion: number,
+    environment: string,
+    accessToken?: string,
+    maxAttempts: number = 5,
+    delayMs: number = 1000
+  ): Promise<GASDeployment> {
+    console.error(`🔍 Verifying ${environment} deployment updated to v${expectedVersion}...`);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const deployment = await this.gasClient.getDeployment(scriptId, deploymentId, accessToken);
+
+        if (deployment.versionNumber === expectedVersion) {
+          console.error(`✅ ${environment} deployment verified at v${expectedVersion}`);
+          return deployment;
+        }
+
+        if (attempt < maxAttempts) {
+          console.error(`  ⏳ Attempt ${attempt}/${maxAttempts}: v${deployment.versionNumber || 'HEAD'}, expected v${expectedVersion}, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      } catch (err: any) {
+        console.error(`  ⚠️  Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
+        if (attempt === maxAttempts) {
+          throw err;
+        }
+        // Delay before retry after API failure
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    throw new ValidationError(
+      'deployment_verification',
+      'timeout',
+      `Deployment update verification failed after ${maxAttempts} attempts (${maxAttempts * delayMs}ms). Expected v${expectedVersion}.`
+    );
+  }
+
+  /**
    * Store deployment URL and ID in ConfigManager (script scope)
    * @private
    */
@@ -601,7 +693,7 @@ export class DeployTool extends BaseTool {
     const envUpper = environment.toUpperCase();
 
     const js_statement = `
-      const ConfigManager = require('gas-properties/ConfigManager');
+      const ConfigManager = require('common-js/ConfigManager');
       const config = new ConfigManager('DEPLOY');
       config.setScript('${envUpper}_URL', '${url}');
       config.setScript('${envUpper}_DEPLOYMENT_ID', '${deploymentId}');

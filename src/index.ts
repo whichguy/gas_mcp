@@ -4,6 +4,7 @@ import { MCPGasServer } from './server/mcpServer.js';
 import { SessionAuthManager } from './auth/sessionManager.js';
 import { McpGasConfigManager } from './config/mcpGasConfig.js';
 import path from 'path';
+import os from 'os';
 
 /**
  * Parse command line arguments
@@ -46,14 +47,11 @@ async function main() {
     process.exit(1);
   }
 
-  // FORCE CLEAR ALL CACHED TOKENS ON STARTUP (skip in test mode)
-  if (process.env.MCP_TEST_MODE !== 'true') {
-    console.error('🗑️  Clearing all cached authentication tokens (forced restart behavior)...');
-    const clearedCount = SessionAuthManager.clearAllSessions();
-    console.error(`✅ Cleared ${clearedCount} cached session(s) - fresh authentication required`);
-  } else {
-    console.error('🧪 Test mode: preserving cached authentication tokens');
-  }
+  // Authentication tokens now persist across server restarts
+  // Tokens are cached at: ~/.auth/mcp-gas/tokens/
+  // To manually clear tokens: rm -rf ~/.auth/mcp-gas/tokens/
+  console.error('✅ Token persistence enabled - credentials will survive server restarts');
+  console.error(`📁 Token cache location: ${os.homedir()}/.auth/mcp-gas/tokens/`);
 
   const server = new MCPGasServer();
 

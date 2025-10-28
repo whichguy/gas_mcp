@@ -1,11 +1,12 @@
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import os from 'os';
 import { OAuth2Client } from 'google-auth-library';
 
 // FILESYSTEM-BASED AUTHENTICATION STORAGE
-// Token cache directory in process.cwd()
-const TOKEN_CACHE_DIR = path.join(process.cwd(), '.auth', 'tokens');
+// Token cache directory in user home directory for consistent cross-session persistence
+const TOKEN_CACHE_DIR = path.join(os.homedir(), '.auth', 'mcp-gas', 'tokens');
 
 // MEMORY LEAK FIX: Maximum deployment URLs to cache (LRU eviction)
 // Prevents unbounded growth in long-running sessions (10+ hours)

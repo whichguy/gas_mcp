@@ -23,6 +23,14 @@ function _main(module, exports, log) {
    * Routes on URI path: /__mcp_exec or parameter: _mcp_run=true
    */
   function doGetHandler(e) {
+    // Check response format preference (used by multiple paths)
+    const wantsJson = e.parameter?.format === 'json';
+
+    // Dedicated /__debug path - always shows debug console
+    if (e.pathInfo === '/__debug') {
+      return handleAuthIde(wantsJson);
+    }
+
     // Check if this is a gas_run request using URI or parameter
     const isGasRunRequest = (e.parameter && e.parameter._mcp_run === 'true') ||
                            (e.pathInfo && e.pathInfo === '/__mcp_exec');
@@ -33,10 +41,6 @@ function _main(module, exports, log) {
 
     // Determine action (default to 'execute' for backward compatibility)
     const action = e.parameter?.action || 'execute';
-
-    // Check response format preference
-    // Default to HTML for browsers, JSON only if explicitly requested
-    const wantsJson = e.parameter?.format === 'json';
 
     // Route based on action
     switch (action) {
