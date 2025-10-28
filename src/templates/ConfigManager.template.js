@@ -1,6 +1,7 @@
 function _main(
   module = globalThis.__getCurrentModule(),
-  exports = module.exports
+  exports = module.exports,
+  log = globalThis.__getModuleLogFunction?.(module) || (() => {})
 ) {
   /**
    * Hierarchical configuration management for Google Apps Script
