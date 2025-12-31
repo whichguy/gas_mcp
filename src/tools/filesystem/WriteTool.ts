@@ -106,7 +106,14 @@ export class WriteTool extends BaseFileSystemTool {
         'Module: {path:"calc",content:"module.exports={add,multiply}"}',
         'Event: {path:"Menu",content:"module.exports.__events__={onOpen:\\"onOpen\\"}",moduleOptions:{loadNow:true}}',
         'Force: {path:"Code",content:"...",force:true}  // ⚠️ Overwrites remote even if out of sync'
-      ]
+      ],
+      errorRecovery: {
+        'sync conflict': 'local_sync first OR force:true (⚠️ overwrites remote)',
+        'hook failed': 'Check .git/hooks/ | fix code | retry',
+        'auth expired': 'auth({mode:"status"}) → auth({mode:"start"}) if needed',
+        'file locked': 'Wait 30s (auto-unlock) OR check concurrent writes'
+      },
+      antiPatterns: ['❌ write for small edits → use edit/aider (95% token savings)', '❌ manual _main() wrapper → let write auto-wrap', '❌ __events__ without loadNow:true → handlers won\'t register']
     }
   };
 
@@ -818,6 +825,10 @@ export class WriteTool extends BaseFileSystemTool {
 
     // Add git hints if available (merge with detection results and branch info)
     if (gitHints || gitDetection || branchResult) {
+      // Import isFeatureBranch to check if we should add workflow hint
+      const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
+      const onFeatureBranch = branchResult?.branch ? isFeatureBranch(branchResult.branch) : false;
+
       result.git = {
         ...(gitHints || {}),
         ...(gitDetection || {}),
@@ -827,6 +838,13 @@ export class WriteTool extends BaseFileSystemTool {
           commitMessage: changeReason || (hookResult.previousContent !== null
             ? `Update ${filename}`
             : `Add ${filename}`)
+        } : {}),
+        // Add workflow completion hint when on feature branch
+        ...(onFeatureBranch ? {
+          nextAction: {
+            hint: `File written. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+            required: false
+          }
         } : {})
       };
     }

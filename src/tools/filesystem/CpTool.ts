@@ -57,6 +57,7 @@ export class CpTool extends BaseFileSystemTool {
     required: ['scriptId', 'from', 'to'],
     additionalProperties: false,
     llmGuidance: {
+      unixLike: 'cp (copy) | GAS | CommonJS unwrap→rewrap',
       whenToUse: 'copy files + proper CommonJS handling',
       workflow: 'cp({scriptId:"...",from:"utils",to:"utils-backup"})',
       commonJsProcessing: 'unwraps source→rewraps dest with correct module name',
@@ -107,7 +108,7 @@ export class CpTool extends BaseFileSystemTool {
     // Use provided changeReason or generate default
     const defaultMessage = `Copy ${fromFilename} to ${toFilename}`;
 
-    const result = await gitManager.executeWithGit(operation, {
+    const gitResult = await gitManager.executeWithGit(operation, {
       scriptId: toProjectId,  // Use destination project for git operations
       files: [toFilename],
       changeReason: params.changeReason || defaultMessage,
@@ -115,8 +116,12 @@ export class CpTool extends BaseFileSystemTool {
     });
 
     // Add additional fields required by tool's CopyResult type
-    const copyResult = result.result;
+    const copyResult = gitResult.result;
     const isCrossProject = fromProjectId !== toProjectId;
+
+    // Check if on feature branch to add workflow hint
+    const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
+    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
     return {
       ...copyResult,
@@ -125,7 +130,14 @@ export class CpTool extends BaseFileSystemTool {
       totalFiles: 0,  // We don't track this anymore
       message: isCrossProject
         ? `Copied ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}... with CommonJS processing`
-        : `Copied ${fromFilename} to ${toFilename} with CommonJS processing within project ${fromProjectId.substring(0, 8)}...`
+        : `Copied ${fromFilename} to ${toFilename} with CommonJS processing within project ${fromProjectId.substring(0, 8)}...`,
+      // Add workflow completion hint when on feature branch
+      ...(onFeatureBranch ? {
+        nextAction: {
+          hint: `File copied. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+          required: false
+        }
+      } : {})
     };
   }
 }

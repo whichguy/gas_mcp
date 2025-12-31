@@ -51,6 +51,7 @@ export class CatTool extends BaseFileSystemTool {
     required: ['scriptId', 'path'],
     additionalProperties: false,
     llmGuidance: {
+      unixLike: 'cat (read file) | GAS | CommonJS unwrap | prefers local cache',
       whenToUse: 'normal file read (auto local/remote)',
       workflow: 'cat({scriptId:"abc123...",path:"utils.gs"})',
       alternatives: 'raw_cat→explicit project ID control',
@@ -61,7 +62,8 @@ export class CatTool extends BaseFileSystemTool {
       commonJsIntegration: 'SERVER_JS auto-integrated (require.js)→_main() wrapper removed→clean code for edit (require()/module/exports available at exec)',
       moduleAccess: 'require("ModuleName")|module.exports={...}|exports.func=... (CommonJS handles loading+caching+deps)',
       editingWorkflow: 'unwrapped for edit→auto-rewrapped on write',
-      examples: ['module: cat({scriptId:"1abc2def...",path:"Utils.gs"})', 'embedded: cat({scriptId:"",path:"1abc2def.../Calculator.gs"})', 'HTML: cat({scriptId:"1abc2def...",path:"sidebar.html"})', 'manifest: cat({scriptId:"1abc2def...",path:"appsscript.json"})']
+      examples: ['module: cat({scriptId:"1abc2def...",path:"Utils.gs"})', 'embedded: cat({scriptId:"",path:"1abc2def.../Calculator.gs"})', 'HTML: cat({scriptId:"1abc2def...",path:"sidebar.html"})', 'manifest: cat({scriptId:"1abc2def...",path:"appsscript.json"})'],
+      antiPatterns: ['❌ cat→edit→cat→edit (wasteful) → use single edit with multiple ops', '❌ cat large file to search → use ripgrep instead', '❌ cat then regex parse → use grep/ripgrep with pattern']
     }
   };
 

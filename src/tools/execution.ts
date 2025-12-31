@@ -196,7 +196,12 @@ export class ExecTool extends BaseTool {
         type: 'string',
         description: 'JavaScript to execute in GAS. Supports: ES6+ expressions, require("Module").func() for project code, all GAS services (DriveApp/SpreadsheetApp/etc), Logger.log() auto-captured. CommonJS resolves dependencies automatically.',
         minLength: 1,
-        examples: ['Math.PI * 2', 'require("Utils").myFunc()', 'DriveApp.createFile("x","y").getId()']
+        examples: [
+          'Math.PI * 2',
+          'require("Utils").myFunc()',
+          'DriveApp.createFile("x","y").getId()',
+          'GmailApp.sendEmail("user@example.com", "Subject", "Body")'
+        ]
       },
       autoRedeploy: {
         type: 'boolean',
@@ -240,8 +245,43 @@ export class ExecTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       whenToUse: 'Execute JavaScript expressions and project functions. Auto-deploys infrastructure. Use logFilter/logTail to manage verbose output.',
-      capabilities: 'ES6+ JavaScript | require() for project code | all GAS services (Drive/Sheets/Gmail/etc) | Logger.log() captured',
-      examples: ['Math: Math.pow(2,10)', 'Module: require("Utils").process(data)', 'GAS: DriveApp.getRootFolder().getName()']
+      capabilities: 'ES6+ JavaScript | require() for project code | all GAS services (DriveApp, SpreadsheetApp, GmailApp, MailApp, CalendarApp, etc.) | Logger.log() captured',
+      examples: [
+        'Math: Math.pow(2,10)',
+        'Module: require("Utils").process(data)',
+        'GAS: DriveApp.getRootFolder().getName()'
+      ],
+
+      moduleLogging: {
+        trigger: 'User wants to debug module loading OR trace require() calls OR see initialization order OR logs are noisy',
+        howTo: [
+          'Enable all: exec({scriptId, js_statement: "setModuleLogging(\'*\', true)"})',
+          'Enable folder: exec({scriptId, js_statement: "setModuleLogging(\'auth/*\', true)"})',
+          'Enable multiple: exec({scriptId, js_statement: "setModuleLogging([\'api/Handler\', \'auth/Client\'], true)"})',
+          'Disable noisy (prevails over enables): exec({scriptId, js_statement: "setModuleLogging(\'auth/Noisy\', false, \'script\', true)"})',
+          'Query all settings: exec({scriptId, js_statement: "getModuleLogging()"})',
+          'Query enabled only: exec({scriptId, js_statement: "listLoggingEnabled()"})',
+          'Clear all: exec({scriptId, js_statement: "clearModuleLogging()"})'
+        ],
+        behavior: 'Logs emit when module loads via require(). Pattern = name in require("Pattern"). Check logger_output in response.',
+        prereq: 'CommonJS auto-installed on first write'
+      },
+
+      configManager: {
+        trigger: 'User needs persistent config OR per-user/per-doc settings OR retrieve deployment URLs',
+        howTo: 'exec({scriptId, js_statement: "const CM = require(\'common-js/ConfigManager\'); const c = new CM(\'APP\'); c.get(\'KEY\', \'default\')"})',
+        scopes: 'Priority: userDoc > document > user > domain > script. Default set() uses userDoc.',
+        methods: 'c.get(key,default) | c.set(key,val,scope) | c.setScript(key,val) | c.setUser(key,val) | c.delete(key,scope)',
+        overrides: 'c.setScriptOverride(key,val) - admin policy wins over user DATA values',
+        autoStored: 'Deploy tool stores DEV_URL, STAGING_URL, PROD_URL at script scope automatically'
+      },
+
+      outputManagement: {
+        trigger: 'logger_output too large OR need only specific log lines',
+        logFilter: 'Regex filter: exec({scriptId, js_statement, logFilter: "ERROR|WARN"})',
+        logTail: 'Last N lines: exec({scriptId, js_statement, logTail: 50})'
+      },
+      antiPatterns: ['❌ exec for file ops → use cat/write/edit instead', '❌ exec without error handling → wrap in try-catch', '❌ long js_statement → write module + require("Module").func()']
     },
     responseSchema: {
       type: 'object',

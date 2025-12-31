@@ -37,6 +37,10 @@ interface SedResult {
     success: boolean;
     error?: string;
   }>;
+  nextAction?: {
+    hint: string;
+    required: boolean;
+  };
 }
 
 /**
@@ -127,7 +131,19 @@ export class SedTool extends BaseTool {
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern', 'replacement'],
-    additionalProperties: false
+    additionalProperties: false,
+    llmGuidance: {
+      unixLike: 'sed s/old/new/g (replace) | GAS | CommonJS wrap/unwrap',
+      whenToUse: 'Regex find/replace across files. Use capture groups ($1, $2) for complex transformations.',
+      examples: ['sed({scriptId,pattern:"oldFunc",replacement:"newFunc"})', 'sed({scriptId,pattern:"console\\\\.log",replacement:"Logger.log",path:"*.gs"})'],
+      nextSteps: ['exec→test changes', 'ripgrep→verify replacements', 'git_feature finish→commit'],
+      errorRecovery: {
+        'invalid regex': 'Escape special chars: . → \\\\. | ( → \\\\( | use dryRun:true to test',
+        'no matches': 'ripgrep pattern first → verify exists → check caseSensitive flag',
+        'partial replace': 'Check global:true (default) | verify pattern specificity'
+      },
+      antiPatterns: ['❌ sed for exact string → use edit (more reliable)', '❌ complex regex without dryRun → test with dryRun:true first', '❌ sed single file → edit is more efficient']
+    }
   };
 
   private ripgrepTool: RipgrepTool;
@@ -185,6 +201,9 @@ export class SedTool extends BaseTool {
         files: []
       };
 
+      // Track branch info from first successful write
+      let branchName: string | undefined;
+
       for (const matchFile of searchResult.matches) {
         try {
           // Read file content
@@ -207,12 +226,16 @@ export class SedTool extends BaseTool {
 
           // Apply changes if not dry run and replacements were made
           if (!params.dryRun && replacementCount > 0) {
-            await this.writeTool.execute({
+            const writeResult = await this.writeTool.execute({
               scriptId,
               path: matchFile.fileName,
               content: newContent,
               accessToken: params.accessToken
-            });
+            }) as any;  // WriteTool returns extended result with git info
+            // Capture branch name from first successful write
+            if (!branchName && writeResult.git?.branch) {
+              branchName = writeResult.git.branch;
+            }
           }
 
           result.files.push({
@@ -231,6 +254,17 @@ export class SedTool extends BaseTool {
             success: false,
             error: error instanceof Error ? error.message : 'Unknown error'
           });
+        }
+      }
+
+      // Add workflow completion hint when on feature branch
+      if (branchName) {
+        const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
+        if (isFeatureBranch(branchName)) {
+          result.nextAction = {
+            hint: `Files updated. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+            required: false
+          };
         }
       }
 

@@ -984,9 +984,11 @@ export class RipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
+      unixLike: 'rg (fast grep) | multi-pattern | smart-case | GAS',
       whenToUse: 'Multi-pattern search with context, smart case, and advanced regex. Searches clean user code (CommonJS unwrapped).',
       features: 'smartCase: auto case detection | multiline: cross-line patterns | replace: non-destructive suggestions | sort/trim: result formatting',
-      examples: ['Multi: patterns:["TODO","FIXME"]', 'Context: context:2,path:"api/*"', 'Advanced: sort:"path",trim:true']
+      examples: ['Multi: patterns:["TODO","FIXME"]', 'Context: context:2,path:"api/*"', 'Advanced: sort:"path",trim:true'],
+      antiPatterns: ['❌ ripgrep to read full file → use cat instead', '❌ complex replace logic → use sed for actual replacement', '❌ search without context → add context:2 for understanding']
     }
   };
 

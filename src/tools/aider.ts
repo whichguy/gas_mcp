@@ -103,7 +103,13 @@ export class AiderTool extends BaseTool {
       toolChoice: 'edit: exact known text | aider: formatting variations | sed: regex patterns | write: new files',
       threshold: '0.8 default, 0.9 strict (minor diffs), 0.7 permissive (moderate diffs)',
       workflow: 'dryRun first to verify matches, then apply. Returns ~10 tokens (95%+ savings vs write).',
-      examples: ['Whitespace: edits:[{searchText:"function   test()",replaceText:"function testNew()"}]', 'Lower threshold: similarityThreshold:0.7', 'Multi-edit: edits:[{...},{...}]']
+      examples: ['Whitespace: edits:[{searchText:"function   test()",replaceText:"function testNew()"}]', 'Lower threshold: similarityThreshold:0.7', 'Multi-edit: edits:[{...},{...}]'],
+      errorRecovery: {
+        'no match found': 'Lower threshold (0.7) OR add more context OR use ripgrep to find actual text',
+        'wrong match': 'Raise threshold (0.9) OR include more unique context in searchText',
+        'sync conflict': 'local_sync first OR retry with force flag'
+      },
+      antiPatterns: ['❌ aider for exact known text → use edit (faster)', '❌ searchText >1000 chars → use grep to locate, then edit', '❌ threshold too low (0.5) → false positives likely']
     },
 
     llmHints: {
@@ -267,18 +273,29 @@ export class AiderTool extends BaseTool {
     // Use provided changeReason or generate default
     const defaultMessage = `Refactor ${filename}`;
 
-    await gitManager.executeWithGit(operation, {
+    const gitResult = await gitManager.executeWithGit(operation, {
       scriptId,
       files: [filename],
       changeReason: params.changeReason || defaultMessage,
       accessToken
     });
 
+    // Check if on feature branch to add workflow hint
+    const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
+    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
+
     // Return minimal response for token efficiency
     return {
       success: true,
       editsApplied,
-      filePath: params.path
+      filePath: params.path,
+      // Add workflow completion hint when on feature branch
+      ...(onFeatureBranch ? {
+        nextAction: {
+          hint: `File edited. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+          required: false
+        }
+      } : {})
     };
   }
 
