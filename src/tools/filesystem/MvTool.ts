@@ -52,7 +52,13 @@ export class MvTool extends BaseFileSystemTool {
         ...ACCESS_TOKEN_SCHEMA
       }
     },
-    required: ['scriptId', 'from', 'to']
+    required: ['scriptId', 'from', 'to'],
+    llmGuidance: {
+      unixLike: 'mv (move/rename) | GAS | CommonJS module name update',
+      whenToUse: 'Move or rename files. Automatically updates CommonJS module name for proper require() resolution.',
+      examples: ['Rename: mv({scriptId,from:"Utils",to:"Helpers"})', 'Cross-project: mv({scriptId,from:"utils",to:"1xyz9abc.../utils"})'],
+      nextSteps: ['ripgrep→update require() calls', 'exec→test module resolution', 'git_feature finish→commit']
+    }
   };
 
   async execute(params: MoveParams): Promise<MoveResult> {
@@ -93,7 +99,7 @@ export class MvTool extends BaseFileSystemTool {
     // Use provided changeReason or generate default
     const defaultMessage = `Move ${fromFilename} to ${toFilename}`;
 
-    const result = await gitManager.executeWithGit(operation, {
+    const gitResult = await gitManager.executeWithGit(operation, {
       scriptId: fromProjectId,  // Use source project for git operations
       files: [fromFilename, toFilename],
       changeReason: params.changeReason || defaultMessage,
@@ -101,14 +107,25 @@ export class MvTool extends BaseFileSystemTool {
     });
 
     // Add message field required by tool's MoveResult type
-    const moveResult = result.result;
+    const moveResult = gitResult.result;
     const isCrossProject = fromProjectId !== toProjectId;
+
+    // Check if on feature branch to add workflow hint
+    const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
+    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
     return {
       ...moveResult,
       message: isCrossProject
         ? `Moved ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
-        : `Moved ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`
+        : `Moved ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`,
+      // Add workflow completion hint when on feature branch
+      ...(onFeatureBranch ? {
+        nextAction: {
+          hint: `File moved. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+          required: false
+        }
+      } : {})
     };
   }
 }

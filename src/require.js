@@ -74,7 +74,8 @@
  *   };
  *
  *   // Expose to global namespace for use in Sheets formulas
- *   module.exports.__global__ = ['MY_CUSTOM_FUNCTION'];
+ *   // NOTE: __global__ must be an OBJECT (key-value), not an array
+ *   module.exports.__global__ = { MY_CUSTOM_FUNCTION: MY_CUSTOM_FUNCTION };
  * }
  * __defineModule__(_main);
  * ```
@@ -313,26 +314,21 @@ function require(moduleName) {
  * Accesses module factories via globalThis
  *
  * @param {Function} moduleFactory - The _main function that creates the module
- * @param {string} [explicitName] - RESERVED for CommonJS system module only
+ * @param {boolean} [loadNow=false] - If true, immediately execute module via require()
  * @param {Object} [options] - Optional configuration
- * @param {boolean} [options.loadNow=false] - If true, immediately execute module via require()
+ * @param {string} [options.explicitName] - Explicit module name (RESERVED for CommonJS system module only)
  */
-function __defineModule__(moduleFactory, explicitName, options) {
-  // TODO: Add argument validation to prevent common errors:
-  // - Validate explicitName is string or undefined (not object)
-  // - Validate moduleFactory is a function
-  // - Provide helpful error messages for invalid arguments
-  // This prevents hard-to-debug issues like "[object Object]" module names
-
+function __defineModule__(moduleFactory, loadNow, options) {
   // Access registries exposed by IIFE
   const moduleFactories = globalThis.__moduleFactories__;
 
-  // Parse options parameter
+  // Parse parameters
+  const shouldLoadNow = typeof loadNow === 'boolean' ? loadNow : false;
   const opts = typeof options === 'object' && options !== null ? options : {};
 
-  // CRITICAL: explicitName is RESERVED for the CommonJS system module only
-  // All user modules MUST use auto-detection
-  debugLog(`[DEFINE] __defineModule__ called with explicitName: ${explicitName || 'auto-detect'}, loadNow: ${opts.loadNow || false}`);
+  // Get module name: explicit from options or auto-detect
+  const explicitName = opts.explicitName;
+  debugLog(`[DEFINE] __defineModule__ called with loadNow: ${shouldLoadNow}, explicitName: ${explicitName || 'auto-detect'}`);
 
   const moduleName = explicitName || globalThis.__detectModuleName__();
 
@@ -347,11 +343,11 @@ function __defineModule__(moduleFactory, explicitName, options) {
   moduleFactories[moduleName] = moduleFactory;
   debugLog(`   Factory stored for: ${moduleName}`);
 
-  // Modules with __global__ exports MUST explicitly use { loadNow: true } option
+  // Modules with __global__ exports MUST explicitly use loadNow=true parameter
   // No auto-detection performed - this prevents cache pollution during temporary factory execution
 
   // If loadNow=true, immediately execute module via require()
-  if (opts.loadNow) {
+  if (shouldLoadNow) {
     try {
       require(moduleName);
       return; // Module is now cached and processed by require()

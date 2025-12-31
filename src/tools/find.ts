@@ -102,12 +102,14 @@ export class FindTool extends BaseTool {
     },
     required: ['scriptId'],
     llmGuidance: {
+      unixLike: 'find -name (by pattern) | GAS flat | virtual dotfiles',
       whenToUse: 'finding files→user-friendly virtual names',
       workflow: 'shell find: find({scriptId,name:"*.test.gs"})',
       alternatives: 'raw_find→actual GAS names',
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal→shows virtual names'},
       limitations: {flatFileStructure: 'no real dirs→filename prefixes', wildcardSupport: '*,?,[abc]→match filenames not paths', virtualFileNames: 'dotfiles virtual (.gitignore) not GAS (.gitignore.gs)'},
-      examples: ['find({scriptId,name:"*test*.gs"})', 'find({scriptId,size:"+10k"})']
+      examples: ['find({scriptId,name:"*test*.gs"})', 'find({scriptId,size:"+10k"})'],
+      antiPatterns: ['❌ find then cat each file → use ripgrep to search content directly', '❌ find without pattern → use ls for listing all files', '❌ find for content search → use grep/ripgrep instead']
     }
   };
 

@@ -106,7 +106,13 @@ export class EditTool extends BaseTool {
       vsGasSed: 'sed: regex patterns | edit: exact strings (more reliable)',
       vsGasAider: 'edit: exact (simple,fast) | aider: fuzzy (handles variations)',
       commonJsIntegration: 'Auto: unwrap→edit→rewrap | clean code→system handles infra',
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal token-efficient editing'}
+      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal token-efficient editing'},
+      errorRecovery: {
+        'text not found': 'cat file → verify exact text → copy-paste OR use aider for fuzzy',
+        'multiple matches': 'Add index:N (0-based) OR include more context in oldText',
+        'sync conflict': 'local_sync first OR retry with force flag'
+      },
+      antiPatterns: ['❌ edit new file → use write instead', '❌ edit >20 operations → split into multiple calls', '❌ guess oldText → cat first to verify exact content']
     },
     llmHints: {
       preferOver: 'write (95% save) | sed (exact vs regex) | cat+write (never)',
@@ -261,18 +267,29 @@ export class EditTool extends BaseTool {
     // Use provided changeReason or generate default
     const defaultMessage = `Update ${filename}`;
 
-    await gitManager.executeWithGit(operation, {
+    const gitResult = await gitManager.executeWithGit(operation, {
       scriptId,
       files: [filename],
       changeReason: params.changeReason || defaultMessage,
       accessToken
     });
 
+    // Check if on feature branch to add workflow hint
+    const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
+    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
+
     // Return minimal response for token efficiency
     return {
       success: true,
       editsApplied,
-      filePath: params.path
+      filePath: params.path,
+      // Add workflow completion hint when on feature branch
+      ...(onFeatureBranch ? {
+        nextAction: {
+          hint: `File edited. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+          required: false
+        }
+      } : {})
     };
   }
 

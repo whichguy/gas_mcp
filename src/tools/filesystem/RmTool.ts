@@ -39,7 +39,13 @@ export class RmTool extends BaseFileSystemTool {
         ...ACCESS_TOKEN_SCHEMA
       }
     },
-    required: ['scriptId', 'path']
+    required: ['scriptId', 'path'],
+    llmGuidance: {
+      unixLike: 'rm (delete) | GAS | git-recoverable if git enabled',
+      whenToUse: 'Delete files from GAS project. Auto-commits if git enabled (recoverable via git history).',
+      examples: ['rm({scriptId,path:"old-utils"})', 'rm({scriptId,path:"backup/temp",changeReason:"Clean up temp files"})'],
+      nextSteps: ['git_feature finish→commit deletion', 'ls→verify removal']
+    }
   };
 
   async execute(params: RemoveParams): Promise<RemoveResult> {
@@ -75,18 +81,29 @@ export class RmTool extends BaseFileSystemTool {
     // Use provided changeReason or generate default
     const defaultMessage = `Delete ${filename}`;
 
-    const result = await gitManager.executeWithGit(operation, {
+    const gitResult = await gitManager.executeWithGit(operation, {
       scriptId: parsedPath.scriptId,
       files: [filename],
       changeReason: params.changeReason || defaultMessage,
       accessToken
     });
 
+    // Check if on feature branch to add workflow hint
+    const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
+    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
+
     return {
       success: true,
       path,
       localDeleted: true,  // GitOperationManager handles local deletion
-      remoteDeleted: result.result.remoteDeleted
+      remoteDeleted: gitResult.result.remoteDeleted,
+      // Add workflow completion hint when on feature branch
+      ...(onFeatureBranch ? {
+        nextAction: {
+          hint: `File deleted. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+          required: false
+        }
+      } : {})
     };
   }
 }

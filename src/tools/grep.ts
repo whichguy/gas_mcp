@@ -40,10 +40,12 @@ export class GrepTool extends BaseTool {
   public inputSchema = {
     type: 'object',
     llmGuidance: {
+      unixLike: 'grep -rn (search) | GAS | CommonJS unwrap | max 200 results',
       whenToUse: '⚠️ PREFER ripgrep (multi-pattern+smart case) | grep for simple single-pattern',
       limitations: '200 result max, 500 file max',
       nextSteps: ['cat→context', 'sed→replace', 'write→save'],
-      contentType: 'unwrapped user code (no CommonJS wrappers)'
+      contentType: 'unwrapped user code (no CommonJS wrappers)',
+      antiPatterns: ['❌ grep for multi-pattern → use ripgrep instead', '❌ grep >200 results needed → use ripgrep with maxCount', '❌ grep without file filter → add path pattern for efficiency']
     },
     properties: {
       pattern: {
