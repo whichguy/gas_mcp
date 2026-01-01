@@ -412,46 +412,47 @@ or
 - Consistent behavior across all git operations
 - Automatic .gitignore creation for new repos
 
-#### Git Auto-Commit (Atomic write → commit → push workflow)
+#### Git Workflow (NO Auto-Commit - Explicit git_feature Required)
 
-**NEW:** Automatic feature branch creation and atomic commits when git repository detected
+**CRITICAL:** Write tools do NOT auto-commit. This aligns with Claude Code's philosophy: "NEVER commit unless explicitly asked."
+
+**Behavior:**
+1. `write`, `edit`, `aider`, `cp`, `mv`, `rm` push to GAS but do NOT commit locally
+2. Files are staged (`git add`) but require explicit commit
+3. Response includes `git.taskCompletionBlocked: true` when uncommitted changes exist
+4. LLM must call `git_feature({operation:'commit'})` to save changes to git
 
 **Two-Phase Discovery:**
 - **Phase A (Local Filesystem):** Scans for git repo at `~/gas-repos/project-{scriptId}/`
 - **Phase B (GAS Breadcrumbs):** Reads `.git/config.gs` from GAS project for sync folder path
 
-**Automatic Workflow:**
-1. `write` or `raw_write` detects git repository (Phase A + B)
-2. Auto-creates feature branch if on main/master: `llm-feature-auto-{timestamp}`
-3. Writes file locally → runs git hooks → commits atomically
-4. Pushes to remote GAS
-5. Rolls back on failure (atomic operation)
-
-**Custom Commit Messages:**
-- Use `changeReason` parameter: `write({..., changeReason: 'feat: Add user auth'})`
-- Default: `"Update {filename}"` or `"Add {filename}"`
-
-**Polyrepo Support:**
-- Use `projectPath` parameter for nested git repos: `write({..., projectPath: 'backend'})`
-- Enables multiple independent git repositories within single GAS project
-
-**Response Enhancement:**
+**Response with Git Hints:**
 ```typescript
 {
   success: true,
   git: {
-    enabled: true,
-    source: 'breadcrumb' | 'local',  // Discovery method
-    gitPath: '/path/to/git/repo',
-    branch: 'llm-feature-auto-20250121143022',
-    branchCreated: true,
-    commitHash: 'abc123d',
-    commitMessage: 'feat: Add user auth',
-    hookModified: false,  // True if git hooks modified content
-    breadcrumbsPulled: ['config']  // Breadcrumbs synced from GAS
+    detected: true,
+    branch: 'main',
+    uncommittedChanges: {
+      count: 3,
+      files: ['auth.js', 'utils.js', 'config.js'],
+      thisFile: true
+    },
+    recommendation: {
+      urgency: 'HIGH',  // CRITICAL (5+), HIGH (3-4), NORMAL (1-2)
+      action: 'commit',
+      command: "git_feature({operation:'commit', scriptId:'...', message:'...'})",
+      reason: '3 files uncommitted - consider committing soon'
+    },
+    taskCompletionBlocked: true  // LLM signal: task NOT complete
   }
 }
 ```
+
+**Startup Check:**
+- On server startup, checks `~/gas-repos/project-*` for uncommitted changes
+- Logs warning with file counts and commit instructions
+- Helps recover from interrupted sessions
 
 #### Git Feature Workflow (Manual branch management)
 
@@ -512,24 +513,32 @@ git_feature({operation: 'push', scriptId})
 git_feature({operation: 'finish', scriptId, pushToRemote: true})
 ```
 
-#### Git Workflow Completion (IMPORTANT)
+#### Git Workflow Completion (CRITICAL)
 
-**After completing any GAS feature development, ALWAYS complete the full git workflow:**
+**Write tools do NOT auto-commit. You MUST explicitly commit changes.**
 
-1. **During development**: `write` operations auto-commit to feature branch
-2. **When feature is complete**:
+**Workflow:**
+1. **During development**: `write` operations stage files but do NOT commit
+2. **After each logical change**: Commit explicitly:
+   ```typescript
+   git_feature({ operation: 'commit', scriptId, message: 'feat: Add user auth' })
+   ```
+3. **When feature is complete**: Finish and push:
    ```typescript
    git_feature({ operation: 'finish', scriptId, pushToRemote: true })
    ```
-3. **This merges feature → main AND pushes to GitHub in one step**
 
-**When to finish** - Complete the workflow when:
+**Task Completion Rule:**
+- A task is NOT complete while `git.taskCompletionBlocked: true` in responses
+- Check `git.uncommittedChanges.count` - if > 0, commit before reporting task done
+
+**When to commit** - Commit changes when:
 - User says "done", "finished", "complete", "that's all"
 - User requests "commit this", "push this", "save to github"
-- Task is complete and no more changes needed
-- User explicitly asks to finalize work
+- After completing a logical unit of work
+- Before switching to a different task
 
-**Do NOT leave work on feature branches** - always merge to main and push to GitHub before ending the task.
+**Do NOT leave uncommitted work** - always commit changes and push to GitHub before ending the task.
 
 **If git_feature finish fails**, use Bash tool with these commands:
 ```bash
@@ -859,12 +868,13 @@ This catches critical CommonJS pattern violations (missing loadNow, wrong __glob
 **Problem**: Updated CommonJS infrastructure files not syncing
 **Solution**: Update template files in `mcp_gas` repository, rebuild, then update GAS project
 
-### Git Auto-Commit Not Working
-**Problem**: Write operations not creating commits
-**Solution**:
-1. Ensure git repo exists at `~/gas-repos/project-{scriptId}/`
-2. Create `.git/config.gs` breadcrumb in GAS project
-3. Verify git is initialized: `cd ~/gas-repos/project-{scriptId} && git status`
+### Git Changes Not Being Committed
+**Problem**: Write operations not creating commits (this is expected behavior)
+**Solution**: Write tools do NOT auto-commit. You must explicitly commit:
+1. After writes, call `git_feature({operation: 'commit', scriptId, message: '...'})`
+2. Check response for `git.taskCompletionBlocked: true` - this means uncommitted changes exist
+3. Verify git repo exists at `~/gas-repos/project-{scriptId}/`
+4. Check server startup logs for uncommitted changes from previous sessions
 
 ### Authentication Tokens Not Persisting
 **Problem**: Server requires re-authentication after every restart

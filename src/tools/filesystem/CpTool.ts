@@ -18,7 +18,7 @@ import { CopyOperationStrategy } from '../../core/git/operations/CopyOperationSt
  */
 export class CpTool extends BaseFileSystemTool {
   public name = 'cp';
-  public description = 'Copy files in Google Apps Script project with CommonJS processing. Unwraps source module, rewraps for destination. Like Unix cp but handles module system.';
+  public description = 'Copy files in GAS (NO git auto-commit). After copy, call git_feature({operation:"commit"}) to save. Unwraps source module, rewraps for destination. Like Unix cp.';
 
   public inputSchema = {
     type: 'object',
@@ -57,6 +57,13 @@ export class CpTool extends BaseFileSystemTool {
     required: ['scriptId', 'from', 'to'],
     additionalProperties: false,
     llmGuidance: {
+      // GIT INTEGRATION - CRITICAL for LLM behavior
+      gitIntegration: {
+        CRITICAL: 'This tool does NOT auto-commit to git',
+        behavior: 'Copy pushes to GAS but does NOT commit locally',
+        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
+      },
+
       unixLike: 'cp (copy) | GAS | CommonJS unwrap→rewrap',
       whenToUse: 'copy files + proper CommonJS handling',
       workflow: 'cp({scriptId:"...",from:"utils",to:"utils-backup"})',
@@ -123,6 +130,8 @@ export class CpTool extends BaseFileSystemTool {
     const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
+    // Return response with git hints for LLM guidance
+    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
     return {
       ...copyResult,
       commonJsProcessed: true,  // CopyOperationStrategy always processes CommonJS
@@ -131,11 +140,20 @@ export class CpTool extends BaseFileSystemTool {
       message: isCrossProject
         ? `Copied ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}... with CommonJS processing`
         : `Copied ${fromFilename} to ${toFilename} with CommonJS processing within project ${fromProjectId.substring(0, 8)}...`,
+      // Pass through git hints from GitOperationManager
+      git: gitResult.git ? {
+        detected: gitResult.git.detected,
+        branch: gitResult.git.branch,
+        staged: gitResult.git.staged,
+        uncommittedChanges: gitResult.git.uncommittedChanges,
+        recommendation: gitResult.git.recommendation,
+        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
+      } : { detected: false },
       // Add workflow completion hint when on feature branch
       ...(onFeatureBranch ? {
         nextAction: {
           hint: `File copied. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: false
+          required: gitResult.git?.taskCompletionBlocked || false
         }
       } : {})
     };

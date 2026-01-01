@@ -27,7 +27,7 @@ const execAsync = promisify(exec);
  */
 export class GitFeatureTool extends BaseFileSystemTool {
   public name = 'git_feature';
-  public description = 'Manage feature branch workflow for git-enabled projects. Operations: start (create branch), finish (squash merge), rollback (delete branch), list (show branches), switch (change branch), commit (commit changes), push (push to remote).';
+  public description = 'PROACTIVE: Start BEFORE major features, commit AFTER changes, finish WHEN complete. Git feature branches: start (create branch), commit (save changes), push (backup/share), finish (squash merge to main), rollback (abandon), list (show branches), switch (change branch). Write tools do NOT auto-commit - use this tool explicitly.';
 
   public inputSchema = {
     type: 'object',
@@ -83,28 +83,65 @@ export class GitFeatureTool extends BaseFileSystemTool {
     required: ['operation', 'scriptId'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Manual feature branch management. Use git_feature for explicit branch control. Auto-commit (via write) creates llm-feature-auto-{timestamp} branches automatically.',
-      operations: {
-        start: 'Create new feature branch for development. Use when: starting new feature, need explicit branch name, want to separate work from main.',
-        finish: 'Complete feature and merge to main. Use when: feature complete, want squash commit, ready to clean up branch.',
-        rollback: 'Abandon feature without merging. Use when: feature cancelled, wrong approach, want to start over.',
-        list: 'View all active feature branches. Use when: checking current branches, deciding which to work on, reviewing open work.',
-        switch: 'Change to different branch. Use when: switching between features, returning to previous work, reviewing other branches.',
-        commit: 'Commit all changes with custom message. Use when: need manual commit after multiple edits, want specific commit message.',
-        push: 'Push current branch to remote. Use when: sharing work, backing up to GitHub, preparing for PR.'
+      // PROACTIVE RULES - emphatic language for LLM behavior
+      proactiveRules: {
+        CRITICAL_BEFORE: 'Call git_feature({operation:"start"}) BEFORE making 3+ file changes for a new feature',
+        CRITICAL_AFTER: 'Call git_feature({operation:"finish", pushToRemote:true}) when feature work is complete',
+        NEVER: 'NEVER leave uncommitted work or orphaned feature branches - always commit and finish'
       },
+
+      // TRIGGER PATTERNS - map user language to operations
+      trigger: {
+        start: [
+          'User says "build", "create", "implement", "add" + feature noun',
+          'Task requires 3+ file changes',
+          'Major architectural changes planned'
+        ],
+        commit: [
+          'After any file modification via write/edit/aider',
+          'User says "save", "checkpoint"',
+          'Before switching tasks or taking a break'
+        ],
+        finish: [
+          'User says "done", "finished", "complete", "that\'s all"',
+          'User requests "commit", "save", "push to github"',
+          'Before ending conversation with significant work'
+        ]
+      },
+
+      // SIZE HEURISTICS - when to use branches
+      sizeHeuristics: {
+        useBranch: '3+ files OR >100 lines OR named feature',
+        skipBranch: 'Single file fix OR config change OR docs'
+      },
+
+      // OPERATIONS - preserved from before
+      operations: {
+        start: 'Create feature branch. Use BEFORE starting new feature development.',
+        commit: 'Commit changes. REQUIRED after write/edit operations - they do NOT auto-commit.',
+        push: 'Push to remote. Use to backup work or share with team.',
+        finish: 'Merge to main and push. Use AFTER feature complete. ALWAYS use pushToRemote:true.',
+        rollback: 'Delete branch without merging. Use when abandoning feature.',
+        list: 'Show feature branches. Use to check current state.',
+        switch: 'Change branches. Use to switch between features.'
+      },
+
+      // EXAMPLES
       examples: [
-        'git_feature({operation: "start", scriptId, featureName: "user-auth"}) - Create llm-feature-user-auth',
-        'git_feature({operation: "commit", scriptId, message: "feat: Add authentication"}) - Commit all changes',
-        'git_feature({operation: "push", scriptId}) - Push current branch to origin',
-        'git_feature({operation: "finish", scriptId, pushToRemote: true}) - Merge to main and push',
-        'git_feature({operation: "rollback", scriptId, branch: "llm-feature-user-auth"}) - Delete branch without merging',
-        'git_feature({operation: "list", scriptId}) - Show all feature branches',
-        'git_feature({operation: "switch", scriptId, branch: "llm-feature-api-refactor"}) - Switch to feature branch'
+        '// BEFORE starting major feature:',
+        'git_feature({operation: "start", scriptId, featureName: "user-auth"})',
+        '',
+        '// AFTER each write operation:',
+        'git_feature({operation: "commit", scriptId, message: "feat: Add login form"})',
+        '',
+        '// WHEN feature complete:',
+        'git_feature({operation: "finish", scriptId, pushToRemote: true})'
       ],
-      workflow: 'Typical: 1) git_feature start → 2) write files (auto-commits) → 3) git_feature commit (optional) → 4) git_feature push → 5) git_feature finish (squash merge + optional push)',
-      vsAutoCommit: 'Auto-commit (write): creates llm-feature-auto-{timestamp} automatically | git_feature: explicit branch names for meaningful features',
-      polyrepo: 'Use projectPath for nested git repos: git_feature({operation: "start", scriptId, featureName: "auth", projectPath: "backend"})'
+
+      // WORKFLOW - updated to reflect no auto-commit
+      workflow: 'BEFORE: start → write files → AFTER EACH: commit → WHEN DONE: finish+push',
+      writeToolBehavior: 'Write tools do NOT auto-commit. You MUST call git_feature commit explicitly after modifications.',
+      polyrepo: 'Use projectPath for nested repos: git_feature({..., projectPath: "backend"})'
     }
   };
 

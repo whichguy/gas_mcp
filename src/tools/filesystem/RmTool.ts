@@ -18,7 +18,7 @@ import { DeleteOperationStrategy } from '../../core/git/operations/DeleteOperati
  */
 export class RmTool extends BaseFileSystemTool {
   public name = 'rm';
-  public description = 'Remove files from Google Apps Script project. Like Unix rm but works with GAS flat file structure using filename patterns.';
+  public description = 'Remove files from GAS (NO git auto-commit). After deletion, call git_feature({operation:"commit"}) to save. Like Unix rm but works with GAS flat file structure.';
 
   public inputSchema = {
     type: 'object',
@@ -41,10 +41,17 @@ export class RmTool extends BaseFileSystemTool {
     },
     required: ['scriptId', 'path'],
     llmGuidance: {
-      unixLike: 'rm (delete) | GAS | git-recoverable if git enabled',
-      whenToUse: 'Delete files from GAS project. Auto-commits if git enabled (recoverable via git history).',
+      // GIT INTEGRATION - CRITICAL for LLM behavior
+      gitIntegration: {
+        CRITICAL: 'This tool does NOT auto-commit to git',
+        behavior: 'Deletion pushes to GAS but does NOT commit locally',
+        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
+      },
+
+      unixLike: 'rm (delete) | GAS | git-recoverable via history',
+      whenToUse: 'Delete files from GAS project. Recoverable via git history after commit.',
       examples: ['rm({scriptId,path:"old-utils"})', 'rm({scriptId,path:"backup/temp",changeReason:"Clean up temp files"})'],
-      nextSteps: ['git_feature finish→commit deletion', 'ls→verify removal']
+      nextSteps: ['git_feature commit→save deletion', 'ls→verify removal']
     }
   };
 
@@ -92,16 +99,27 @@ export class RmTool extends BaseFileSystemTool {
     const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
+    // Return response with git hints for LLM guidance
+    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
     return {
       success: true,
       path,
       localDeleted: true,  // GitOperationManager handles local deletion
       remoteDeleted: gitResult.result.remoteDeleted,
+      // Pass through git hints from GitOperationManager
+      git: gitResult.git ? {
+        detected: gitResult.git.detected,
+        branch: gitResult.git.branch,
+        staged: gitResult.git.staged,
+        uncommittedChanges: gitResult.git.uncommittedChanges,
+        recommendation: gitResult.git.recommendation,
+        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
+      } : { detected: false },
       // Add workflow completion hint when on feature branch
       ...(onFeatureBranch ? {
         nextAction: {
           hint: `File deleted. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: false
+          required: gitResult.git?.taskCompletionBlocked || false
         }
       } : {})
     };

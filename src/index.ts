@@ -4,6 +4,7 @@ import { MCPGasServer } from './server/mcpServer.js';
 import { SessionAuthManager } from './auth/sessionManager.js';
 import { McpGasConfigManager } from './config/mcpGasConfig.js';
 import { LockManager } from './utils/lockManager.js';
+import { checkAllReposForUncommitted } from './utils/gitStatus.js';
 import path from 'path';
 import os from 'os';
 
@@ -57,6 +58,31 @@ async function main() {
   // Cleanup stale locks from previous sessions
   const lockManager = LockManager.getInstance();
   await lockManager.cleanupStaleLocks();
+
+  // Check for uncommitted changes from previous sessions
+  try {
+    const uncommittedProjects = await checkAllReposForUncommitted();
+    if (uncommittedProjects.length > 0) {
+      console.error('');
+      console.error('⚠️  UNCOMMITTED CHANGES DETECTED from previous session:');
+      for (const project of uncommittedProjects) {
+        console.error(`   📁 Project ${project.scriptId.substring(0, 12)}...: ${project.count} file(s)`);
+        for (const file of project.files.slice(0, 3)) {
+          console.error(`      - ${file}`);
+        }
+        if (project.files.length > 3) {
+          console.error(`      ... and ${project.files.length - 3} more`);
+        }
+      }
+      console.error('');
+      console.error('   💡 To commit: git_feature({ operation: "commit", scriptId: "...", message: "..." })');
+      console.error('   💡 To review: git_feature({ operation: "list", scriptId: "..." })');
+      console.error('');
+    }
+  } catch (checkError) {
+    // Non-critical - just log and continue
+    console.error('⚠️  Could not check for uncommitted changes:', checkError);
+  }
 
   const server = new MCPGasServer();
 

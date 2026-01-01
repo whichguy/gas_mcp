@@ -1161,4 +1161,91 @@ node_modules/
       };
     }
   }
-} 
+
+  /**
+   * Stage changes to project git repository WITHOUT committing
+   *
+   * This aligns with Claude Code's philosophy: "NEVER commit changes unless
+   * the user explicitly asks you to."
+   *
+   * Files are staged (git add) but NOT committed. Users must explicitly call
+   * git_feature({operation:'commit'}) to create commits.
+   */
+  static async stageChangesOnly(
+    projectName: string,
+    changedFiles: string[],
+    workingDir?: string
+  ): Promise<{
+    staged: boolean;
+    stagedFiles: string[];
+    message: string;
+  }> {
+    const actualWorkingDir = this.getWorkingDirectory(workingDir);
+    const projectPath = await this.getProjectDirectory(projectName, actualWorkingDir);
+
+    try {
+      const { spawn } = await import('child_process');
+
+      // Stage all changes (git add .)
+      await new Promise<void>((resolve, reject) => {
+        const gitAdd = spawn('git', ['add', '.'], {
+          cwd: projectPath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stderr = '';
+        gitAdd.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        gitAdd.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Git add failed: ${stderr}`));
+          }
+        });
+      });
+
+      // Get list of staged files
+      const stagedFiles = await new Promise<string[]>((resolve) => {
+        const gitStatus = spawn('git', ['diff', '--cached', '--name-only'], {
+          cwd: projectPath,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let stdout = '';
+        gitStatus.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        gitStatus.on('close', () => {
+          const files = stdout.trim().split('\n').filter(f => f.length > 0);
+          resolve(files);
+        });
+      });
+
+      if (stagedFiles.length === 0) {
+        return {
+          staged: false,
+          stagedFiles: [],
+          message: 'No changes to stage'
+        };
+      }
+
+      return {
+        staged: true,
+        stagedFiles,
+        message: `Staged ${stagedFiles.length} file(s) - NOT COMMITTED. Use git_feature({operation:'commit'}) to commit.`
+      };
+
+    } catch (error: any) {
+      console.error(`❌ [GIT STAGE] Failed to stage changes: ${error.message}`);
+      return {
+        staged: false,
+        stagedFiles: [],
+        message: `Stage failed: ${error.message}`
+      };
+    }
+  }
+}

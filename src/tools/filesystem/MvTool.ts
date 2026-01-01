@@ -16,7 +16,7 @@ import { MoveOperationStrategy } from '../../core/git/operations/MoveOperationSt
  */
 export class MvTool extends BaseFileSystemTool {
   public name = 'mv';
-  public description = 'Move or rename files in Google Apps Script project. Supports cross-project moves and CommonJS module name updates. Like Unix mv but handles GAS module system.';
+  public description = 'Move/rename files in GAS (NO git auto-commit). After move, call git_feature({operation:"commit"}) to save. Supports cross-project moves and CommonJS module name updates. Like Unix mv.';
 
   public inputSchema = {
     type: 'object',
@@ -54,10 +54,17 @@ export class MvTool extends BaseFileSystemTool {
     },
     required: ['scriptId', 'from', 'to'],
     llmGuidance: {
+      // GIT INTEGRATION - CRITICAL for LLM behavior
+      gitIntegration: {
+        CRITICAL: 'This tool does NOT auto-commit to git',
+        behavior: 'Move pushes to GAS but does NOT commit locally',
+        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
+      },
+
       unixLike: 'mv (move/rename) | GAS | CommonJS module name update',
       whenToUse: 'Move or rename files. Automatically updates CommonJS module name for proper require() resolution.',
       examples: ['Rename: mv({scriptId,from:"Utils",to:"Helpers"})', 'Cross-project: mv({scriptId,from:"utils",to:"1xyz9abc.../utils"})'],
-      nextSteps: ['ripgrep→update require() calls', 'exec→test module resolution', 'git_feature finish→commit']
+      nextSteps: ['ripgrep→update require() calls', 'exec→test module resolution', 'git_feature commit→save changes']
     }
   };
 
@@ -114,16 +121,27 @@ export class MvTool extends BaseFileSystemTool {
     const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
+    // Return response with git hints for LLM guidance
+    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
     return {
       ...moveResult,
       message: isCrossProject
         ? `Moved ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
         : `Moved ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`,
+      // Pass through git hints from GitOperationManager
+      git: gitResult.git ? {
+        detected: gitResult.git.detected,
+        branch: gitResult.git.branch,
+        staged: gitResult.git.staged,
+        uncommittedChanges: gitResult.git.uncommittedChanges,
+        recommendation: gitResult.git.recommendation,
+        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
+      } : { detected: false },
       // Add workflow completion hint when on feature branch
       ...(onFeatureBranch ? {
         nextAction: {
           hint: `File moved. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: false
+          required: gitResult.git?.taskCompletionBlocked || false
         }
       } : {})
     };

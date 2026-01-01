@@ -28,6 +28,30 @@ interface EditParams {
   accessToken?: string;
 }
 
+interface GitHints {
+  detected: boolean;
+  branch?: string;
+  staged?: boolean;
+  uncommittedChanges?: {
+    count: number;
+    files: string[];
+    hasMore?: boolean;
+    thisFile?: boolean;
+  };
+  recommendation?: {
+    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
+    action: 'commit';
+    command: string;
+    reason: string;
+  };
+  taskCompletionBlocked?: boolean;
+}
+
+interface NextActionHint {
+  hint: string;
+  required: boolean;
+}
+
 interface EditResult {
   success: boolean;
   editsApplied: number;
@@ -38,6 +62,8 @@ interface EditResult {
     outputTokensUsed: number;
     outputTokensSaved: number;
   };
+  git?: GitHints;
+  nextAction?: NextActionHint;
 }
 
 /**
@@ -48,7 +74,7 @@ interface EditResult {
  */
 export class EditTool extends BaseTool {
   public name = 'edit';
-  public description = 'Token-efficient file editing using exact string matching. LLM outputs only changed text (~40 tokens) instead of entire file (~4500 tokens), providing 83% token savings. Supports multi-edit operations, dry-run preview, and automatic CommonJS processing.';
+  public description = 'Token-efficient file editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. LLM outputs only changed text (~40 tokens) vs entire file (~4500 tokens), 83% token savings.';
 
   public inputSchema = {
     type: 'object',
@@ -99,6 +125,15 @@ export class EditTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
+      // GIT INTEGRATION - CRITICAL for LLM behavior
+      gitIntegration: {
+        CRITICAL: 'This tool does NOT auto-commit to git',
+        behavior: 'Edits push to GAS but do NOT commit locally',
+        workflowSignal: 'Response includes git.taskCompletionBlocked=true when uncommitted',
+        taskCompletionRule: 'Task is NOT complete while git.uncommittedChanges.count > 0',
+        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
+      },
+
       whenToUse: 'Token-efficient: LLM outputs only changed text (~40tok) vs full file (~4.5k tok)',
       tokenSavings: '95%+ vs write (4.5k file+25tok change: write=4.5k | edit=~10tok)',
       examples: ['Single: edits:[{oldText:"const DEBUG=false",newText:"const DEBUG=true"}]', 'Multi: edits:[{oldText:"port:3000",newText:"port:8080"},{oldText:"host:localhost",newText:"host:0.0.0.0"}]', 'Dry-run: dryRun:true', 'Duplicates: edits:[{oldText:"assert(true)",newText:"expect(true)",index:1}]'],
@@ -112,7 +147,12 @@ export class EditTool extends BaseTool {
         'multiple matches': 'Add index:N (0-based) OR include more context in oldText',
         'sync conflict': 'local_sync first OR retry with force flag'
       },
-      antiPatterns: ['❌ edit new file → use write instead', '❌ edit >20 operations → split into multiple calls', '❌ guess oldText → cat first to verify exact content']
+      antiPatterns: [
+        '❌ edit new file → use write instead',
+        '❌ edit >20 operations → split into multiple calls',
+        '❌ guess oldText → cat first to verify exact content',
+        '❌ assuming auto-commit happened → MUST call git_feature commit'
+      ]
     },
     llmHints: {
       preferOver: 'write (95% save) | sed (exact vs regex) | cat+write (never)',
@@ -278,16 +318,26 @@ export class EditTool extends BaseTool {
     const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
-    // Return minimal response for token efficiency
+    // Return response with git hints for LLM guidance
+    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
     return {
       success: true,
       editsApplied,
       filePath: params.path,
+      // Pass through git hints from GitOperationManager
+      git: gitResult.git ? {
+        detected: gitResult.git.detected,
+        branch: gitResult.git.branch,
+        staged: gitResult.git.staged,
+        uncommittedChanges: gitResult.git.uncommittedChanges,
+        recommendation: gitResult.git.recommendation,
+        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
+      } : { detected: false },
       // Add workflow completion hint when on feature branch
       ...(onFeatureBranch ? {
         nextAction: {
           hint: `File edited. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: false
+          required: gitResult.git?.taskCompletionBlocked || false
         }
       } : {})
     };
