@@ -32,7 +32,8 @@ describe('ModuleOptions Feature', () => {
 
       const wrapped = wrapModuleContent(content, moduleName, { loadNow: true });
 
-      expect(wrapped).to.include('__defineModule__(_main, null, { loadNow: true });');
+      // New format: __defineModule__(_main, true) - loadNow as 2nd boolean parameter
+      expect(wrapped).to.include('__defineModule__(_main, true);');
     });
 
     it('should generate __defineModule__ with loadNow=false when specified', () => {
@@ -41,7 +42,8 @@ describe('ModuleOptions Feature', () => {
 
       const wrapped = wrapModuleContent(content, moduleName, { loadNow: false });
 
-      expect(wrapped).to.include('__defineModule__(_main, null, { loadNow: false });');
+      // New format: __defineModule__(_main, false) - loadNow as 2nd boolean parameter
+      expect(wrapped).to.include('__defineModule__(_main, false);');
     });
 
     it('should generate __defineModule__(_main) when options is undefined', () => {
@@ -127,6 +129,43 @@ __defineModule__(_main, null, { loadNow: false });`;
       expect(unwrappedContent).to.equal(content);
       expect(existingOptions).to.be.null;
     });
+
+    it('should unwrap content with object-as-2nd-param format: __defineModule__(_main, { loadNow: true })', () => {
+      // This format has the options object directly as the 2nd parameter (no null prefix)
+      const wrappedContent = `function _main(
+  module = globalThis.__getCurrentModule(),
+  exports = module.exports,
+  require = globalThis.require
+) {
+  function doGet() {}
+}
+
+__defineModule__(_main, { loadNow: true });`;
+
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(wrappedContent);
+
+      expect(unwrappedContent.trim()).to.equal('function doGet() {}');
+      expect(existingOptions).to.not.be.null;
+      expect(existingOptions?.loadNow).to.be.true;
+    });
+
+    it('should unwrap content with object-as-2nd-param format: __defineModule__(_main, { loadNow: false })', () => {
+      const wrappedContent = `function _main(
+  module = globalThis.__getCurrentModule(),
+  exports = module.exports,
+  require = globalThis.require
+) {
+  function helper() {}
+}
+
+__defineModule__(_main, { loadNow: false });`;
+
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(wrappedContent);
+
+      expect(unwrappedContent.trim()).to.equal('function helper() {}');
+      expect(existingOptions).to.not.be.null;
+      expect(existingOptions?.loadNow).to.be.false;
+    });
   });
 
   describe('Integration: Round-trip wrap/unwrap with options', () => {
@@ -137,13 +176,16 @@ __defineModule__(_main, null, { loadNow: false });`;
       // Wrap with loadNow=true
       const wrapped = wrapModuleContent(originalContent, moduleName, { loadNow: true });
 
-      // Verify it includes the options in __defineModule__
-      expect(wrapped).to.include('__defineModule__(_main, null, { loadNow: true });');
+      // Verify it includes the options in __defineModule__ (new 2-param format)
+      expect(wrapped).to.include('__defineModule__(_main, true);');
 
       // Unwrap
-      const { unwrappedContent } = unwrapModuleContent(wrapped);
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(wrapped);
 
       expect(unwrappedContent.trim()).to.equal(originalContent);
+      // Verify options are preserved through the cycle
+      expect(existingOptions).to.not.be.null;
+      expect(existingOptions?.loadNow).to.be.true;
     });
 
     it('should preserve content through wrap/unwrap cycle with loadNow=false', () => {
@@ -153,13 +195,16 @@ __defineModule__(_main, null, { loadNow: false });`;
       // Wrap with loadNow=false
       const wrapped = wrapModuleContent(originalContent, moduleName, { loadNow: false });
 
-      // Verify it includes the options in __defineModule__
-      expect(wrapped).to.include('__defineModule__(_main, null, { loadNow: false });');
+      // Verify it includes the options in __defineModule__ (new 2-param format)
+      expect(wrapped).to.include('__defineModule__(_main, false);');
 
       // Unwrap
-      const { unwrappedContent } = unwrapModuleContent(wrapped);
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(wrapped);
 
       expect(unwrappedContent.trim()).to.equal(originalContent);
+      // Verify options are preserved through the cycle
+      expect(existingOptions).to.not.be.null;
+      expect(existingOptions?.loadNow).to.be.false;
     });
 
     it('should preserve content through wrap/unwrap cycle with no options', () => {
@@ -224,8 +269,8 @@ __defineModule__(_main, null, { loadNow: false });`;
 
       const wrapped = wrapModuleContent(content, moduleName, { loadNow: true });
 
-      // Should pass through user's explicit choice
-      expect(wrapped).to.include('__defineModule__(_main, null, { loadNow: true });');
+      // Should pass through user's explicit choice (new 2-param format)
+      expect(wrapped).to.include('__defineModule__(_main, true);');
     });
 
     it('should pass explicit { loadNow: false } directly', () => {
@@ -234,8 +279,8 @@ __defineModule__(_main, null, { loadNow: false });`;
 
       const wrapped = wrapModuleContent(content, moduleName, { loadNow: false });
 
-      // Should pass through user's explicit choice
-      expect(wrapped).to.include('__defineModule__(_main, null, { loadNow: false });');
+      // Should pass through user's explicit choice (new 2-param format)
+      expect(wrapped).to.include('__defineModule__(_main, false);');
     });
   });
 });

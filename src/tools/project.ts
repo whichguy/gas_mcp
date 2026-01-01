@@ -61,28 +61,34 @@ export class ReorderTool extends BaseTool {
     // Get current position of the file being moved
     const currentIndex = files.findIndex((f: any) => f.name === fileName);
 
-    // CRITICAL: Prevent moving common-js/require.gs away from position 0
-    // Only allow moving it TO position 0 if it's currently out of place
-    if (fileName === 'common-js/require.gs') {
-      if (currentIndex === 0 && newPosition !== 0) {
+    // CRITICAL: Prevent moving critical infrastructure files from their required positions
+    const criticalFiles: Record<string, number> = {
+      'common-js/require': 0,
+      'common-js/ConfigManager': 1,
+      'common-js/__mcp_exec': 2
+    };
+
+    if (fileName in criticalFiles) {
+      const requiredPosition = criticalFiles[fileName];
+      if (currentIndex === requiredPosition && newPosition !== requiredPosition) {
         throw new ValidationError(
           'newPosition',
           newPosition,
-          'common-js/require.gs must always remain at position 0 (first file). It cannot be moved to any other position.'
+          `${fileName} must always remain at position ${requiredPosition}. This is a critical infrastructure file that cannot be moved.`
         );
       }
-      // Allow moving it back to position 0 if it's currently elsewhere
-      if (currentIndex !== 0 && newPosition !== 0) {
+      // Allow moving it back to required position if it's currently out of place
+      if (currentIndex !== requiredPosition && newPosition !== requiredPosition) {
         throw new ValidationError(
           'newPosition',
           newPosition,
-          'common-js/require.gs can only be moved to position 0. To fix file order, set newPosition to 0.'
+          `${fileName} can only be moved to position ${requiredPosition}. To fix file order, set newPosition to ${requiredPosition}.`
         );
       }
     }
 
     // Create new file order
-    const reorderedFiles = [...files];
+    let reorderedFiles = [...files];
 
     // Remove file from current position
     const [movedFile] = reorderedFiles.splice(currentIndex, 1);
@@ -90,25 +96,31 @@ export class ReorderTool extends BaseTool {
     // Insert at new position
     reorderedFiles.splice(newPosition, 0, movedFile);
 
-    // Enforce critical file ordering:
-    // Position 0: common-js/require (always first)
-    // Position 1: common-js/__mcp_exec (always second, right after require)
-    // ✅ FIX: File names in GAS API don't have extensions
-    const commonJsIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/require');
-    const mcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec');
+    // Enforce critical file ordering using extract-and-insert pattern
+    // Position 0: common-js/require (module system)
+    // Position 1: common-js/ConfigManager (configuration)
+    // Position 2: common-js/__mcp_exec (execution infrastructure)
+    // ✅ File names in GAS API don't have extensions
+    const criticalFileNames = [
+      'common-js/require',        // Position 0
+      'common-js/ConfigManager',  // Position 1
+      'common-js/__mcp_exec'      // Position 2
+    ];
 
-    // Move common-js/require to position 0 if not already there
-    if (commonJsIndex !== -1 && commonJsIndex !== 0) {
-      const [commonJsFile] = reorderedFiles.splice(commonJsIndex, 1);
-      reorderedFiles.unshift(commonJsFile);
-    }
+    // Extract critical files in order
+    const extractedCriticalFiles: any[] = [];
+    criticalFileNames.forEach(name => {
+      const file = reorderedFiles.find((f: any) => f.name === name);
+      if (file) extractedCriticalFiles.push(file);
+    });
 
-    // Move common-js/__mcp_exec to position 1 if not already there (right after require)
-    const updatedMcpRunIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec');
-    if (updatedMcpRunIndex !== -1 && updatedMcpRunIndex !== 1) {
-      const [mcpRunFile] = reorderedFiles.splice(updatedMcpRunIndex, 1);
-      reorderedFiles.splice(1, 0, mcpRunFile);
-    }
+    // Remove critical files from array
+    const nonCriticalFiles = reorderedFiles.filter(
+      (f: any) => !criticalFileNames.includes(f.name)
+    );
+
+    // Rebuild: critical files first, then others
+    reorderedFiles = [...extractedCriticalFiles, ...nonCriticalFiles];
 
     // Update the project with new file order
     const updatedFiles = await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
@@ -148,7 +160,7 @@ export class ReorderTool extends BaseTool {
       oldPosition: currentIndex,
       newPosition,
       totalFiles: files.length,
-      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. common-js/require.gs enforced at position 0, common-js/__mcp_exec.gs at position 1.`
+      message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. Critical files enforced: require(0), ConfigManager(1), __mcp_exec(2).`
     };
   }
 }

@@ -61,7 +61,7 @@ export const PREFER_LOCAL_SCHEMA = {
 export const DETAILED_SCHEMA = {
   ...BOOLEAN_FLAG_SCHEMA,
   default: true,
-  description: 'Include detailed file information (size, type, timestamps, last modifier, etc.) - defaults to true'
+  description: 'Include detailed file information (size, type, position, timestamps, last modifier, etc.) - defaults to true. Position field shows actual GAS execution order (0-based), preserved even when filtering'
 } as const;
 
 export const RECURSIVE_SCHEMA = {

@@ -108,4 +108,30 @@ export class FileOperationError extends MCPGasError {
       reason
     });
   }
+}
+
+/**
+ * Lock timeout error - thrown when unable to acquire write lock within timeout period
+ */
+export class LockTimeoutError extends MCPGasError {
+  constructor(
+    scriptId: string,
+    timeout: number,
+    operation: string,
+    currentLockHolder?: { pid: number; hostname: string; operation: string }
+  ) {
+    const holderInfo = currentLockHolder
+      ? `Currently held by PID ${currentLockHolder.pid} on ${currentLockHolder.hostname} (${currentLockHolder.operation}).`
+      : '';
+
+    const message = `Lock timeout after ${timeout}ms waiting for write access to project ${scriptId}. ` +
+      `${holderInfo} Another operation may be in progress. Retry or check for stuck processes.`;
+
+    super(message, -32005, {
+      scriptId,
+      timeout,
+      operation,
+      lockHolder: currentLockHolder
+    });
+  }
 } 

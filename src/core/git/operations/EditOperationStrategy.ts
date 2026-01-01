@@ -19,7 +19,7 @@
 import { GASClient } from '../../../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../../../errors/mcpErrors.js';
 import { parsePath, resolveHybridScriptId } from '../../../api/pathParser.js';
-import { unwrapModuleContent, wrapModuleContent, shouldWrapContent } from '../../../utils/moduleWrapper.js';
+import { unwrapModuleContent, wrapModuleContent, shouldWrapContent, type ModuleOptions } from '../../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../../utils/virtualFileTranslation.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
@@ -55,6 +55,7 @@ export class EditOperationStrategy implements FileOperationStrategy<EditResult> 
   private scriptId: string | null = null;
   private fileType: 'SERVER_JS' | 'HTML' | 'JSON' | null = null;
   private editsApplied: number = 0;
+  private existingOptions: ModuleOptions | null = null;
 
   constructor(params: EditStrategyParams) {
     this.params = params;
@@ -103,13 +104,15 @@ export class EditOperationStrategy implements FileOperationStrategy<EditResult> 
 
     this.fileType = fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON';
 
-    // Unwrap CommonJS if needed
+    // Unwrap CommonJS if needed and preserve existing options
     let content = fileContent.source || '';
     if (this.fileType === 'SERVER_JS') {
-      const result = unwrapModuleContent(content);
-      if (result && result.unwrappedContent) {
-        content = result.unwrappedContent;
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(content);
+      if (unwrappedContent) {
+        content = unwrappedContent;
       }
+      // Store existing options for preservation during re-wrap
+      this.existingOptions = existingOptions;
     }
 
     this.originalContent = content;
@@ -191,10 +194,10 @@ export class EditOperationStrategy implements FileOperationStrategy<EditResult> 
       throw new Error(`No validated content found for ${this.filename}`);
     }
 
-    // Wrap CommonJS if needed before writing to remote
+    // Wrap CommonJS if needed before writing to remote, preserving existing options
     let finalContent = content;
     if (this.fileType === 'SERVER_JS' && shouldWrapContent(this.fileType, this.filename)) {
-      finalContent = wrapModuleContent(content, this.filename);
+      finalContent = wrapModuleContent(content, this.filename, this.existingOptions);
     }
 
     // Write validated content to remote
@@ -224,10 +227,10 @@ export class EditOperationStrategy implements FileOperationStrategy<EditResult> 
       return;
     }
 
-    // Wrap original content if needed
+    // Wrap original content if needed, preserving existing options
     let finalContent = this.originalContent;
     if (this.fileType === 'SERVER_JS' && shouldWrapContent(this.fileType, this.filename)) {
-      finalContent = wrapModuleContent(this.originalContent, this.filename);
+      finalContent = wrapModuleContent(this.originalContent, this.filename, this.existingOptions);
     }
 
     // Restore original content to remote

@@ -18,6 +18,7 @@
 import { GASClient } from '../../../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../../../errors/mcpErrors.js';
 import { resolveHybridScriptId } from '../../../api/pathParser.js';
+import { shouldWrapContent, unwrapModuleContent, wrapModuleContent, getModuleName, type ModuleOptions } from '../../../utils/moduleWrapper.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
 interface MoveStrategyParams {
@@ -48,6 +49,8 @@ export class MoveOperationStrategy implements FileOperationStrategy<MoveResult> 
   private fromFilename: string | null = null;
   private toFilename: string | null = null;
   private isCrossProject: boolean = false;
+  private existingOptions: ModuleOptions | null = null;
+  private unwrappedContent: string | null = null;
 
   constructor(params: MoveStrategyParams) {
     this.params = params;
@@ -86,12 +89,28 @@ export class MoveOperationStrategy implements FileOperationStrategy<MoveResult> 
       throw new FileOperationError('move', this.params.from, 'source file not found');
     }
 
+    // COMMONJS PROCESSING: Unwrap source content and preserve options
+    let processedContent = this.sourceFile.source || '';
+    const fileType = this.sourceFile.type || 'SERVER_JS';
+
+    if (shouldWrapContent(fileType, this.fromFilename)) {
+      // Unwrap CommonJS from source (like cat does) and preserve options
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(processedContent);
+      if (unwrappedContent !== processedContent) {
+        processedContent = unwrappedContent;
+      }
+      // Store existing options for preservation during re-wrap
+      this.existingOptions = existingOptions;
+    }
+
+    this.unwrappedContent = processedContent;
+
     // Return map with two entries:
     // 1. Source file: empty string signals deletion
-    // 2. Destination file: actual content
+    // 2. Destination file: unwrapped content (will be re-wrapped in applyChanges)
     const result = new Map<string, string>();
     result.set(this.fromFilename, ''); // Empty = delete
-    result.set(this.toFilename, this.sourceFile.source || '');
+    result.set(this.toFilename, processedContent);
     return result;
   }
 
@@ -112,14 +131,23 @@ export class MoveOperationStrategy implements FileOperationStrategy<MoveResult> 
       throw new Error(`No validated content found for ${this.toFilename}`);
     }
 
+    const fileType = this.sourceFile.type || 'SERVER_JS';
+
+    // Wrap CommonJS if needed before writing to remote, preserving existing options
+    let finalContent = destContent;
+    if (shouldWrapContent(fileType, this.toFilename)) {
+      const moduleName = getModuleName(this.toFilename);
+      finalContent = wrapModuleContent(destContent, moduleName, this.existingOptions);
+    }
+
     // Create file at destination with validated content and original type
     await this.params.gasClient.updateFile(
       this.toProjectId,
       this.toFilename,
-      destContent,
+      finalContent,
       undefined,
       this.params.accessToken,
-      this.sourceFile.type as 'SERVER_JS' | 'HTML' | 'JSON'
+      fileType as 'SERVER_JS' | 'HTML' | 'JSON'
     );
 
     // Delete file from source
@@ -160,7 +188,8 @@ export class MoveOperationStrategy implements FileOperationStrategy<MoveResult> 
     }
 
     try {
-      // Restore source file with original type
+      // Restore source file with original content (already wrapped)
+      // Note: sourceFile.source contains the original wrapped content
       await this.params.gasClient.updateFile(
         this.fromProjectId,
         this.fromFilename,

@@ -1007,8 +1007,8 @@ function __defineModule__(moduleFactory, loadNow, options) {
   globalThis.__getCurrentModule__ = __getCurrentModule__;  // Used by _main() default params
   globalThis.__getModuleLogFunction = getModuleLogFunction;  // Used by global require() for per-module logging
 
-  // Register the shim module itself
-  __defineModule__(function(_main) {
+  // Register the shim module itself (loadNow=true so it's always available)
+  __defineModule__(function(module, exports, log) {
     return {
       getModuleInfo: getModuleInfo,
       getModules: getModules,
@@ -1016,7 +1016,7 @@ function __defineModule__(moduleFactory, loadNow, options) {
       __defineModule__: __defineModule__,
       __getCurrentModule__: __getCurrentModule__
     };
-      }, 'common-js/require');
+  }, true, { explicitName: 'common-js/require' });
 
   debugLog('[INIT] Module system initialized');
 })();

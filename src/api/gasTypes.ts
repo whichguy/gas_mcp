@@ -23,6 +23,7 @@ export interface GASFile {
   name: string;
   type: 'SERVER_JS' | 'HTML' | 'JSON';
   source?: string;
+  position?: number;            // ✅ File position in execution order (array index from API)
   createTime?: string;          // ✅ Creation timestamp from API
   updateTime?: string;          // ✅ Last modified timestamp from API
   lastModifyUser?: {            // ✅ Last user who modified the file

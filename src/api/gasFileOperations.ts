@@ -14,6 +14,7 @@ import { GASAuthOperations } from './gasAuthOperations.js';
 import { GASFile } from './gasTypes.js';
 import { getFileType } from './pathParser.js';
 import { GASApiError } from '../errors/mcpErrors.js';
+import { LockManager } from '../utils/lockManager.js';
 
 /**
  * File Operations class
@@ -28,40 +29,56 @@ export class GASFileOperations {
 
   /**
    * Update project content
+   *
+   * IMPORTANT: This method is protected by a filesystem-based write lock to prevent
+   * concurrent modification collisions. The Google Apps Script API provides no
+   * server-side concurrency control (no ETags, version checking, or conflict detection),
+   * so we implement client-side locking to prevent "last-write-wins" data loss.
    */
   async updateProjectContent(scriptId: string, files: GASFile[], accessToken?: string): Promise<GASFile[]> {
-    await this.authOps.initializeClient(accessToken);
+    const lockManager = LockManager.getInstance();
 
-    return this.authOps.makeApiCall(async () => {
-      const scriptApi = this.authOps.getScriptApi();
+    // Acquire lock with 30s timeout
+    await lockManager.acquireLock(scriptId, 'updateProjectContent');
 
-      // Let Google Apps Script API be the authority for validation
-      // Remove arbitrary client-side limits and let the API return its own errors
+    try {
+      await this.authOps.initializeClient(accessToken);
 
-      console.error(`📤 [GAS_API] Sending ${files.length} files in order:`);
-      files.forEach((f, i) => console.error(`  ${i}: ${f.name} (${f.type})`));
+      return await this.authOps.makeApiCall(async () => {
+        const scriptApi = this.authOps.getScriptApi();
 
-      const response = await scriptApi.projects.updateContent({
-        scriptId,
-        requestBody: {
-          files: files.map(file => ({
-            name: file.name,
-            type: file.type,
-            source: file.source,
-            // ✅ Preserve metadata to maintain file history and ordering
-            ...(file.createTime && { createTime: file.createTime }),
-            ...(file.updateTime && { updateTime: file.updateTime }),
-            ...(file.lastModifyUser && { lastModifyUser: file.lastModifyUser })
-          }))
-        }
-      });
+        // Let Google Apps Script API be the authority for validation
+        // Remove arbitrary client-side limits and let the API return its own errors
 
-      const returnedFiles = response.data.files || [];
-      console.error(`📥 [GAS_API] Received ${returnedFiles.length} files in order:`);
-      returnedFiles.forEach((f: any, i: number) => console.error(`  ${i}: ${f.name} (${f.type})`));
+        console.error(`📤 [GAS_API] Sending ${files.length} files in order:`);
+        files.forEach((f, i) => console.error(`  ${i}: ${f.name} (${f.type})`));
 
-      return returnedFiles;
-    }, accessToken);
+        const response = await scriptApi.projects.updateContent({
+          scriptId,
+          requestBody: {
+            files: files.map(file => ({
+              name: file.name,
+              type: file.type,
+              source: file.source,
+              // ✅ Preserve metadata to maintain file history and ordering
+              ...(file.createTime && { createTime: file.createTime }),
+              ...(file.updateTime && { updateTime: file.updateTime }),
+              ...(file.lastModifyUser && { lastModifyUser: file.lastModifyUser })
+            }))
+          }
+        });
+
+        const returnedFiles = response.data.files || [];
+        console.error(`📥 [GAS_API] Received ${returnedFiles.length} files in order:`);
+        returnedFiles.forEach((f: any, i: number) => console.error(`  ${i}: ${f.name} (${f.type})`));
+
+        return returnedFiles;
+      }, accessToken);
+
+    } finally {
+      // ALWAYS release lock, even on error
+      await lockManager.releaseLock(scriptId);
+    }
   }
 
   /**

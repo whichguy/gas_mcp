@@ -1187,13 +1187,51 @@ export class LocalSyncTool extends BaseTool {
         const hasNewFiles = localFiles.some(f => !claspFiles.has(f.relativePath));
 
         if (hasNewFiles) {
-          console.error(`   ⚠️  New files detected - regenerating .clasp.json...`);
-          const updatedGasFiles = await gasClient.getProjectContent(scriptId, accessToken);
-          await this.createClaspConfig(scriptId, updatedGasFiles, basePath);
+          console.error(`   ⚠️  New files detected - updating .clasp.json order...`);
 
-          // Reload the updated config
-          const updatedContent = await fs.readFile(claspPath, 'utf8');
-          claspConfig = JSON.parse(updatedContent);
+          // Define critical infrastructure files (local paths with extensions)
+          const criticalFileNames = [
+            'common-js/require.js',
+            'common-js/ConfigManager.js',
+            'common-js/__mcp_exec.js'
+          ];
+
+          // Separate new files into critical and regular
+          const existingOrder = claspConfig.filePushOrder || [];
+          const newFiles = localFiles
+            .filter(f => !claspFiles.has(f.relativePath))
+            .map(f => f.relativePath);
+
+          const newCriticalFiles = newFiles
+            .filter(f => criticalFileNames.includes(f))
+            .sort((a, b) => criticalFileNames.indexOf(a) - criticalFileNames.indexOf(b));
+
+          const newRegularFiles = newFiles
+            .filter(f => !criticalFileNames.includes(f))
+            .sort();  // Sort alphabetically
+
+          // Remove any existing critical files from existingOrder (will be re-inserted at beginning)
+          const existingNonCritical = existingOrder.filter((f: string) => !criticalFileNames.includes(f));
+
+          // Rebuild: critical files first (new + any existing), then non-critical (existing + new)
+          const rebuiltOrder = [
+            ...newCriticalFiles,
+            ...existingNonCritical,
+            ...newRegularFiles
+          ];
+
+          // Remove duplicates while preserving order (first occurrence wins)
+          claspConfig.filePushOrder = [...new Set(rebuiltOrder)];
+
+          // Write updated config
+          await fs.writeFile(claspPath, JSON.stringify(claspConfig, null, 2), 'utf8');
+
+          if (newCriticalFiles.length > 0) {
+            console.error(`   ✅ Added ${newCriticalFiles.length} critical file(s) at beginning`);
+          }
+          if (newRegularFiles.length > 0) {
+            console.error(`   ✅ Appended ${newRegularFiles.length} regular file(s) to end`);
+          }
         }
 
         // Convert local paths to GAS paths
@@ -1368,12 +1406,37 @@ export class LocalSyncTool extends BaseTool {
     gasFiles: any[],
     basePath: string
   ): Promise<void> {
-    // BUG #5 FIX: Sort files by position with stable tie-breaker
-    const sortedFiles = [...gasFiles]
-      .filter(f => !f.name.startsWith('.git/')) // Exclude git breadcrumbs
+    // Validate critical infrastructure files exist
+    const criticalOrder = ['common-js/require', 'common-js/ConfigManager', 'common-js/__mcp_exec'];
+    const filteredFiles = gasFiles.filter(f => !f.name.startsWith('.git/'));
+    const existingFileNames = new Set(filteredFiles.map(f => f.name));
+    const missingCritical = criticalOrder.filter(name => !existingFileNames.has(name));
+
+    if (missingCritical.length > 0) {
+      console.error(`   ⚠️  Missing critical infrastructure files: ${missingCritical.join(', ')}`);
+      console.error(`   ℹ️  Run project_init to install CommonJS module system`);
+    } else {
+      console.error(`   ✅ All critical infrastructure files present`);
+    }
+
+    // BUG #5 FIX: Sort files by critical order → position → alphabetical
+    const sortedFiles = [...filteredFiles]
       .sort((a, b) => {
+        // ENFORCE CRITICAL FILES: Must be in specific order for CommonJS to work
+        const aIndex = criticalOrder.indexOf(a.name);
+        const bIndex = criticalOrder.indexOf(b.name);
+
+        // Both critical: use critical order
+        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+        // Only a is critical: a comes first
+        if (aIndex !== -1) return -1;
+        // Only b is critical: b comes first
+        if (bIndex !== -1) return 1;
+
+        // Neither critical: use position from GAS API response
         const posDiff = (a.position || 0) - (b.position || 0);
         if (posDiff !== 0) return posDiff;
+
         // Break ties alphabetically by name for stability
         return a.name.localeCompare(b.name);
       });

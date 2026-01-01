@@ -10,6 +10,105 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { buildFunctionCall } from '../utils/parameterSerializer.js';
 import open from 'open';
 
+/**
+ * Structured error response with consistent metadata fields.
+ * Used by all error paths to ensure consistent response shape.
+ */
+interface ExecErrorResponse {
+  status: 'error';
+  scriptId: string;
+  js_statement: string;
+  error: {
+    type: string;
+    message: string;
+    stack?: string;
+    statusCode?: number;
+    originalError?: string;
+    context?: string;
+    function_called?: string;
+    accessed_url?: string;
+    url_type?: string;
+    debug_info?: {
+      timestamp: string;
+      deployment_mode: string;
+      httpStatus: number;
+      errorSource: string;
+    };
+  };
+  logger_output: string;
+  executedAt: string;
+  environment: 'dev' | 'staging' | 'prod';
+  versionNumber: number | null;
+  ide_url_hint: string;
+}
+
+/**
+ * Build standardized error response with consistent metadata fields.
+ * Ensures all error paths include environment, versionNumber, ide_url_hint.
+ *
+ * @param scriptId - The script project ID
+ * @param js_statement - The JavaScript that was executed
+ * @param error - Error details object
+ * @param loggerOutput - Captured Logger.log() output
+ * @param options - Optional metadata (environment, versionNumber, executionUrl)
+ * @returns Structured error response matching ExecErrorResponse interface
+ */
+function buildExecErrorResponse(
+  scriptId: string,
+  js_statement: string,
+  error: ExecErrorResponse['error'],
+  loggerOutput: string,
+  options: {
+    environment?: 'dev' | 'staging' | 'prod';
+    versionNumber?: number | null;
+    executionUrl?: string | null;
+  } = {}
+): ExecErrorResponse {
+  return {
+    status: 'error',
+    scriptId,
+    js_statement,
+    error,
+    logger_output: loggerOutput,
+    executedAt: new Date().toISOString(),
+    environment: options.environment || 'dev',
+    versionNumber: options.versionNumber ?? null,
+    ide_url_hint: options.executionUrl
+      ? `${options.executionUrl}?_mcp_run=true&action=auth_ide`
+      : `https://script.google.com/home/projects/${scriptId}/edit`
+  };
+}
+
+/**
+ * Safely extract stack trace from any error-like object
+ * Handles: Error objects, non-Error thrown objects, primitives, circular refs
+ * @param err - Any thrown value
+ * @param maxLength - Maximum stack length (default 8KB)
+ * @returns Safe string representation of the stack
+ */
+function getStackSafe(err: any, maxLength: number = 8192): string {
+  try {
+    if (!err) return '';
+    if (typeof err === 'string') return err.length > maxLength ? err.substring(0, maxLength) + '\n... [truncated]' : err;
+
+    // Prefer gasStack (GAS-originated) over generic stack
+    let stack = '';
+    if (typeof err.gasStack === 'string') {
+      stack = err.gasStack;
+    } else if (typeof err.stack === 'string') {
+      stack = err.stack;
+    } else if (typeof err.toString === 'function') {
+      stack = err.toString();
+    } else {
+      stack = String(err);
+    }
+
+    return stack.length > maxLength ? stack.substring(0, maxLength) + '\n... [truncated]' : stack;
+  } catch {
+    return '[Unable to serialize error stack]';
+  }
+}
+
 // Import extracted utilities
 import {
   estimateTokenCount,
@@ -281,27 +380,132 @@ export class ExecTool extends BaseTool {
         logFilter: 'Regex filter: exec({scriptId, js_statement, logFilter: "ERROR|WARN"})',
         logTail: 'Last N lines: exec({scriptId, js_statement, logTail: 50})'
       },
+
+      troubleshooting: {
+        trigger: 'Module loading fails OR require() errors OR unexpected undefined OR CommonJS issues',
+        diagnostic: [
+          'Run exec({scriptId, js_statement: "2*3"}) to verify basic execution',
+          'If basic works but module fails, check logger_output for loading errors',
+          'Look for: "[DEFINE]", "[ERROR]", "Factory not found" messages in logger_output',
+          'Check error.stack field for GAS-side stack trace'
+        ],
+        commonCauses: [
+          'Missing loadNow:true for modules with __events__ or __global__',
+          'Circular dependency between modules',
+          'Syntax error in module preventing factory registration',
+          'File ordering issue - dependency not loaded yet',
+          'Typo in module name in require() call'
+        ],
+        errorResponse: 'On error: status="error", error.stack contains GAS stack trace, logger_output contains Logger.log() output'
+      },
+
+      responseFormats: {
+        discrimination: 'Check status field first: "success" has result, "error" has error object',
+        success: 'status="success" + result (any JSON type) + logger_output + environment/versionNumber/ide_url_hint',
+        error: 'status="error" + error.{type,message,stack} + logger_output + environment/versionNumber/ide_url_hint',
+        stackBehavior: 'Full stack in /dev mode only. Production/staging returns "[Stack trace hidden in production - use /dev deployment for debugging]"',
+        truncation: 'Large responses (>22k tokens) may have logger_output truncated or result replaced with truncation notice',
+        errorTypes: {
+          'ExecutionError': 'GAS-side error during code execution',
+          'EXECUTION_ERROR': 'HTTP-level execution failure (status 500+)',
+          'AutoRedeployDisabled': 'Auto-redeploy skipped per configuration',
+          'TimeoutError': 'Execution exceeded time limit'
+        }
+      },
+
+      htmlValidation: {
+        whenToUse: 'Before deploying HTML files OR when HTML errors occur at runtime OR to validate scriptlet syntax',
+        validation: {
+          basic: 'HtmlService.createHtmlOutputFromFile("filename") - validates HTML syntax, returns error on malformed markup',
+          template: 'HtmlService.createTemplateFromFile("filename").evaluate() - validates scriptlets (<?= ?>, <? ?>, <?!= ?>), catches undefined variables',
+          include: 'Validates nested <?!= include("file") ?> dependencies resolve, catches missing files'
+        },
+        commonErrors: {
+          'Cannot find file': 'HTML file not found - check filename (no .html extension needed)',
+          'Unexpected token': 'Malformed scriptlet syntax - check <? ?> balance and JS syntax inside',
+          'undefined is not a function': 'Server-side function not available in template context - wrap in <?!= include() ?>',
+          'Cannot read property of undefined': 'Variable not passed to template - check template.data = {} binding'
+        },
+        debugPatterns: {
+          validateSyntax: "try { HtmlService.createHtmlOutputFromFile('NAME'); return {valid:true} } catch(e) { return {valid:false, error:e.message, stack:e.stack} }",
+          validateTemplate: "try { const t=HtmlService.createTemplateFromFile('NAME'); t.data={testVar:'test'}; t.evaluate(); return {valid:true} } catch(e) { return {valid:false, error:e.message, stack:e.stack} }",
+          getRenderedContent: "HtmlService.createTemplateFromFile('NAME').evaluate().getContent()",
+          checkIncludePath: "try { HtmlService.createHtmlOutputFromFile('path/to/include'); return 'exists' } catch(e) { return 'missing: '+e.message }"
+        },
+        bestPractices: [
+          'Run validation via exec() BEFORE opening sidebar/dialog - catches errors server-side',
+          'Use template.data = {} to pass test values when validating templates',
+          'Check each <?!= include() ?> file exists independently',
+          'Scriptlet errors show line numbers in stack trace - use for debugging',
+          'HtmlService.createHtmlOutput(string) validates raw HTML without file lookup'
+        ]
+      },
+
       antiPatterns: ['❌ exec for file ops → use cat/write/edit instead', '❌ exec without error handling → wrap in try-catch', '❌ long js_statement → write module + require("Module").func()']
     },
     responseSchema: {
       type: 'object',
-      properties: {
-        status: { type: 'string', enum: ['success', 'error'] },
-        result: {},
-        logger_output: { type: 'string' },
-        scriptId: { type: 'string' },
-        js_statement: { type: 'string' },
-        executedAt: { type: 'string', format: 'date-time' },
-        error: {
-          type: 'object',
+      description: 'Discriminated union: check status first, then access status-specific fields',
+      oneOf: [
+        {
+          title: 'SuccessResponse',
+          description: 'Returned when execution completes without error',
           properties: {
-            type: { type: 'string' },
-            message: { type: 'string' },
-            originalError: { type: 'string' }
-          }
+            status: { type: 'string', enum: ['success'] },
+            result: { description: 'Execution result - any JSON-serializable value (string, number, boolean, array, object, null)' },
+            logger_output: { type: 'string', description: 'Captured Logger.log() output from GAS execution' },
+            scriptId: { type: 'string' },
+            js_statement: { type: 'string', description: 'The JavaScript that was executed' },
+            executedAt: { type: 'string', format: 'date-time' },
+            environment: { type: 'string', enum: ['dev', 'staging', 'prod'] },
+            versionNumber: { type: ['number', 'null'], description: 'Deployment version number (null for HEAD/dev)' },
+            ide_url_hint: { type: 'string', description: 'URL to open project in Apps Script IDE' },
+            cookieAuthUsed: { type: 'boolean', description: 'True if cookie authentication was used (rare)' }
+          },
+          required: ['status', 'result', 'logger_output', 'scriptId', 'js_statement', 'executedAt', 'environment']
+        },
+        {
+          title: 'ErrorResponse',
+          description: 'Returned when execution fails. Check error.type for specific error category.',
+          properties: {
+            status: { type: 'string', enum: ['error'] },
+            error: {
+              type: 'object',
+              description: 'Error details. Shape varies by error type.',
+              properties: {
+                type: { type: 'string', description: 'Error category: ExecutionError, EXECUTION_ERROR, AutoRedeployDisabled, or error.name' },
+                message: { type: 'string', description: 'Human-readable error message' },
+                stack: { type: 'string', description: 'Stack trace (full in /dev mode, hidden "[Stack trace hidden in production]" in staging/prod)' },
+                statusCode: { type: 'number', description: 'HTTP status code (present for network errors)' },
+                context: { type: 'string', description: 'Where error occurred (e.g., "execution", "setup")' },
+                function_called: { type: 'string', description: 'Function or statement that caused error' },
+                originalError: { type: 'string', description: 'Original error message before wrapping (present for autoRedeploy errors)' },
+                accessed_url: { type: 'string', description: 'URL that was accessed (present for HTML/JS errors)' },
+                url_type: { type: 'string', description: 'Type of URL accessed (present for HTML/JS errors)' },
+                debug_info: {
+                  type: 'object',
+                  description: 'Detailed debugging context (present for HTML/JS errors)',
+                  properties: {
+                    timestamp: { type: 'string' },
+                    deployment_mode: { type: 'string' },
+                    httpStatus: { type: 'number' },
+                    errorSource: { type: 'string' }
+                  }
+                }
+              },
+              required: ['type', 'message']
+            },
+            logger_output: { type: 'string', description: 'Captured logs (may be empty for early failures)' },
+            scriptId: { type: 'string' },
+            js_statement: { type: 'string' },
+            executedAt: { type: 'string', format: 'date-time' },
+            environment: { type: 'string', enum: ['dev', 'staging', 'prod'] },
+            versionNumber: { type: ['number', 'null'] },
+            ide_url_hint: { type: 'string' }
+          },
+          required: ['status', 'error', 'logger_output', 'scriptId', 'js_statement', 'executedAt', 'environment']
         }
-      },
-      required: ['status', 'result', 'logger_output', 'scriptId', 'js_statement', 'executedAt']
+      ]
     }
   };
 
@@ -463,18 +667,36 @@ export class ExecTool extends BaseTool {
       }
       
       // 🔍 PERFORMANCE: Check infrastructure before expensive setup
-      if (this.needsInfrastructureSetup(error) && autoRedeploy) {
+      if (this.needsInfrastructureSetup(error)) {
+        // Check if autoRedeploy is disabled FIRST (was previously dead code inside && autoRedeploy block)
+        if (!autoRedeploy) {
+          // Return structured error response when autoRedeploy is disabled
+          return buildExecErrorResponse(
+            scriptId,
+            js_statement,
+            {
+              type: 'AutoRedeployDisabled',
+              message: `Execution failed and autoRedeploy is disabled. ${error.message}`,
+              stack: getStackSafe(error),
+              originalError: error.message
+            },
+            error.loggerOutput || '',
+            { environment: environment, versionNumber: null }
+          );
+        }
+
+        // autoRedeploy is true - proceed with infrastructure setup
         // For infrastructure setup, we definitely need authentication
         if (!accessToken) {
           throw new AuthenticationError(
             `Authentication required for infrastructure setup. Use auth(mode="start") to authenticate first.`
           );
         }
-        
+
         // Check if we have cached deployment URL (indicates infrastructure exists)
-        const hasCachedUrl = this.sessionAuthManager ? 
+        const hasCachedUrl = this.sessionAuthManager ?
           await this.sessionAuthManager.getCachedDeploymentUrl(scriptId) : null;
-        
+
         if (hasCachedUrl) {
           console.error(`⚡ [OPTIMISTIC RETRY] Infrastructure exists (cached URL found), retrying without setup...`);
           // Try one more time before full infrastructure setup
@@ -484,43 +706,28 @@ export class ExecTool extends BaseTool {
             console.error(`[OPTIMISTIC RETRY FAILED] Proceeding with infrastructure setup: ${retryError.message}`);
           }
         }
-        
-        if (!autoRedeploy) {
-          // Return structured error response with logger output if available
-          return {
-            status: 'error',
-            scriptId,
-            js_statement,
-            error: {
-              type: 'AutoRedeployDisabled',
-              message: `Execution failed and autoRedeploy is disabled. ${error.message}`,
-              originalError: error.message
-            },
-            logger_output: error.loggerOutput || '',
-            executedAt: new Date().toISOString()
-          };
-        }
-        
+
         // Set up infrastructure and retry
         console.error(`[INFRASTRUCTURE SETUP] Setting up deployment infrastructure...`);
         await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager);
-        
+
         // NEW: Retry logic for deployment delays with test function validation
         return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, logFilter, logTail, environment);
       }
-      // Return structured error response with logger output if available
-      return {
-        status: 'error',
+
+      // Return structured error response with logger output if available (Path 2 - general catch)
+      return buildExecErrorResponse(
         scriptId,
         js_statement,
-        error: {
+        {
           type: error.name || 'ExecutionError',
           message: error.message,
+          stack: getStackSafe(error),
           statusCode: error.statusCode || 500
         },
-        logger_output: error.loggerOutput || '',
-        executedAt: new Date().toISOString()
-      };
+        error.loggerOutput || '',
+        { environment: environment, versionNumber: null }
+      );
     }
   }
 
@@ -911,19 +1118,25 @@ export class ExecTool extends BaseTool {
         
         if (isExecutionError) {
           console.error(`[EXECUTION ERROR] HTTP ${response.status} contains JavaScript error - returning error response instead of domain auth`);
-          
+
           // Return execution error as structured response (don't trigger domain auth)
-          return {
-            status: 'error', // Correctly mark as error since execution failed
+          // Extract stack trace from response body (contains full error output)
+          const stackTrace = responseBodyCheck.length > 8192
+            ? responseBodyCheck.substring(0, 8192) + '\n... [truncated]'
+            : responseBodyCheck;
+
+          // Path 3: HTML JS error - use helper with all metadata
+          return buildExecErrorResponse(
             scriptId,
             js_statement,
-            error: {
-              type: 'EXECUTION_ERROR',
-              message: responseBodyCheck.includes('ReferenceError:') ? 
+            {
+              type: 'EXECUTION_ERROR',  // Keep SCREAMING_SNAKE_CASE for backward compatibility
+              message: responseBodyCheck.includes('ReferenceError:') ?
                         responseBodyCheck.split('ReferenceError:')[1].split('\n')[0].trim() :
                         responseBodyCheck.includes('SyntaxError:') ?
                         responseBodyCheck.split('SyntaxError:')[1].split('\n')[0].trim() :
                         'JavaScript execution error',
+              stack: stackTrace,
               statusCode: response.status,
               context: 'execution',
               function_called: js_statement,
@@ -936,9 +1149,13 @@ export class ExecTool extends BaseTool {
                 errorSource: 'project_initialization'
               }
             },
-            logger_output: '',
-            executedAt: new Date().toISOString()
-          };
+            '',
+            {
+              environment: environment,
+              versionNumber: envDeployment?.versionNumber || null,
+              executionUrl: executionUrl
+            }
+          );
         }
         
         console.error(`[COOKIE AUTH REQUIRED] HTTP ${response.status} with non-JSON response - calling exec_auth`);
@@ -1189,6 +1406,9 @@ export class ExecTool extends BaseTool {
         } else if (result.type === 'exception') {
           const error = new Error(result.payload.error.message);
           error.name = result.payload.error.name || 'FunctionExecutionError';
+          // Preserve the GAS stack trace and logger output for debugging
+          (error as any).gasStack = result.payload.error.stack || '';
+          (error as any).loggerOutput = result.payload.logger_output || '';
           throw error;
         }
       }
@@ -1203,6 +1423,27 @@ export class ExecTool extends BaseTool {
         logTail
       );
 
+      // Check for GAS errorResponse format: {error: true, ...}
+      // This is CRITICAL - without this check, errors are incorrectly marked as success
+      if (result && typeof result === 'object' && result.error === true) {
+        return protectResponseSize({
+          status: 'error',
+          scriptId,
+          js_statement,
+          error: {
+            type: 'ExecutionError',
+            message: result.message || 'Unknown error',
+            stack: result.stack || '',
+            context: result.context || 'unknown',
+            function_called: result.function_called || 'unknown'
+          },
+          logger_output: filteredOutput + metadata,
+          executedAt: new Date().toISOString(),
+          environment: environment,
+          versionNumber: envDeployment?.versionNumber || null,
+          ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
+        });
+      }
 
       // Return simple success response with logger output
       return protectResponseSize({
@@ -1241,23 +1482,20 @@ export class ExecTool extends BaseTool {
         const timeoutError = new Error(`Request timeout: Google Apps Script did not respond within ${executionTimeout} seconds`);
         (timeoutError as any).statusCode = 408;
         (timeoutError as any).loggerOutput = error.loggerOutput || '';
+        (timeoutError as any).gasStack = error.gasStack || '';
         throw timeoutError;
       }
-      
+
       // Handle response reading timeout
       if (error.message?.includes('Response body reading timeout')) {
         const timeoutError = new Error(`Response reading timeout: Google Apps Script response body took longer than ${responseTimeout} seconds to read`);
         (timeoutError as any).statusCode = 408;
         (timeoutError as any).loggerOutput = error.loggerOutput || '';
+        (timeoutError as any).gasStack = error.gasStack || '';
         throw timeoutError;
       }
-      
-      // Preserve logger output in re-thrown errors
-      if (error.loggerOutput) {
-        (error as any).loggerOutput = error.loggerOutput;
-      }
-      
-      // Re-throw other errors
+
+      // Re-throw other errors (loggerOutput and gasStack already preserved on error object)
       throw error;
     }
   }
