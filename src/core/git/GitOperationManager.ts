@@ -18,7 +18,8 @@
 
 import { log } from '../../utils/logger.js';
 import { ensureFeatureBranch } from '../../utils/gitAutoCommit.js';
-import { writeLocalAndValidateWithHooks, revertGitCommit } from '../../utils/hookIntegration.js';
+// Note: writeLocalAndValidateWithHooks no longer used - GitOperationManager stages only, doesn't commit
+// import { writeLocalAndValidateWithHooks } from '../../utils/hookIntegration.js';
 import type { GASClient } from '../../api/gasClient.js';
 import type { GitPathResolver } from './GitPathResolver.js';
 import type { SyncStrategyFactory } from './SyncStrategyFactory.js';
@@ -37,19 +38,59 @@ export interface GitOperationOptions {
 }
 
 /**
+ * Git hint structure for LLM guidance
+ */
+export interface GitHint {
+  detected: true;
+  repoPath: string;
+  branch: string;
+  uncommittedChanges: {
+    count: number;
+    files: string[];
+    hasMore: boolean;
+    thisFile: boolean;
+  };
+  recommendation: {
+    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
+    action: 'commit';
+    command: string;
+    reason: string;
+  };
+  taskCompletionBlocked: boolean;
+}
+
+/**
  * Result of git operation execution
+ *
+ * IMPORTANT: Write operations do NOT auto-commit. The git.uncommittedChanges
+ * field provides hints for LLMs to use git_feature({operation:'commit'}).
  */
 export interface GitOperationResult<T> {
   success: boolean;
   result: T;
   git: {
+    detected: true;
     branch: string;
     branchCreated: boolean;
-    commit: string;
-    commitMessage: string;
+    staged: boolean;
+    stagedFiles: string[];
     localPath: string;
     syncMode: 'simple' | 'bidirectional' | 'local-only';
     filesAffected: string[];
+    // Git hints for LLM - signal that commit is needed
+    uncommittedChanges: {
+      count: number;
+      files: string[];
+      hasMore: boolean;
+      thisFile: boolean;
+    };
+    recommendation: {
+      urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
+      action: 'commit';
+      command: string;
+      reason: string;
+    };
+    taskCompletionBlocked: boolean;
   };
 }
 
@@ -137,7 +178,7 @@ export class GitOperationManager {
 
     // PHASE 3: Compute Changes (read from remote, apply logic, NO writes)
     let operationResult: T;
-    let commitHash: string | null = null;
+    let stagedFiles: string[] = [];
     let affectedFiles: string[] = [];
 
     try {
@@ -191,8 +232,9 @@ export class GitOperationManager {
           }
         }
 
-        // STEP 2: Single git commit with ALL affected files
-        log.info(`[GIT-MANAGER] Creating single commit for ${affectedFiles.length} file(s)`);
+        // STEP 2: Stage files (NO AUTO-COMMIT - aligns with Claude Code philosophy)
+        // "NEVER commit changes unless the user explicitly asks you to."
+        log.info(`[GIT-MANAGER] Staging ${affectedFiles.length} file(s) - NOT committing`);
 
         // Convert GAS filenames to local filenames with extensions for git
         const affectedFilesWithExtensions = affectedFiles.map(filename => {
@@ -200,19 +242,64 @@ export class GitOperationManager {
           return filename + fileExtension;
         });
 
-        const gitResult = await LocalFileManager.autoCommitChanges(
+        const stageResult = await LocalFileManager.stageChangesOnly(
           options.scriptId,
           affectedFilesWithExtensions,
-          commitMessage,
           localPath
         );
 
-        if (!gitResult.committed) {
-          throw new Error(`Git commit failed: ${gitResult.message}`);
+        if (!stageResult.staged) {
+          // Handle legitimate "remote-only delete" scenario:
+          // File exists in GAS but was never synced to local git.
+          // This produces "No changes to stage" because file was never tracked.
+          const isRemoteOnlyDelete =
+            operation.getType() === 'delete' &&
+            stageResult.message === 'No changes to stage';
+
+          if (isRemoteOnlyDelete) {
+            // Verify ALL files are truly remote-only (don't exist locally)
+            // to avoid masking real git errors (corruption, permissions, etc.)
+            const { access } = await import('fs/promises');
+            const filesExistingLocally: string[] = [];
+
+            for (const filename of affectedFilesWithExtensions) {
+              const filePath = join(localPath, filename);
+              try {
+                await access(filePath);
+                filesExistingLocally.push(filename);
+              } catch (error: any) {
+                if (error.code !== 'ENOENT') {
+                  // Permission error or other I/O error - not safe to proceed
+                  throw new Error(
+                    `Cannot verify file existence for "${filename}": ${error.message}`
+                  );
+                }
+                // ENOENT - file doesn't exist locally (expected for remote-only)
+              }
+            }
+
+            if (filesExistingLocally.length > 0) {
+              // At least one file exists but git says no changes - real error
+              throw new Error(
+                `Git stage failed: ${stageResult.message} ` +
+                `(files exist locally but git detected no changes: ${filesExistingLocally.join(', ')} - possible git issue)`
+              );
+            }
+
+            // Valid remote-only scenario - proceed without local staging
+            log.info(
+              `[GIT-MANAGER] Delete operation: ${affectedFilesWithExtensions.length} file(s) not tracked in local git, ` +
+              `proceeding with remote deletion only (no local staging needed)`
+            );
+
+          } else {
+            // All other "no stage" cases are errors
+            throw new Error(`Git stage failed: ${stageResult.message}`);
+          }
         }
 
-        commitHash = gitResult.commitHash || null;
-        log.info(`[GIT-MANAGER] Commit created: ${commitHash}`);
+        stagedFiles = stageResult.stagedFiles;
+        log.info(`[GIT-MANAGER] Staged ${stagedFiles.length} file(s) - NOT committed`);
 
         // STEP 3: Read back ALL hook-validated files
         log.debug(`[GIT-MANAGER] Reading back hook-validated content`);
@@ -250,7 +337,7 @@ export class GitOperationManager {
           }
         }
 
-        log.info(`[GIT-MANAGER] Validation complete. Commit: ${commitHash}`);
+        log.info(`[GIT-MANAGER] Validation complete. Staged: ${stagedFiles.length} file(s)`);
       }
 
       // PHASE 5: Apply validated changes to remote
@@ -263,18 +350,46 @@ export class GitOperationManager {
       // SUCCESS
       log.info(`[GIT-MANAGER] Git operation completed successfully`);
 
+      // Get uncommitted status for git hints
+      const { getUncommittedStatus, buildGitHint } = await import('../../utils/gitStatus.js');
+      const uncommitted = await getUncommittedStatus(localPath);
+      const primaryFile = affectedFiles[0] || '';
+
+      // Build urgency based on uncommitted count
+      const urgency: 'CRITICAL' | 'HIGH' | 'NORMAL' =
+        uncommitted.count >= 5 ? 'CRITICAL' :
+        uncommitted.count >= 3 ? 'HIGH' : 'NORMAL';
+
       return {
         success: true,
         result: operationResult,
         git: {
+          detected: true,
           branch: branchResult.branch,
           branchCreated: branchResult.created,
-          commit: commitHash || 'none',
-          commitMessage: options.changeReason ||
-            this.generateSmartCommitMessage(operation, affectedFiles),
+          staged: stagedFiles.length > 0,
+          stagedFiles,
           localPath,
           syncMode,
-          filesAffected: affectedFiles
+          filesAffected: affectedFiles,
+          // Git hints for LLM - signal that commit is needed
+          uncommittedChanges: {
+            count: uncommitted.count,
+            files: uncommitted.files,
+            hasMore: uncommitted.hasMore,
+            thisFile: uncommitted.files.some(f =>
+              f.includes(primaryFile) || primaryFile.includes(f.replace(/\.(gs|html|json)$/, ''))
+            )
+          },
+          recommendation: {
+            urgency,
+            action: 'commit',
+            command: `git_feature({operation:'commit', scriptId:'${options.scriptId}', message:'...'})`,
+            reason: urgency === 'CRITICAL'
+              ? `${uncommitted.count} files uncommitted - significant work at risk`
+              : `${uncommitted.count} file(s) staged but not committed to git history`
+          },
+          taskCompletionBlocked: uncommitted.count > 0
         }
       };
 
@@ -282,19 +397,45 @@ export class GitOperationManager {
       // PHASE 6: Atomic Rollback
       log.error(`[GIT-MANAGER] Operation failed: ${error.message}`);
 
-      if (commitHash) {
-        log.info(`[GIT-MANAGER] Rolling back commit: ${commitHash}`);
+      // Unstage any staged files (no commits to revert since we don't auto-commit)
+      if (stagedFiles.length > 0) {
+        log.info(`[GIT-MANAGER] Unstaging ${stagedFiles.length} file(s)...`);
 
-        const revertResult = await revertGitCommit(
-          localPath,
-          commitHash,
-          affectedFiles.join(', ')
-        );
+        try {
+          const { spawn } = await import('child_process');
 
-        if (!revertResult.success) {
-          log.error(`[GIT-MANAGER] Rollback failed: ${revertResult.error}`);
-        } else {
-          log.info(`[GIT-MANAGER] Rollback successful`);
+          // Check if repo has commits (empty repo can't use reset HEAD)
+          const hasCommits = await new Promise<boolean>((resolve) => {
+            const check = spawn('git', ['rev-parse', '--verify', 'HEAD'], { cwd: localPath });
+            check.on('close', (code) => resolve(code === 0));
+            check.on('error', () => resolve(false));
+          });
+
+          if (hasCommits) {
+            // Normal unstage with reset HEAD
+            await new Promise<void>((resolve, reject) => {
+              const git = spawn('git', ['reset', 'HEAD', ...stagedFiles], {
+                cwd: localPath,
+                stdio: ['ignore', 'pipe', 'pipe']
+              });
+              git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git reset failed with exit code ${code}`)));
+              git.on('error', reject);
+            });
+          } else {
+            // Empty repo - use rm --cached
+            await new Promise<void>((resolve, reject) => {
+              const git = spawn('git', ['rm', '--cached', ...stagedFiles], {
+                cwd: localPath,
+                stdio: ['ignore', 'pipe', 'pipe']
+              });
+              git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git rm --cached failed with exit code ${code}`)));
+              git.on('error', reject);
+            });
+          }
+
+          log.info(`[GIT-MANAGER] Unstaging successful`);
+        } catch (unstageError: any) {
+          log.warn(`[GIT-MANAGER] Unstaging failed: ${unstageError.message}`);
         }
       }
 

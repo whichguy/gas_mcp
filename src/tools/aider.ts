@@ -29,6 +29,30 @@ interface AiderParams {
   accessToken?: string;
 }
 
+interface GitHints {
+  detected: boolean;
+  branch?: string;
+  staged?: boolean;
+  uncommittedChanges?: {
+    count: number;
+    files: string[];
+    hasMore?: boolean;
+    thisFile?: boolean;
+  };
+  recommendation?: {
+    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
+    action: 'commit';
+    command: string;
+    reason: string;
+  };
+  taskCompletionBlocked?: boolean;
+}
+
+interface NextActionHint {
+  hint: string;
+  required: boolean;
+}
+
 interface AiderResult {
   success: boolean;
   editsApplied: number;
@@ -40,6 +64,8 @@ interface AiderResult {
     similarity: number;
     applied: boolean;
   }>;
+  git?: GitHints;
+  nextAction?: NextActionHint;
 }
 
 /**
@@ -50,7 +76,7 @@ interface AiderResult {
  */
 export class AiderTool extends BaseTool {
   public name = 'aider';
-  public description = 'Token-efficient file editing using fuzzy string matching. Finds and replaces similar (not exact) text, handling formatting variations and minor differences. Provides 95%+ token savings vs write.';
+  public description = 'Token-efficient fuzzy editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. Finds and replaces similar text, handling formatting variations. 95%+ token savings vs write.';
 
   public inputSchema = {
     type: 'object',
@@ -99,6 +125,15 @@ export class AiderTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
+      // GIT INTEGRATION - CRITICAL for LLM behavior
+      gitIntegration: {
+        CRITICAL: 'This tool does NOT auto-commit to git',
+        behavior: 'Edits push to GAS but do NOT commit locally',
+        workflowSignal: 'Response includes git.taskCompletionBlocked=true when uncommitted',
+        taskCompletionRule: 'Task is NOT complete while git.uncommittedChanges.count > 0',
+        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
+      },
+
       whenToUse: 'Fuzzy matching for formatting variations, whitespace differences, or uncertain exact text. Use edit for exact text, sed for regex patterns.',
       toolChoice: 'edit: exact known text | aider: formatting variations | sed: regex patterns | write: new files',
       threshold: '0.8 default, 0.9 strict (minor diffs), 0.7 permissive (moderate diffs)',
@@ -109,7 +144,12 @@ export class AiderTool extends BaseTool {
         'wrong match': 'Raise threshold (0.9) OR include more unique context in searchText',
         'sync conflict': 'local_sync first OR retry with force flag'
       },
-      antiPatterns: ['❌ aider for exact known text → use edit (faster)', '❌ searchText >1000 chars → use grep to locate, then edit', '❌ threshold too low (0.5) → false positives likely']
+      antiPatterns: [
+        '❌ aider for exact known text → use edit (faster)',
+        '❌ searchText >1000 chars → use grep to locate, then edit',
+        '❌ threshold too low (0.5) → false positives likely',
+        '❌ assuming auto-commit happened → MUST call git_feature commit'
+      ]
     },
 
     llmHints: {
@@ -284,16 +324,26 @@ export class AiderTool extends BaseTool {
     const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
-    // Return minimal response for token efficiency
+    // Return response with git hints for LLM guidance
+    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
     return {
       success: true,
       editsApplied,
       filePath: params.path,
+      // Pass through git hints from GitOperationManager
+      git: gitResult.git ? {
+        detected: gitResult.git.detected,
+        branch: gitResult.git.branch,
+        staged: gitResult.git.staged,
+        uncommittedChanges: gitResult.git.uncommittedChanges,
+        recommendation: gitResult.git.recommendation,
+        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
+      } : { detected: false },
       // Add workflow completion hint when on feature branch
       ...(onFeatureBranch ? {
         nextAction: {
           hint: `File edited. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: false
+          required: gitResult.git?.taskCompletionBlocked || false
         }
       } : {})
     };

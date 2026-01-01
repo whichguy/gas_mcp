@@ -2,6 +2,37 @@
  * Shared type definitions for filesystem tools
  */
 
+/**
+ * Git hints returned from write operations for LLM guidance.
+ * Used to signal that explicit commit is needed.
+ */
+export interface GitHints {
+  detected: boolean;
+  branch?: string;
+  staged?: boolean;
+  uncommittedChanges?: {
+    count: number;
+    files: string[];
+    hasMore?: boolean;
+    thisFile?: boolean;
+  };
+  recommendation?: {
+    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
+    action: 'commit';
+    command: string;
+    reason: string;
+  };
+  taskCompletionBlocked?: boolean;
+}
+
+/**
+ * Next action hint for workflow completion
+ */
+export interface NextActionHint {
+  hint: string;
+  required: boolean;
+}
+
 export interface FileResult {
   filename: string;
   content: string;
@@ -53,6 +84,8 @@ export interface RemoveResult {
   path: string;
   localDeleted: boolean;
   remoteDeleted: boolean;
+  git?: GitHints;
+  nextAction?: NextActionHint;
 }
 
 export interface MoveResult {
@@ -66,6 +99,8 @@ export interface MoveResult {
   sourceFilesRemaining?: number;
   destFilesTotal?: number;
   message: string;
+  git?: GitHints;
+  nextAction?: NextActionHint;
 }
 
 export interface CopyResult {
@@ -79,6 +114,8 @@ export interface CopyResult {
   size: number;
   totalFiles: number;
   message: string;
+  git?: GitHints;
+  nextAction?: NextActionHint;
 }
 
 export interface FileParams {

@@ -7,7 +7,8 @@ import { setFileMtimeToRemote, checkSyncOrThrow } from '../../utils/fileHelpers.
 import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
-import { writeLocalAndValidateWithHooks, revertGitCommit } from '../../utils/hookIntegration.js';
+import { writeLocalAndValidateHooksOnly } from '../../utils/hookIntegration.js';
+import { getUncommittedStatus, buildGitHint } from '../../utils/gitStatus.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitHints, type GitDetection } from '../../utils/localGitDetection.js';
 import { log } from '../../utils/logger.js';
 import { join, dirname } from 'path';
@@ -23,7 +24,7 @@ import type { WriteParams, WriteResult } from './shared/types.js';
  */
 export class WriteTool extends BaseFileSystemTool {
   public name = 'write';
-  public description = 'Write file contents to Google Apps Script project. Automatically wraps user code with CommonJS module system (require, module, exports). Supports .git hooks for validation: writes locally first, runs hooks, then syncs validated content to remote (atomic with full rollback on failure). Falls back to remote-first workflow when git not available.';
+  public description = 'Write file to GAS (NO git auto-commit). After writes, call git_feature({operation:"commit"}) to save changes. Automatically wraps user code with CommonJS module system. Writes locally and syncs to remote GAS.';
 
   public inputSchema = {
     type: 'object',
@@ -90,6 +91,15 @@ export class WriteTool extends BaseFileSystemTool {
     required: ['scriptId', 'path', 'content'],
     additionalProperties: false,
     llmGuidance: {
+      // GIT INTEGRATION - CRITICAL for LLM behavior
+      gitIntegration: {
+        CRITICAL: 'This tool does NOT auto-commit to git',
+        behavior: 'File writes push to GAS but do NOT commit locally',
+        workflowSignal: 'Response includes git.taskCompletionBlocked=true when uncommitted',
+        taskCompletionRule: 'Task is NOT complete while git.uncommittedChanges.count > 0',
+        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
+      },
+
       whenToUse: 'Normal file write with auto CommonJS wrapping. Use edit/aider for small changes (95%+ token savings).',
       alternatives: 'edit: exact text match, aider: fuzzy match, raw_write: no CommonJS processing',
       commonJs: 'Auto-wraps SERVER_JS with require(), module, exports. Never manually add _main() or __defineModule__.',
@@ -99,7 +109,6 @@ export class WriteTool extends BaseFileSystemTool {
         troubleshooting: 'Log "[WARN] No X handlers found" means missing loadNow: true',
         hoistedFunctions: '[{name,params,jsdoc}] for Sheets autocomplete'
       },
-      gitHooks: '.git exists → local write+hooks → remote sync (atomic rollback on failure). No git → remote-first.',
       force: '⚠️ DANGEROUS: Skips sync validation. Use only when intentionally discarding remote changes.',
       examples: [
         'Basic: {path:"utils",content:"function add(a,b){return a+b}"}',
@@ -109,11 +118,15 @@ export class WriteTool extends BaseFileSystemTool {
       ],
       errorRecovery: {
         'sync conflict': 'local_sync first OR force:true (⚠️ overwrites remote)',
-        'hook failed': 'Check .git/hooks/ | fix code | retry',
         'auth expired': 'auth({mode:"status"}) → auth({mode:"start"}) if needed',
         'file locked': 'Wait 30s (auto-unlock) OR check concurrent writes'
       },
-      antiPatterns: ['❌ write for small edits → use edit/aider (95% token savings)', '❌ manual _main() wrapper → let write auto-wrap', '❌ __events__ without loadNow:true → handlers won\'t register']
+      antiPatterns: [
+        '❌ write for small edits → use edit/aider (95% token savings)',
+        '❌ manual _main() wrapper → let write auto-wrap',
+        '❌ __events__ without loadNow:true → handlers won\'t register',
+        '❌ assuming auto-commit happened → MUST call git_feature commit'
+      ]
     }
   };
 
@@ -473,16 +486,16 @@ export class WriteTool extends BaseFileSystemTool {
       commitMessage = `Add ${filename}`;
     }
 
-    // Auto-commit to git (only after remote success)
-    let gitCommitResult: any = null;
+    // Stage changes to git (NO AUTO-COMMIT - LLM must call git_feature to commit)
+    let projectPathForGit: string | null = null;
 
     if (!remoteOnly && gitStatus.gitInitialized) {
       try {
         const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
         const fullFilename = filename + fileExtension;
-        const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+        projectPathForGit = await LocalFileManager.getProjectDirectory(projectName, workingDir);
         const path = await import('path');
-        const filePath = path.join(projectPath, fullFilename);
+        const filePath = path.join(projectPathForGit, fullFilename);
 
         await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
@@ -496,17 +509,17 @@ export class WriteTool extends BaseFileSystemTool {
           console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
         }
 
-        gitCommitResult = await LocalFileManager.autoCommitChanges(
-          projectName,
-          [filename],
-          commitMessage,
-          workingDir
-        );
-      } catch (commitError: any) {
-        gitCommitResult = {
-          committed: false,
-          message: `Git commit failed: ${commitError.message}`
-        };
+        // Stage the file (NO COMMIT - LLM must call git_feature)
+        const { spawn } = await import('child_process');
+        await new Promise<void>((resolve, reject) => {
+          const git = spawn('git', ['add', fullFilename], { cwd: projectPathForGit! });
+          git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git add failed with code ${code}`)));
+          git.on('error', reject);
+        });
+        console.error(`📦 [GIT] Staged ${fullFilename} (NOT committed - call git_feature to commit)`);
+      } catch (stageError: any) {
+        console.error(`⚠️ [GIT] Could not stage file: ${stageError.message}`);
+        // Continue anyway - file is written, just not staged
       }
     }
 
@@ -562,11 +575,30 @@ export class WriteTool extends BaseFileSystemTool {
       };
     }
 
-    // Add git hints if available (merge with detection results)
-    if (gitHints || gitDetection) {
+    // Add git hints if available (merge with detection results + uncommitted status)
+    if (gitHints || gitDetection || projectPathForGit) {
+      // Build uncommitted status if we have a git path
+      let uncommittedHints: any = {};
+      if (projectPathForGit) {
+        try {
+          const uncommittedStatus = await getUncommittedStatus(projectPathForGit);
+          const gitHint = await buildGitHint(scriptId, projectPathForGit, uncommittedStatus, filename);
+          uncommittedHints = {
+            branch: gitHint.branch,
+            uncommittedChanges: gitHint.uncommittedChanges,
+            recommendation: gitHint.recommendation,
+            taskCompletionBlocked: gitHint.taskCompletionBlocked
+          };
+        } catch (hintError) {
+          // Continue without hints if we can't get them
+          console.error(`⚠️ [GIT] Could not build uncommitted hints: ${hintError}`);
+        }
+      }
+
       result.git = {
         ...(gitHints || {}),
-        ...(gitDetection || {})
+        ...(gitDetection || {}),
+        ...uncommittedHints
       };
     }
 
@@ -658,10 +690,12 @@ export class WriteTool extends BaseFileSystemTool {
   }
 
   /**
-   * Execute write with atomic hook validation workflow
-   * PHASE 1: Write local, run hooks, read post-hook content
+   * Execute write with hook validation workflow (NO AUTO-COMMIT)
+   * PHASE 1: Write local, run hooks, read post-hook content (staged but NOT committed)
    * PHASE 2: Push to remote
-   * PHASE 3: If remote fails, revert git commit
+   * PHASE 3: If remote fails, unstage changes (simple cleanup, no commit to revert)
+   *
+   * LLM must call git_feature({operation:'commit'}) to commit staged changes.
    */
   private async executeWithHookValidation(
     params: any,
@@ -688,22 +722,18 @@ export class WriteTool extends BaseFileSystemTool {
     const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
     const filePath = join(projectPath, fullFilename);
 
-    // PHASE 0: Ensure feature branch before committing
-    const { ensureFeatureBranch } = await import('../../utils/gitAutoCommit.js');
-    const branchResult = await ensureFeatureBranch(projectPath);
+    // PHASE 0: Check current branch (no auto-creation of feature branches)
+    const { getCurrentBranchName } = await import('../../utils/gitStatus.js');
+    const currentBranch = await getCurrentBranchName(projectPath);
 
-    log.info(
-      `[WRITE] Feature branch: ${branchResult.branch}${branchResult.created ? ' (auto-created)' : ' (existing)'}`
-    );
+    log.info(`[WRITE] Current branch: ${currentBranch}`);
 
-    // PHASE 1: Local validation with hooks
-    const hookResult = await writeLocalAndValidateWithHooks(
+    // PHASE 1: Local validation with hooks (NO COMMIT - just validate and stage)
+    const hookResult = await writeLocalAndValidateHooksOnly(
       content,
       filePath,
-      filename,
-      projectName,
-      workingDir,
-      changeReason  // Pass custom commit message
+      fullFilename,  // Use full filename with extension for git operations
+      projectPath  // Pass git root for hook execution
     );
 
     if (!hookResult.success) {
@@ -716,8 +746,8 @@ export class WriteTool extends BaseFileSystemTool {
     let results: any = {
       hookValidation: {
         success: true,
-        hookModified: hookResult.hookModified,
-        commitHash: hookResult.commitHash
+        hookModified: hookResult.hookModified
+        // No commitHash - we don't auto-commit
       }
     };
 
@@ -782,33 +812,63 @@ export class WriteTool extends BaseFileSystemTool {
         };
 
       } catch (remoteError: any) {
-        // PHASE 3: Remote failed - revert git commit
-        const revertResult = await revertGitCommit(
-          projectPath,
-          hookResult.commitHash!,
-          filename
-        );
+        // PHASE 3: Remote failed - unstage changes (simple cleanup, no commit to revert)
+        log.error(`[WRITE] Remote write failed for ${filename} in project ${scriptId}, unstaging local changes: ${remoteError.message}`);
 
-        if (revertResult.success) {
-          throw new Error(`Remote write failed after local validation - all changes reverted: ${remoteError.message}`);
-        } else {
-          throw new Error(
-            `CRITICAL: Remote write failed AND commit revert failed.\n\n` +
-            `Manual recovery required:\n` +
-            `1. Navigate to: ${projectPath}\n` +
-            `2. Check git status: git status\n` +
-            `3. If conflicts exist: git revert --abort\n` +
-            `4. To undo commit: git reset --hard HEAD~1 (WARNING: loses commit ${hookResult.commitHash})\n\n` +
-            `Original error: ${remoteError.message}\n` +
-            `Revert error: ${revertResult.error || 'unknown'}`
-          );
+        try {
+          const { spawn } = await import('child_process');
+
+          // Check if repo has any commits (empty repo can't use reset HEAD)
+          const hasCommits = await new Promise<boolean>((resolve) => {
+            const check = spawn('git', ['rev-parse', '--verify', 'HEAD'], { cwd: projectPath });
+            check.on('close', (code) => resolve(code === 0));
+            check.on('error', () => resolve(false));
+          });
+
+          if (hasCommits) {
+            // Normal case: unstage with reset HEAD
+            await new Promise<void>((resolve, reject) => {
+              const git = spawn('git', ['reset', 'HEAD', fullFilename], { cwd: projectPath });
+              git.on('close', (code) => {
+                if (code === 0) {
+                  resolve();
+                } else {
+                  reject(new Error(`git reset failed with exit code ${code}`));
+                }
+              });
+              git.on('error', reject);
+            });
+          } else {
+            // Empty repo: use rm --cached instead
+            await new Promise<void>((resolve, reject) => {
+              const git = spawn('git', ['rm', '--cached', fullFilename], { cwd: projectPath });
+              git.on('close', (code) => {
+                if (code === 0) {
+                  resolve();
+                } else {
+                  reject(new Error(`git rm --cached failed with exit code ${code}`));
+                }
+              });
+              git.on('error', reject);
+            });
+          }
+          log.info(`[WRITE] Unstaged ${fullFilename} after remote failure`);
+        } catch (unstageError) {
+          // Best effort - unstaging is not critical but log the actual error
+          log.warn(`[WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
         }
+
+        throw new Error(`Remote write failed for ${filename} in project ${scriptId} - local changes unstaged: ${remoteError.message}`);
       }
     }
 
     // Check for git association hints AND detect local git (single API call)
     const accessToken = await this.getAuthToken(params);
     const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken);
+
+    // Build git uncommitted status for hints
+    const uncommittedStatus = await getUncommittedStatus(projectPath);
+    const gitHint = await buildGitHint(scriptId, projectPath, uncommittedStatus, filename);
 
     // Build result with local and git hints
     const result: any = {
@@ -823,31 +883,17 @@ export class WriteTool extends BaseFileSystemTool {
       exists: true
     };
 
-    // Add git hints if available (merge with detection results and branch info)
-    if (gitHints || gitDetection || branchResult) {
-      // Import isFeatureBranch to check if we should add workflow hint
-      const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
-      const onFeatureBranch = branchResult?.branch ? isFeatureBranch(branchResult.branch) : false;
-
-      result.git = {
-        ...(gitHints || {}),
-        ...(gitDetection || {}),
-        ...(branchResult ? {
-          branch: branchResult.branch,
-          branchCreated: branchResult.created,
-          commitMessage: changeReason || (hookResult.previousContent !== null
-            ? `Update ${filename}`
-            : `Add ${filename}`)
-        } : {}),
-        // Add workflow completion hint when on feature branch
-        ...(onFeatureBranch ? {
-          nextAction: {
-            hint: `File written. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-            required: false
-          }
-        } : {})
-      };
-    }
+    // Add comprehensive git hints (merge detection, branch info, and uncommitted status)
+    result.git = {
+      ...(gitHints || {}),
+      ...(gitDetection || {}),
+      // Branch info (no branchCreated - we don't auto-create branches)
+      branch: currentBranch,
+      // Uncommitted status and hints
+      uncommittedChanges: gitHint.uncommittedChanges,
+      recommendation: gitHint.recommendation,
+      taskCompletionBlocked: gitHint.taskCompletionBlocked
+    };
 
     return result;
   }
