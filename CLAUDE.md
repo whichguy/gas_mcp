@@ -50,7 +50,7 @@ npm run test:all-verify          # Run all verification tests
 
 ## Architecture Overview
 
-**MCP server:** AI ↔ GAS → 41 tools for create/manage/execute GAS projects
+**MCP server:** AI ↔ GAS → 49 tools for create/manage/execute GAS projects
 
 **Flow:** Client ↔ stdio ↔ mcpServer → tools → gasClient → GAS API
 
@@ -76,6 +76,61 @@ npm run test:all-verify          # Run all verification tests
 - `loadNow: true` (eager) → _main() at startup → use for: doGet/doPost, onOpen/onEdit/onInstall triggers, __events__ registration
 - `loadNow: false` (lazy) → _main() on first require() → use for: utils, helpers, internal logic
 - `omit` (preserve) → reads existing setting (~200-500ms) | defaults lazy for new files → use for: updating existing, bulk ops (set explicit to skip lookup)
+
+**Two Hoisted Function Systems:**
+
+There are two separate systems for hoisting functions in GAS - each serves a different purpose:
+
+| System | Location | Purpose | How to Use |
+|--------|----------|---------|------------|
+| **moduleOptions.hoistedFunctions** | `src/utils/moduleWrapper.ts` | Google Sheets custom functions (=MYFUNCTION) | `write({..., moduleOptions: { hoistedFunctions: [{name, params, jsdoc}] }})` |
+| **@hoisted JSDoc annotation** | `src/utils/hoistedFunctionGenerator.ts` | Client-side google.script.run bridges | Add `@hoisted` to function JSDoc |
+
+- **hoistedFunctions in moduleOptions**: Creates bridge functions visible to Google Sheets for autocomplete (e.g., custom functions). Generated between `// ===== HOISTED CUSTOM FUNCTIONS =====` markers.
+- **@hoisted annotation**: Parses `@hoisted` JSDoc tags from source code to generate functions callable via `google.script.run` from HTML sidebars/dialogs.
+
+These systems are **independent** and don't interact - choose based on whether you need Sheets custom functions (moduleOptions) or client-side HTML bridges (@hoisted).
+
+#### Module Logging Control (Debugging CommonJS)
+
+**Runtime Functions**: The CommonJS module system provides four global functions for controlling per-module debug logging:
+
+**Enable logging for modules:**
+```javascript
+// Enable all modules
+exec({scriptId, js_statement: "setModuleLogging('*', true)"})
+
+// Enable specific folder
+exec({scriptId, js_statement: "setModuleLogging('auth/*', true)"})
+
+// Enable specific modules
+exec({scriptId, js_statement: "setModuleLogging(['api/Handler', 'auth/Client'], true)"})
+```
+
+**Disable or exclude modules:**
+```javascript
+// Disable specific module (when * is enabled)
+exec({scriptId, js_statement: "setModuleLogging('auth/NoisyModule', false, 'script', true)"})
+```
+
+**Query and clear:**
+```javascript
+exec({scriptId, js_statement: "getModuleLogging()"})       // Get all settings
+exec({scriptId, js_statement: "listLoggingEnabled()"})     // List enabled patterns
+exec({scriptId, js_statement: "clearModuleLogging()"})     // Clear all
+```
+
+**Pattern matching:**
+- Exact name: `'auth/SessionManager'` - matches exactly
+- Folder pattern: `'auth/*'` - matches all modules in auth/
+- Wildcard: `'*'` - matches all modules
+- Exclusion precedence: `false` takes precedence over `true`
+
+**Typical debugging workflow:**
+1. `setModuleLogging('*', true)` - Enable all logging
+2. Execute your code
+3. Review `logger_output` in exec result
+4. `clearModuleLogging()` - Clean up
 
 **Response Enhancement (write/raw_write):**
 - Returns `local: {path, exists}` when file written locally
@@ -173,6 +228,91 @@ dev (HEAD) → promote → staging (v1,v2,v3...) → promote → prod (stable)
 
 **Full Guide:** See `docs/DEPLOYMENT_WORKFLOW.md` for complete workflow documentation
 
+#### 7. Write Operation Locking
+
+**Protection**: Filesystem-based per-project write locks prevent concurrent modification collisions
+
+**Why Necessary**: Google Apps Script API provides NO server-side concurrency control
+- ❌ No ETags, If-Match headers, or version checking
+- ❌ No conflict detection or error codes
+- ⚠️ **Last-write-wins** behavior with complete project replacement
+- ✅ **Client-side locking required** to prevent data loss
+
+**Collision Example Without Locking:**
+```
+Client A: read → modify file 1 → write
+Client B: read → modify file 2 → write ← OVERWRITES Client A's changes!
+Result: File 1 changes lost
+```
+
+**Lock Behavior:**
+- **Concurrent writes to different projects**: Allowed (no blocking)
+- **Concurrent writes to same project**: Queued (second waits for first)
+- **Timeout**: 30s default (configurable via `MCP_GAS_LOCK_TIMEOUT`)
+- **Lock location**: `~/.auth/mcp-gas/locks/{scriptId}.lock`
+- **Stale detection**: Automatic cleanup of locks from dead processes
+
+**Protected Operations:**
+All write operations that call `updateProjectContent`:
+- write, raw_write, edit, aider, sed
+- rm, mv, cp
+- gitSync, deploy operations
+
+**Error Handling:**
+- `LockTimeoutError`: Thrown after 30s waiting for lock
+- Indicates: Another operation in progress or stuck process
+- Resolution: Retry operation or check for orphaned locks
+- Error message includes current lock holder info (PID, hostname, operation)
+
+**Automatic Recovery:**
+- **Startup cleanup**: Removes stale locks from dead processes
+- **Shutdown cleanup**: Releases all locks on SIGINT/SIGTERM
+- **Exception safety**: Locks released even on write errors (try/finally)
+- **No manual intervention**: System self-heals automatically
+
+**Performance Impact:**
+- **Uncontended locks**: ~2-10ms overhead (file create/delete)
+- **Contended locks**: Wait time = first operation duration (100ms min, 30s max timeout)
+  - Example: If operation 1 takes 5s, operation 2 waits ~5s + lock overhead
+  - Operations to different projects run in parallel (no waiting)
+- Network latency (100-500ms) typically dominates in uncontended case
+- No impact on read operations (cat, ls, grep remain unlocked)
+
+**Debugging:**
+```typescript
+// Check lock status
+await lockManager.getLockStatus(scriptId)
+// Returns: { locked: boolean, info?: { pid, hostname, operation, timestamp } }
+
+// Manual cleanup if needed (rare)
+await lockManager.cleanupStaleLocks()
+```
+
+**Environment Variables:**
+- `MCP_GAS_LOCK_TIMEOUT=60000` - Override default 30s timeout (minimum 1000ms)
+- Lock directory: `~/.auth/mcp-gas/locks/` (consistent with token storage)
+
+**Limitations:**
+- **Single-user per machine**: Locks are stored in user home directory (`~/.auth/mcp-gas/locks/`)
+  - Users A and B on same machine have separate lock directories → won't coordinate
+  - Only protects concurrent operations from the same user account
+  - Multi-user environments: Each user's operations are isolated, no cross-user protection
+- **Local filesystem required**: Lock atomicity requires local filesystem
+  - ✅ Works: Local disk (ext4, APFS, NTFS, etc.)
+  - ⚠️ May fail: NFS, SMB/CIFS, distributed filesystems (lock atomicity not guaranteed)
+  - Use local disk for lock directory to ensure correctness
+- **Cross-machine coordination**: Different hostnames rely on timestamp-based stale detection
+  - Clock skew between machines can affect stale detection accuracy
+  - 5-minute threshold provides buffer for minor clock differences
+  - Same user on different machines will coordinate via shared home directory (if networked)
+
+**Observability:**
+```typescript
+// Get lock usage metrics for debugging
+const metrics = lockManager.getMetrics();
+// Returns: { acquisitions, contentions, timeouts, staleRemoved, currentlyHeld }
+```
+
 ---
 
 ### Architectural Patterns
@@ -180,6 +320,41 @@ dev (HEAD) → promote → staging (v1,v2,v3...) → promote → prod (stable)
 **Tool:** BaseTool → name (mcp__gas__*) + inputSchema → execute (validate → auth → operation) → formatSuccess/handleApiError
 **Virtual Files:** .git/.gitignore/.env ↔ .gs suffix → period prefix handling → MD ↔ HTML transforms
 **Sync:** Local (./src/) → Remote GAS → Git mirror (~/gas-repos/project-[scriptId]/) → local-first auto-sync
+
+#### File Operation Strategy Pattern
+
+**Location:** `src/core/git/operations/`
+
+**Purpose:** Separates file operation logic from git orchestration. Used by edit, aider, mv, cp, rm tools.
+
+**Two-Phase Workflow:**
+1. `computeChanges()` - Read from remote, compute changes (NO side effects, NO remote writes)
+2. `applyChanges(validatedContent)` - Write hook-validated content to remote
+
+**Key Files:**
+| File | Purpose |
+|------|---------|
+| `FileOperationStrategy.ts` | Interface defining the contract |
+| `EditOperationStrategy.ts` | Exact string matching edits |
+| `AiderOperationStrategy.ts` | Fuzzy matching edits (Levenshtein distance) |
+| `CopyOperationStrategy.ts` | File copy with CommonJS unwrap/rewrap |
+| `MoveOperationStrategy.ts` | File move/rename with CommonJS processing |
+| `DeleteOperationStrategy.ts` | File deletion |
+
+**Orchestrator:** `GitOperationManager` (`src/core/git/GitOperationManager.ts`)
+- Path resolution → Branch management → computeChanges() → Hook validation → applyChanges() → Git commit → Sync
+- Atomic rollback on any failure via strategy.rollback()
+
+**moduleOptions Preservation:**
+All strategies preserve `loadNow`, `hoistedFunctions`, `__global__`, `__events__` when unwrapping/rewrapping CommonJS:
+```typescript
+// In computeChanges():
+const { unwrappedContent, existingOptions } = unwrapModuleContent(content);
+this.existingOptions = existingOptions;  // Store for later
+
+// In applyChanges():
+finalContent = wrapModuleContent(content, moduleName, this.existingOptions);  // Preserve!
+```
 
 ### Git Integration
 
@@ -280,7 +455,7 @@ or
 
 #### Git Feature Workflow (Manual branch management)
 
-**Tool:** `git_feature` - Consolidated tool with 5 operations
+**Tool:** `git_feature` - Consolidated tool with 7 operations
 
 **Operations:**
 - **`start`**: Create new feature branch `llm-feature-{name}`
@@ -288,10 +463,26 @@ or
   - Creates: `llm-feature-user-auth`
   - Validates: Not already on feature branch, no uncommitted changes
 
+- **`commit`**: Commit all changes with custom message
+  - Example: `git_feature({operation: 'commit', scriptId, message: 'feat: Add user authentication'})`
+  - Always commits all changes (`git add -A`)
+  - Pre-flight checks: Not in detached HEAD, has changes to commit
+  - Returns: commit SHA, message, files changed count, timestamp
+
+- **`push`**: Push current branch to remote with auto-upstream
+  - Example: `git_feature({operation: 'push', scriptId})` (uses default remote: origin)
+  - Example: `git_feature({operation: 'push', scriptId, remote: 'upstream'})`
+  - Auto-sets upstream tracking (`git push -u`)
+  - Pre-flight checks: Not in detached HEAD, remote exists
+  - Validates remote name for security
+
 - **`finish`**: Squash merge to main/master and optionally delete branch
   - Example: `git_feature({operation: 'finish', scriptId, deleteAfterMerge: true})`
+  - Example: `git_feature({operation: 'finish', scriptId, pushToRemote: true})` (merge + push)
   - Auto-detects default branch (main or master)
   - Creates squash commit: `"Feature: {description}"`
+  - Optional `pushToRemote` flag to push after merge
+  - Handles partial success (merge OK, push failed)
 
 - **`rollback`**: Delete branch without merging
   - Example: `git_feature({operation: 'rollback', scriptId, branch: 'llm-feature-user-auth'})`
@@ -304,6 +495,49 @@ or
 - **`switch`**: Switch between branches
   - Example: `git_feature({operation: 'switch', scriptId, branch: 'llm-feature-user-auth'})`
   - Validates: Branch exists, no uncommitted changes
+
+**Typical Workflow:**
+```typescript
+// 1. Start feature
+git_feature({operation: 'start', scriptId, featureName: 'user-auth'})
+
+// 2. Make changes with auto-commits (via write operations)
+// ... or manually commit
+git_feature({operation: 'commit', scriptId, message: 'feat: Add login form'})
+
+// 3. Push to backup/share
+git_feature({operation: 'push', scriptId})
+
+// 4. Finish and push to main
+git_feature({operation: 'finish', scriptId, pushToRemote: true})
+```
+
+#### Git Workflow Completion (IMPORTANT)
+
+**After completing any GAS feature development, ALWAYS complete the full git workflow:**
+
+1. **During development**: `write` operations auto-commit to feature branch
+2. **When feature is complete**:
+   ```typescript
+   git_feature({ operation: 'finish', scriptId, pushToRemote: true })
+   ```
+3. **This merges feature → main AND pushes to GitHub in one step**
+
+**When to finish** - Complete the workflow when:
+- User says "done", "finished", "complete", "that's all"
+- User requests "commit this", "push this", "save to github"
+- Task is complete and no more changes needed
+- User explicitly asks to finalize work
+
+**Do NOT leave work on feature branches** - always merge to main and push to GitHub before ending the task.
+
+**If git_feature finish fails**, use Bash tool with these commands:
+```bash
+git -C ~/gas-repos/project-{scriptId} checkout main && \
+git -C ~/gas-repos/project-{scriptId} merge --squash {feature-branch} && \
+git -C ~/gas-repos/project-{scriptId} commit -m "feat: {description}" && \
+git -C ~/gas-repos/project-{scriptId} push origin main
+```
 
 **Dynamic Branch Detection:**
 - 4-strategy detection for default branch (main vs master)
@@ -320,6 +554,75 @@ or
 **Polyrepo Support:**
 - Use `projectPath` parameter: `git_feature({..., projectPath: 'backend'})`
 
+#### Poly-Repo Architecture (Assembled Git Repositories)
+
+**Purpose:** Enable a single GAS project to serve as an **assembled poly-repo** - combining multiple independent git repositories (shared libraries like auth, utils, ui) into one deployable unit.
+
+**Architecture:**
+```
+GAS Project (Single scriptId)
+├── .git/config.gs              → Root repo breadcrumb (main app)
+├── common-js/require.gs
+├── src/main.js
+├── libs/auth/.git/config.gs    → Auth library repo breadcrumb
+│   ├── libs/auth/oauth.js
+│   └── libs/auth/session.js
+├── libs/utils/.git/config.gs   → Utils library repo breadcrumb
+│   ├── libs/utils/helpers.js
+│   └── libs/utils/format.js
+└── libs/ui/.git/config.gs      → UI library repo breadcrumb
+    ├── libs/ui/sidebar.html
+    └── libs/ui/components.js
+```
+
+Each `.git/config.gs` breadcrumb maps to an independent local git repository:
+```
+~/gas-repos/project-{scriptId}/
+├── .git/                    → Root repo
+├── libs/auth/.git/          → Auth library (separate repo)
+├── libs/utils/.git/         → Utils library (separate repo)
+└── libs/ui/.git/            → UI library (separate repo)
+```
+
+**Current Capabilities:**
+
+| Capability | Tool/Mechanism | Status |
+|------------|----------------|--------|
+| Multiple git repos in one GAS | `.git/config.gs` breadcrumbs | ✅ Full |
+| Selective sync per repo | `local_sync({projectPath})` | ✅ Full |
+| Write to specific repo | `write({projectPath})` | ✅ Full |
+| Feature branches per repo | `git_feature({projectPath})` | ✅ Full |
+| Auto-discovery of nested repos | `GitProjectManager.loadAllGitProjects()` | ✅ Full |
+| File filtering per repo | `filterFilesByPath()` | ✅ Full |
+
+**Per-Repo Workflow:**
+```typescript
+// Sync just the auth library
+local_sync({scriptId, projectPath: 'libs/auth'})
+
+// Start feature on auth library
+git_feature({operation: 'start', scriptId, featureName: 'oauth2', projectPath: 'libs/auth'})
+
+// Write to auth library (auto-commits to its repo)
+write({scriptId, path: 'oauth.js', content: '...', projectPath: 'libs/auth'})
+
+// Finish feature on auth library
+git_feature({operation: 'finish', scriptId, projectPath: 'libs/auth'})
+```
+
+**Key Infrastructure:**
+- `GitProjectManager.ts` - Discovers all nested repos via `loadAllGitProjects()`
+- `GitPathResolver.ts` - Resolves local git paths from breadcrumbs
+- `filterFilesByPath()` - Filters GAS files to specific project path
+
+**Known Gaps (Future Enhancement):**
+- No atomic multi-repo feature branches (each repo operates independently)
+- No cross-repo sync coordination (no transaction semantics)
+- Missing `projectPath` on some tools (edit, aider, rm, grep, find)
+- No version pinning or dependency awareness between repos
+
+**Full Gap Analysis:** See `~/.claude/plans/quirky-stargazing-plum.md` for complete roadmap
+
 ### Project Management + Errors
 
 **Management:** project_list (view projects) | project_create (infra setup with 3 deployments) → gas-config.json stores → all tools require explicit scriptId
@@ -328,19 +631,20 @@ or
 
 ## Config + Tools
 
-**Tools (41 total):**
+**Tools (49 total):**
 | Category | Count | Tools |
 |----------|-------|-------|
 | **File (Smart)** | 14 | cat, write, ls, rm, mv, cp, file_status, grep, find, ripgrep, sed, edit, aider, cache_clear |
 | **File (Raw)** | 9 | raw_cat, raw_write, raw_cp, raw_grep, raw_find, raw_ripgrep, raw_sed, raw_edit, raw_aider |
 | **Analysis** | 1 | deps (dependency graphs) |
 | **Execution** | 2 | exec, exec_api |
-| **Deployment** | 3 | deploy, project_create, project_init |
-| **Management** | 6 | auth, project_list, reorder, process_list |
+| **Deployment** | 11 | deploy, project_create, project_init, deploy_create, deploy_delete, deploy_get_details, deploy_list, deploy_update, version_create, version_get, version_list |
+| **Management** | 4 | auth, project_list, reorder, process_list |
 | **Logging** | 1 | log (list + get operations) |
 | **Triggers** | 1 | trigger (list + create + delete operations) |
-| **Git** | 3 | local_sync, config, git_feature (start/finish/rollback/list/switch) |
+| **Git** | 3 | local_sync, config, git_feature (start/commit/push/finish/rollback/list/switch) |
 | **Sheets** | 1 | sheet_sql |
+| **Drive** | 2 | create_script, find_drive_script |
 
 **Config:** gas-config.json (OAuth + projects) | oauth-config.json (GCP creds) | ~/.auth/mcp-gas/tokens/ (persistent auth tokens)
 **Design:** smart (unwrap) vs raw (preserve) | mcp__gas__* naming | period prefix (.gitignore.gs) | ~/gas-repos/project-[scriptId]/
@@ -376,6 +680,75 @@ or
 | **Performance** | Local cache + incremental builds + concurrent copy + local-first + rate limiting |
 | **Debug** | `DEBUG=mcp:* \| mcp:auth \| mcp:execution \| mcp:sync npm start` |
 
+### Security Best Practices
+
+**Critical: Command Injection Prevention**
+
+When executing git commands or any shell operations with user input, **ALWAYS use spawn with array arguments, NEVER use exec with template literals**:
+
+```typescript
+// ❌ VULNERABLE - Never do this:
+await execAsync(`git commit -m "${userMessage}"`, { cwd });
+// Attack: userMessage = 'test"; rm -rf / #' → executes arbitrary commands
+
+// ✅ SECURE - Always do this:
+import { spawn } from 'child_process';
+
+function execGitCommand(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const git = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+
+    git.stdout.on('data', (data) => { stdout += data.toString(); });
+    git.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    git.on('close', (code) => {
+      code === 0 ? resolve(stdout) : reject(new Error(stderr || `Exit code ${code}`));
+    });
+  });
+}
+
+// Safe usage:
+await execGitCommand(['commit', '-m', userMessage], gitRoot);
+```
+
+**Why This Matters:**
+- `exec` spawns a shell that interprets special characters (`"`, `;`, `$`, etc.)
+- `spawn` with array args directly executes the command without shell interpretation
+- Special characters in user input become literal strings, not shell commands
+- 2-3x faster (no shell spawn overhead) + more secure
+
+**When to Apply:**
+- Any git command with user input (commit messages, branch names, file paths)
+- Any shell command that includes user-controlled data
+- Even with input sanitization (defense in depth)
+
+**Testing:**
+Always add security tests for command injection:
+```typescript
+it('should prevent command injection in commit message', async () => {
+  const maliciousMessages = [
+    'Test"; rm -rf / #',    // Quote injection
+    'Test`echo pwned`',     // Backtick execution
+    'Test$(echo pwned)',    // Command substitution
+    'Test & echo pwned',    // Command chaining
+    'Test | echo pwned',    // Pipe injection
+  ];
+
+  for (const msg of maliciousMessages) {
+    await git_feature({operation: 'commit', scriptId, message: msg});
+    // Should succeed with exact message, no command execution
+  }
+});
+```
+
+**References:**
+- Pattern implemented in `src/tools/git/GitFeatureTool.ts` (lines 247-296, execGitCommand)
+- Security test: `test/integration/mcp-gas-validation/git-feature-workflow.test.ts:720-765`
+- Similar patterns throughout codebase (lockManager, gitInit, etc.)
+
 ### Key Patterns
 
 **Tool Development:**
@@ -395,6 +768,59 @@ or
 - `cat` unwraps for editing → maintains clean code workflow
 - Infrastructure files: `src/require.js`, `src/__mcp_exec.js`
 
+**Client-Side HTML Pattern:**
+
+For HTML UIs calling GAS server functions, **ALWAYS use the Promise-based `createGasServer()` wrapper** instead of google.script.run:
+
+```javascript
+// ❌ OLD PATTERN - Don't use:
+google.script.run
+  .withSuccessHandler(callback)
+  .withFailureHandler(errorCallback)
+  .exec_api(null, module, function, params);
+
+// ✅ NEW PATTERN - Use this:
+// Available globally as window.server (auto-configured)
+window.server.exec_api(null, module, function, params)
+  .then(callback)
+  .catch(errorCallback);
+
+// Or create custom server instance:
+const server = createGasServer({
+  debug: true,              // Enable debug logging
+  throwOnUnhandled: true,   // Auto-throw on unhandled errors
+  checkNetwork: true,       // Network connectivity checking
+  onError: (err, func, args) => console.error(`[${func}]`, err)
+});
+```
+
+**Key Features:**
+- **Promise API**: Modern async/await support
+- **Cancellable Calls**: `.cancel()`, `.pause()`, `.resume()` for long operations
+- **Polling**: `.poll(callback)` for thinking messages/progress updates
+- **Network Checking**: Auto-detects offline state
+- **Validation**: Checks argument serializability, payload size limits
+- **Enhanced Errors**: Contextual error messages with hints
+- **Memory Leak Detection**: Warns if promises never executed
+
+**Example with exec_api:**
+```javascript
+// With thinking message polling
+const call = window.server.exec_api(null, 'MyModule', 'longTask', params)
+  .poll(
+    messages => messages.forEach(m => console.log('Progress:', m)),
+    { continuous: true, maxDuration: 180000 }
+  )
+  .then(result => console.log('Complete:', result));
+
+// Cancel if needed
+document.getElementById('cancelBtn').onclick = () => call.cancel('User cancelled');
+```
+
+**Infrastructure Files:**
+- `common-js/html/gas_client.html` - Main implementation (39KB)
+- `__mcp_exec/gas_client.html` - Execution infrastructure version (14KB)
+
 **Testing Strategy:**
 - **Unit tests**: Fast, mocked dependencies, test individual functions
 - **Integration tests**: Real GAS API calls, require authentication, slower
@@ -404,12 +830,22 @@ or
 
 ## MCP Integration
 
-**Server:** MCP protocol → AI assistants (Claude) → 40 GAS tools
+**Server:** MCP protocol → AI assistants (Claude) → 49 GAS tools
 
 **Claude Desktop Config** (`~/.claude_desktop_config.json`):
 ```json
 {"mcpServers": {"gas": {"command": "node", "args": ["/path/to/mcp_gas/dist/src/index.js"], "env": {"NODE_ENV": "production"}}}}
 ```
+
+## Proactive Code Review
+
+After writing or modifying GAS files (.gs/.html/.json), Claude automatically invokes the **gas-code-reviewer** agent when detecting high-risk patterns:
+
+- **Auto-invoke** for: `__events__`, `__global__`, doGet/doPost/onOpen/onEdit handlers
+- **Suggest** for: Simple utility modules (user can decline)
+- **Milestone reviews**: User says "done", "review", before git commits
+
+This catches critical CommonJS pattern violations (missing loadNow, wrong __global__ syntax) before they cause runtime failures.
 
 ## Common Issues
 

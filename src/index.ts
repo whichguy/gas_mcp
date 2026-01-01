@@ -3,6 +3,7 @@
 import { MCPGasServer } from './server/mcpServer.js';
 import { SessionAuthManager } from './auth/sessionManager.js';
 import { McpGasConfigManager } from './config/mcpGasConfig.js';
+import { LockManager } from './utils/lockManager.js';
 import path from 'path';
 import os from 'os';
 
@@ -53,6 +54,10 @@ async function main() {
   console.error('✅ Token persistence enabled - credentials will survive server restarts');
   console.error(`📁 Token cache location: ${os.homedir()}/.auth/mcp-gas/tokens/`);
 
+  // Cleanup stale locks from previous sessions
+  const lockManager = LockManager.getInstance();
+  await lockManager.cleanupStaleLocks();
+
   const server = new MCPGasServer();
 
   // MEMORY LEAK FIX: Store handler references for cleanup in long-running sessions
@@ -61,6 +66,9 @@ async function main() {
   // Handle graceful shutdown
   const shutdown = async (signal: string) => {
     console.error(`\nReceived ${signal}, shutting down gracefully...`);
+
+    // Release all held locks before shutdown
+    await lockManager.releaseAllLocks();
 
     // MEMORY LEAK FIX: Remove all registered event listeners
     for (const [eventName, handler] of signalHandlers) {
@@ -88,14 +96,14 @@ async function main() {
   registerSignalHandler('SIGTERM', () => shutdown('SIGTERM'));
 
   // Handle uncaught exceptions and unhandled rejections with tracking
-  registerSignalHandler('uncaughtException', (error: Error) => {
+  registerSignalHandler('uncaughtException', async (error: Error) => {
     console.error('Uncaught Exception:', error);
-    shutdown('uncaughtException');
+    await shutdown('uncaughtException');
   });
 
-  registerSignalHandler('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  registerSignalHandler('unhandledRejection', async (reason: any, promise: Promise<any>) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    shutdown('unhandledRejection');
+    await shutdown('unhandledRejection');
   });
 
   try {

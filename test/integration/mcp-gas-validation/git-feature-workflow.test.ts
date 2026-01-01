@@ -1,18 +1,23 @@
 /**
  * Git Feature Workflow Integration Tests
  *
- * Tests the git_feature tool with all 5 operations:
+ * Tests the git_feature tool with all 7 operations:
  * - start: Create new feature branch (llm-feature-{name})
- * - finish: Squash merge to main and optionally delete branch
+ * - finish: Squash merge to main and optionally delete branch (with optional push)
  * - rollback: Delete branch without merging
  * - list: Show all feature branches
  * - switch: Switch between branches
+ * - commit: Commit all changes with custom message
+ * - push: Push current branch to remote with auto-upstream
  *
  * Features tested:
  * - Dynamic main/master branch detection
  * - Branch name sanitization and validation
  * - Uncommitted changes detection
  * - Squash merge workflow
+ * - Commit workflow with pre-flight checks
+ * - Push workflow with auto-upstream tracking
+ * - Partial success handling (merge OK, push failed)
  * - Error handling and validation
  * - Polyrepo support via projectPath parameter
  */
@@ -581,6 +586,381 @@ describe('Git Feature Workflow Integration Tests', () => {
       } finally {
         fs.rmSync(masterFolder, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('Operation: commit', () => {
+    before(async function() {
+      // Create a feature branch for commit tests
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+
+      await client.callAndParse('git_feature', {
+        operation: 'start',
+        scriptId: testProjectId,
+        featureName: 'commit-test'
+      });
+
+      console.log('✅ Created feature branch for commit tests');
+    });
+
+    it('should commit all changes with custom message', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Create some changes
+      fs.writeFileSync(path.join(tempSyncFolder!, 'commit-test1.txt'), 'Test file 1');
+      fs.writeFileSync(path.join(tempSyncFolder!, 'commit-test2.txt'), 'Test file 2');
+
+      const result = await client.callAndParse('git_feature', {
+        operation: 'commit',
+        scriptId: testProjectId,
+        message: 'feat: Add commit test files'
+      });
+
+      expect(result).to.have.property('status', 'success');
+      expect(result).to.have.property('operation', 'commit');
+      expect(result).to.have.property('branch', 'llm-feature-commit-test');
+      expect(result).to.have.property('commitSha').that.match(/^[0-9a-f]{40}$/);
+      expect(result).to.have.property('shortSha').that.match(/^[0-9a-f]{7}$/);
+      expect(result).to.have.property('message', 'feat: Add commit test files');
+      expect(result).to.have.property('filesChanged');
+      expect(result.filesChanged).to.be.at.least(2);
+      expect(result).to.have.property('timestamp');
+      expect(result).to.have.property('isFeatureBranch', true);
+
+      console.log(`✅ Committed ${result.filesChanged} file(s): ${result.shortSha}`);
+    });
+
+    it('should fail when no changes to commit', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+
+      // Previous test committed all changes, so working tree is clean
+      try {
+        await client.callAndParse('git_feature', {
+          operation: 'commit',
+          scriptId: testProjectId,
+          message: 'This should fail'
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).to.include('No changes to commit');
+        console.log('✅ Correctly detected no changes to commit');
+      }
+    });
+
+    it('should fail in detached HEAD state', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Get current commit SHA
+      const commitSha = execSync('git rev-parse HEAD', {
+        cwd: tempSyncFolder,
+        encoding: 'utf8'
+      }).trim();
+
+      // Detach HEAD
+      execSync(`git checkout ${commitSha}`, { cwd: tempSyncFolder, stdio: 'pipe' });
+
+      // Create a change
+      fs.writeFileSync(path.join(tempSyncFolder!, 'detached.txt'), 'Detached test');
+
+      try {
+        await client.callAndParse('git_feature', {
+          operation: 'commit',
+          scriptId: testProjectId,
+          message: 'Should fail in detached HEAD'
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).to.include('detached HEAD');
+        expect(error.message).to.include('git checkout -b');
+        console.log('✅ Correctly rejected commit in detached HEAD');
+      } finally {
+        // Return to branch
+        execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder, stdio: 'pipe' });
+        // Clean up test file
+        try {
+          fs.unlinkSync(path.join(tempSyncFolder!, 'detached.txt'));
+        } catch {
+          // Ignore if file doesn't exist
+        }
+      }
+    });
+
+    it('should validate commit message is not empty', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Create a change
+      fs.writeFileSync(path.join(tempSyncFolder!, 'empty-msg.txt'), 'Test');
+
+      try {
+        await client.callAndParse('git_feature', {
+          operation: 'commit',
+          scriptId: testProjectId,
+          message: ''
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).to.match(/message.*required|empty/i);
+        console.log('✅ Correctly validated empty commit message');
+      } finally {
+        // Clean up
+        fs.unlinkSync(path.join(tempSyncFolder!, 'empty-msg.txt'));
+      }
+    });
+
+    it('should prevent command injection in commit message', async function() {
+      this.timeout(TEST_TIMEOUTS.EXTENDED);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Create a test file
+      fs.writeFileSync(path.join(tempSyncFolder!, 'injection-test.txt'), 'Test');
+
+      // Malicious commit messages that attempt command injection
+      const maliciousMessages = [
+        'Test"; rm -rf / #',  // Shell command injection with quotes
+        'Test`echo pwned`',   // Backtick execution
+        'Test$(echo pwned)',  // Command substitution
+        'Test & echo pwned',  // Command chaining
+        'Test | echo pwned',  // Pipe injection
+      ];
+
+      for (const maliciousMsg of maliciousMessages) {
+        try {
+          const result = await client.callAndParse('git_feature', {
+            operation: 'commit',
+            scriptId: testProjectId,
+            message: maliciousMsg
+          });
+
+          // Should succeed with exact message (no command execution)
+          expect(result).to.have.property('status', 'success');
+          expect(result).to.have.property('message', maliciousMsg);
+
+          // Verify the test file still exists (command didn't execute)
+          expect(fs.existsSync(path.join(tempSyncFolder!, 'injection-test.txt'))).to.be.true;
+
+          console.log(`✅ Safely handled malicious message: ${maliciousMsg.substring(0, 25)}...`);
+
+          // Create another change for next iteration
+          fs.writeFileSync(path.join(tempSyncFolder!, `test-${Date.now()}.txt`), 'Change');
+        } catch (error: any) {
+          // Git might reject some messages (e.g., with newlines), which is fine
+          // But the command injection should NOT have executed
+          expect(fs.existsSync(path.join(tempSyncFolder!, 'injection-test.txt'))).to.be.true;
+          console.log(`✅ Git rejected malicious message (safe): ${maliciousMsg.substring(0, 25)}...`);
+        }
+      }
+
+      console.log('✅ Command injection prevention verified for all malicious patterns');
+    });
+  });
+
+  describe('Operation: push', () => {
+    before(async function() {
+      // Ensure we're on commit-test branch with committed changes
+      expect(tempSyncFolder).to.not.be.null;
+      execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder, stdio: 'pipe' });
+    });
+
+    it('should push current branch to origin with auto-upstream', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Note: This test uses the file:// remote configured in the before() hook
+      const result = await client.callAndParse('git_feature', {
+        operation: 'push',
+        scriptId: testProjectId
+      });
+
+      expect(result).to.have.property('status', 'success');
+      expect(result).to.have.property('operation', 'push');
+      expect(result).to.have.property('branch', 'llm-feature-commit-test');
+      expect(result).to.have.property('remote', 'origin');
+      expect(result).to.have.property('upstreamSet', true);
+      expect(result).to.have.property('isFeatureBranch', true);
+
+      console.log(`✅ Pushed ${result.branch} to ${result.remote}`);
+    });
+
+    it('should fail with invalid remote name', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+
+      try {
+        await client.callAndParse('git_feature', {
+          operation: 'push',
+          scriptId: testProjectId,
+          remote: 'non-existent-remote'
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).to.include('not found');
+        expect(error.message).to.include('git remote add');
+        console.log('✅ Correctly rejected invalid remote');
+      }
+    });
+
+    it('should fail in detached HEAD state', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Get current commit SHA
+      const commitSha = execSync('git rev-parse HEAD', {
+        cwd: tempSyncFolder,
+        encoding: 'utf8'
+      }).trim();
+
+      // Detach HEAD
+      execSync(`git checkout ${commitSha}`, { cwd: tempSyncFolder, stdio: 'pipe' });
+
+      try {
+        await client.callAndParse('git_feature', {
+          operation: 'push',
+          scriptId: testProjectId
+        });
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).to.include('detached HEAD');
+        console.log('✅ Correctly rejected push in detached HEAD');
+      } finally {
+        // Return to branch
+        execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder, stdio: 'pipe' });
+      }
+    });
+
+    it('should push explicitly specified branch', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Switch to main branch
+      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+
+      // But push the feature branch explicitly
+      const result = await client.callAndParse('git_feature', {
+        operation: 'push',
+        scriptId: testProjectId,
+        branch: 'llm-feature-commit-test'
+      });
+
+      expect(result).to.have.property('branch', 'llm-feature-commit-test');
+      expect(result).to.have.property('status', 'success');
+      console.log('✅ Pushed explicitly specified branch');
+    });
+  });
+
+  describe('Operation: finish with push', () => {
+    before(async function() {
+      // Create a new feature branch for finish+push test
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+
+      await client.callAndParse('git_feature', {
+        operation: 'start',
+        scriptId: testProjectId,
+        featureName: 'finish-push-test'
+      });
+
+      // Make a commit
+      fs.writeFileSync(path.join(tempSyncFolder!, 'finish-push.txt'), 'Test');
+      execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git commit -m "Add finish-push test"', { cwd: tempSyncFolder, stdio: 'pipe' });
+
+      console.log('✅ Created feature branch for finish+push test');
+    });
+
+    it('should squash merge and push to remote', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      const result = await client.callAndParse('git_feature', {
+        operation: 'finish',
+        scriptId: testProjectId,
+        pushToRemote: true
+      });
+
+      expect(result).to.have.property('status', 'success');
+      expect(result).to.have.property('operation', 'finish');
+      expect(result).to.have.property('branch', 'llm-feature-finish-push-test');
+      expect(result).to.have.property('squashCommit');
+      expect(result).to.have.property('currentBranch', 'main');
+      expect(result).to.have.property('pushed', true);
+      expect(result).to.not.have.property('pushError');
+
+      console.log('✅ Successfully merged and pushed to remote');
+    });
+
+    it('should handle partial success when push fails', async function() {
+      this.timeout(TEST_TIMEOUTS.STANDARD);
+      expect(testProjectId).to.not.be.null;
+      expect(tempSyncFolder).to.not.be.null;
+
+      // Create another feature branch
+      await client.callAndParse('git_feature', {
+        operation: 'start',
+        scriptId: testProjectId,
+        featureName: 'push-fail-test'
+      });
+
+      // Make a commit
+      fs.writeFileSync(path.join(tempSyncFolder!, 'push-fail.txt'), 'Test');
+      execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git commit -m "Add push-fail test"', { cwd: tempSyncFolder, stdio: 'pipe' });
+
+      // Update git config to use invalid remote URL (this will fail on push)
+      const gitConfig = `[remote "origin"]
+\turl = file:///non/existent/path
+[branch "main"]
+[sync]
+\tlocalPath = ${tempSyncFolder}`;
+
+      await client.callTool('write', {
+        scriptId: testProjectId,
+        path: '.git/config',
+        content: gitConfig
+      });
+
+      const result = await client.callAndParse('git_feature', {
+        operation: 'finish',
+        scriptId: testProjectId,
+        pushToRemote: true
+      });
+
+      // Merge should succeed, push should fail (partial success)
+      expect(result).to.have.property('status', 'success');
+      expect(result).to.have.property('squashCommit'); // Merge succeeded
+      expect(result).to.have.property('pushed', false); // Push failed
+      expect(result).to.have.property('pushError'); // Error details present
+
+      console.log('✅ Handled partial success (merge OK, push failed)');
+
+      // Restore valid git config
+      const validGitConfig = `[remote "origin"]
+\turl = file://${tempSyncFolder}
+[branch "main"]
+[sync]
+\tlocalPath = ${tempSyncFolder}`;
+
+      await client.callTool('write', {
+        scriptId: testProjectId,
+        path: '.git/config',
+        content: validGitConfig
+      });
     });
   });
 

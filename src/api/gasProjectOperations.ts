@@ -101,8 +101,14 @@ export class GASProjectOperations {
         functionSet: file.functionSet
       }));
 
-      // Sort files by execution order
-      return sortFilesForExecution(files);
+      // Sort files by execution order (currently preserves API order)
+      const sortedFiles = sortFilesForExecution(files);
+
+      // Capture position AFTER sorting to ensure position reflects actual execution order
+      return sortedFiles.map((file, index) => ({
+        ...file,
+        position: index
+      }));
     }, accessToken);
   }
 

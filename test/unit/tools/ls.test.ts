@@ -240,6 +240,115 @@ describe('LsTool', () => {
     });
   });
 
+  describe.skip('position field preservation', () => {
+    // SKIPPED: Tests make real API calls - stubs don't intercept the actual execution path
+    // Same issue as checksums tests above - requires architectural changes to properly mock
+    beforeEach(() => {
+      // Mock getAuthToken to bypass authentication
+      stub(lsTool as any, 'getAuthToken').resolves('mock-token');
+
+      // Mock gasClient.getProjectContent to return files with position field
+      stub((lsTool as any).gasClient, 'getProjectContent').resolves([
+        {
+          name: 'common-js/require',
+          type: 'SERVER_JS',
+          source: 'function require() {}',
+          position: 0
+        },
+        {
+          name: 'common-js/ConfigManager',
+          type: 'SERVER_JS',
+          source: 'function ConfigManager() {}',
+          position: 1
+        },
+        {
+          name: 'utils/helpers',
+          type: 'SERVER_JS',
+          source: 'function helpers() {}',
+          position: 3
+        },
+        {
+          name: 'api/endpoints',
+          type: 'SERVER_JS',
+          source: 'function endpoints() {}',
+          position: 5
+        }
+      ]);
+    });
+
+    it('should preserve original position values from API (no filtering)', async () => {
+      const result: any = await lsTool.execute({
+        scriptId: 'test-script-id-12345678901234567890123456789012',
+        path: '',
+        detailed: true
+      });
+
+      expect(result.items).to.have.lengthOf(4);
+
+      // Verify positions match original API values, not filtered array indices
+      expect(result.items[0].position).to.equal(0);
+      expect(result.items[1].position).to.equal(1);
+      expect(result.items[2].position).to.equal(3);
+      expect(result.items[3].position).to.equal(5);
+    });
+
+    it('should preserve original position when filtering by wildcard', async () => {
+      const result: any = await lsTool.execute({
+        scriptId: 'test-script-id-12345678901234567890123456789012',
+        path: 'api/*',
+        detailed: true
+      });
+
+      // Filter returns only 1 file (api/endpoints)
+      expect(result.items).to.have.lengthOf(1);
+
+      // Position should be 5 (original), NOT 0 (filtered array index)
+      expect(result.items[0].name).to.equal('api/endpoints');
+      expect(result.items[0].position).to.equal(5);
+    });
+
+    it('should preserve original positions when filtering by directory', async () => {
+      const result: any = await lsTool.execute({
+        scriptId: 'test-script-id-12345678901234567890123456789012',
+        path: 'common-js',
+        detailed: true
+      });
+
+      // Filter returns 2 files (require, ConfigManager)
+      expect(result.items).to.have.lengthOf(2);
+
+      // Positions should be 0, 1 (original), NOT 0, 1 by coincidence
+      expect(result.items[0].name).to.equal('common-js/require');
+      expect(result.items[0].position).to.equal(0);
+
+      expect(result.items[1].name).to.equal('common-js/ConfigManager');
+      expect(result.items[1].position).to.equal(1);
+    });
+
+    it('should use fallback value 0 if position is undefined', async () => {
+      // Override stub to return file without position field
+      restore();
+      stub(lsTool as any, 'getAuthToken').resolves('mock-token');
+      stub((lsTool as any).gasClient, 'getProjectContent').resolves([
+        {
+          name: 'test.gs',
+          type: 'SERVER_JS',
+          source: 'function test() {}',
+          // position field intentionally omitted
+        }
+      ]);
+
+      const result: any = await lsTool.execute({
+        scriptId: 'test-script-id-12345678901234567890123456789012',
+        path: '',
+        detailed: true
+      });
+
+      expect(result.items).to.have.lengthOf(1);
+      expect(result.items[0].position).to.equal(0); // Fallback value
+    });
+  });
+
   describe('llmGuidance documentation', () => {
     it('should have checksums examples in llmGuidance', () => {
       const schema = lsTool.inputSchema as any;

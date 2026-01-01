@@ -19,7 +19,7 @@ import { GASClient } from '../../../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../../../errors/mcpErrors.js';
 import { resolveHybridScriptId } from '../../../api/pathParser.js';
 import { translatePathForOperation } from '../../../utils/virtualFileTranslation.js';
-import { shouldWrapContent, unwrapModuleContent, wrapModuleContent, getModuleName } from '../../../utils/moduleWrapper.js';
+import { shouldWrapContent, unwrapModuleContent, wrapModuleContent, getModuleName, type ModuleOptions } from '../../../utils/moduleWrapper.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
 interface CopyStrategyParams {
@@ -51,6 +51,7 @@ export class CopyOperationStrategy implements FileOperationStrategy<CopyResult> 
   private toFilename: string | null = null;
   private fileType: 'SERVER_JS' | 'HTML' | 'JSON' | null = null;
   private isCrossProject: boolean = false;
+  private existingOptions: ModuleOptions | null = null;
 
   constructor(params: CopyStrategyParams) {
     this.params = params;
@@ -99,11 +100,13 @@ export class CopyOperationStrategy implements FileOperationStrategy<CopyResult> 
     let processedContent = sourceFile.source || '';
 
     if (shouldWrapContent(this.fileType, this.fromFilename)) {
-      // Unwrap CommonJS from source (like cat does)
-      const { unwrappedContent } = unwrapModuleContent(processedContent);
+      // Unwrap CommonJS from source (like cat does) and preserve options
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(processedContent);
       if (unwrappedContent !== processedContent) {
         processedContent = unwrappedContent;
       }
+      // Store existing options for preservation during re-wrap
+      this.existingOptions = existingOptions;
     }
 
     this.processedContent = processedContent;
@@ -131,11 +134,11 @@ export class CopyOperationStrategy implements FileOperationStrategy<CopyResult> 
       throw new Error(`No validated content found for ${this.toFilename}`);
     }
 
-    // Wrap CommonJS if needed before writing to remote
+    // Wrap CommonJS if needed before writing to remote, preserving existing options
     let finalContent = content;
     if (shouldWrapContent(this.fileType, this.toFilename)) {
       const moduleName = getModuleName(this.toFilename);
-      finalContent = wrapModuleContent(content, moduleName, undefined);
+      finalContent = wrapModuleContent(content, moduleName, this.existingOptions);
     }
 
     // Create copy in destination with validated content

@@ -1304,7 +1304,7 @@ export class ProjectInitTool extends BaseTool {
       whenToUse: 'Retrofit existing projects | exec fails with __defineModule__ error | missing infrastructure',
       verification: 'Git SHA-1 checksums | force=false: warn only | force=true: auto-repair mismatches',
       workflow: 'project_init({scriptId}) → verify infrastructure → exec test',
-      fileOrdering: 'Automatically enforces: require.gs at position 0 (MUST execute first), __mcp_exec.gs at position 1 (MUST execute second). Reorder tool prevents manual changes that break this ordering.'
+      fileOrdering: 'Automatically enforces: require at position 0 (module system), ConfigManager at position 1 (configuration), __mcp_exec at position 2 (execution infrastructure). Reorder tool prevents manual changes that break this ordering.'
     }
   };
 
@@ -1649,7 +1649,7 @@ export class ProjectInitTool extends BaseTool {
         path: `${scriptId}/common-js/__mcp_exec.gs`,
         content: executionTemplate,
         fileType: 'SERVER_JS' as const,
-        position: 1, // Execute after CommonJS
+        position: 2, // Execute after require (0) and ConfigManager (1)
         skipSyncCheck: true,
         accessToken
       };
@@ -1761,6 +1761,7 @@ export class ProjectInitTool extends BaseTool {
         path: `${scriptId}/common-js/ConfigManager`,
         content,
         fileType: 'SERVER_JS' as const,
+        position: 1, // Execute after require (position 0)
         skipSyncCheck: true,
         accessToken
       };
@@ -1999,26 +2000,38 @@ export class ProjectInitTool extends BaseTool {
       // Get current files
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
 
-      // Find infrastructure files
-      const requireIndex = files.findIndex((f: any) => f.name === 'common-js/require.gs');
-      const execIndex = files.findIndex((f: any) => f.name === 'common-js/__mcp_exec.gs');
+      // Find infrastructure files (no extensions - GAS API stores without .gs)
+      const requireIndex = files.findIndex((f: any) => f.name === 'common-js/require');
+      const configManagerIndex = files.findIndex((f: any) => f.name === 'common-js/ConfigManager');
+      const execIndex = files.findIndex((f: any) => f.name === 'common-js/__mcp_exec');
 
-      // Check if reordering is needed
-      if ((requireIndex !== -1 && requireIndex !== 0) || (execIndex !== -1 && execIndex !== 1)) {
-        const reorderedFiles = [...files];
+      // Check if reordering is needed (critical files: require(0), ConfigManager(1), __mcp_exec(2))
+      if ((requireIndex !== -1 && requireIndex !== 0) ||
+          (configManagerIndex !== -1 && configManagerIndex !== 1) ||
+          (execIndex !== -1 && execIndex !== 2)) {
 
-        // Move require.gs to position 0
-        if (requireIndex !== -1 && requireIndex !== 0) {
-          const [requireFile] = reorderedFiles.splice(requireIndex, 1);
-          reorderedFiles.unshift(requireFile);
-        }
+        // Enforce critical file ordering using extract-and-insert pattern
+        // This avoids position shifting issues when moving multiple files
+        const criticalFileNames = [
+          'common-js/require',        // Position 0: Module system
+          'common-js/ConfigManager',  // Position 1: Configuration
+          'common-js/__mcp_exec'      // Position 2: Execution infrastructure
+        ];
 
-        // Move __mcp_exec.gs to position 1
-        const updatedExecIndex = reorderedFiles.findIndex((f: any) => f.name === 'common-js/__mcp_exec.gs');
-        if (updatedExecIndex !== -1 && updatedExecIndex !== 1) {
-          const [execFile] = reorderedFiles.splice(updatedExecIndex, 1);
-          reorderedFiles.splice(1, 0, execFile);
-        }
+        // Extract critical files in order
+        const criticalFiles: any[] = [];
+        criticalFileNames.forEach(name => {
+          const file = files.find((f: any) => f.name === name);
+          if (file) criticalFiles.push(file);
+        });
+
+        // Remove critical files from array
+        const nonCriticalFiles = files.filter(
+          (f: any) => !criticalFileNames.includes(f.name)
+        );
+
+        // Rebuild: critical files first, then others
+        const reorderedFiles = [...criticalFiles, ...nonCriticalFiles];
 
         // Update project with new order
         const updatedFiles = await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
@@ -2050,7 +2063,7 @@ export class ProjectInitTool extends BaseTool {
           // Don't fail the operation if local sync fails - remote update succeeded
         }
 
-        console.error(`✅ [GAS_PROJECT_INIT] File order enforced: require.gs at position 0, __mcp_exec.gs at position 1`);
+        console.error(`✅ [GAS_PROJECT_INIT] File order enforced: require(0), ConfigManager(1), __mcp_exec(2)`);
       } else {
         console.error(`✅ [GAS_PROJECT_INIT] File order already correct`);
       }

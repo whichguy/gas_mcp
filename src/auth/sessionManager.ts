@@ -263,10 +263,10 @@ export class SessionAuthManager {
    */
   private async findExistingValidSession(): Promise<string | null> {
     try {
-      console.error(`Searching filesystem token cache...`);
+      console.error(`[Session Discovery] Searching filesystem token cache at ${TOKEN_CACHE_DIR}`);
 
       const emails = await TokenCacheHelpers.listCachedEmails();
-      console.error(`Found ${emails.length} cached token files`);
+      console.error(`[Session Discovery] Found ${emails.length} cached token files: ${emails.join(', ') || 'none'}`);
 
       for (const email of emails) {
         const session = await TokenCacheHelpers.readTokenCache(email);
@@ -282,7 +282,9 @@ export class SessionAuthManager {
 
         if (isValid) {
           // Token is still valid
-          console.error(`Found valid session for ${email}`);
+          console.error(`[Session Discovery] ✓ Found valid session for ${email}`);
+          console.error(`[Session Discovery]   SessionId: ${session.sessionId}`);
+          console.error(`[Session Discovery]   Expires: ${new Date(session.tokens.expires_at).toISOString()}`);
 
           // Update lastUsed timestamp
           session.lastUsed = currentTime;
@@ -300,10 +302,11 @@ export class SessionAuthManager {
             session.lastUsed = currentTime;
             await TokenCacheHelpers.writeTokenCache(email, session);
 
-            console.error(`Refreshed and using session for ${email}`);
+            console.error(`[Session Discovery] ✓ Refreshed and using session for ${email}`);
+            console.error(`[Session Discovery]   SessionId: ${session.sessionId}`);
             return session.sessionId;
           } else {
-            console.error(`Refresh failed for ${email}`);
+            console.error(`[Session Discovery] ✗ Refresh failed for ${email}`);
           }
         } else {
           console.error(`Session expired for ${email} (no refresh token)`);

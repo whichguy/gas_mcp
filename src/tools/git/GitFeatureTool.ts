@@ -16,7 +16,7 @@ import { LocalFileManager } from '../../utils/localFileManager.js';
 import { getCurrentBranch, isFeatureBranch, hasUncommittedChanges, getAllBranches } from '../../utils/gitAutoCommit.js';
 import { log } from '../../utils/logger.js';
 import { ensureGitInitialized } from '../../utils/gitInit.js';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { join } from 'path';
 
@@ -27,16 +27,16 @@ const execAsync = promisify(exec);
  */
 export class GitFeatureTool extends BaseFileSystemTool {
   public name = 'git_feature';
-  public description = 'Manage feature branch workflow for git-enabled projects. Operations: start (create branch), finish (squash merge), rollback (delete branch), list (show branches), switch (change branch).';
+  public description = 'Manage feature branch workflow for git-enabled projects. Operations: start (create branch), finish (squash merge), rollback (delete branch), list (show branches), switch (change branch), commit (commit changes), push (push to remote).';
 
   public inputSchema = {
     type: 'object',
     properties: {
       operation: {
         type: 'string',
-        enum: ['start', 'finish', 'rollback', 'list', 'switch'],
+        enum: ['start', 'finish', 'rollback', 'list', 'switch', 'commit', 'push'],
         description: 'Feature branch operation to perform',
-        examples: ['start', 'finish', 'rollback', 'list', 'switch']
+        examples: ['start', 'finish', 'rollback', 'list', 'switch', 'commit', 'push']
       },
       scriptId: {
         ...SCRIPT_ID_SCHEMA
@@ -62,6 +62,22 @@ export class GitFeatureTool extends BaseFileSystemTool {
         type: 'boolean',
         default: true,
         description: 'Delete branch after merge (finish operation only). Default: true'
+      },
+      message: {
+        type: 'string',
+        description: 'Commit message (required for commit operation)',
+        examples: ['feat: Add user authentication', 'fix: Resolve validation bug', 'refactor: Improve error handling']
+      },
+      remote: {
+        type: 'string',
+        default: 'origin',
+        description: 'Remote name for push operation. Default: origin',
+        examples: ['origin', 'upstream', 'github']
+      },
+      pushToRemote: {
+        type: 'boolean',
+        default: false,
+        description: 'Push to remote after merge (finish operation only). Default: false'
       }
     },
     required: ['operation', 'scriptId'],
@@ -73,16 +89,20 @@ export class GitFeatureTool extends BaseFileSystemTool {
         finish: 'Complete feature and merge to main. Use when: feature complete, want squash commit, ready to clean up branch.',
         rollback: 'Abandon feature without merging. Use when: feature cancelled, wrong approach, want to start over.',
         list: 'View all active feature branches. Use when: checking current branches, deciding which to work on, reviewing open work.',
-        switch: 'Change to different branch. Use when: switching between features, returning to previous work, reviewing other branches.'
+        switch: 'Change to different branch. Use when: switching between features, returning to previous work, reviewing other branches.',
+        commit: 'Commit all changes with custom message. Use when: need manual commit after multiple edits, want specific commit message.',
+        push: 'Push current branch to remote. Use when: sharing work, backing up to GitHub, preparing for PR.'
       },
       examples: [
         'git_feature({operation: "start", scriptId, featureName: "user-auth"}) - Create llm-feature-user-auth',
-        'git_feature({operation: "finish", scriptId}) - Squash merge current feature to main',
+        'git_feature({operation: "commit", scriptId, message: "feat: Add authentication"}) - Commit all changes',
+        'git_feature({operation: "push", scriptId}) - Push current branch to origin',
+        'git_feature({operation: "finish", scriptId, pushToRemote: true}) - Merge to main and push',
         'git_feature({operation: "rollback", scriptId, branch: "llm-feature-user-auth"}) - Delete branch without merging',
         'git_feature({operation: "list", scriptId}) - Show all feature branches',
         'git_feature({operation: "switch", scriptId, branch: "llm-feature-api-refactor"}) - Switch to feature branch'
       ],
-      workflow: 'Typical: 1) git_feature start → 2) write files (auto-commits to feature branch) → 3) git_feature finish (squash merge)',
+      workflow: 'Typical: 1) git_feature start → 2) write files (auto-commits) → 3) git_feature commit (optional) → 4) git_feature push → 5) git_feature finish (squash merge + optional push)',
       vsAutoCommit: 'Auto-commit (write): creates llm-feature-auto-{timestamp} automatically | git_feature: explicit branch names for meaningful features',
       polyrepo: 'Use projectPath for nested git repos: git_feature({operation: "start", scriptId, featureName: "auth", projectPath: "backend"})'
     }
@@ -114,15 +134,19 @@ export class GitFeatureTool extends BaseFileSystemTool {
       case 'start':
         return this.executeStart(gitRoot, params.featureName);
       case 'finish':
-        return this.executeFinish(gitRoot, params.branch, params.deleteAfterMerge ?? true);
+        return this.executeFinish(gitRoot, params.branch, params.deleteAfterMerge ?? true, params.pushToRemote ?? false, params.remote);
       case 'rollback':
         return this.executeRollback(gitRoot, params.branch);
       case 'list':
         return this.executeList(gitRoot);
       case 'switch':
         return this.executeSwitch(gitRoot, params.branch);
+      case 'commit':
+        return this.executeCommit(gitRoot, params.message);
+      case 'push':
+        return this.executePush(gitRoot, params.branch, params.remote);
       default:
-        throw new ValidationError('operation', operation, 'valid operation (start/finish/rollback/list/switch)');
+        throw new ValidationError('operation', operation, 'valid operation (start/finish/rollback/list/switch/commit/push)');
     }
   }
 
@@ -209,10 +233,73 @@ export class GitFeatureTool extends BaseFileSystemTool {
   }
 
   /**
+   * Check if git repository is in detached HEAD state
+   */
+  private async isDetachedHead(gitRoot: string): Promise<boolean> {
+    try {
+      const result = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: gitRoot });
+      return result.stdout.trim() === 'HEAD';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Execute git command with array arguments (prevents command injection)
+   *
+   * Uses spawn instead of exec to avoid shell interpretation of arguments.
+   * This is the ONLY secure way to pass user-controlled data to git commands.
+   *
+   * @param args - Git command arguments as array
+   * @param cwd - Working directory for git command
+   * @returns Promise resolving to stdout
+   *
+   * @example
+   * // Secure: Array arguments prevent injection
+   * await this.execGitCommand(['commit', '-m', userMessage], gitRoot);
+   *
+   * @example
+   * // INSECURE: Don't do this!
+   * await execAsync(`git commit -m "${userMessage}"`, { cwd });
+   */
+  private execGitCommand(args: string[], cwd: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const git = spawn('git', args, {
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      git.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      git.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      git.on('close', (code: number | null) => {
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          const errorMsg = stderr || `Git command failed with code ${code}`;
+          reject(new Error(errorMsg));
+        }
+      });
+
+      git.on('error', (error: Error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
    * Validate operation-specific parameters
    */
   private validateOperationParams(params: any): void {
-    const { operation, featureName, branch } = params;
+    const { operation, featureName, branch, message } = params;
 
     if (operation === 'start') {
       if (!featureName) {
@@ -229,6 +316,16 @@ export class GitFeatureTool extends BaseFileSystemTool {
           'featureName',
           featureName,
           'alphanumeric characters and hyphens only'
+        );
+      }
+    }
+
+    if (operation === 'commit') {
+      if (!message || !message.trim()) {
+        throw new ValidationError(
+          'message',
+          message || '',
+          'commit message is required for commit operation and cannot be empty'
         );
       }
     }
@@ -278,7 +375,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
 
     log.info(`[GIT_FEATURE] Creating feature branch: ${safeBranchName}`);
 
-    await execAsync(`git checkout -b ${safeBranchName}`, { cwd: gitRoot });
+    await this.execGitCommand(['checkout', '-b', safeBranchName], gitRoot);
 
     log.info(`[GIT_FEATURE] ✓ Feature branch created: ${branchName}`);
 
@@ -287,7 +384,11 @@ export class GitFeatureTool extends BaseFileSystemTool {
       operation: 'start',
       branch: branchName,
       created: true,
-      previousBranch: currentBranch || 'main'
+      previousBranch: currentBranch || 'main',
+      nextAction: {
+        hint: `Feature branch created. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+        required: false
+      }
     };
   }
 
@@ -297,7 +398,9 @@ export class GitFeatureTool extends BaseFileSystemTool {
   private async executeFinish(
     gitRoot: string,
     branch?: string,
-    deleteAfterMerge: boolean = true
+    deleteAfterMerge: boolean = true,
+    pushToRemote: boolean = false,
+    remote: string = 'origin'
   ): Promise<any> {
     // Get current branch if not specified
     const targetBranch = branch || await getCurrentBranch(gitRoot);
@@ -331,28 +434,53 @@ export class GitFeatureTool extends BaseFileSystemTool {
     const safeDefaultBranch = this.sanitizeBranchName(defaultBranch);
     log.info(`[GIT_FEATURE] Switching to default branch: ${safeDefaultBranch}`);
 
-    await execAsync(`git checkout ${safeDefaultBranch}`, { cwd: gitRoot });
-    await execAsync(`git merge --squash ${safeTargetBranch}`, { cwd: gitRoot });
+    await this.execGitCommand(['checkout', safeDefaultBranch], gitRoot);
+    await this.execGitCommand(['merge', '--squash', safeTargetBranch], gitRoot);
 
     // Create squash commit with feature name
     const featureDesc = targetBranch.replace('llm-feature-', '').replace('llm-feature-auto-', 'auto-');
     const commitMessage = `Feature: ${featureDesc}`;
 
-    await execAsync(`git commit -m "${commitMessage}"`, { cwd: gitRoot });
+    // Use secure command execution (prevents injection via feature description)
+    await this.execGitCommand(['commit', '-m', commitMessage], gitRoot);
 
     // Get squash commit SHA
-    const commitResult = await execAsync('git rev-parse HEAD', { cwd: gitRoot });
-    const commitSha = commitResult.stdout.trim();
+    const commitShaOutput = await this.execGitCommand(['rev-parse', 'HEAD'], gitRoot);
+    const commitSha = commitShaOutput.trim();
 
     log.info(`[GIT_FEATURE] ✓ Squash commit created: ${commitSha}`);
+
+    // Push to remote if requested
+    let pushed = false;
+    let pushError: string | undefined;
+    if (pushToRemote) {
+      try {
+        log.info(`[GIT_FEATURE] Pushing ${defaultBranch} to ${remote}`);
+        const safeDefaultBranchForPush = this.sanitizeBranchName(defaultBranch);
+        await this.execGitCommand(['push', '-u', remote, safeDefaultBranchForPush], gitRoot);
+        pushed = true;
+        log.info(`[GIT_FEATURE] ✓ Pushed ${defaultBranch} to ${remote}`);
+      } catch (error) {
+        // Don't fail the merge if push fails - partial success is OK
+        pushError = error instanceof Error ? error.message : String(error);
+        log.warn(`[GIT_FEATURE] ⚠ Push failed: ${pushError}`);
+        log.warn(`[GIT_FEATURE] Merge successful but push failed. Run git push manually.`);
+      }
+    }
 
     // Delete feature branch if requested
     let deleted = false;
     if (deleteAfterMerge) {
-      await execAsync(`git branch -D ${safeTargetBranch}`, { cwd: gitRoot });
+      await this.execGitCommand(['branch', '-D', safeTargetBranch], gitRoot);
       deleted = true;
       log.info(`[GIT_FEATURE] ✓ Feature branch deleted: ${targetBranch}`);
     }
+
+    // Add warning hint if merged but NOT pushed to GitHub
+    const nextAction = !pushed ? {
+      hint: `WARNING: Changes merged locally but NOT pushed to GitHub. Run: git_feature({ operation: 'push', scriptId }) or use pushToRemote: true`,
+      required: true
+    } : undefined;
 
     return {
       status: 'success',
@@ -361,7 +489,10 @@ export class GitFeatureTool extends BaseFileSystemTool {
       squashCommit: commitSha,
       commitMessage,
       deleted,
-      currentBranch: defaultBranch
+      currentBranch: defaultBranch,
+      pushed,
+      ...(pushError && { pushError }),
+      ...(nextAction && { nextAction })
     };
   }
 
@@ -406,11 +537,11 @@ export class GitFeatureTool extends BaseFileSystemTool {
       defaultBranch = await this.getDefaultBranch(gitRoot);
       safeDefaultBranch = this.sanitizeBranchName(defaultBranch);
       log.info(`[GIT_FEATURE] Switching to default branch: ${safeDefaultBranch}`);
-      await execAsync(`git checkout ${safeDefaultBranch}`, { cwd: gitRoot });
+      await this.execGitCommand(['checkout', safeDefaultBranch], gitRoot);
     }
 
     // Delete feature branch (force delete to discard commits)
-    await execAsync(`git branch -D ${safeBranch}`, { cwd: gitRoot });
+    await this.execGitCommand(['branch', '-D', safeBranch], gitRoot);
 
     log.info(`[GIT_FEATURE] ✓ Feature branch deleted: ${branch}`);
 
@@ -477,7 +608,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     const safeBranch = this.sanitizeBranchName(branch);
 
     // Switch branch
-    await execAsync(`git checkout ${safeBranch}`, { cwd: gitRoot });
+    await this.execGitCommand(['checkout', safeBranch], gitRoot);
 
     log.info(`[GIT_FEATURE] ✓ Switched to branch: ${branch}`);
 
@@ -487,6 +618,166 @@ export class GitFeatureTool extends BaseFileSystemTool {
       branch,
       switched: true,
       isFeatureBranch: isFeatureBranch(branch)
+    };
+  }
+
+  /**
+   * Commit all changes with custom message
+   */
+  private async executeCommit(
+    gitRoot: string,
+    message: string
+  ): Promise<Record<string, unknown>> {
+    log.info('[GIT_FEATURE] Executing commit operation');
+
+    // Pre-flight check: not in detached HEAD
+    if (await this.isDetachedHead(gitRoot)) {
+      throw new Error(
+        'Cannot commit in detached HEAD state. Create a branch first with: git checkout -b <branch-name>'
+      );
+    }
+
+    // Pre-flight check: has changes to commit
+    const hasChanges = await hasUncommittedChanges(gitRoot);
+    if (!hasChanges) {
+      throw new Error(
+        'No changes to commit. Working tree is clean.'
+      );
+    }
+
+    // Get current branch name
+    const currentBranch = await getCurrentBranch(gitRoot);
+    if (!currentBranch) {
+      throw new Error('Could not determine current branch');
+    }
+
+    log.info(`[GIT_FEATURE] Committing changes on branch: ${currentBranch}`);
+
+    // Stage all changes (per user preference: always commit all)
+    await this.execGitCommand(['add', '-A'], gitRoot);
+
+    // Commit with message (using array args prevents command injection)
+    await this.execGitCommand(['commit', '-m', message], gitRoot);
+
+    // Get commit SHA
+    const commitSha = await this.execGitCommand(['rev-parse', 'HEAD'], gitRoot);
+    const shortSha = commitSha.trim().substring(0, 7);
+
+    // Get commit timestamp
+    const timestamp = await this.execGitCommand(['show', '-s', '--format=%ci', 'HEAD'], gitRoot);
+
+    // Get files committed count
+    const stats = await this.execGitCommand(['show', '--stat', '--oneline', 'HEAD'], gitRoot);
+    const filesChanged = (stats.match(/\|/g) || []).length;
+
+    log.info(`[GIT_FEATURE] ✓ Committed ${filesChanged} file(s): ${shortSha}`);
+
+    // Add hint for feature branch workflow completion
+    const onFeatureBranch = isFeatureBranch(currentBranch);
+    const nextAction = onFeatureBranch ? {
+      hint: `Changes committed. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+      required: false
+    } : undefined;
+
+    return {
+      status: 'success',
+      operation: 'commit',
+      branch: currentBranch,
+      commitSha: commitSha.trim(),
+      shortSha,
+      message,
+      filesChanged,
+      timestamp: timestamp.trim(),
+      isFeatureBranch: onFeatureBranch,
+      ...(nextAction && { nextAction })
+    };
+  }
+
+  /**
+   * Push current branch to remote
+   */
+  private async executePush(
+    gitRoot: string,
+    branch?: string,
+    remote: string = 'origin'
+  ): Promise<Record<string, unknown>> {
+    log.info('[GIT_FEATURE] Executing push operation');
+
+    // Pre-flight check: not in detached HEAD
+    if (await this.isDetachedHead(gitRoot)) {
+      throw new Error(
+        'Cannot push in detached HEAD state. Create a branch first with: git checkout -b <branch-name>'
+      );
+    }
+
+    // Get current branch if not specified
+    const branchResult = branch || await getCurrentBranch(gitRoot);
+    if (!branchResult) {
+      throw new Error('Could not determine current branch');
+    }
+    const currentBranch = branchResult;
+
+    log.info(`[GIT_FEATURE] Pushing branch: ${currentBranch} to remote: ${remote}`);
+
+    // Sanitize remote name for safety
+    if (!/^[a-zA-Z0-9_-]+$/.test(remote)) {
+      throw new ValidationError('remote', remote, 'alphanumeric characters, hyphens, and underscores only');
+    }
+
+    // Check if remote exists
+    const remotes = await this.execGitCommand(['remote'], gitRoot);
+    if (!remotes.split('\n').includes(remote)) {
+      throw new Error(
+        `Remote '${remote}' not found. Available remotes: ${remotes.trim() || 'none'}. Add remote with: git remote add ${remote} <url>`
+      );
+    }
+
+    // Sanitize branch name for safety
+    const safeBranch = this.sanitizeBranchName(currentBranch);
+
+    // Push with auto-upstream (always use -u for convenience)
+    // This is safe and idempotent - sets local tracking configuration
+    // Using array args prevents command injection
+    try {
+      await this.execGitCommand(['push', '-u', remote, safeBranch], gitRoot);
+    } catch (error) {
+      // Provide helpful error messages for common push failures
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      if (errorMsg.includes('no upstream branch')) {
+        throw new Error(
+          `No upstream branch configured. This should not happen with -u flag. Try: git push --set-upstream ${remote} ${currentBranch}`
+        );
+      } else if (errorMsg.includes('rejected')) {
+        throw new Error(
+          `Push rejected. Remote has changes not in local branch. Pull first with: git pull ${remote} ${currentBranch}`
+        );
+      } else if (errorMsg.includes('permission denied') || errorMsg.includes('authentication failed')) {
+        throw new Error(
+          `Authentication failed. Check your git credentials and repository access permissions.`
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    log.info(`[GIT_FEATURE] ✓ Pushed ${currentBranch} to ${remote}`);
+
+    // Add workflow hint for feature branches
+    const onFeatureBranch = isFeatureBranch(currentBranch);
+    const nextAction = onFeatureBranch ? {
+      hint: `Branch pushed to remote. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
+      required: false
+    } : undefined;
+
+    return {
+      status: 'success',
+      operation: 'push',
+      branch: currentBranch,
+      remote,
+      upstreamSet: true,
+      isFeatureBranch: onFeatureBranch,
+      ...(nextAction && { nextAction })
     };
   }
 }

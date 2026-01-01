@@ -351,23 +351,51 @@ function jsonResponse(data) {
 
 /**
  * Standardized error response with logger output
+ * Security: Stack traces only shown in /dev mode to prevent information disclosure
  */
 function errorResponse(error, context, code = 'unknown', loggerOutput = '') {
   console.error(`Error in ${context}:`, error.toString());
 
   const currentUrl = ScriptApp.getService().getUrl();
+  const isDevMode = currentUrl.endsWith('/dev');
+
+  // Safe stack extraction with length limit (8KB max)
+  const MAX_STACK_LENGTH = 8192;
+  let rawStack = '';
+  try {
+    if (error && typeof error === 'object' && typeof error.stack === 'string') {
+      rawStack = error.stack;
+    } else if (error && typeof error.toString === 'function') {
+      rawStack = error.toString();
+    } else {
+      rawStack = String(error);
+    }
+  } catch (e) {
+    rawStack = '[Error serializing stack trace]';
+  }
+
+  // Truncate long stacks and filter by environment
+  let stack;
+  if (isDevMode) {
+    stack = rawStack.length > MAX_STACK_LENGTH
+      ? rawStack.substring(0, MAX_STACK_LENGTH) + '\n... [truncated, ' + (rawStack.length - MAX_STACK_LENGTH) + ' chars hidden]'
+      : rawStack;
+  } else {
+    stack = '[Stack trace hidden in production - use /dev deployment for debugging]';
+  }
 
   return jsonResponse({
     error: true,
     context: context,
     function_called: code,
     message: error.toString(),
+    stack: stack,
     logger_output: loggerOutput,
     accessed_url: currentUrl,
     url_type: currentUrl.endsWith('/dev') ? 'HEAD deployment (testing)' : currentUrl.endsWith('/exec') ? 'Deployment (may be redirected from /dev)' : 'Unknown deployment type',
     debug_info: {
       timestamp: new Date().toISOString(),
-      deployment_mode: currentUrl.endsWith('/dev') ? 'development' : currentUrl.endsWith('/exec') ? 'redirected' : 'unknown'
+      deployment_mode: isDevMode ? 'development' : currentUrl.endsWith('/exec') ? 'redirected' : 'unknown'
     }
   });
 }
@@ -1101,4 +1129,4 @@ function exec_api(options, moduleName, functionName) {
   return require('common-js/__mcp_exec').exec_api.apply(null, args);
 }
 
-__defineModule__(_main, 'common-js/__mcp_exec', { loadNow: true });
+__defineModule__(_main, true, { explicitName: 'common-js/__mcp_exec' });

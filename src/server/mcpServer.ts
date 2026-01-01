@@ -401,9 +401,15 @@ export class MCPGasServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
-      // Create fresh SessionAuthManager for this request
-      // It will auto-discover existing sessions from filesystem
-      const authManager = new SessionAuthManager();
+      // Extract sessionId from args BEFORE creating SessionAuthManager
+      // This allows clients to specify which session to use
+      const requestedSessionId = args?.sessionId;
+
+      // Create SessionAuthManager with explicit sessionId if provided
+      // Otherwise it will auto-discover existing sessions from filesystem
+      const authManager = (requestedSessionId && typeof requestedSessionId === 'string')
+        ? new SessionAuthManager(requestedSessionId)
+        : new SessionAuthManager();
       let sessionId: string;
 
       try {
@@ -421,7 +427,7 @@ export class MCPGasServer {
           console.error(`Executing tool: ${name}`);
         }
 
-        // Remove sessionId from args before passing to tool
+        // Remove sessionId from args before passing to tool (already used in constructor)
         const toolArgs = { ...args };
         delete toolArgs.sessionId;
 
@@ -546,10 +552,15 @@ export class MCPGasServer {
   async start(): Promise<void> {
     console.error('Starting MCP Gas Server with Session Isolation...');
     
-    // Clear ALL cached session tokens on startup (user requested)
-    console.error('Clearing all cached session tokens on startup...');
-    const clearedSessions = await SessionAuthManager.clearAllSessions();
-    console.error(`Cleared ${clearedSessions} cached session token(s)`);
+    // Only clear tokens if explicitly requested via environment variable
+    if (process.env.MCP_CLEAR_TOKENS_ON_STARTUP === 'true') {
+      console.error('Clearing all cached session tokens on startup (MCP_CLEAR_TOKENS_ON_STARTUP=true)...');
+      const clearedSessions = await SessionAuthManager.clearAllSessions();
+      console.error(`Cleared ${clearedSessions} cached session token(s)`);
+    } else {
+      console.error('Reusing existing session tokens from ~/.auth/mcp-gas/tokens/');
+      console.error('Set MCP_CLEAR_TOKENS_ON_STARTUP=true to clear tokens on startup');
+    }
     
     // Initialize default local root directory if not configured
     try {
