@@ -343,170 +343,50 @@ export class ExecTool extends BaseTool {
     required: ['scriptId', 'js_statement'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Execute JavaScript expressions and project functions. Auto-deploys infrastructure. Use logFilter/logTail to manage verbose output.',
-      capabilities: 'ES6+ JavaScript | require() for project code | all GAS services (DriveApp, SpreadsheetApp, GmailApp, MailApp, CalendarApp, etc.) | Logger.log() captured',
-      examples: [
-        'Math: Math.pow(2,10)',
-        'Module: require("Utils").process(data)',
-        'GAS: DriveApp.getRootFolder().getName()'
-      ],
+      whenToUse: 'Execute JS expressions/functions. Auto-deploys. logFilter/logTail for verbose output.',
+      capabilities: 'ES6+ | require() | GAS services (Drive/Spreadsheet/Gmail/etc) | Logger captured',
+      examples: ['Math.pow(2,10)', 'require("Utils").process(data)', 'DriveApp.getRootFolder().getName()'],
 
+      // DEBUG: Module loading control - PRESERVE EXACT SIGNATURES
       moduleLogging: {
-        trigger: 'User wants to debug module loading OR trace require() calls OR see initialization order OR logs are noisy',
-        howTo: [
-          'Enable all: exec({scriptId, js_statement: "setModuleLogging(\'*\', true)"})',
-          'Enable folder: exec({scriptId, js_statement: "setModuleLogging(\'auth/*\', true)"})',
-          'Enable multiple: exec({scriptId, js_statement: "setModuleLogging([\'api/Handler\', \'auth/Client\'], true)"})',
-          'Disable noisy (prevails over enables): exec({scriptId, js_statement: "setModuleLogging(\'auth/Noisy\', false, \'script\', true)"})',
-          'Query all settings: exec({scriptId, js_statement: "getModuleLogging()"})',
-          'Query enabled only: exec({scriptId, js_statement: "listLoggingEnabled()"})',
-          'Clear all: exec({scriptId, js_statement: "clearModuleLogging()"})'
-        ],
-        behavior: 'Logs emit when module loads via require(). Pattern = name in require("Pattern"). Check logger_output in response.',
-        prereq: 'CommonJS auto-installed on first write'
+        funcs: ['setModuleLogging(pattern,enabled)', 'setModuleLogging(pattern,false,scope,true)', 'getModuleLogging()', 'listLoggingEnabled()', 'clearModuleLogging()'],
+        patterns: '"*"=all | "auth/*"=folder | ["mod1","mod2"]=multiple',
+        note: 'Logs on require(). Check logger_output.'
       },
 
+      // DEBUG: ConfigManager - PRESERVE SCOPE PRIORITY
       configManager: {
-        trigger: 'User needs persistent config OR per-user/per-doc settings OR retrieve deployment URLs',
-        howTo: 'exec({scriptId, js_statement: "const CM = require(\'common-js/ConfigManager\'); const c = new CM(\'APP\'); c.get(\'KEY\', \'default\')"})',
-        scopes: 'Priority: userDoc > document > user > domain > script. Default set() uses userDoc.',
-        methods: 'c.get(key,default) | c.set(key,val,scope) | c.setScript(key,val) | c.setUser(key,val) | c.delete(key,scope)',
-        overrides: 'c.setScriptOverride(key,val) - admin policy wins over user DATA values',
-        autoStored: 'Deploy tool stores DEV_URL, STAGING_URL, PROD_URL at script scope automatically'
+        use: 'require("common-js/ConfigManager"); new CM("APP").get(key,default)',
+        scopes: 'userDoc > document > user > domain > script',
+        methods: 'get|set|setScript|setUser|delete',
+        note: 'Deploy stores DEV_URL/STAGING_URL/PROD_URL at script scope'
       },
 
-      outputManagement: {
-        trigger: 'logger_output too large OR need only specific log lines',
-        logFilter: 'Regex filter: exec({scriptId, js_statement, logFilter: "ERROR|WARN"})',
-        logTail: 'Last N lines: exec({scriptId, js_statement, logTail: 50})'
+      // DEBUG: Response format - PRESERVE DISCRIMINATION
+      response: {
+        check: 'status first: "success"→result, "error"→error object',
+        errorTypes: ['ExecutionError', 'EXECUTION_ERROR', 'AutoRedeployDisabled', 'TimeoutError'],
+        stack: '/dev=full, staging/prod="[hidden]"'
       },
 
+      // DEBUG: Troubleshooting - PRESERVE DIAGNOSTICS
       troubleshooting: {
-        trigger: 'Module loading fails OR require() errors OR unexpected undefined OR CommonJS issues',
-        diagnostic: [
-          'Run exec({scriptId, js_statement: "2*3"}) to verify basic execution',
-          'If basic works but module fails, check logger_output for loading errors',
-          'Look for: "[DEFINE]", "[ERROR]", "Factory not found" messages in logger_output',
-          'Check error.stack field for GAS-side stack trace'
-        ],
-        commonCauses: [
-          'Missing loadNow:true for modules with __events__ or __global__',
-          'Circular dependency between modules',
-          'Syntax error in module preventing factory registration',
-          'File ordering issue - dependency not loaded yet',
-          'Typo in module name in require() call'
-        ],
-        errorResponse: 'On error: status="error", error.stack contains GAS stack trace, logger_output contains Logger.log() output'
+        test: 'exec({scriptId, js_statement:"2*3"}) verify basic',
+        logs: 'Check logger_output for "[DEFINE]","[ERROR]","Factory not found"',
+        causes: ['Missing loadNow:true for __events__/__global__', 'Circular deps', 'Syntax error', 'File order', 'Typo in require()']
       },
 
-      responseFormats: {
-        discrimination: 'Check status field first: "success" has result, "error" has error object',
-        success: 'status="success" + result (any JSON type) + logger_output + environment/versionNumber/ide_url_hint',
-        error: 'status="error" + error.{type,message,stack} + logger_output + environment/versionNumber/ide_url_hint',
-        stackBehavior: 'Full stack in /dev mode only. Production/staging returns "[Stack trace hidden in production - use /dev deployment for debugging]"',
-        truncation: 'Large responses (>22k tokens) may have logger_output truncated or result replaced with truncation notice',
-        errorTypes: {
-          'ExecutionError': 'GAS-side error during code execution',
-          'EXECUTION_ERROR': 'HTTP-level execution failure (status 500+)',
-          'AutoRedeployDisabled': 'Auto-redeploy skipped per configuration',
-          'TimeoutError': 'Execution exceeded time limit'
-        }
-      },
-
+      // DEBUG: HTML validation - PRESERVE PATTERNS
       htmlValidation: {
-        whenToUse: 'Before deploying HTML files OR when HTML errors occur at runtime OR to validate scriptlet syntax',
-        validation: {
-          basic: 'HtmlService.createHtmlOutputFromFile("filename") - validates HTML syntax, returns error on malformed markup',
-          template: 'HtmlService.createTemplateFromFile("filename").evaluate() - validates scriptlets (<?= ?>, <? ?>, <?!= ?>), catches undefined variables',
-          include: 'Validates nested <?!= include("file") ?> dependencies resolve, catches missing files'
-        },
-        commonErrors: {
-          'Cannot find file': 'HTML file not found - check filename (no .html extension needed)',
-          'Unexpected token': 'Malformed scriptlet syntax - check <? ?> balance and JS syntax inside',
-          'undefined is not a function': 'Server-side function not available in template context - wrap in <?!= include() ?>',
-          'Cannot read property of undefined': 'Variable not passed to template - check template.data = {} binding'
-        },
-        debugPatterns: {
-          validateSyntax: "try { HtmlService.createHtmlOutputFromFile('NAME'); return {valid:true} } catch(e) { return {valid:false, error:e.message, stack:e.stack} }",
-          validateTemplate: "try { const t=HtmlService.createTemplateFromFile('NAME'); t.data={testVar:'test'}; t.evaluate(); return {valid:true} } catch(e) { return {valid:false, error:e.message, stack:e.stack} }",
-          getRenderedContent: "HtmlService.createTemplateFromFile('NAME').evaluate().getContent()",
-          checkIncludePath: "try { HtmlService.createHtmlOutputFromFile('path/to/include'); return 'exists' } catch(e) { return 'missing: '+e.message }"
-        },
-        bestPractices: [
-          'Run validation via exec() BEFORE opening sidebar/dialog - catches errors server-side',
-          'Use template.data = {} to pass test values when validating templates',
-          'Check each <?!= include() ?> file exists independently',
-          'Scriptlet errors show line numbers in stack trace - use for debugging',
-          'HtmlService.createHtmlOutput(string) validates raw HTML without file lookup'
-        ]
+        syntax: "HtmlService.createHtmlOutputFromFile('NAME')",
+        template: "HtmlService.createTemplateFromFile('NAME').evaluate()",
+        errors: {'Cannot find file':'check filename', 'Unexpected token':'<? ?> syntax', 'undefined is not a function':'wrap in include()'}
       },
 
-      antiPatterns: ['❌ exec for file ops → use cat/write/edit instead', '❌ exec without error handling → wrap in try-catch', '❌ long js_statement → write module + require("Module").func()']
-    },
-    responseSchema: {
-      type: 'object',
-      description: 'Discriminated union: check status first, then access status-specific fields',
-      oneOf: [
-        {
-          title: 'SuccessResponse',
-          description: 'Returned when execution completes without error',
-          properties: {
-            status: { type: 'string', enum: ['success'] },
-            result: { description: 'Execution result - any JSON-serializable value (string, number, boolean, array, object, null)' },
-            logger_output: { type: 'string', description: 'Captured Logger.log() output from GAS execution' },
-            scriptId: { type: 'string' },
-            js_statement: { type: 'string', description: 'The JavaScript that was executed' },
-            executedAt: { type: 'string', format: 'date-time' },
-            environment: { type: 'string', enum: ['dev', 'staging', 'prod'] },
-            versionNumber: { type: ['number', 'null'], description: 'Deployment version number (null for HEAD/dev)' },
-            ide_url_hint: { type: 'string', description: 'URL to open project in Apps Script IDE' },
-            cookieAuthUsed: { type: 'boolean', description: 'True if cookie authentication was used (rare)' }
-          },
-          required: ['status', 'result', 'logger_output', 'scriptId', 'js_statement', 'executedAt', 'environment']
-        },
-        {
-          title: 'ErrorResponse',
-          description: 'Returned when execution fails. Check error.type for specific error category.',
-          properties: {
-            status: { type: 'string', enum: ['error'] },
-            error: {
-              type: 'object',
-              description: 'Error details. Shape varies by error type.',
-              properties: {
-                type: { type: 'string', description: 'Error category: ExecutionError, EXECUTION_ERROR, AutoRedeployDisabled, or error.name' },
-                message: { type: 'string', description: 'Human-readable error message' },
-                stack: { type: 'string', description: 'Stack trace (full in /dev mode, hidden "[Stack trace hidden in production]" in staging/prod)' },
-                statusCode: { type: 'number', description: 'HTTP status code (present for network errors)' },
-                context: { type: 'string', description: 'Where error occurred (e.g., "execution", "setup")' },
-                function_called: { type: 'string', description: 'Function or statement that caused error' },
-                originalError: { type: 'string', description: 'Original error message before wrapping (present for autoRedeploy errors)' },
-                accessed_url: { type: 'string', description: 'URL that was accessed (present for HTML/JS errors)' },
-                url_type: { type: 'string', description: 'Type of URL accessed (present for HTML/JS errors)' },
-                debug_info: {
-                  type: 'object',
-                  description: 'Detailed debugging context (present for HTML/JS errors)',
-                  properties: {
-                    timestamp: { type: 'string' },
-                    deployment_mode: { type: 'string' },
-                    httpStatus: { type: 'number' },
-                    errorSource: { type: 'string' }
-                  }
-                }
-              },
-              required: ['type', 'message']
-            },
-            logger_output: { type: 'string', description: 'Captured logs (may be empty for early failures)' },
-            scriptId: { type: 'string' },
-            js_statement: { type: 'string' },
-            executedAt: { type: 'string', format: 'date-time' },
-            environment: { type: 'string', enum: ['dev', 'staging', 'prod'] },
-            versionNumber: { type: ['number', 'null'] },
-            ide_url_hint: { type: 'string' }
-          },
-          required: ['status', 'error', 'logger_output', 'scriptId', 'js_statement', 'executedAt', 'environment']
-        }
-      ]
+      antiPatterns: ['exec for file ops→use cat/write', 'long js_statement→write module+require()']
     }
+    // NOTE: responseSchema removed for token efficiency (~750 tokens saved)
+    // Response format documented in llmGuidance.response block above
   };
 
   private gasClient: GASClient;
