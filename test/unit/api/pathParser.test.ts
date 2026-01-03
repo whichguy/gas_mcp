@@ -228,7 +228,11 @@ describe('Path Parser', () => {
   });
 
   describe('sortFilesForExecution', () => {
-    it('should respect explicit order', () => {
+    // NOTE: sortFilesForExecution was simplified to preserve API order
+    // The function now returns files unchanged to respect the order returned by GAS API
+    // This is intentional - GAS API maintains file order after updateContent operations
+
+    it('should preserve API order (no sorting)', () => {
       const files = [
         { name: 'third.gs', order: 2 },
         { name: 'first.gs', order: 0 },
@@ -236,66 +240,34 @@ describe('Path Parser', () => {
       ];
 
       const sorted = sortFilesForExecution(files);
-      expect(sorted[0].name).to.equal('first.gs');
-      expect(sorted[1].name).to.equal('second.gs');
-      expect(sorted[2].name).to.equal('third.gs');
+      // Files returned in original order - no sorting applied
+      expect(sorted[0].name).to.equal('third.gs');
+      expect(sorted[1].name).to.equal('first.gs');
+      expect(sorted[2].name).to.equal('second.gs');
     });
 
-    it('should prioritize library files', () => {
+    it('should return same array reference (identity function)', () => {
       const files = [
         { name: 'main.gs' },
         { name: 'lib/utils.gs' },
-        { name: 'util/helpers.gs' },
-        { name: 'common/constants.gs' },
-        { name: 'shared/config.gs' },
-        { name: 'app.gs' }
+        { name: 'util/helpers.gs' }
       ];
 
       const sorted = sortFilesForExecution(files);
-      const sortedLibFiles = sorted.slice(0, 4).map((f: any) => f.name);
-      expect(sortedLibFiles).to.have.members(['lib/utils.gs', 'util/helpers.gs', 'common/constants.gs', 'shared/config.gs']);
+      expect(sorted).to.equal(files); // Same reference
+      expect(sorted.length).to.equal(files.length);
     });
 
-    it('should sort by directory depth', () => {
-      const files = [
-        { name: 'deep/nested/file.gs' },
-        { name: 'shallow.gs' },
-        { name: 'medium/file.gs' }
-      ];
-
+    it('should handle empty array', () => {
+      const files: { name: string }[] = [];
       const sorted = sortFilesForExecution(files);
-      expect(sorted[0].name).to.equal('shallow.gs');
-      expect(sorted[1].name).to.equal('medium/file.gs');
-      expect(sorted[2].name).to.equal('deep/nested/file.gs');
+      expect(sorted).to.deep.equal([]);
     });
 
-    it('should sort alphabetically as fallback', () => {
-      const files = [
-        { name: 'zebra.gs' },
-        { name: 'alpha.gs' },
-        { name: 'beta.gs' }
-      ];
-
+    it('should handle single file', () => {
+      const files = [{ name: 'only.gs' }];
       const sorted = sortFilesForExecution(files);
-      expect(sorted[0].name).to.equal('alpha.gs');
-      expect(sorted[1].name).to.equal('beta.gs');
-      expect(sorted[2].name).to.equal('zebra.gs');
-    });
-
-    it('should handle mixed sorting criteria', () => {
-      const files = [
-        { name: 'app/main.gs' },
-        { name: 'lib/core.gs' },
-        { name: 'config.gs', order: 0 },
-        { name: 'util/helper.gs' },
-        { name: 'views/index.html' }
-      ];
-
-      const sorted = sortFilesForExecution(files);
-      // Explicit order first
-      expect(sorted[0].name).to.equal('config.gs');
-      // Then libraries
-      expect([sorted[1].name, sorted[2].name]).to.have.members(['lib/core.gs', 'util/helper.gs']);
+      expect(sorted[0].name).to.equal('only.gs');
     });
 
     it('should work with different file types', () => {
@@ -312,7 +284,10 @@ describe('Path Parser', () => {
       ];
 
       const sorted = sortFilesForExecution(files);
-      expect(sorted[0].name).to.equal('lib/utils.gs');
+      // Order preserved - no sorting
+      expect(sorted[0].name).to.equal('main.gs');
+      expect(sorted[1].name).to.equal('template.html');
+      expect(sorted[2].name).to.equal('lib/utils.gs');
       expect(sorted.length).to.equal(3);
     });
   });
