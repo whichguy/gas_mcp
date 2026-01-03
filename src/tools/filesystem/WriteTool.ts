@@ -2,7 +2,7 @@ import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug } from '../../utils/moduleWrapper.js';
-import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
+import { translatePathForOperation, wrapGitConfigAsModule } from '../../utils/virtualFileTranslation.js';
 import { setFileMtimeToRemote, checkSyncOrThrow } from '../../utils/fileHelpers.js';
 import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
@@ -134,7 +134,7 @@ export class WriteTool extends BaseFileSystemTool {
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const localOnly = params.localOnly || false;
-    const remoteOnly = params.remoteOnly || false;
+    let remoteOnly = params.remoteOnly || false;
 
     if (localOnly && remoteOnly) {
       throw new ValidationError('localOnly/remoteOnly', 'both true', 'only one can be true');
@@ -283,6 +283,15 @@ export class WriteTool extends BaseFileSystemTool {
           preservationDebug
         }
       };
+    } else if (filename.startsWith('.git/') || filename.startsWith('.git')) {
+      // Git config files need to be wrapped as valid JavaScript for GAS compatibility
+      // GAS requires all .gs files to be valid JavaScript, so we wrap git config
+      // content (which has [section] format) as module.exports = JSON.stringify(content)
+      processedContent = wrapGitConfigAsModule(originalContent, filename);
+      commonJsProcessing = {
+        wrapperApplied: true,
+        reason: 'Git config file wrapped as module.exports string for GAS compatibility'
+      };
     } else {
       commonJsProcessing = {
         wrapperApplied: false,
@@ -291,6 +300,15 @@ export class WriteTool extends BaseFileSystemTool {
     }
 
     const content = processedContent;
+
+    // .git/ breadcrumb files are remote-only: they should only exist in GAS, not in local .git/ directory
+    // Writing JavaScript-wrapped content to local .git/config would break Git commands
+    // These files are used for path resolution (GitPathResolver) and are read from GAS, not local disk
+    const isGitBreadcrumb = filename.startsWith('.git/') || filename === '.git';
+    if (isGitBreadcrumb) {
+      remoteOnly = true;
+      log.info(`[WRITE] .git/ breadcrumb file detected: ${filename} - forcing remote-only (GAS breadcrumbs should not be written to local .git/ directory)`);
+    }
 
     // Two-phase git discovery with projectPath support
     const projectPath = params.projectPath || '';
@@ -334,7 +352,8 @@ export class WriteTool extends BaseFileSystemTool {
     let syncStatus: any = null;
     let remoteFiles: any[] = [];
 
-    if (!localOnly) {
+    // Skip local sync operations when remoteOnly is true (e.g., .git/ breadcrumb files)
+    if (!localOnly && !remoteOnly) {
       try {
         remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
         syncStatus = await LocalFileManager.verifySyncStatus(projectName, remoteFiles, workingDir);

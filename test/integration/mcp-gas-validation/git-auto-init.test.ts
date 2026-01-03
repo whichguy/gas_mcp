@@ -63,7 +63,7 @@ describe('Git Auto-Init Integration Tests', () => {
   });
 
   beforeEach(async function() {
-    this.timeout(TEST_TIMEOUTS.OPERATION);
+    this.timeout(TEST_TIMEOUTS.STANDARD);
 
     // Create fresh temp directory for each test
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-gas-autoinit-'));
@@ -79,7 +79,7 @@ describe('Git Auto-Init Integration Tests', () => {
   });
 
   after(async function() {
-    this.timeout(TEST_TIMEOUTS.CLEANUP);
+    this.timeout(TEST_TIMEOUTS.STANDARD);
 
     // Clean up test project
     if (testProjectId) {
@@ -94,7 +94,7 @@ describe('Git Auto-Init Integration Tests', () => {
 
   describe('git_feature auto-init', () => {
     it('should auto-initialize git when .git missing', async function() {
-      this.timeout(TEST_TIMEOUTS.OPERATION);
+      this.timeout(TEST_TIMEOUTS.STANDARD);
 
       if (!testProjectId || !tempDir) {
         this.skip();
@@ -127,7 +127,7 @@ describe('Git Auto-Init Integration Tests', () => {
 
       // Verify git config was set
       const gitUserName = execSync('git config user.name', {
-        cwd: tempDir,
+        cwd: tempDir!,
         encoding: 'utf8'
       }).trim();
 
@@ -136,7 +136,7 @@ describe('Git Auto-Init Integration Tests', () => {
     });
 
     it('should use global git config if available', async function() {
-      this.timeout(TEST_TIMEOUTS.OPERATION);
+      this.timeout(TEST_TIMEOUTS.STANDARD);
 
       if (!testProjectId || !tempDir) {
         this.skip();
@@ -179,7 +179,7 @@ describe('Git Auto-Init Integration Tests', () => {
 
       // Verify local repo uses global config
       const localUserName = execSync('git config user.name', {
-        cwd: tempDir,
+        cwd: tempDir!,
         encoding: 'utf8'
       }).trim();
 
@@ -189,7 +189,7 @@ describe('Git Auto-Init Integration Tests', () => {
     });
 
     it('should set default config when no global config exists', async function() {
-      this.timeout(TEST_TIMEOUTS.OPERATION);
+      this.timeout(TEST_TIMEOUTS.STANDARD);
 
       if (!testProjectId || !tempDir) {
         this.skip();
@@ -214,12 +214,12 @@ describe('Git Auto-Init Integration Tests', () => {
 
       // Verify git config exists (either global or defaults)
       const localUserName = execSync('git config user.name', {
-        cwd: tempDir,
+        cwd: tempDir!,
         encoding: 'utf8'
       }).trim();
 
       const localUserEmail = execSync('git config user.email', {
-        cwd: tempDir,
+        cwd: tempDir!,
         encoding: 'utf8'
       }).trim();
 
@@ -232,7 +232,7 @@ describe('Git Auto-Init Integration Tests', () => {
 
   describe('write tool auto-init', () => {
     it('should auto-initialize git during write operation', async function() {
-      this.timeout(TEST_TIMEOUTS.OPERATION);
+      this.timeout(TEST_TIMEOUTS.STANDARD);
 
       if (!testProjectId || !tempDir) {
         this.skip();
@@ -268,7 +268,7 @@ describe('Git Auto-Init Integration Tests', () => {
     });
 
     it('should create .gitignore when initializing new repo', async function() {
-      this.timeout(TEST_TIMEOUTS.OPERATION);
+      this.timeout(TEST_TIMEOUTS.STANDARD);
 
       if (!testProjectId || !tempDir) {
         this.skip();
@@ -307,7 +307,7 @@ describe('Git Auto-Init Integration Tests', () => {
 
   describe('Consistent behavior across tools', () => {
     it('should produce identical git repos from write and git_feature', async function() {
-      this.timeout(TEST_TIMEOUTS.OPERATION);
+      this.timeout(TEST_TIMEOUTS.STANDARD);
 
       if (!testProjectId) {
         this.skip();
@@ -384,7 +384,7 @@ describe('Git Auto-Init Integration Tests', () => {
 
   describe('Error handling', () => {
     it('should handle git init failures gracefully', async function() {
-      this.timeout(TEST_TIMEOUTS.OPERATION);
+      this.timeout(TEST_TIMEOUTS.STANDARD);
 
       if (!testProjectId) {
         this.skip();

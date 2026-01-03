@@ -76,15 +76,15 @@ describe('Git Feature Workflow Integration Tests', () => {
     console.log(`✅ Created temp sync folder: ${tempSyncFolder}`);
 
     // Initialize git repository with main branch
-    execSync('git init', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git config user.email "test@mcp-gas.test"', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git config user.name "MCP Test"', { cwd: tempSyncFolder, stdio: 'pipe' });
+    execSync('git init', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git config user.email "test@mcp-gas.test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git config user.name "MCP Test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
     // Create main branch with initial commit
-    fs.writeFileSync(path.join(tempSyncFolder, 'README.md'), '# Feature Test Project\n');
-    execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git commit -m "Initial commit"', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git branch -M main', { cwd: tempSyncFolder, stdio: 'pipe' });
+    fs.writeFileSync(path.join(tempSyncFolder!, 'README.md'), '# Feature Test Project\n');
+    execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git commit -m "Initial commit"', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git branch -M main', { cwd: tempSyncFolder!, stdio: 'pipe' });
     console.log('✅ Git repository initialized with main branch');
 
     // Create .git/config.gs breadcrumb in GAS
@@ -131,8 +131,8 @@ describe('Git Feature Workflow Integration Tests', () => {
     // Ensure we're on main branch and have no uncommitted changes
     if (tempSyncFolder && fs.existsSync(tempSyncFolder)) {
       try {
-        execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
-        execSync('git reset --hard', { cwd: tempSyncFolder, stdio: 'pipe' });
+        execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
+        execSync('git reset --hard', { cwd: tempSyncFolder!, stdio: 'pipe' });
       } catch {
         // Ignore errors - might be on detached HEAD
       }
@@ -188,7 +188,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(result).to.have.property('previousBranch', 'main');
 
       // Verify branch was created
-      const branches = execSync('git branch', { cwd: tempSyncFolder, encoding: 'utf8' });
+      const branches = execSync('git branch', { cwd: tempSyncFolder!, encoding: 'utf8' });
       expect(branches).to.include('llm-feature-user-auth');
       console.log('✅ Feature branch created: llm-feature-user-auth');
     });
@@ -217,10 +217,10 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // Switch back to main
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       // Create uncommitted change
-      fs.writeFileSync(path.join(tempSyncFolder, 'uncommitted.txt'), 'test');
+      fs.writeFileSync(path.join(tempSyncFolder!, 'uncommitted.txt'), 'test');
 
       try {
         await client.callAndParse('git_feature', {
@@ -234,7 +234,7 @@ describe('Git Feature Workflow Integration Tests', () => {
         console.log('✅ Correctly detected uncommitted changes');
       } finally {
         // Clean up
-        fs.unlinkSync(path.join(tempSyncFolder, 'uncommitted.txt'));
+        fs.unlinkSync(path.join(tempSyncFolder!, 'uncommitted.txt'));
       }
     });
 
@@ -283,7 +283,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // Switch to feature branch
-      execSync('git checkout llm-feature-user-auth', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout llm-feature-user-auth', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       const result = await client.callAndParse('git_feature', {
         operation: 'list',
@@ -302,7 +302,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // Ensure we're on main
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       const result = await client.callAndParse('git_feature', {
         operation: 'switch',
@@ -318,7 +318,7 @@ describe('Git Feature Workflow Integration Tests', () => {
 
       // Verify current branch
       const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       }).trim();
       expect(currentBranch).to.equal('llm-feature-user-auth');
@@ -348,7 +348,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // Create uncommitted change
-      fs.writeFileSync(path.join(tempSyncFolder, 'uncommitted.txt'), 'test');
+      fs.writeFileSync(path.join(tempSyncFolder!, 'uncommitted.txt'), 'test');
 
       try {
         await client.callAndParse('git_feature', {
@@ -362,7 +362,7 @@ describe('Git Feature Workflow Integration Tests', () => {
         console.log('✅ Correctly detected uncommitted changes');
       } finally {
         // Clean up
-        fs.unlinkSync(path.join(tempSyncFolder, 'uncommitted.txt'));
+        fs.unlinkSync(path.join(tempSyncFolder!, 'uncommitted.txt'));
       }
     });
   });
@@ -372,16 +372,16 @@ describe('Git Feature Workflow Integration Tests', () => {
       // Make some commits on the feature branch
       expect(tempSyncFolder).to.not.be.null;
 
-      execSync('git checkout llm-feature-user-auth', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout llm-feature-user-auth', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       // Create and commit test files
       fs.writeFileSync(path.join(tempSyncFolder!, 'feature1.txt'), 'Feature 1');
-      execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-      execSync('git commit -m "Add feature 1"', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+      execSync('git commit -m "Add feature 1"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       fs.writeFileSync(path.join(tempSyncFolder!, 'feature2.txt'), 'Feature 2');
-      execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-      execSync('git commit -m "Add feature 2"', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+      execSync('git commit -m "Add feature 2"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       console.log('✅ Created test commits on feature branch');
     });
@@ -408,7 +408,7 @@ describe('Git Feature Workflow Integration Tests', () => {
 
       // Verify we're on main
       const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       }).trim();
       expect(currentBranch).to.equal('main');
@@ -418,7 +418,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(fs.existsSync(path.join(tempSyncFolder!, 'feature2.txt'))).to.be.true;
 
       // Verify branch was deleted
-      const branches = execSync('git branch', { cwd: tempSyncFolder, encoding: 'utf8' });
+      const branches = execSync('git branch', { cwd: tempSyncFolder!, encoding: 'utf8' });
       expect(branches).to.not.include('llm-feature-user-auth');
 
       console.log(`✅ Squash merged to main: ${result.squashCommit}`);
@@ -430,7 +430,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // Create another feature branch
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       const startResult = await client.callAndParse('git_feature', {
         operation: 'start',
@@ -440,8 +440,8 @@ describe('Git Feature Workflow Integration Tests', () => {
 
       // Make a commit
       fs.writeFileSync(path.join(tempSyncFolder!, 'keep.txt'), 'Keep me');
-      execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-      execSync('git commit -m "Add keep file"', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+      execSync('git commit -m "Add keep file"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       // Finish without deleting
       const result = await client.callAndParse('git_feature', {
@@ -454,7 +454,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(result).to.have.property('deleted', false);
 
       // Verify branch still exists
-      const branches = execSync('git branch', { cwd: tempSyncFolder, encoding: 'utf8' });
+      const branches = execSync('git branch', { cwd: tempSyncFolder!, encoding: 'utf8' });
       expect(branches).to.include('llm-feature-keep-branch');
       console.log('✅ Branch kept after merge');
     });
@@ -467,7 +467,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // llm-feature-keep-branch should still exist from previous test
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       const result = await client.callAndParse('git_feature', {
         operation: 'rollback',
@@ -482,7 +482,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(result).to.have.property('uncommittedChangesLost', false);
 
       // Verify branch was deleted
-      const branches = execSync('git branch', { cwd: tempSyncFolder, encoding: 'utf8' });
+      const branches = execSync('git branch', { cwd: tempSyncFolder!, encoding: 'utf8' });
       expect(branches).to.not.include('llm-feature-keep-branch');
       console.log('✅ Branch deleted without merging');
     });
@@ -595,7 +595,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(testProjectId).to.not.be.null;
       expect(tempSyncFolder).to.not.be.null;
 
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       await client.callAndParse('git_feature', {
         operation: 'start',
@@ -660,12 +660,12 @@ describe('Git Feature Workflow Integration Tests', () => {
 
       // Get current commit SHA
       const commitSha = execSync('git rev-parse HEAD', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       }).trim();
 
       // Detach HEAD
-      execSync(`git checkout ${commitSha}`, { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync(`git checkout ${commitSha}`, { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       // Create a change
       fs.writeFileSync(path.join(tempSyncFolder!, 'detached.txt'), 'Detached test');
@@ -683,7 +683,7 @@ describe('Git Feature Workflow Integration Tests', () => {
         console.log('✅ Correctly rejected commit in detached HEAD');
       } finally {
         // Return to branch
-        execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder, stdio: 'pipe' });
+        execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder!, stdio: 'pipe' });
         // Clean up test file
         try {
           fs.unlinkSync(path.join(tempSyncFolder!, 'detached.txt'));
@@ -769,7 +769,7 @@ describe('Git Feature Workflow Integration Tests', () => {
     before(async function() {
       // Ensure we're on commit-test branch with committed changes
       expect(tempSyncFolder).to.not.be.null;
-      execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder!, stdio: 'pipe' });
     });
 
     it('should push current branch to origin with auto-upstream', async function() {
@@ -818,12 +818,12 @@ describe('Git Feature Workflow Integration Tests', () => {
 
       // Get current commit SHA
       const commitSha = execSync('git rev-parse HEAD', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       }).trim();
 
       // Detach HEAD
-      execSync(`git checkout ${commitSha}`, { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync(`git checkout ${commitSha}`, { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       try {
         await client.callAndParse('git_feature', {
@@ -836,7 +836,7 @@ describe('Git Feature Workflow Integration Tests', () => {
         console.log('✅ Correctly rejected push in detached HEAD');
       } finally {
         // Return to branch
-        execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder, stdio: 'pipe' });
+        execSync('git checkout llm-feature-commit-test', { cwd: tempSyncFolder!, stdio: 'pipe' });
       }
     });
 
@@ -846,7 +846,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // Switch to main branch
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       // But push the feature branch explicitly
       const result = await client.callAndParse('git_feature', {
@@ -867,7 +867,7 @@ describe('Git Feature Workflow Integration Tests', () => {
       expect(testProjectId).to.not.be.null;
       expect(tempSyncFolder).to.not.be.null;
 
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       await client.callAndParse('git_feature', {
         operation: 'start',
@@ -877,8 +877,8 @@ describe('Git Feature Workflow Integration Tests', () => {
 
       // Make a commit
       fs.writeFileSync(path.join(tempSyncFolder!, 'finish-push.txt'), 'Test');
-      execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-      execSync('git commit -m "Add finish-push test"', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+      execSync('git commit -m "Add finish-push test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       console.log('✅ Created feature branch for finish+push test');
     });
@@ -919,8 +919,8 @@ describe('Git Feature Workflow Integration Tests', () => {
 
       // Make a commit
       fs.writeFileSync(path.join(tempSyncFolder!, 'push-fail.txt'), 'Test');
-      execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-      execSync('git commit -m "Add push-fail test"', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+      execSync('git commit -m "Add push-fail test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       // Update git config to use invalid remote URL (this will fail on push)
       const gitConfig = `[remote "origin"]

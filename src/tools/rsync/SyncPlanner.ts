@@ -1,0 +1,517 @@
+/**
+ * SyncPlanner - Creates sync plans for rsync operations
+ *
+ * Orchestrates the planning phase of sync operations:
+ * - Validates preconditions (breadcrumb, git status, lock)
+ * - Fetches current state from both GAS and local
+ * - Computes diff using SyncDiff
+ * - Creates and stores plan in PlanStore
+ *
+ * Key responsibilities:
+ * - Breadcrumb verification (required for sync)
+ * - Git working directory status check
+ * - Bootstrap detection via SyncManifest
+ * - Diff computation with SyncDiff
+ * - Plan creation and storage
+ */
+
+import { promises as fs } from 'fs';
+import path from 'path';
+import { log } from '../../utils/logger.js';
+import { LockManager } from '../../utils/lockManager.js';
+import { GitPathResolver } from '../../core/git/GitPathResolver.js';
+import { SyncManifest, ManifestLoadResult } from './SyncManifest.js';
+import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
+import { PlanStore, SyncPlan } from './PlanStore.js';
+import { getUncommittedStatus, getCurrentBranchName } from '../../utils/gitStatus.js';
+import { GASClient, GASFile } from '../../api/gasClient.js';
+
+/**
+ * Error codes for planning phase
+ */
+export type SyncPlanErrorCode =
+  | 'BREADCRUMB_MISSING'
+  | 'LOCK_TIMEOUT'
+  | 'UNCOMMITTED_CHANGES'
+  | 'GIT_NOT_FOUND'
+  | 'API_ERROR'
+  | 'LOCAL_READ_ERROR';
+
+/**
+ * Error thrown during planning phase
+ */
+export class SyncPlanError extends Error {
+  constructor(
+    public readonly code: SyncPlanErrorCode,
+    message: string,
+    public readonly details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'SyncPlanError';
+  }
+}
+
+/**
+ * Options for creating a sync plan
+ */
+export interface PlanOptions {
+  scriptId: string;
+  direction: 'pull' | 'push';
+  projectPath?: string;          // For polyrepo support
+  accessToken: string;
+  force?: boolean;               // Skip uncommitted changes check
+  excludePatterns?: string[];    // Files to exclude from sync
+}
+
+/**
+ * Result of the planning operation
+ */
+export interface PlanResult {
+  success: true;
+  plan: SyncPlan;
+  summary: {
+    direction: 'pull' | 'push';
+    additions: number;
+    updates: number;
+    deletions: number;
+    isBootstrap: boolean;
+    totalOperations: number;
+  };
+  warnings: string[];
+  nextStep: string;
+}
+
+/**
+ * SyncPlanner class for creating sync plans
+ */
+export class SyncPlanner {
+  private lockManager: LockManager;
+  private gasClient: GASClient;
+  private planStore: PlanStore;
+  private pathResolver: GitPathResolver;
+
+  constructor(gasClient?: GASClient) {
+    this.lockManager = LockManager.getInstance();
+    this.gasClient = gasClient || new GASClient();
+    this.planStore = PlanStore.getInstance();
+    this.pathResolver = new GitPathResolver();
+  }
+
+  /**
+   * Create a sync plan
+   *
+   * @param options - Planning options
+   * @returns PlanResult with created plan and summary
+   * @throws SyncPlanError on failure
+   */
+  async createPlan(options: PlanOptions): Promise<PlanResult> {
+    const { scriptId, direction, projectPath, accessToken, force = false, excludePatterns } = options;
+
+    log.info(`[PLANNER] Creating ${direction} plan for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
+
+    const warnings: string[] = [];
+    let localPath: string;
+    let manifestResult: ManifestLoadResult;
+    let gasFiles: GASFile[];
+    let localFiles: DiffFileInfo[];
+
+    try {
+      // Step 1: Check breadcrumb and resolve local path
+      localPath = await this.resolveLocalPath(scriptId, projectPath, accessToken);
+
+      // Step 2: Acquire lock
+      await this.acquireLock(scriptId);
+
+      try {
+        // Step 3: Check git status (unless force)
+        if (!force) {
+          await this.checkGitStatus(localPath, warnings);
+        } else {
+          warnings.push('Forced mode: skipped uncommitted changes check');
+        }
+
+        // Step 4: Load manifest (bootstrap detection)
+        manifestResult = await this.loadManifest(localPath);
+
+        // Step 5: Fetch current state from both sides
+        gasFiles = await this.fetchGasFiles(scriptId, accessToken, excludePatterns);
+        localFiles = await this.scanLocalFiles(localPath, excludePatterns);
+
+        // Step 6: Compute diff
+        const diffResult = this.computeDiff(
+          direction,
+          gasFiles,
+          localFiles,
+          manifestResult
+        );
+
+        // Step 7: Create and store plan
+        const plan = this.planStore.create({
+          direction,
+          scriptId,
+          operations: diffResult,
+          isBootstrap: manifestResult.isBootstrap,
+          localPath,
+          sourceFileCount: direction === 'pull' ? gasFiles.length : localFiles.length,
+          destFileCount: direction === 'pull' ? localFiles.length : gasFiles.length
+        });
+
+        // Build result
+        const result: PlanResult = {
+          success: true,
+          plan,
+          summary: {
+            direction,
+            additions: diffResult.add.length,
+            updates: diffResult.update.length,
+            deletions: diffResult.delete.length,
+            isBootstrap: manifestResult.isBootstrap,
+            totalOperations: diffResult.totalOperations
+          },
+          warnings,
+          nextStep: this.buildNextStepInstruction(plan)
+        };
+
+        log.info(`[PLANNER] Plan created: ${PlanStore.formatPlanSummary(plan)}`);
+
+        return result;
+
+      } finally {
+        // Always release lock
+        await this.releaseLock(scriptId);
+      }
+
+    } catch (error) {
+      // Re-throw SyncPlanError as-is
+      if (error instanceof SyncPlanError) {
+        throw error;
+      }
+
+      // Wrap other errors
+      log.error(`[PLANNER] Unexpected error:`, error);
+      throw new SyncPlanError(
+        'API_ERROR',
+        `Failed to create sync plan: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Resolve local path from breadcrumb
+   */
+  private async resolveLocalPath(
+    scriptId: string,
+    projectPath: string | undefined,
+    accessToken: string
+  ): Promise<string> {
+    const breadcrumb = await this.pathResolver.getBreadcrumb(scriptId, projectPath, accessToken);
+
+    if (!breadcrumb?.sync?.localPath) {
+      throw new SyncPlanError(
+        'BREADCRUMB_MISSING',
+        'No .git/config.gs breadcrumb found in GAS project. Create one with [sync] localPath = ~/path/to/repo',
+        { scriptId, projectPath }
+      );
+    }
+
+    const localPath = await this.pathResolver.resolve(scriptId, projectPath, accessToken);
+
+    // Verify local path exists
+    try {
+      const stat = await fs.stat(localPath);
+      if (!stat.isDirectory()) {
+        throw new SyncPlanError(
+          'GIT_NOT_FOUND',
+          `Configured sync path is not a directory: ${localPath}`,
+          { localPath }
+        );
+      }
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new SyncPlanError(
+          'GIT_NOT_FOUND',
+          `Configured sync path does not exist: ${localPath}. Create the directory first.`,
+          { localPath }
+        );
+      }
+      throw error;
+    }
+
+    // Verify it's a git repository
+    const gitDir = path.join(localPath, '.git');
+    try {
+      await fs.access(gitDir);
+    } catch {
+      throw new SyncPlanError(
+        'GIT_NOT_FOUND',
+        `Not a git repository: ${localPath}. Run 'git init' first.`,
+        { localPath }
+      );
+    }
+
+    log.debug(`[PLANNER] Resolved local path: ${localPath}`);
+    return localPath;
+  }
+
+  /**
+   * Acquire lock for sync operation
+   */
+  private async acquireLock(scriptId: string): Promise<void> {
+    try {
+      await this.lockManager.acquireLock(scriptId, 'rsync-plan', 30000);
+    } catch (error: any) {
+      if (error.name === 'LockTimeoutError') {
+        throw new SyncPlanError(
+          'LOCK_TIMEOUT',
+          'Another sync operation is in progress. Wait for it to complete or check for stuck processes.',
+          { scriptId, lockInfo: error.lockInfo }
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Release lock
+   */
+  private async releaseLock(scriptId: string): Promise<void> {
+    await this.lockManager.releaseLock(scriptId);
+  }
+
+  /**
+   * Check git working directory status
+   */
+  private async checkGitStatus(localPath: string, warnings: string[]): Promise<void> {
+    const uncommitted = await getUncommittedStatus(localPath);
+
+    if (uncommitted.count > 0) {
+      const fileList = uncommitted.files.join(', ');
+      throw new SyncPlanError(
+        'UNCOMMITTED_CHANGES',
+        `Local git has ${uncommitted.count} uncommitted change(s). Commit or stash first, or use force=true.`,
+        {
+          count: uncommitted.count,
+          files: uncommitted.files,
+          hasMore: uncommitted.hasMore,
+          suggestion: 'git add -A && git commit -m "WIP" OR git stash'
+        }
+      );
+    }
+
+    const branch = await getCurrentBranchName(localPath);
+    if (branch === 'HEAD') {
+      warnings.push('Warning: Git is in detached HEAD state. Consider creating a branch.');
+    }
+  }
+
+  /**
+   * Load manifest for bootstrap detection
+   */
+  private async loadManifest(localPath: string): Promise<ManifestLoadResult> {
+    const manifest = new SyncManifest(localPath);
+    return manifest.load();
+  }
+
+  /**
+   * Fetch files from GAS project
+   */
+  private async fetchGasFiles(
+    scriptId: string,
+    accessToken: string,
+    excludePatterns?: string[]
+  ): Promise<GASFile[]> {
+    try {
+      const files = await this.gasClient.getProjectContent(scriptId, accessToken);
+
+      // Filter out excluded patterns
+      const filtered = this.filterFiles(files, excludePatterns);
+
+      log.debug(`[PLANNER] Fetched ${filtered.length} files from GAS (${files.length} total)`);
+      return filtered;
+
+    } catch (error) {
+      throw new SyncPlanError(
+        'API_ERROR',
+        `Failed to fetch files from GAS: ${error instanceof Error ? error.message : String(error)}`,
+        { scriptId }
+      );
+    }
+  }
+
+  /**
+   * Scan local files in src directory
+   */
+  private async scanLocalFiles(
+    localPath: string,
+    excludePatterns?: string[]
+  ): Promise<DiffFileInfo[]> {
+    const srcDir = path.join(localPath, 'src');
+    const files: DiffFileInfo[] = [];
+
+    try {
+      // Check if src directory exists
+      try {
+        await fs.access(srcDir);
+      } catch {
+        // No src directory yet - return empty (bootstrap case)
+        log.debug(`[PLANNER] No src directory at ${srcDir} - bootstrap sync`);
+        return [];
+      }
+
+      // Recursively scan src directory
+      await this.scanDirectory(srcDir, '', files);
+
+      // Filter out excluded patterns
+      const filtered = this.filterDiffFiles(files, excludePatterns);
+
+      log.debug(`[PLANNER] Scanned ${filtered.length} local files (${files.length} total)`);
+      return filtered;
+
+    } catch (error) {
+      throw new SyncPlanError(
+        'LOCAL_READ_ERROR',
+        `Failed to scan local files: ${error instanceof Error ? error.message : String(error)}`,
+        { localPath }
+      );
+    }
+  }
+
+  /**
+   * Recursively scan a directory
+   */
+  private async scanDirectory(
+    baseDir: string,
+    relativePath: string,
+    files: DiffFileInfo[]
+  ): Promise<void> {
+    const dirPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const entryRelPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+
+      if (entry.isDirectory()) {
+        await this.scanDirectory(baseDir, entryRelPath, files);
+      } else if (entry.isFile()) {
+        const filePath = path.join(dirPath, entry.name);
+        const content = await fs.readFile(filePath, 'utf-8');
+        const stat = await fs.stat(filePath);
+
+        // Convert path to GAS-style filename (remove .gs extension, convert slashes)
+        const filename = this.localPathToGasFilename(entryRelPath);
+
+        files.push({
+          filename,
+          content,
+          sha1: SyncManifest.computeGitSha1(content),
+          lastModified: stat.mtime.toISOString(),
+          size: stat.size
+        });
+      }
+    }
+  }
+
+  /**
+   * Convert local path to GAS filename
+   *
+   * Examples:
+   * - utils.gs -> utils
+   * - models/User.gs -> models/User
+   * - auth/oauth.gs -> auth/oauth
+   */
+  private localPathToGasFilename(localPath: string): string {
+    // Remove .gs extension
+    let filename = localPath.replace(/\.gs$/, '');
+
+    // Convert Windows backslashes to forward slashes
+    filename = filename.replace(/\\/g, '/');
+
+    return filename;
+  }
+
+  /**
+   * Filter GASFile array by exclude patterns
+   */
+  private filterFiles(files: GASFile[], excludePatterns?: string[]): GASFile[] {
+    if (!excludePatterns || excludePatterns.length === 0) {
+      return files;
+    }
+
+    return files.filter(file => {
+      for (const pattern of excludePatterns) {
+        if (file.name.startsWith(pattern) || file.name === pattern) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Filter DiffFileInfo array by exclude patterns
+   */
+  private filterDiffFiles(files: DiffFileInfo[], excludePatterns?: string[]): DiffFileInfo[] {
+    if (!excludePatterns || excludePatterns.length === 0) {
+      return files;
+    }
+
+    return files.filter(file => {
+      for (const pattern of excludePatterns) {
+        if (file.filename.startsWith(pattern) || file.filename === pattern) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Compute diff between source and destination
+   */
+  private computeDiff(
+    direction: 'pull' | 'push',
+    gasFiles: GASFile[],
+    localFiles: DiffFileInfo[],
+    manifestResult: ManifestLoadResult
+  ): ReturnType<typeof SyncDiff.compute> {
+    // Convert GAS files to DiffFileInfo (filter out files without source)
+    const gasDiffFiles = SyncDiff.fromGasFiles(
+      gasFiles
+        .filter(f => f.source !== undefined)
+        .map(f => ({
+          name: f.name,
+          source: f.source as string,
+          updateTime: f.updateTime
+        }))
+    );
+
+    // Determine source and destination based on direction
+    const sourceFiles = direction === 'pull' ? gasDiffFiles : localFiles;
+    const destFiles = direction === 'pull' ? localFiles : gasDiffFiles;
+
+    return SyncDiff.compute(sourceFiles, destFiles, {
+      isBootstrap: manifestResult.isBootstrap,
+      manifest: manifestResult.manifest || undefined,
+      direction
+    });
+  }
+
+  /**
+   * Build next step instruction for user
+   */
+  private buildNextStepInstruction(plan: SyncPlan): string {
+    if (!plan.operations.hasChanges) {
+      return 'No changes to sync. Files are already in sync.';
+    }
+
+    let instruction = `rsync({operation: 'execute', planId: '${plan.planId}'`;
+
+    if (plan.operations.delete.length > 0 && !plan.isBootstrap) {
+      instruction += `, confirmDeletions: true`;
+    }
+
+    instruction += `})`;
+
+    return instruction;
+  }
+}

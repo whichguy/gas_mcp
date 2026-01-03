@@ -362,8 +362,25 @@ export class InProcessTestClient {
       };
     }
 
+    // Import and execute rsync tool
+    if (name === 'rsync') {
+      const { RsyncTool } = await import('../../src/tools/rsync/RsyncTool.js');
+      const tool = new RsyncTool(this.sessionManager);
+
+      // Execute the tool
+      const result = await tool.execute(args);
+
+      // Return in MCP format
+      return {
+        content: [{
+          type: 'text',
+          text: typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+
     // For tools we haven't implemented, throw error
-    const supportedTools = ['auth', 'deploy', 'local_sync', 'config', 'cat', 'raw_cat', 'ls', 'write', 'git_feature'];
+    const supportedTools = ['auth', 'deploy', 'local_sync', 'config', 'cat', 'raw_cat', 'ls', 'write', 'git_feature', 'rsync'];
     throw new Error(
       `Tool '${name}' not yet supported in direct execution mode.\n` +
       `Supported tools: ${supportedTools.join(', ')}\n` +
