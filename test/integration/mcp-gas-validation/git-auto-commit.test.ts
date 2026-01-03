@@ -71,14 +71,14 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
     console.log(`✅ Created temp sync folder: ${tempSyncFolder}`);
 
     // Initialize git repository
-    execSync('git init', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git config user.email "test@mcp-gas.test"', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git config user.name "MCP Test"', { cwd: tempSyncFolder, stdio: 'pipe' });
+    execSync('git init', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git config user.email "test@mcp-gas.test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git config user.name "MCP Test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
     // Create main branch with initial commit
     fs.writeFileSync(path.join(tempSyncFolder, 'README.md'), '# Test Project\n');
-    execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git commit -m "Initial commit"', { cwd: tempSyncFolder, stdio: 'pipe' });
+    execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git commit -m "Initial commit"', { cwd: tempSyncFolder!, stdio: 'pipe' });
     console.log('✅ Git repository initialized');
   });
 
@@ -190,7 +190,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       // Ensure we're on main branch
-      execSync('git checkout main', { cwd: tempSyncFolder, stdio: 'pipe' });
+      execSync('git checkout main', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
       // Write a file (should auto-create feature branch)
       const result = await client.callAndParse('write', {
@@ -210,7 +210,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
 
       // Verify we're actually on the new branch
       const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       }).trim();
       expect(currentBranch).to.match(/^llm-feature-auto-/);
@@ -223,7 +223,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
 
       // Current branch should still be the auto-created one from previous test
       const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       }).trim();
 
@@ -266,7 +266,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
 
       // Verify commit exists in git log
       const log = execSync('git log --oneline -1', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       });
       expect(log).to.include('Update AtomicTest');
@@ -294,7 +294,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
 
       // Verify in git log
       const log = execSync('git log --oneline -1', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       });
       expect(log).to.include(customMessage);
@@ -405,7 +405,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
 
       // Verify git is still in good state after errors
       const status = execSync('git status --porcelain', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       });
 
@@ -454,7 +454,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       const branches = execSync('git branch', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       });
 
@@ -469,7 +469,7 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
       expect(tempSyncFolder).to.not.be.null;
 
       const log = execSync('git log --oneline', {
-        cwd: tempSyncFolder,
+        cwd: tempSyncFolder!,
         encoding: 'utf8'
       });
 

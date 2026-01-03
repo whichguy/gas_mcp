@@ -704,7 +704,13 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
     if (fileType !== 'SERVER_JS') {
         return false;
     }
-    
+
+    // Don't wrap git directory files (breadcrumbs, config, etc.)
+    // These contain git config format ([core], [sync], etc.) not JavaScript
+    if (fileName.startsWith('.git/') || fileName.startsWith('.git')) {
+        return false;
+    }
+
     // Don't wrap special system files
     const specialFiles = ['appsscript', 'common-js/require', 'common-js/__mcp_exec'];
 

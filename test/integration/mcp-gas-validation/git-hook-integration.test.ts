@@ -65,15 +65,15 @@ describe('Git Hook Integration Tests', () => {
     console.log(`✅ Created temp sync folder: ${tempSyncFolder}`);
 
     // Initialize git repository with main branch
-    execSync('git init', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git config user.email "test@mcp-gas.test"', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git config user.name "MCP Test"', { cwd: tempSyncFolder, stdio: 'pipe' });
+    execSync('git init', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git config user.email "test@mcp-gas.test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git config user.name "MCP Test"', { cwd: tempSyncFolder!, stdio: 'pipe' });
 
     // Create main branch with initial commit
     fs.writeFileSync(path.join(tempSyncFolder, 'README.md'), '# Hook Test Project\n');
-    execSync('git add .', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git commit -m "Initial commit"', { cwd: tempSyncFolder, stdio: 'pipe' });
-    execSync('git branch -M main', { cwd: tempSyncFolder, stdio: 'pipe' });
+    execSync('git add .', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git commit -m "Initial commit"', { cwd: tempSyncFolder!, stdio: 'pipe' });
+    execSync('git branch -M main', { cwd: tempSyncFolder!, stdio: 'pipe' });
     console.log('✅ Git repository initialized with main branch');
 
     // Create .git/config.gs breadcrumb in GAS
@@ -83,7 +83,7 @@ describe('Git Hook Integration Tests', () => {
 [sync]
 \tlocalPath = ${tempSyncFolder}`;
 
-    await client.callTool('write', {
+    await client.callAndParse('write', {
       scriptId: testProjectId,
       path: '.git/config',
       content: gitConfig
@@ -138,7 +138,7 @@ describe('Git Hook Integration Tests', () => {
 </body>
 </html>`;
 
-      const writeResult = await client.callTool('write', {
+      const writeResult = await client.callAndParse('write', {
         scriptId: testProjectId,
         path: 'sheets-sidebar/html/include/SidebarAppInit',
         content: htmlContent,
@@ -180,7 +180,7 @@ describe('Git Hook Integration Tests', () => {
 
 module.exports = { testFunction };`;
 
-      const writeResult = await client.callTool('write', {
+      const writeResult = await client.callAndParse('write', {
         scriptId: testProjectId,
         path: 'utils/TestUtil',
         content: jsContent
@@ -217,7 +217,7 @@ module.exports = { testFunction };`;
         runtimeVersion: "V8"
       }, null, 2);
 
-      const writeResult = await client.callTool('write', {
+      const writeResult = await client.callAndParse('write', {
         scriptId: testProjectId,
         path: 'appsscript',
         content: manifestContent,
@@ -253,7 +253,7 @@ dist/
 *.log
 .env`;
 
-      const writeResult = await client.callTool('write', {
+      const writeResult = await client.callAndParse('write', {
         scriptId: testProjectId,
         path: '.gitignore',
         content: gitignoreContent
@@ -287,7 +287,7 @@ dist/
   return "Deep nesting test";
 }`;
 
-      const writeResult = await client.callTool('write', {
+      const writeResult = await client.callAndParse('write', {
         scriptId: testProjectId,
         path: 'src/modules/auth/handlers/oauth/OAuthCallback',
         content: jsContent
@@ -324,7 +324,7 @@ dist/
 }`;
 
       // File already has extension - should not add another
-      const writeResult = await client.callTool('write', {
+      const writeResult = await client.callAndParse('write', {
         scriptId: testProjectId,
         path: 'test/utils.test.spec',
         content: jsContent
@@ -358,7 +358,7 @@ dist/
   return "Main code";
 }`;
 
-      const writeResult = await client.callTool('write', {
+      const writeResult = await client.callAndParse('write', {
         scriptId: testProjectId,
         path: 'Code',
         content: jsContent

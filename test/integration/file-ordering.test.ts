@@ -5,23 +5,17 @@
 
 import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
-import { GASProjectOperations } from '../../src/api/gasProjectOperations.js';
-import { GASFileOperations } from '../../src/api/gasFileOperations.js';
-import { SessionAuthManager } from '../../src/auth/sessionManager.js';
+import { GASClient } from '../../src/api/gasClient.js';
 import { GASFile } from '../../src/api/gasTypes.js';
 
 describe('File Ordering - Integration Tests', function() {
   this.timeout(60000); // 60s timeout for API calls
 
-  let projectOps: GASProjectOperations;
-  let fileOps: GASFileOperations;
+  let gasClient: GASClient;
   let testScriptId: string;
-  let sessionAuth: SessionAuthManager;
 
   before(async function() {
-    sessionAuth = new SessionAuthManager();
-    projectOps = new GASProjectOperations(sessionAuth);
-    fileOps = new GASFileOperations(sessionAuth);
+    gasClient = new GASClient();
 
     // Use test project from environment or skip tests
     testScriptId = process.env.MCP_GAS_TEST_SCRIPT_ID || '';
@@ -30,9 +24,9 @@ describe('File Ordering - Integration Tests', function() {
       this.skip();
     }
 
-    // Ensure authenticated
+    // Ensure authenticated - try to get project content
     try {
-      await sessionAuth.getValidToken();
+      await gasClient.getProjectContent(testScriptId);
     } catch (error) {
       console.log('⚠️  Skipping file ordering tests - not authenticated');
       this.skip();
@@ -41,7 +35,7 @@ describe('File Ordering - Integration Tests', function() {
 
   describe('Position Field Capture', function() {
     it('should capture position field after sorting', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       // Verify all files have position field
       expect(files.length).to.be.greaterThan(0);
@@ -53,7 +47,7 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should preserve position order through array operations', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       // Create a copy and verify positions match indices
       const filesCopy = [...files];
@@ -64,7 +58,7 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should have sequential positions starting from 0', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       const positions = files.map(f => f.position).filter(p => p !== undefined) as number[];
 
@@ -79,7 +73,7 @@ describe('File Ordering - Integration Tests', function() {
 
   describe('Critical File Enforcement', function() {
     it('should identify critical files if present', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       const criticalFiles = [
         'common-js/require',
@@ -107,7 +101,7 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should have critical files in correct order if all present', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       const criticalOrder = [
         'common-js/require',
@@ -138,14 +132,14 @@ describe('File Ordering - Integration Tests', function() {
   describe('Round-Trip Consistency', function() {
     it('should maintain order after updateProjectContent', async function() {
       // Get current files
-      const originalFiles = await projectOps.getProjectContent(testScriptId);
+      const originalFiles = await gasClient.getProjectContent(testScriptId);
       const originalOrder = originalFiles.map(f => f.name);
 
       // Update project with same content (no changes)
-      await fileOps.updateProjectContent(testScriptId, originalFiles);
+      await gasClient.updateProjectContent(testScriptId, originalFiles);
 
       // Get files again
-      const updatedFiles = await projectOps.getProjectContent(testScriptId);
+      const updatedFiles = await gasClient.getProjectContent(testScriptId);
       const updatedOrder = updatedFiles.map(f => f.name);
 
       // Order should be identical
@@ -154,13 +148,13 @@ describe('File Ordering - Integration Tests', function() {
 
     it('should maintain positions after round-trip', async function() {
       // Get current files
-      const originalFiles = await projectOps.getProjectContent(testScriptId);
+      const originalFiles = await gasClient.getProjectContent(testScriptId);
 
       // Update project
-      await fileOps.updateProjectContent(testScriptId, originalFiles);
+      await gasClient.updateProjectContent(testScriptId, originalFiles);
 
       // Get files again
-      const updatedFiles = await projectOps.getProjectContent(testScriptId);
+      const updatedFiles = await gasClient.getProjectContent(testScriptId);
 
       // Positions should match
       originalFiles.forEach((originalFile, index) => {
@@ -186,7 +180,7 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should handle files with undefined position field', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       // Verify no file has undefined position
       files.forEach(file => {
@@ -196,7 +190,7 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should handle duplicate file names gracefully', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       const fileNames = files.map(f => f.name);
       const uniqueNames = new Set(fileNames);
@@ -210,7 +204,7 @@ describe('File Ordering - Integration Tests', function() {
   describe('Performance', function() {
     it('should capture positions efficiently (< 100ms overhead)', async function() {
       const startTime = Date.now();
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
       const endTime = Date.now();
 
       const duration = endTime - startTime;
@@ -224,7 +218,7 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should handle large projects efficiently', async function() {
-      const files = await projectOps.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId);
 
       // Position capture is O(n), should scale linearly
       // Test with actual file count
