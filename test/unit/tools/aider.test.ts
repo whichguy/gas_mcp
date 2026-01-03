@@ -107,9 +107,9 @@ describe('AiderTool', () => {
   });
 
   describe('Fuzzy Matching Algorithm', () => {
-    it('should document fuzzy matching in tool description', () => {
+    it('should document fuzzy editing in tool description', () => {
       expect(aiderTool.description).to.include('fuzzy');
-      expect(aiderTool.description).to.include('matching');
+      expect(aiderTool.description).to.include('editing');
     });
 
     it('should explain similarity threshold in schema', () => {
