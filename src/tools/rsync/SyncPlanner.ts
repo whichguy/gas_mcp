@@ -25,6 +25,12 @@ import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
 import { PlanStore, SyncPlan } from './PlanStore.js';
 import { getUncommittedStatus, getCurrentBranchName } from '../../utils/gitStatus.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
+import {
+  shouldWrapContent,
+  unwrapModuleContent,
+  wrapModuleContent,
+  getModuleName
+} from '../../utils/moduleWrapper.js';
 
 /**
  * Error codes for planning phase
@@ -467,6 +473,13 @@ export class SyncPlanner {
 
   /**
    * Compute diff between source and destination
+   *
+   * IMPORTANT: For accurate comparison, we must compare UNWRAPPED content.
+   * - GAS files have CommonJS wrappers (_main, __defineModule__)
+   * - Local files have clean user code
+   *
+   * We unwrap GAS content before comparison so SHA1 hashes match when
+   * the actual user code is identical.
    */
   private computeDiff(
     direction: 'pull' | 'push',
@@ -474,16 +487,9 @@ export class SyncPlanner {
     localFiles: DiffFileInfo[],
     manifestResult: ManifestLoadResult
   ): ReturnType<typeof SyncDiff.compute> {
-    // Convert GAS files to DiffFileInfo (filter out files without source)
-    const gasDiffFiles = SyncDiff.fromGasFiles(
-      gasFiles
-        .filter(f => f.source !== undefined)
-        .map(f => ({
-          name: f.name,
-          source: f.source as string,
-          updateTime: f.updateTime
-        }))
-    );
+    // Convert GAS files to DiffFileInfo with UNWRAPPED content for comparison
+    // but keep original wrapped content for the operations
+    const gasDiffFiles = this.convertGasFilesToDiff(gasFiles);
 
     // Determine source and destination based on direction
     const sourceFiles = direction === 'pull' ? gasDiffFiles : localFiles;
@@ -494,6 +500,38 @@ export class SyncPlanner {
       manifest: manifestResult.manifest || undefined,
       direction
     });
+  }
+
+  /**
+   * Convert GAS files to DiffFileInfo format with unwrapped content
+   *
+   * This ensures that when comparing GAS files with local files,
+   * we compare the actual user code (without CommonJS wrappers).
+   */
+  private convertGasFilesToDiff(gasFiles: GASFile[]): DiffFileInfo[] {
+    return gasFiles
+      .filter(f => f.source !== undefined)
+      .map(f => {
+        const source = f.source as string;
+        const fileType = f.type || 'SERVER_JS';
+
+        // Unwrap CommonJS for SERVER_JS files for accurate comparison
+        let contentForComparison = source;
+        if (shouldWrapContent(fileType, f.name)) {
+          const { unwrappedContent } = unwrapModuleContent(source);
+          contentForComparison = unwrappedContent;
+        }
+
+        return {
+          filename: f.name,
+          content: contentForComparison,  // Unwrapped for comparison
+          sha1: SyncManifest.computeGitSha1(contentForComparison),
+          lastModified: f.updateTime,
+          size: contentForComparison.length,
+          // Store original wrapped content for operations
+          originalContent: source
+        };
+      });
   }
 
   /**

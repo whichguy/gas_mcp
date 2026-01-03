@@ -16,13 +16,23 @@ import { SyncManifest, SyncManifestData } from './SyncManifest.js';
 
 /**
  * File information for diff computation
+ *
+ * For CommonJS integration:
+ * - `content`: The content used for comparison (unwrapped for SERVER_JS files)
+ * - `sha1`: Hash of the comparison content
+ * - `originalContent`: (Optional) The original wrapped content for operations
+ *
+ * When computing diffs:
+ * - GAS files: content = unwrapped, originalContent = wrapped (for PULL)
+ * - Local files: content = as-is (already unwrapped), no originalContent needed
  */
 export interface DiffFileInfo {
   filename: string;
-  content: string;
-  sha1: string;
+  content: string;           // Content for comparison (unwrapped)
+  sha1: string;              // Hash of comparison content
   lastModified?: string;
   size?: number;
+  originalContent?: string;  // Original content for operations (wrapped for GAS files)
 }
 
 /**
@@ -105,6 +115,10 @@ export class SyncDiff {
     for (const [filename, sourceFile] of sourceMap) {
       const destFile = destMap.get(filename);
 
+      // Use originalContent for operations if available (for wrapped GAS files)
+      // Otherwise use content (for local files which are already unwrapped)
+      const operationContent = sourceFile.originalContent || sourceFile.content;
+
       if (!destFile) {
         // File exists in source but not in destination -> ADD
         result.add.push({
@@ -112,7 +126,7 @@ export class SyncDiff {
           action: 'add',
           sourceHash: sourceFile.sha1,
           size: sourceFile.size,
-          content: sourceFile.content
+          content: operationContent
         });
 
         log.debug(`[DIFF] ADD: ${filename}`);
@@ -125,7 +139,7 @@ export class SyncDiff {
           sourceHash: sourceFile.sha1,
           destHash: destFile.sha1,
           size: sourceFile.size,
-          content: sourceFile.content
+          content: operationContent
         });
 
         log.debug(`[DIFF] UPDATE: ${filename} (${destFile.sha1.slice(0, 8)} -> ${sourceFile.sha1.slice(0, 8)})`);
