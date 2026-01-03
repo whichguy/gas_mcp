@@ -25,6 +25,12 @@ import { SyncManifest } from './SyncManifest.js';
 import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
 import { PlanStore, SyncPlan } from './PlanStore.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
+import {
+  shouldWrapContent,
+  unwrapModuleContent,
+  wrapModuleContent,
+  getModuleName
+} from '../../utils/moduleWrapper.js';
 
 /**
  * Error codes for execution phase
@@ -258,6 +264,8 @@ export class SyncExecutor {
 
   /**
    * Verify no state drift since plan was created
+   *
+   * Uses unwrapped content for comparison to match planning phase behavior.
    */
   private async verifyNoDrift(plan: SyncPlan, accessToken: string): Promise<void> {
     log.debug(`[EXECUTOR] Verifying no drift since plan creation`);
@@ -266,18 +274,10 @@ export class SyncExecutor {
     const currentGasFiles = await this.gasClient.getProjectContent(plan.scriptId, accessToken);
     const currentLocalFiles = await this.scanLocalFiles(plan.localPath);
 
-    // Convert to DiffFileInfo format (filter out files without source)
-    const gasDiffFiles = SyncDiff.fromGasFiles(
-      currentGasFiles
-        .filter(f => f.source !== undefined)
-        .map(f => ({
-          name: f.name,
-          source: f.source as string,
-          updateTime: f.updateTime
-        }))
-    );
+    // Convert GAS files to DiffFileInfo with UNWRAPPED content for comparison
+    const gasDiffFiles = this.convertGasFilesToDiff(currentGasFiles);
 
-    // Detect drift
+    // Detect drift using unwrapped content
     const sourceFiles = plan.direction === 'pull' ? gasDiffFiles : currentLocalFiles;
     const destFiles = plan.direction === 'pull' ? currentLocalFiles : gasDiffFiles;
 
@@ -295,6 +295,36 @@ export class SyncExecutor {
     }
 
     log.debug(`[EXECUTOR] No drift detected, safe to proceed`);
+  }
+
+  /**
+   * Convert GAS files to DiffFileInfo format with unwrapped content for comparison
+   *
+   * Matches the behavior in SyncPlanner.convertGasFilesToDiff()
+   */
+  private convertGasFilesToDiff(gasFiles: GASFile[]): DiffFileInfo[] {
+    return gasFiles
+      .filter(f => f.source !== undefined)
+      .map(f => {
+        const source = f.source as string;
+        const fileType = f.type || 'SERVER_JS';
+
+        // Unwrap CommonJS for SERVER_JS files for accurate comparison
+        let contentForComparison = source;
+        if (shouldWrapContent(fileType, f.name)) {
+          const { unwrappedContent } = unwrapModuleContent(source);
+          contentForComparison = unwrappedContent;
+        }
+
+        return {
+          filename: f.name,
+          content: contentForComparison,  // Unwrapped for comparison
+          sha1: SyncManifest.computeGitSha1(contentForComparison),
+          lastModified: f.updateTime,
+          size: contentForComparison.length,
+          originalContent: source  // Keep wrapped for operations
+        };
+      });
   }
 
   /**
@@ -361,6 +391,10 @@ export class SyncExecutor {
 
   /**
    * Execute PULL operation (GAS → Local)
+   *
+   * IMPORTANT: When pulling from GAS, SERVER_JS files contain CommonJS wrappers
+   * (_main function, __defineModule__ call). We must UNWRAP these before writing
+   * to local so developers see clean code.
    */
   private async executePull(plan: SyncPlan): Promise<void> {
     log.info(`[EXECUTOR] Executing PULL: ${plan.operations.totalOperations} operations`);
@@ -374,7 +408,10 @@ export class SyncExecutor {
     for (const op of plan.operations.add) {
       const filePath = path.join(srcDir, this.gasFilenameToLocalPath(op.filename));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.writeFile(filePath, op.content || '', 'utf-8');
+
+      // Unwrap CommonJS for SERVER_JS files
+      const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
+      await fs.writeFile(filePath, contentToWrite, 'utf-8');
       log.debug(`[EXECUTOR] Added: ${op.filename}`);
     }
 
@@ -382,7 +419,10 @@ export class SyncExecutor {
     for (const op of plan.operations.update) {
       const filePath = path.join(srcDir, this.gasFilenameToLocalPath(op.filename));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
-      await fs.writeFile(filePath, op.content || '', 'utf-8');
+
+      // Unwrap CommonJS for SERVER_JS files
+      const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
+      await fs.writeFile(filePath, contentToWrite, 'utf-8');
       log.debug(`[EXECUTOR] Updated: ${op.filename}`);
     }
 
@@ -408,7 +448,32 @@ export class SyncExecutor {
   }
 
   /**
+   * Unwrap CommonJS wrapper from GAS content for local storage
+   *
+   * When pulling from GAS, SERVER_JS files have _main() wrappers.
+   * We remove these so local files contain clean user code.
+   * HTML and JSON files are passed through unchanged.
+   */
+  private unwrapForLocal(filename: string, content: string): string {
+    const fileType = this.inferFileType(filename);
+
+    // Only unwrap SERVER_JS files that should have CommonJS wrappers
+    if (!shouldWrapContent(fileType, filename)) {
+      return content;
+    }
+
+    // Unwrap the CommonJS wrapper
+    const { unwrappedContent } = unwrapModuleContent(content);
+    log.debug(`[EXECUTOR] Unwrapped CommonJS for: ${filename}`);
+    return unwrappedContent;
+  }
+
+  /**
    * Execute PUSH operation (Local → GAS)
+   *
+   * IMPORTANT: When pushing to GAS, local SERVER_JS files contain clean user code.
+   * We must WRAP these with CommonJS (_main function, __defineModule__ call)
+   * before pushing to GAS.
    */
   private async executePush(plan: SyncPlan, accessToken: string): Promise<void> {
     log.info(`[EXECUTOR] Executing PUSH: ${plan.operations.totalOperations} operations`);
@@ -416,7 +481,7 @@ export class SyncExecutor {
     // Get current GAS files
     const currentGasFiles = await this.gasClient.getProjectContent(plan.scriptId, accessToken);
 
-    // Build complete file list by applying operations
+    // Build complete file list by applying operations (with CommonJS wrapping)
     const newFiles = this.buildCompleteFileList(currentGasFiles, plan.operations);
 
     // Single atomic API call to update all files
@@ -427,11 +492,21 @@ export class SyncExecutor {
 
   /**
    * Build complete file list by applying operations to current state
+   *
+   * For SERVER_JS files being added/updated, we wrap them with CommonJS.
+   * We also preserve existing moduleOptions (loadNow, hoistedFunctions) from
+   * the current GAS version when updating files.
    */
   private buildCompleteFileList(
     currentFiles: GASFile[],
     operations: SyncPlan['operations']
   ): GASFile[] {
+    // Build a map of current files for quick lookup (for preserving moduleOptions)
+    const currentFileMap = new Map<string, GASFile>();
+    for (const file of currentFiles) {
+      currentFileMap.set(file.name, file);
+    }
+
     // Start with current files, excluding those to be deleted or updated
     const deleteNames = new Set(operations.delete.map(op => op.filename));
     const updateNames = new Set(operations.update.map(op => op.filename));
@@ -440,25 +515,73 @@ export class SyncExecutor {
       file => !deleteNames.has(file.name) && !updateNames.has(file.name)
     );
 
-    // Add new files
+    // Add new files (wrapped with CommonJS for SERVER_JS)
     for (const op of operations.add) {
+      const fileType = this.inferFileType(op.filename);
+      const wrappedContent = this.wrapForGas(op.filename, op.content || '', null);
+
       result.push({
         name: op.filename,
-        type: this.inferFileType(op.filename),
-        source: op.content || ''
+        type: fileType,
+        source: wrappedContent
       });
     }
 
-    // Add updated files
+    // Add updated files (wrapped with CommonJS for SERVER_JS, preserving existing options)
     for (const op of operations.update) {
+      const fileType = this.inferFileType(op.filename);
+      const existingFile = currentFileMap.get(op.filename);
+
+      // Preserve existing moduleOptions from the current GAS version
+      const wrappedContent = this.wrapForGas(
+        op.filename,
+        op.content || '',
+        existingFile?.source || null
+      );
+
       result.push({
         name: op.filename,
-        type: this.inferFileType(op.filename),
-        source: op.content || ''
+        type: fileType,
+        source: wrappedContent
       });
     }
 
     return result;
+  }
+
+  /**
+   * Wrap local content with CommonJS wrapper for GAS
+   *
+   * When pushing to GAS, SERVER_JS files need _main() wrappers.
+   * We add these so GAS can execute the code with CommonJS support.
+   * HTML and JSON files are passed through unchanged.
+   *
+   * @param filename - The filename being wrapped
+   * @param content - The local (clean) content
+   * @param existingGasContent - Existing GAS content to preserve moduleOptions from (or null)
+   */
+  private wrapForGas(filename: string, content: string, existingGasContent: string | null): string {
+    const fileType = this.inferFileType(filename);
+
+    // Only wrap SERVER_JS files that should have CommonJS wrappers
+    if (!shouldWrapContent(fileType, filename)) {
+      return content;
+    }
+
+    // Extract existing moduleOptions from GAS content (to preserve loadNow, hoistedFunctions)
+    let existingOptions = null;
+    if (existingGasContent) {
+      const { existingOptions: opts } = unwrapModuleContent(existingGasContent);
+      existingOptions = opts;
+    }
+
+    // Get the module name from the filename
+    const moduleName = getModuleName(filename);
+
+    // Wrap with CommonJS
+    const wrappedContent = wrapModuleContent(content, moduleName, existingOptions);
+    log.debug(`[EXECUTOR] Wrapped CommonJS for: ${filename}${existingOptions ? ' (preserved options)' : ''}`);
+    return wrappedContent;
   }
 
   /**
