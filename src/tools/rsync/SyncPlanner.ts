@@ -50,6 +50,7 @@ const GAS_EXTENSIONS = ['.js', '.gs', '.html'];
  */
 const EXCLUDED_FILES = [
   '.clasp.json',          // clasp CLI config (contains scriptId)
+  '.claspignore',         // clasp ignore patterns
   '.rsync-manifest.json', // Internal rsync tracking
   '.gitignore',           // Git ignore patterns
 ];
