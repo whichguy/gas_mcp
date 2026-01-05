@@ -172,7 +172,7 @@ From `gasClient.ts`, the GAS REST API provides:
 | Tool | Purpose |
 |------|---------|
 | `git_init` | Create .git/config.gs breadcrumb |
-| `local_sync` | Safe merge: GAS ↔ local git repo |
+| `rsync` | Safe merge: GAS ↔ local git repo |
 | `config` | Generic config management |
 
 **Analysis**: Workflow orchestration with intelligent merge. Essential.

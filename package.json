@@ -67,11 +67,13 @@
     "fs-xattr": "^0.4.0",
     "google-auth-library": "^9.15.1",
     "googleapis": "^128.0.0",
+    "ignore": "^7.0.5",
     "marked": "^16.2.1",
     "open": "^8.4.2",
     "turndown": "^7.2.1"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^10.0.0",
     "@types/node": "^20.0.0",

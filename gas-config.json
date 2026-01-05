@@ -83,9 +83,9 @@
       "description": "Created: 7/17/2025"
     },
     "logger-test": {
-      "scriptId": "1ToLqrtFi9wN6aL14Wi5lSscb1e97x2r0zAHhbF3sN9sygISbmOZuUUo0",
+      "scriptId": "1iWuidRfd_VvJqyvxXzyppLcttoWsDu4SWEfyOvAzA_mAZw-3xUdS09Kn",
       "name": "logger-test",
-      "description": "Created: 10/11/2025"
+      "description": "Created: 1/4/2026"
     },
     "logger-test-fresh": {
       "scriptId": "1zoYXqGqYNpGWF1FHwmPrK8m8_cegWPZkzlZ5T6uUH86ahF-mqlLGxYUW",
@@ -508,29 +508,29 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1hldonUw3y832PayhX0I37ujfy8HPYdjBuzNuq96m-2WcEsi7Odhxf_zP",
+      "scriptId": "1gEZvJonB1zt-EJAjComvJYPHHMKI_sCTpXtXIG-AwNgt8Z0xsbu53Gqa",
       "name": "consolidated-test-project",
-      "description": "Created: 1/1/2026"
+      "description": "Created: 1/4/2026"
     },
     "exec-test": {
-      "scriptId": "1JlPz50R26CTwa4-Cpeh7y0Ampmi5ewSvfaFidl2nj0z8N53AYh-cFUWW",
+      "scriptId": "18Pm9TuVuiecwXolVs_HTAu1p1hV3kfRONDY9ERP6iX8yPclr56qiKE2U",
       "name": "exec-test",
-      "description": "Created: 1/1/2026"
+      "description": "Created: 1/4/2026"
     },
     "gas-services-test": {
-      "scriptId": "1L4glTbZyAOMp2ZkoGHt1sP9GAclpzca3ks249VO_bxPSGEQL8jCk7XMJ",
+      "scriptId": "1CELOhmX7m4ZXLpL6rrFRMmECZ9UUXy3a4lxBibVn0XAu_GXNxs9oFGTx",
       "name": "gas-services-test",
-      "description": "Created: 10/11/2025"
+      "description": "Created: 1/4/2026"
     },
     "complex-js-test": {
-      "scriptId": "1UvOaKAn3ThH7E1lropQnSoRyeqMA3n3iX-e-cH3h_PheB8mjHWW1g44r",
+      "scriptId": "1_it1AztsIBRztUfZ65tT0dpyLWtkLaQIWjAYB0SQkc8dZX6POIE1mKZZ",
       "name": "complex-js-test",
-      "description": "Created: 10/11/2025"
+      "description": "Created: 1/4/2026"
     },
     "file-ops-test": {
-      "scriptId": "1jEMt6WO6iyJZ6O8SfDmXaTLS4GSLt9GtiRW6x1ip0pSqb40061Djz1W5",
+      "scriptId": "1vNr8LT_OHLbmlUn1ZzVPBQfYdSJZgbc8mIXChZAVSTc2MFm0SGtzAEvJ",
       "name": "file-ops-test",
-      "description": "Created: 10/11/2025"
+      "description": "Created: 1/4/2026"
     },
     "real-gas-e2e-test-176021807938": {
       "scriptId": "1jhIP5JveC9MOJRuCyDnD_nPb2zQZNfq0mXvoH7PARjD9NipyZ9CQI6vx",
@@ -730,7 +730,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-01-03T18:54:57.215Z"
+    "lastModified": "2026-01-05T00:16:31.406Z"
   },
   "debug": true,
   "currentProject": {

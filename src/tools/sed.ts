@@ -24,6 +24,7 @@ import { CatTool, RawCatTool } from './filesystem/index.js';
 import { WriteTool, RawWriteTool } from './filesystem/index.js';
 import { RegexProcessor } from '../utils/regexProcessor.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 
 /**
  * Interface for sed operation results
@@ -40,7 +41,9 @@ interface SedResult {
   nextAction?: {
     hint: string;
     required: boolean;
+    rsync?: string;
   };
+  gitBreadcrumbHints?: GitBreadcrumbEditHint[];
 }
 
 /**
@@ -257,15 +260,25 @@ export class SedTool extends BaseTool {
         }
       }
 
-      // Add workflow completion hint when on feature branch
-      if (branchName) {
-        const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
-        if (isFeatureBranch(branchName)) {
-          result.nextAction = {
-            hint: `Files updated. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-            required: false
-          };
-        }
+      // Add workflow completion hint with rsync suggestion
+      const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
+      const onFeatureBranch = branchName ? isFeatureBranch(branchName) : false;
+      result.nextAction = {
+        hint: onFeatureBranch
+          ? `Files updated. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`
+          : `Files updated. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
+        required: false,
+        rsync: branchName ? `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })` : undefined
+      };
+
+      // Collect git breadcrumb hints for any .git/* files processed
+      const gitBreadcrumbHints = result.files
+        .filter(f => f.success && f.path.startsWith('.git/'))
+        .map(f => getGitBreadcrumbEditHint(f.path))
+        .filter(hint => hint !== null);
+
+      if (gitBreadcrumbHints.length > 0) {
+        result.gitBreadcrumbHints = gitBreadcrumbHints;
       }
 
       return result;
@@ -484,6 +497,16 @@ export class RawSedTool extends BaseTool {
             error: error instanceof Error ? error.message : 'Unknown error'
           });
         }
+      }
+
+      // Collect git breadcrumb hints for any .git/* files processed
+      const gitBreadcrumbHints = result.files
+        .filter(f => f.success && f.path.startsWith('.git/'))
+        .map(f => getGitBreadcrumbEditHint(f.path))
+        .filter(hint => hint !== null);
+
+      if (gitBreadcrumbHints.length > 0) {
+        result.gitBreadcrumbHints = gitBreadcrumbHints;
       }
 
       return result;

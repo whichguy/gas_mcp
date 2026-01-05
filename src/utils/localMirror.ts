@@ -379,7 +379,7 @@ export async function mirrorFileLocally(options: MirrorOptions): Promise<MirrorR
 /**
  * Mirror multiple files in batch
  *
- * Used by local_sync and bulk operations.
+ * Used by rsync and bulk operations.
  * More efficient than calling mirrorFileLocally multiple times.
  */
 export async function mirrorFilesLocally(

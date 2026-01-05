@@ -65,8 +65,8 @@ export class ConfigTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       actions: 'get: query sync_folder path | set: update sync_folder location',
-      moveExisting: 'physically moves git repo preserving history + updates .git/config.gs',
-      workflow: 'before move: git status/stash | after: cd <path> + local_sync'
+      moveExisting: 'physically moves git repo preserving history + updates .git/config',
+      workflow: 'before move: git status/stash | after: cd <path> + rsync'
     }
   };
 
@@ -106,11 +106,11 @@ export class ConfigTool extends BaseTool {
           hasGitLink: false,
           message: 'Project is not git-linked',
           recommendedActions: {
-            primary: 'Create .git/config.gs breadcrumb manually',
+            primary: 'Create .git/config breadcrumb manually',
             gasCommands: [
-              `write({scriptId: '${scriptId}', fileName: '.git/config.gs', content: '[remote "origin"]\\n\\turl = https://github.com/owner/repo.git\\n[branch "main"]'})`
+              `write({scriptId: '${scriptId}', fileName: '.git/config', content: '[remote "origin"]\\n\\turl = https://github.com/owner/repo.git\\n[branch "main"]'})`
             ],
-            description: 'Manually create .git/config.gs breadcrumb in GAS first, then create local git repo'
+            description: 'Manually create .git/config breadcrumb in GAS first, then create local git repo'
           }
         };
       }
@@ -120,7 +120,7 @@ export class ConfigTool extends BaseTool {
       const config = await gitProjectManager.getProjectConfig(scriptId, accessToken, projectPath);
 
       if (!config) {
-        throw new ValidationError('.git/config.gs', 'invalid', 'Valid git configuration');
+        throw new ValidationError('.git/config', 'invalid', 'Valid git configuration');
       }
 
       const gitConfig: any = {
@@ -191,7 +191,7 @@ export class ConfigTool extends BaseTool {
           response.recommendedActions = {
             primary: 'Sync with GAS or work with git',
             alternatives: [
-              'Run local_sync to pull latest from GAS',
+              'Run rsync to pull latest from GAS',
               'Make changes and commit to git',
               'Push changes to GitHub'
             ],
@@ -201,15 +201,15 @@ export class ConfigTool extends BaseTool {
               `git push origin ${branch}`
             ],
             gasCommands: [
-              `local_sync({scriptId: '${scriptId}'})`
+              `rsync({operation: 'plan', scriptId: '${scriptId}', direction: 'pull'})`
             ]
           };
         }
       } else if (!response.exists) {
         response.recommendedActions = {
-          primary: 'Run local_sync to create folder',
+          primary: 'Run rsync to create folder',
           gasCommands: [
-            `local_sync({scriptId: '${scriptId}'})`
+            `rsync({operation: 'plan', scriptId: '${scriptId}', direction: 'pull'})`
           ]
         };
       } else if (!response.isGitRepo) {
@@ -245,8 +245,8 @@ export class ConfigTool extends BaseTool {
 
       if (!config) {
         throw new ValidationError('git-link', scriptId,
-          'Project must have .git/config.gs file.\n' +
-          'Manually create breadcrumb: write({scriptId, fileName: ".git/config.gs", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo.git"})'
+          'Project must have .git/config file.\n' +
+          'Manually create breadcrumb: write({scriptId, fileName: ".git/config", content: "[remote \\"origin\\"]\\nurl = https://github.com/user/repo.git"})'
         );
       }
 
@@ -286,7 +286,7 @@ export class ConfigTool extends BaseTool {
         recommendedActions: {
           primary: 'Sync to ensure everything is connected',
           gasCommands: [
-            `local_sync({scriptId: '${scriptId}'})`
+            `rsync({operation: 'plan', scriptId: '${scriptId}', direction: 'pull'})`
           ]
         }
       };

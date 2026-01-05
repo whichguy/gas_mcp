@@ -146,7 +146,7 @@ export class GitOperationManager {
     );
 
     // Determine sync mode
-    // Note: Bidirectional mode removed - users should call local_sync explicitly
+    // Note: Bidirectional mode removed - users should call rsync explicitly
     let syncMode: 'simple' | 'local-only';
     if (options.mode === 'local-only') {
       syncMode = 'local-only';
@@ -174,7 +174,7 @@ export class GitOperationManager {
     log.info(`[GIT-MANAGER] Branch: ${branchResult.branch} (created: ${branchResult.created})`);
 
     // PHASE 2: Pre-Operation Sync (skipped - no bidirectional mode)
-    // Note: Bidirectional sync removed. Users should call local_sync before write operations.
+    // Note: Bidirectional sync removed. Users should call rsync before write operations.
 
     // PHASE 3: Compute Changes (read from remote, apply logic, NO writes)
     let operationResult: T;

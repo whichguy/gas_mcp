@@ -3,6 +3,7 @@ import { parsePath } from '../../api/pathParser.js';
 import { ValidationError } from '../../errors/mcpErrors.js';
 import { checkSyncOrThrow, setFileMtimeToRemote } from '../../utils/fileHelpers.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/localGitDetection.js';
+import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { join, dirname } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, CONTENT_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA } from './shared/schemas.js';
@@ -273,6 +274,19 @@ export class RawWriteTool extends BaseFileSystemTool {
     // Add git detection results if available
     if (gitDetection) {
       result.git = gitDetection;
+
+      // Add workflow completion hint with rsync suggestion
+      result.nextAction = {
+        hint: `File written. Commit when ready: git_feature({ operation: 'commit', scriptId: '${parsedPath.scriptId}', message: '...' })`,
+        required: false,
+        rsync: `local_sync({ scriptId: "${parsedPath.scriptId}", operation: "plan", direction: "pull" })`
+      };
+    }
+
+    // Add git breadcrumb hint for .git/* files
+    const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);
+    if (gitBreadcrumbHint) {
+      result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
     return result;
@@ -353,7 +367,7 @@ export class RawWriteTool extends BaseFileSystemTool {
       }
 
       // Success - return result
-      return {
+      const result: any = {
         status: 'success',
         path: params.path,
         scriptId: parsedPath.scriptId,
@@ -371,8 +385,22 @@ export class RawWriteTool extends BaseFileSystemTool {
           commitMessage: params.changeReason || `Update ${filename}`,
           hookModified: hookResult.hookModified,
           breadcrumbsPulled: gitDiscovery.breadcrumbsPulled
+        },
+        // Add workflow completion hint with rsync suggestion
+        nextAction: {
+          hint: `File written. When complete: git_feature({ operation: 'finish', scriptId: '${parsedPath.scriptId}', pushToRemote: true })`,
+          required: false,
+          rsync: `local_sync({ scriptId: "${parsedPath.scriptId}", operation: "plan", direction: "pull" })`
         }
       };
+
+      // Add git breadcrumb hint for .git/* files
+      const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);
+      if (gitBreadcrumbHint) {
+        result.gitBreadcrumbHint = gitBreadcrumbHint;
+      }
+
+      return result;
 
     } catch (remoteError: any) {
       // PHASE 3: Remote failed - revert git commit

@@ -12,6 +12,8 @@ import { GitOperationManager } from '../core/git/GitOperationManager.js';
 import { GitPathResolver } from '../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../core/git/SyncStrategyFactory.js';
 import { AiderOperationStrategy } from '../core/git/operations/AiderOperationStrategy.js';
+import { analyzeContent } from '../utils/contentAnalyzer.js';
+import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 
 interface AiderOperation {
   searchText: string;
@@ -51,6 +53,8 @@ interface GitHints {
 interface NextActionHint {
   hint: string;
   required: boolean;
+  /** Rsync command to sync local git with GAS. Always included when git.detected is true. */
+  rsync?: string;
 }
 
 interface AiderResult {
@@ -66,6 +70,9 @@ interface AiderResult {
   }>;
   git?: GitHints;
   nextAction?: NextActionHint;
+  warnings?: string[];
+  hints?: string[];
+  gitBreadcrumbHint?: GitBreadcrumbEditHint;
 }
 
 /**
@@ -142,7 +149,7 @@ export class AiderTool extends BaseTool {
       errorRecovery: {
         'no match found': 'Lower threshold (0.7) OR add more context OR use ripgrep to find actual text',
         'wrong match': 'Raise threshold (0.9) OR include more unique context in searchText',
-        'sync conflict': 'local_sync first OR retry with force flag'
+        'sync conflict': 'rsync first OR retry with force flag'
       },
       antiPatterns: [
         '❌ aider for exact known text → use edit (faster)',
@@ -217,12 +224,14 @@ export class AiderTool extends BaseTool {
       throw new ValidationError('filename', filename, 'existing file in the project');
     }
 
-    // Unwrap CommonJS if needed
+    // Unwrap CommonJS if needed, capturing existing module options for analysis
     let content = fileContent.source || '';
+    let existingOptions: { loadNow?: boolean | null; hoistedFunctions?: any[] } | null | undefined;
     if (fileContent.type === 'SERVER_JS') {
       const result = unwrapModuleContent(content);
       if (result && result.unwrappedContent) {
         content = result.unwrappedContent;
+        existingOptions = result.existingOptions;
       }
     }
     const originalContent = content;
@@ -271,13 +280,19 @@ export class AiderTool extends BaseTool {
     // Apply edits in reverse position order (prevents position invalidation)
     const { content: modifiedContent, editsApplied } = this.fuzzyMatcher.applyEdits(content, editsWithMatches);
 
+    // Analyze the modified content for common issues and patterns
+    // Pass existingOptions so loadNow check works for files with event handlers
+    const analysis = analyzeContent(filename, modifiedContent, existingOptions ?? undefined);
+
     // Check if any changes were made
     if (modifiedContent === originalContent) {
       return {
         success: true,
         editsApplied: 0,
         filePath: params.path,
-        matches: params.dryRun ? matches : undefined
+        matches: params.dryRun ? matches : undefined,
+        ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
+        ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
       };
     }
 
@@ -289,7 +304,9 @@ export class AiderTool extends BaseTool {
         editsApplied,
         diff,
         filePath: params.path,
-        matches
+        matches,
+        ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
+        ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
       };
     }
 
@@ -326,7 +343,7 @@ export class AiderTool extends BaseTool {
 
     // Return response with git hints for LLM guidance
     // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
-    return {
+    const result: AiderResult = {
       success: true,
       editsApplied,
       filePath: params.path,
@@ -339,14 +356,26 @@ export class AiderTool extends BaseTool {
         recommendation: gitResult.git.recommendation,
         taskCompletionBlocked: gitResult.git.taskCompletionBlocked
       } : { detected: false },
-      // Add workflow completion hint when on feature branch
-      ...(onFeatureBranch ? {
-        nextAction: {
-          hint: `File edited. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: gitResult.git?.taskCompletionBlocked || false
-        }
-      } : {})
+      // Add workflow completion hint with rsync suggestion
+      nextAction: {
+        hint: onFeatureBranch
+          ? `File edited. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`
+          : `File edited. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
+        required: gitResult.git?.taskCompletionBlocked || false,
+        rsync: gitResult.git?.detected ? `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })` : undefined
+      },
+      // Include content analysis warnings and hints
+      ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
+      ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
     };
+
+    // Add git breadcrumb hint for .git/* files
+    const gitBreadcrumbHint = getGitBreadcrumbEditHint(filename);
+    if (gitBreadcrumbHint) {
+      result.gitBreadcrumbHint = gitBreadcrumbHint;
+    }
+
+    return result;
   }
 
 }

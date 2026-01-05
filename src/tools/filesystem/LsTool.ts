@@ -62,10 +62,10 @@ export class LsTool extends BaseFileSystemTool {
       whenToUse: 'explore structure+find by pattern',
       workflow: 'ls({scriptId:"..."}) | ls({scriptId:"...",path:"*.test*"})',
       scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→shows virtual dotfile names'},
-      limitations: {flatFileStructure: 'no real dirs→filename prefixes ("utils/helper") simulate', wildcardPatterns: '*,? supported→matching by wildcardMode', virtualFileDisplay: 'dotfiles (.gitignore,.git/config.gs)→virtual not GAS names'},
+      limitations: {flatFileStructure: 'no real dirs→filename prefixes ("utils/helper") simulate', wildcardPatterns: '*,? supported→matching by wildcardMode', virtualFileDisplay: 'dotfiles (.gitignore)→virtual not GAS names, .git/* files no extension change'},
       examples: ['ls({})→all projects', 'ls({scriptId:"1abc2def..."})→files', 'ls({scriptId:"1abc2def...",path:"*.gs"})→pattern', 'ls({scriptId:"1abc2def...",path:"utils/*"})→subfolder', 'ls({scriptId:"1abc2def...",detailed:true})→detailed', 'ls({scriptId:"1abc2def...",checksums:true})→checksums', 'ls({scriptId:"1abc2def...",detailed:true,checksums:true})→both'],
       virtualFiles: 'dotfiles (.gitignore)→virtual names not GAS storage',
-      checksums: {whenToUse: 'verify file integrity|detect changes (no download)|compare with local Git', format: 'Git-compatible SHA-1: sha1("blob "+size+"\\0"+content)', verification: 'matches: git hash-object <file>', integration: 'local_sync tools→detect GAS↔Git diverge (no download)'},
+      checksums: {whenToUse: 'verify file integrity|detect changes (no download)|compare with local Git', format: 'Git-compatible SHA-1: sha1("blob "+size+"\\0"+content)', verification: 'matches: git hash-object <file>', integration: 'rsync tool→detect GAS↔Git diverge (no download)'},
       positionField: {semantics: 'actual GAS execution order (0-based), NOT filtered array index', preserved: 'position values maintained even when filtering files (e.g., filter to api/* shows position=5, not position=0)', critical: 'require@0, ConfigManager@1, __mcp_exec@2 enforced in write operations', usage: 'use for reorder operations, understanding execution dependencies'},
       antiPatterns: ['❌ ls then cat each file → use ripgrep to search content', '❌ ls for file content → use cat instead', '❌ ls without scriptId for specific project → add scriptId parameter']
     }

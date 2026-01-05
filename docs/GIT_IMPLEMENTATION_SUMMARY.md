@@ -19,7 +19,7 @@ This document summarizes the complete implementation of git auto-commit and feat
 
 #### Two-Phase Discovery
 - **Phase A (Local Filesystem)**: Scans for git repo at `~/gas-repos/project-{scriptId}/`
-- **Phase B (GAS Breadcrumbs)**: Reads `.git/config.gs` from GAS project for sync folder path
+- **Phase B (GAS Breadcrumbs)**: Reads `.git/config` from GAS project for sync folder path
 
 #### Workflow
 1. `write` or `raw_write` detects git repository (Phase A + B)

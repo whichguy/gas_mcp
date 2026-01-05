@@ -1,7 +1,6 @@
 import { expect } from 'chai';
 import { CatTool } from '../../src/tools/filesystem/CatTool.js';
 import { WriteTool } from '../../src/tools/filesystem/WriteTool.js';
-import { LocalSyncTool } from '../../src/tools/gitSync.js';
 import { getCachedGASMetadata, hasCachedMetadata } from '../../src/utils/gasMetadataCache.js';
 import { isFileInSync } from '../../src/utils/fileHelpers.js';
 import * as fs from 'fs/promises';
@@ -20,8 +19,7 @@ import * as os from 'os';
  * 3. Verify cached metadata exists and is correct
  * 4. Verify mtime matches remote updateTime
  * 5. Test sync detection with isFileInSync()
- * 6. Test local_sync preserves metadata
- * 7. Verify graceful degradation when xattr not available
+ * 6. Verify graceful degradation when xattr not available
  */
 
 describe('Metadata Cache Integration Tests', function() {
@@ -39,7 +37,6 @@ module.exports = { testFunction };`;
 
   let writeTool: WriteTool;
   let catTool: CatTool;
-  let localSyncTool: LocalSyncTool;
   let localFilePath: string;
 
   before(async function() {
@@ -57,7 +54,6 @@ module.exports = { testFunction };`;
 
     writeTool = new WriteTool();
     catTool = new CatTool();
-    localSyncTool = new LocalSyncTool();
 
     console.log(`\n🧪 Running metadata cache integration tests on project: ${TEST_SCRIPT_ID}`);
   });

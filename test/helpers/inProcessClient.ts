@@ -264,23 +264,6 @@ export class InProcessTestClient {
       return await this._handleAuthTool(args);
     }
 
-    // Import and execute git tools
-    if (name === 'local_sync') {
-      const { LocalSyncTool } = await import('../../src/tools/gitSync.js');
-      const tool = new LocalSyncTool(this.sessionManager);
-
-      // Execute the tool (session manager is passed via constructor)
-      const result = await tool.execute(args);
-
-      // Return in MCP format
-      return {
-        content: [{
-          type: 'text',
-          text: typeof result === 'string' ? result : JSON.stringify(result, null, 2)
-        }]
-      };
-    }
-
     // Import and execute config tool
     if (name === 'config') {
       const { ConfigTool } = await import('../../src/tools/config.js');
@@ -380,7 +363,7 @@ export class InProcessTestClient {
     }
 
     // For tools we haven't implemented, throw error
-    const supportedTools = ['auth', 'deploy', 'local_sync', 'config', 'cat', 'raw_cat', 'ls', 'write', 'git_feature', 'rsync'];
+    const supportedTools = ['auth', 'deploy', 'config', 'cat', 'raw_cat', 'ls', 'write', 'git_feature', 'rsync'];
     throw new Error(
       `Tool '${name}' not yet supported in direct execution mode.\n` +
       `Supported tools: ${supportedTools.join(', ')}\n` +

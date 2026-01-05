@@ -19,8 +19,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
+import ignore, { Ignore } from 'ignore';
 import { log } from '../../utils/logger.js';
-import { LockManager } from '../../utils/lockManager.js';
 import { SyncManifest } from './SyncManifest.js';
 import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
 import { PlanStore, SyncPlan } from './PlanStore.js';
@@ -31,6 +31,38 @@ import {
   wrapModuleContent,
   getModuleName
 } from '../../utils/moduleWrapper.js';
+
+// ============================================================================
+// GAS File Filtering Constants (shared with SyncPlanner)
+// ============================================================================
+
+/**
+ * GAS-compatible file extensions (local filesystem)
+ */
+const GAS_EXTENSIONS = ['.js', '.gs', '.html'];
+
+/**
+ * Files that are always excluded from sync
+ */
+const EXCLUDED_FILES = [
+  '.clasp.json',
+  '.rsync-manifest.json',
+  '.gitignore',
+];
+
+/**
+ * Directories that are always excluded from sync
+ */
+const EXCLUDED_DIRS = ['.git', 'node_modules', '.idea', '.vscode'];
+
+/**
+ * Check if a file is GAS-compatible based on extension
+ */
+function isGasCompatible(filename: string): boolean {
+  if (filename === 'appsscript.json') return true;
+  if (filename.endsWith('.json')) return false;
+  return GAS_EXTENSIONS.some(ext => filename.endsWith(ext));
+}
 
 /**
  * Error codes for execution phase
@@ -90,12 +122,10 @@ export interface SyncResult {
  * SyncExecutor class for executing sync plans
  */
 export class SyncExecutor {
-  private lockManager: LockManager;
   private gasClient: GASClient;
   private planStore: PlanStore;
 
   constructor(gasClient?: GASClient) {
-    this.lockManager = LockManager.getInstance();
     this.gasClient = gasClient || new GASClient();
     this.planStore = PlanStore.getInstance();
   }
@@ -164,63 +194,55 @@ export class SyncExecutor {
     let preCommitSha: string | undefined;
 
     try {
-      // Step 3: Acquire lock for execution
-      await this.acquireLock(plan.scriptId);
+      // Step 3: Verify no drift since plan was created
+      // Note: No explicit lock here - gasClient.updateProjectContent() handles write locking
+      await this.verifyNoDrift(plan, accessToken);
 
-      try {
-        // Step 4: Verify no drift since plan was created
-        await this.verifyNoDrift(plan, accessToken);
-
-        // Step 5: Create git checkpoint (for PULL operations)
-        if (plan.direction === 'pull') {
-          preCommitSha = await this.getGitCommit(plan.localPath);
-        }
-
-        // Step 6: Execute based on direction
-        if (plan.direction === 'pull') {
-          await this.executePull(plan);
-        } else {
-          await this.executePush(plan, accessToken);
-        }
-
-        // Step 7: Update manifest
-        const newManifest = await this.updateManifest(plan, accessToken);
-
-        // Step 8: Get new commit SHA (for PULL)
-        const newCommitSha = plan.direction === 'pull'
-          ? await this.getGitCommit(plan.localPath)
-          : undefined;
-
-        // Step 9: Delete the plan
-        this.planStore.delete(planId);
-
-        // Step 10: Build and return result
-        const result: SyncResult = {
-          success: true,
-          direction: plan.direction,
-          filesAdded: plan.operations.add.length,
-          filesUpdated: plan.operations.update.length,
-          filesDeleted: plan.operations.delete.length,
-          commitSha: newCommitSha,
-          recoveryInfo: plan.direction === 'pull'
-            ? {
-                method: 'git reset',
-                command: `git -C ${plan.localPath} reset --hard ${preCommitSha || 'HEAD~1'}`
-              }
-            : {
-                method: 'git reset + push',
-                command: `git -C ${plan.localPath} reset --hard HEAD~1 && rsync({operation: 'plan', scriptId: '${plan.scriptId}', direction: 'push'})`
-              }
-        };
-
-        log.info(`[EXECUTOR] Sync complete: +${result.filesAdded} ~${result.filesUpdated} -${result.filesDeleted}`);
-
-        return result;
-
-      } finally {
-        // Always release lock
-        await this.releaseLock(plan.scriptId);
+      // Step 4: Create git checkpoint (for PULL operations)
+      if (plan.direction === 'pull') {
+        preCommitSha = await this.getGitCommit(plan.localPath);
       }
+
+      // Step 5: Execute based on direction
+      if (plan.direction === 'pull') {
+        await this.executePull(plan);
+      } else {
+        await this.executePush(plan, accessToken);
+      }
+
+      // Step 6: Update manifest
+      const newManifest = await this.updateManifest(plan, accessToken);
+
+      // Step 7: Get new commit SHA (for PULL)
+      const newCommitSha = plan.direction === 'pull'
+        ? await this.getGitCommit(plan.localPath)
+        : undefined;
+
+      // Step 8: Delete the plan
+      this.planStore.delete(planId);
+
+      // Step 9: Build and return result
+      const result: SyncResult = {
+        success: true,
+        direction: plan.direction,
+        filesAdded: plan.operations.add.length,
+        filesUpdated: plan.operations.update.length,
+        filesDeleted: plan.operations.delete.length,
+        commitSha: newCommitSha,
+        recoveryInfo: plan.direction === 'pull'
+          ? {
+              method: 'git reset',
+              command: `git -C ${plan.localPath} reset --hard ${preCommitSha || 'HEAD~1'}`
+            }
+          : {
+              method: 'git reset + push',
+              command: `git -C ${plan.localPath} reset --hard HEAD~1 && rsync({operation: 'plan', scriptId: '${plan.scriptId}', direction: 'push'})`
+            }
+      };
+
+      log.info(`[EXECUTOR] Sync complete: +${result.filesAdded} ~${result.filesUpdated} -${result.filesDeleted}`);
+
+      return result;
 
     } catch (error) {
       // Re-throw SyncExecuteError as-is
@@ -235,31 +257,6 @@ export class SyncExecutor {
         `Failed to execute sync: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-  }
-
-  /**
-   * Acquire lock for sync execution
-   */
-  private async acquireLock(scriptId: string): Promise<void> {
-    try {
-      await this.lockManager.acquireLock(scriptId, 'rsync-execute', 60000);
-    } catch (error: any) {
-      if (error.name === 'LockTimeoutError') {
-        throw new SyncExecuteError(
-          'LOCK_TIMEOUT',
-          'Another sync operation is in progress. Wait for it to complete.',
-          { scriptId, lockInfo: error.lockInfo }
-        );
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Release lock
-   */
-  private async releaseLock(scriptId: string): Promise<void> {
-    await this.lockManager.releaseLock(scriptId);
   }
 
   /**
@@ -328,40 +325,80 @@ export class SyncExecutor {
   }
 
   /**
+   * Load .gitignore patterns from repository root
+   */
+  private async loadGitignore(repoRoot: string): Promise<Ignore | null> {
+    try {
+      const gitignorePath = path.join(repoRoot, '.gitignore');
+      const content = await fs.readFile(gitignorePath, 'utf-8');
+      return ignore().add(content);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Scan local files for drift detection
+   *
+   * Only includes GAS-compatible files, respects .gitignore.
    */
   private async scanLocalFiles(localPath: string): Promise<DiffFileInfo[]> {
-    const srcDir = path.join(localPath, 'src');
     const files: DiffFileInfo[] = [];
 
     try {
-      await fs.access(srcDir);
+      await fs.access(localPath);
     } catch {
-      // No src directory - return empty
+      // Directory doesn't exist - return empty
       return [];
     }
 
-    await this.scanDirectory(srcDir, '', files);
+    const ig = await this.loadGitignore(localPath);
+    await this.scanDirectory(localPath, '', files, ig);
     return files;
   }
 
   /**
-   * Recursively scan a directory
+   * Recursively scan a directory for GAS-compatible files
    */
   private async scanDirectory(
     baseDir: string,
     relativePath: string,
-    files: DiffFileInfo[]
+    files: DiffFileInfo[],
+    ig: Ignore | null
   ): Promise<void> {
     const dirPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
 
     for (const entry of entries) {
-      const entryRelPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+      const entryRelPath = relativePath
+        ? `${relativePath}/${entry.name}`
+        : entry.name;
 
       if (entry.isDirectory()) {
-        await this.scanDirectory(baseDir, entryRelPath, files);
+        // Skip excluded directories
+        if (EXCLUDED_DIRS.includes(entry.name)) {
+          continue;
+        }
+        // Skip directories matching .gitignore
+        if (ig?.ignores(entryRelPath + '/')) {
+          continue;
+        }
+        await this.scanDirectory(baseDir, entryRelPath, files, ig);
+
       } else if (entry.isFile()) {
+        // Skip non-GAS files (extension whitelist)
+        if (!isGasCompatible(entry.name)) {
+          continue;
+        }
+        // Skip hardcoded exclusions
+        if (EXCLUDED_FILES.includes(entry.name)) {
+          continue;
+        }
+        // Skip files matching .gitignore
+        if (ig?.ignores(entryRelPath)) {
+          continue;
+        }
+
         const filePath = path.join(dirPath, entry.name);
         const content = await fs.readFile(filePath, 'utf-8');
         const stat = await fs.stat(filePath);
@@ -384,8 +421,10 @@ export class SyncExecutor {
    * Convert local path to GAS filename
    */
   private localPathToGasFilename(localPath: string): string {
-    let filename = localPath.replace(/\\.gs$/, '');
-    filename = filename.replace(/\\\\/g, '/');
+    // Remove .js, .gs, or .html extension (support all local extensions)
+    // Note: .html files keep their extension in GAS, but we strip for consistency
+    let filename = localPath.replace(/\.(js|gs)$/, '');
+    filename = filename.replace(/\\/g, '/');
     return filename;
   }
 
@@ -399,36 +438,34 @@ export class SyncExecutor {
   private async executePull(plan: SyncPlan): Promise<void> {
     log.info(`[EXECUTOR] Executing PULL: ${plan.operations.totalOperations} operations`);
 
-    const srcDir = path.join(plan.localPath, 'src');
-
-    // Ensure src directory exists
-    await fs.mkdir(srcDir, { recursive: true });
+    // Write files directly to repo root (not src/ subdirectory)
+    const targetDir = plan.localPath;
 
     // Process ADD operations
     for (const op of plan.operations.add) {
-      const filePath = path.join(srcDir, this.gasFilenameToLocalPath(op.filename));
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
-
       // Unwrap CommonJS for SERVER_JS files
       const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
+      // Pass content to detect HTML files
+      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, contentToWrite));
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
       log.debug(`[EXECUTOR] Added: ${op.filename}`);
     }
 
     // Process UPDATE operations
     for (const op of plan.operations.update) {
-      const filePath = path.join(srcDir, this.gasFilenameToLocalPath(op.filename));
-      await fs.mkdir(path.dirname(filePath), { recursive: true });
-
       // Unwrap CommonJS for SERVER_JS files
       const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
+      // Pass content to detect HTML files
+      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, contentToWrite));
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
       log.debug(`[EXECUTOR] Updated: ${op.filename}`);
     }
 
-    // Process DELETE operations
+    // Process DELETE operations - no content available, use filename only
     for (const op of plan.operations.delete) {
-      const filePath = path.join(srcDir, this.gasFilenameToLocalPath(op.filename));
+      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename));
       try {
         await fs.unlink(filePath);
         log.debug(`[EXECUTOR] Deleted: ${op.filename}`);
@@ -599,13 +636,33 @@ export class SyncExecutor {
 
   /**
    * Convert GAS filename to local path
+   *
+   * @param filename - GAS filename (without extension for SERVER_JS/HTML)
+   * @param content - Optional content to detect HTML files
    */
-  private gasFilenameToLocalPath(filename: string): string {
-    // Add .gs extension if not HTML or JSON
-    if (!filename.endsWith('.html') && filename !== 'appsscript.json') {
-      return filename + '.gs';
+  private gasFilenameToLocalPath(filename: string, content?: string): string {
+    // JSON files (manifest)
+    if (filename === 'appsscript' || filename.endsWith('.json')) {
+      return filename.endsWith('.json') ? filename : filename + '.json';
     }
-    return filename;
+
+    // HTML files - check filename pattern or content
+    if (filename.endsWith('.html')) {
+      return filename;
+    }
+
+    // Detect HTML by content (GAS HTML files often don't have .html in name)
+    if (content) {
+      const trimmed = content.trim();
+      if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') ||
+          trimmed.startsWith('<head') || trimmed.startsWith('<body') ||
+          (trimmed.startsWith('<') && trimmed.includes('</script>'))) {
+        return filename + '.html';
+      }
+    }
+
+    // Default: JavaScript files
+    return filename + '.js';
   }
 
   /**

@@ -31,6 +31,8 @@ export interface GitHints {
 export interface NextActionHint {
   hint: string;
   required: boolean;
+  /** Rsync command to sync local git with GAS. Always included when git.detected is true. */
+  rsync?: string;
 }
 
 export interface FileResult {
@@ -65,6 +67,8 @@ export interface WriteResult {
     filesModified: string[];
     commitHash?: string;
   };
+  git?: GitHints;
+  nextAction?: NextActionHint;
 }
 
 export interface ListResult {
@@ -127,10 +131,15 @@ export interface FileParams {
 
 export interface CatParams extends FileParams {
   preferLocal?: boolean;
+  /** Write content to this local file. Creates parent dirs. Supports ~ expansion. */
+  toLocal?: string;
 }
 
 export interface WriteParams extends FileParams {
-  content: string;
+  /** Content to write. Required unless fromLocal is provided. */
+  content?: string;
+  /** Read content from this local file instead of content param. Supports ~ expansion. */
+  fromLocal?: string;
   fileType?: 'SERVER_JS' | 'HTML' | 'JSON';
   localOnly?: boolean;
   remoteOnly?: boolean;

@@ -535,10 +535,29 @@ function htmlAuthSuccessResponse(executionResult) {
       argCount: args.length
     }));
 
-    // Direct execution without ContentService wrapping
-    // Returns plain JavaScript value for google.script.run
-    var fn = createFunction(js_statement);
-    return fn();
+    // Execute with logger capture for debugging
+    try {
+      var fn = createFunction(js_statement);
+      var result = fn();
+      var loggerOutput = Logger.getLog();
+
+      return {
+        success: true,
+        result: result,
+        logger_output: loggerOutput,
+        execution_type: 'exec_api'
+      };
+    } catch (error) {
+      var loggerOutput = Logger.getLog();
+      return {
+        success: false,
+        error: error.toString(),
+        message: error.message,
+        stack: error.stack,
+        logger_output: loggerOutput,
+        execution_type: 'exec_api'
+      };
+    }
   }
 
   /**
@@ -587,13 +606,26 @@ function htmlAuthSuccessResponse(executionResult) {
         }
         
         const result = fn(...args);
-        
+        const loggerOutput = Logger.getLog();
+
         // Auto-parse ContentService responses
         if (result && typeof result.getContent === 'function') {
-          return JSON.parse(result.getContent());
+          const parsed = JSON.parse(result.getContent());
+          // Preserve any existing logger_output, merge if needed
+          if (!parsed.logger_output) {
+            parsed.logger_output = loggerOutput;
+          } else if (loggerOutput) {
+            parsed.logger_output = parsed.logger_output + '\n' + loggerOutput;
+          }
+          return parsed;
         }
-        
-        return result;
+
+        return {
+          success: true,
+          result: result,
+          logger_output: loggerOutput,
+          execution_type: 'invoke_module'
+        };
       }
       
       // MODE 2: Raw JavaScript execution (default)
@@ -607,10 +639,13 @@ function htmlAuthSuccessResponse(executionResult) {
       
       return result;
     } catch (error) {
+      const loggerOutput = Logger.getLog();
       return {
         success: false,
         error: error.toString(),
-        message: error.message
+        message: error.message,
+        stack: error.stack,
+        logger_output: loggerOutput
       };
     }
   }

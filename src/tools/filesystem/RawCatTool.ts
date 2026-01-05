@@ -2,6 +2,7 @@ import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { setFileMtimeToRemote } from '../../utils/fileHelpers.js';
+import { getGitBreadcrumbHint } from '../../utils/gitBreadcrumbHints.js';
 import { join, dirname } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 
@@ -63,7 +64,7 @@ export class RawCatTool extends BaseFileSystemTool {
       // Don't fail if local sync fails
     }
 
-    return {
+    const result: any = {
       path,
       scriptId: parsedPath.scriptId,
       filename: parsedPath.filename,
@@ -72,5 +73,13 @@ export class RawCatTool extends BaseFileSystemTool {
       size: (file.source || '').length,
       updateTime: file.updateTime
     };
+
+    // Add git breadcrumb hint for .git/* files
+    const gitHint = getGitBreadcrumbHint(parsedPath.filename || '');
+    if (gitHint) {
+      result.gitBreadcrumbHint = gitHint;
+    }
+
+    return result;
   }
 }

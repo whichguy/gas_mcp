@@ -4,6 +4,7 @@ import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { parsePath } from '../api/pathParser.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 
 interface RawEditOperation {
   oldText: string;
@@ -29,6 +30,7 @@ interface RawEditResult {
     outputTokensUsed: number;
     outputTokensSaved: number;
   };
+  gitBreadcrumbHint?: GitBreadcrumbEditHint;
 }
 
 /**
@@ -226,11 +228,19 @@ export class RawEditTool extends BaseTool {
     await this.gasClient.updateFile(scriptId, filename, content, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
 
     // Return minimal response for token efficiency
-    return {
+    const result: RawEditResult = {
       success: true,
       editsApplied,
       filePath: params.path
     };
+
+    // Add git breadcrumb hint for .git/* files
+    const gitBreadcrumbHint = getGitBreadcrumbEditHint(filename);
+    if (gitBreadcrumbHint) {
+      result.gitBreadcrumbHint = gitBreadcrumbHint;
+    }
+
+    return result;
   }
 
   /**

@@ -7,9 +7,11 @@ import { setFileMtimeToRemote, isFileInSync } from '../../utils/fileHelpers.js';
 import { getCachedGASMetadata } from '../../utils/gasMetadataCache.js';
 import { join, dirname } from 'path';
 import { writeFile, unlink, mkdir } from 'fs/promises';
+import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, PREFER_LOCAL_SCHEMA } from './shared/schemas.js';
+import { getGitBreadcrumbHint } from '../../utils/gitBreadcrumbHints.js';
 import type { CatParams, FileResult } from './shared/types.js';
 
 /**
@@ -41,6 +43,11 @@ export class CatTool extends BaseFileSystemTool {
       preferLocal: {
         ...PREFER_LOCAL_SCHEMA
       },
+      toLocal: {
+        type: 'string',
+        description: 'Write content to this local file. Creates parent dirs. Supports ~ expansion (e.g., ~/backup/file.js).',
+        examples: ['~/backup/utils.js', '/tmp/download.js', '~/gas-repos/backup/Code.js']
+      },
       workingDir: {
         ...WORKING_DIR_SCHEMA
       },
@@ -51,6 +58,12 @@ export class CatTool extends BaseFileSystemTool {
     required: ['scriptId', 'path'],
     additionalProperties: false,
     llmGuidance: {
+      // LOCAL FILE EXPORT - Write content to local file
+      localFileSupport: {
+        toLocal: 'Save to local file: cat({scriptId, path:"utils.js", toLocal:"~/backup/utils.js"})',
+        useCase: 'Backup, export for external tools, local editing, migration',
+        behavior: 'Creates parent directories. Returns savedTo in response.'
+      },
       unixLike: 'cat (read file) | GAS | CommonJS unwrap | prefers local cache',
       whenToUse: 'normal file read (auto local/remote)',
       workflow: 'cat({scriptId:"abc123...",path:"utils.gs"})',
@@ -160,6 +173,20 @@ export class CatTool extends BaseFileSystemTool {
 
               result.content = finalContent;
               result.commonJsInfo = commonJsInfo;
+
+              // Add git breadcrumb hint for .git/* files
+              const gitHint = getGitBreadcrumbHint(filename);
+              if (gitHint) {
+                result.gitBreadcrumbHint = gitHint;
+              }
+
+              // Save to local file if requested
+              if (params.toLocal) {
+                const localPath = expandAndValidateLocalPath(params.toLocal);
+                await mkdir(dirname(localPath), { recursive: true });
+                await writeFile(localPath, result.content, 'utf-8');
+                result.savedTo = localPath;
+              }
 
               // Fast path success - return immediately without API call
               return result;
@@ -359,6 +386,20 @@ export class CatTool extends BaseFileSystemTool {
 
     result.content = finalContent;
     result.commonJsInfo = commonJsInfo;
+
+    // Add git breadcrumb hint for .git/* files
+    const gitHint = getGitBreadcrumbHint(filename);
+    if (gitHint) {
+      result.gitBreadcrumbHint = gitHint;
+    }
+
+    // Save to local file if requested
+    if (params.toLocal) {
+      const localPath = expandAndValidateLocalPath(params.toLocal);
+      await mkdir(dirname(localPath), { recursive: true });
+      await writeFile(localPath, result.content, 'utf-8');
+      result.savedTo = localPath;
+    }
 
     return result;
   }

@@ -102,17 +102,12 @@ console.log('📦 Project Management Tests');
 
 test('PROJECT', 'Project tools exist', checkFileExists('src/tools/project.ts'));
 test('PROJECT', 'Project context tools', checkFileExists('src/tools/projectContext.ts'));
-test('PROJECT', 'Local sync tools', checkFileExists('src/tools/localSync.ts'));
+test('PROJECT', 'Rsync tools', checkFileExists('src/tools/rsync/RsyncTool.ts'));
 
 // Check project operations
 test('PROJECT', 'Project creation tools', checkFileContains('src/tools/project.ts', 'gas_project_create'));
 test('PROJECT', 'Project initialization', checkFileContains('src/tools/deployments.ts', 'gas_project_init'));
 test('PROJECT', 'Project context management', checkFileContains('src/tools/projectContext.ts', 'gas_project_set'));
-
-// Check local synchronization
-test('PROJECT', 'Local pull operations', checkFileContains('src/tools/localSync.ts', 'gas_pull'));
-test('PROJECT', 'Local push operations', checkFileContains('src/tools/localSync.ts', 'gas_push'));
-test('PROJECT', 'Status checking', checkFileContains('src/tools/localSync.ts', 'gas_status'));
 
 console.log();
 
@@ -137,20 +132,14 @@ test('EXEC', 'Version management', checkFileContains('src/tools/versions.ts', ['
 console.log();
 
 // =============================================================================
-// 6. GIT SYNC TESTS (Already verified separately)
+// 6. GIT SYNC TESTS (rsync + git_feature)
 // =============================================================================
 console.log('🔄 Git Sync Integration Tests');
 
-test('GIT', 'Git sync tools exist', checkFileExists('src/tools/gitSync.ts'));
-test('GIT', 'All git tools implemented', checkFileContains('src/tools/gitSync.ts', [
-  'GasGitInitTool',
-  'GasGitSyncTool', 
-  'GasGitStatusTool',
-  'GasGitSetSyncFolderTool',
-  'GasGitGetSyncFolderTool'
-]));
-test('GIT', 'Multi-repository support', checkFileContains('src/tools/gitSync.ts', 'projectPath'));
-test('GIT', 'Safe git operations', checkFileContains('src/tools/gitSync.ts', 'git -C'));
+test('GIT', 'Rsync tool exists', checkFileExists('src/tools/rsync/RsyncTool.ts'));
+test('GIT', 'Git feature tool exists', checkFileExists('src/tools/git/GitFeatureTool.ts'));
+test('GIT', 'Config tool exists', checkFileExists('src/tools/config.ts'));
+test('GIT', 'Multi-repository support', checkFileContains('src/tools/rsync/RsyncTool.ts', 'projectPath'));
 
 console.log();
 
@@ -221,7 +210,7 @@ test('BUILD', 'ESLint config exists', checkFileExists('.eslintrc.json'));
 // Check build output
 test('BUILD', 'Dist directory exists', fs.existsSync(path.join(__dirname, '../..', 'dist')));
 test('BUILD', 'Compiled server exists', checkFileExists('dist/src/server/mcpServer.js'));
-test('BUILD', 'Compiled tools exist', checkFileExists('dist/src/tools/gitSync.js'));
+test('BUILD', 'Compiled rsync tools exist', checkFileExists('dist/src/tools/rsync/RsyncTool.js'));
 
 console.log();
 
@@ -238,11 +227,11 @@ if (failed === 0) {
   
   console.log('\n🏆 Verified Components:');
   console.log('  • Core Infrastructure (MCP protocol, base classes)');
-  console.log('  • Authentication System (OAuth 2.0 PKCE flow)');  
+  console.log('  • Authentication System (OAuth 2.0 PKCE flow)');
   console.log('  • File System Operations (CRUD, search, advanced)');
-  console.log('  • Project Management (creation, context, sync)');
+  console.log('  • Project Management (creation, context, rsync)');
   console.log('  • Execution & Deployment (run, deploy, versions)');
-  console.log('  • Git Sync Integration (multi-repo, safe sync)');
+  console.log('  • Git Integration (rsync, git_feature, config)');
   console.log('  • Advanced Features (triggers, monitoring, proxy)');
   console.log('  • Utilities & Helpers (clients, parsers, transformers)');
   console.log('  • Error Handling (comprehensive error types)');

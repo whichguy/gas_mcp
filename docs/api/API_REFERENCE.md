@@ -3359,7 +3359,7 @@ const writeResult = await callTool('gas_write', {
 
 **Git Discovery Process**:
 1. **Phase A (Local Filesystem)**: Scans for git repo at `~/gas-repos/project-{scriptId}/`
-2. **Phase B (GAS Breadcrumbs)**: Reads `.git/config.gs` from GAS project
+2. **Phase B (GAS Breadcrumbs)**: Reads `.git/config` from GAS project
 
 **Workflow**:
 1. Write operation detects git repository

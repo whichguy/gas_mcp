@@ -12,7 +12,7 @@ import * as path from 'path';
  * Recommendation object for establishing sync
  */
 export interface SyncRecommendation {
-  action: 'local_sync';
+  action: 'rsync';
   reason: string;
   command: string;
   details: {
@@ -138,10 +138,12 @@ export async function detectLocalGit(scriptId: string): Promise<string | null> {
 }
 
 /**
- * Check if .git/config.gs breadcrumb exists in GAS project files
+ * Check if .git/config breadcrumb exists in GAS project files
  *
  * Checks the provided files array for the breadcrumb file.
  * This is designed to work with files already fetched by the calling tool.
+ *
+ * Note: GAS stores .git/config without .gs extension (type: SERVER_JS provides the extension info)
  *
  * @param files - Array of GAS files from getProjectContent()
  * @returns true if breadcrumb exists, false otherwise
@@ -149,7 +151,8 @@ export async function detectLocalGit(scriptId: string): Promise<string | null> {
 export function checkBreadcrumbExists(
   files: Array<{ name: string; [key: string]: any }>
 ): boolean {
-  // Check if .git/config.gs exists in the file list
+  // Check if .git/config exists in the file list
+  // Note: GAS stores this as ".git/config" (no .gs extension), but check both for safety
   return files.some(file =>
     file.name === '.git/config.gs' || file.name === '.git/config'
   );
@@ -159,7 +162,7 @@ export function checkBreadcrumbExists(
  * Build recommendation object for establishing sync
  *
  * Creates a structured recommendation with:
- * - Action to take (local_sync)
+ * - Action to take (rsync)
  * - Human-readable reason
  * - Exact command to execute
  * - Additional details
@@ -173,9 +176,9 @@ export function buildRecommendation(
   gitPath: string
 ): SyncRecommendation {
   return {
-    action: 'local_sync',
-    reason: 'Local git repository detected but no .git/config.gs breadcrumb found in GAS',
-    command: `local_sync({scriptId: "${scriptId}", direction: "pull-only"})`,
+    action: 'rsync',
+    reason: 'Local git repository detected but no .git/config breadcrumb found in GAS',
+    command: `rsync({operation: 'plan', scriptId: "${scriptId}", direction: 'pull'})`,
     details: {
       localGitPath: gitPath,
       breadcrumbMissing: true

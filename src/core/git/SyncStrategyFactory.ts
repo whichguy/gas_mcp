@@ -13,7 +13,7 @@ import type { GASClient } from '../../api/gasClient.js';
  * Factory for creating sync strategies
  *
  * Note: BidirectionalSyncStrategy was removed due to complexity and risk.
- * Users should call local_sync explicitly for bidirectional workflows.
+ * Users should call rsync explicitly for sync workflows.
  */
 export class SyncStrategyFactory {
   /**

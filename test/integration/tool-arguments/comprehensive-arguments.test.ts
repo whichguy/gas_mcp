@@ -10,7 +10,7 @@ import { ArgumentTestHelper } from './helpers/argument-test-helper.js';
  * using a SINGLE shared project to maximize performance.
  *
  * Coverage:
- * - Git tools (2 tools: local_sync, config)
+ * - Git tools (2 tools: rsync, config)
  * - Project management (1 tool: project_list)
  * - Process tools (2 tools)
  * - Log tools (1 tool: log with list/get operations)

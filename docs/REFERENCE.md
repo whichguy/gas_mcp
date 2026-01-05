@@ -433,16 +433,16 @@ trigger({operation: "delete", scriptId: "...", triggerId: "..."})
 
 All work identically for both script types.
 
-**`local_sync` (deprecated)** - Initialize git association
-- Creates `.git/config.gs` in GAS project
-- Links to GitHub repository
-- Configures local sync folder
+**`rsync`** - Two-phase unidirectional sync
+- Plan operation: compute diff and create plan
+- Execute operation: apply plan with deletion confirmation
+- Supports pull (GAS→local) and push (local→GAS) directions
+- 5-minute TTL on plans for safety
 
-**`local_sync`** - Safe bidirectional sync
-- ALWAYS pulls from GAS first
-- Merges with local changes
-- Only pushes if merge succeeds
-- Stops for manual conflict resolution
+**`git_feature`** - Feature branch management
+- start/commit/push/finish/rollback/list/switch operations
+- Creates `llm-feature-{name}` branches
+- Squash merge to main on finish
 
 **`config`** - Generic configuration management
 - Get/set sync_folder location
@@ -451,8 +451,8 @@ All work identically for both script types.
 
 **Limitations:**
 - Requires local git installation
-- Merge conflicts require manual resolution
-- Cannot push blindly (safety feature)
+- Plans expire after 5 minutes
+- Deletions require explicit confirmation
 
 ### Local Project Sync (7 tools)
 

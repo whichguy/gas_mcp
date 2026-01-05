@@ -1,17 +1,17 @@
 /**
  * GitPathResolver - Resolves local git repository paths
  *
- * Ensures ALL tools (write/edit/aider/local_sync) use the SAME local path
- * by checking for .git/config.gs breadcrumbs in GAS projects.
+ * Ensures ALL tools (write/edit/aider/rsync) use the SAME local path
+ * by checking for .git/config breadcrumbs in GAS projects.
  *
  * Resolution Strategy:
- * 1. Check for .git/config.gs breadcrumb in GAS
+ * 1. Check for .git/config breadcrumb in GAS
  * 2. Use configured localPath from breadcrumb if exists
  * 3. Fall back to LocalFileManager default path
  *
  * This ensures consistency between:
  * - write/edit operations (create local commits)
- * - local_sync operations (pull/merge/push)
+ * - rsync operations (pull/push)
  */
 
 import { log } from '../../utils/logger.js';
@@ -21,7 +21,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 /**
- * Git breadcrumb configuration from .git/config.gs
+ * Git breadcrumb configuration from .git/config
  */
 export interface GitBreadcrumbConfig {
   remote?: {
@@ -52,7 +52,7 @@ export class GitPathResolver {
    * Resolve local git repository path for a GAS project
    *
    * Resolution order:
-   * 1. .git/config.gs breadcrumb localPath (if exists)
+   * 1. .git/config breadcrumb localPath (if exists)
    * 2. LocalFileManager default path
    *
    * @param scriptId - GAS project ID
@@ -74,7 +74,7 @@ export class GitPathResolver {
     log.debug(`[PATH-RESOLVER] Resolving path for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
 
     try {
-      // Check for .git/config.gs breadcrumb
+      // Check for .git/config breadcrumb
       const breadcrumb = await this.getBreadcrumb(scriptId, projectPath, accessToken);
 
       if (breadcrumb?.sync?.localPath) {
@@ -107,7 +107,7 @@ export class GitPathResolver {
   }
 
   /**
-   * Check if .git/config.gs breadcrumb exists in GAS project
+   * Check if .git/config breadcrumb exists in GAS project
    *
    * @param scriptId - GAS project ID
    * @param projectPath - Optional nested project path
