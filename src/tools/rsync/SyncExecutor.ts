@@ -325,16 +325,32 @@ export class SyncExecutor {
   }
 
   /**
-   * Load .gitignore patterns from repository root
+   * Load ignore patterns from .gitignore and .claspignore
+   * Both files use the same syntax (gitignore format)
    */
-  private async loadGitignore(repoRoot: string): Promise<Ignore | null> {
+  private async loadIgnorePatterns(repoRoot: string): Promise<Ignore | null> {
+    const ig = ignore();
+    let hasPatterns = false;
+
+    // Load .gitignore
     try {
-      const gitignorePath = path.join(repoRoot, '.gitignore');
-      const content = await fs.readFile(gitignorePath, 'utf-8');
-      return ignore().add(content);
+      const content = await fs.readFile(path.join(repoRoot, '.gitignore'), 'utf-8');
+      ig.add(content);
+      hasPatterns = true;
     } catch {
-      return null;
+      // No .gitignore - continue
     }
+
+    // Load .claspignore (clasp CLI compatibility)
+    try {
+      const content = await fs.readFile(path.join(repoRoot, '.claspignore'), 'utf-8');
+      ig.add(content);
+      hasPatterns = true;
+    } catch {
+      // No .claspignore - continue
+    }
+
+    return hasPatterns ? ig : null;
   }
 
   /**
@@ -352,7 +368,7 @@ export class SyncExecutor {
       return [];
     }
 
-    const ig = await this.loadGitignore(localPath);
+    const ig = await this.loadIgnorePatterns(localPath);
     await this.scanDirectory(localPath, '', files, ig);
     return files;
   }

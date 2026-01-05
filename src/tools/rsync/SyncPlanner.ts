@@ -400,18 +400,34 @@ export class SyncPlanner {
   }
 
   /**
-   * Load .gitignore patterns from repository root
+   * Load ignore patterns from .gitignore and .claspignore
+   * Both files use the same syntax (gitignore format)
    */
-  private async loadGitignore(repoRoot: string): Promise<Ignore | null> {
+  private async loadIgnorePatterns(repoRoot: string): Promise<Ignore | null> {
+    const ig = ignore();
+    let hasPatterns = false;
+
+    // Load .gitignore
     try {
-      const gitignorePath = path.join(repoRoot, '.gitignore');
-      const content = await fs.readFile(gitignorePath, 'utf-8');
-      log.debug(`[PLANNER] Loaded .gitignore from ${gitignorePath}`);
-      return ignore().add(content);
+      const content = await fs.readFile(path.join(repoRoot, '.gitignore'), 'utf-8');
+      ig.add(content);
+      hasPatterns = true;
+      log.debug(`[PLANNER] Loaded .gitignore from ${repoRoot}`);
     } catch {
-      // No .gitignore file - that's fine
-      return null;
+      // No .gitignore - continue
     }
+
+    // Load .claspignore (clasp CLI compatibility)
+    try {
+      const content = await fs.readFile(path.join(repoRoot, '.claspignore'), 'utf-8');
+      ig.add(content);
+      hasPatterns = true;
+      log.debug(`[PLANNER] Loaded .claspignore from ${repoRoot}`);
+    } catch {
+      // No .claspignore - continue
+    }
+
+    return hasPatterns ? ig : null;
   }
 
   /**
@@ -440,8 +456,8 @@ export class SyncPlanner {
         return [];
       }
 
-      // Load .gitignore if it exists
-      const ig = await this.loadGitignore(localPath);
+      // Load .gitignore and .claspignore if they exist
+      const ig = await this.loadIgnorePatterns(localPath);
 
       // Recursively scan from repo root (only GAS-compatible files)
       await this.scanDirectory(localPath, '', files, ig);
