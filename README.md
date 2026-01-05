@@ -323,7 +323,8 @@ NODE_ENV = "production"
 <td>
 
 **🔀 Git Integration**
-- `local_sync` - Sync changes (pull→merge→push)
+- `rsync` - Two-phase sync (plan→execute)
+- `git_feature` - Feature branch management
 - `config` - Manage sync folder
 
 </td>
@@ -368,15 +369,16 @@ NODE_ENV = "production"
 
 ### Git Workflow Integration
 ```javascript
-// Set up .git/config.gs breadcrumb file first
+// Set up .git/config breadcrumb file first
 mcp__gas__write({
   scriptId: "...",
   path: ".git/config",
   content: JSON.stringify({ repository: "https://github.com/...", localPath: "~/my-project" })
 })
 
-// Sync changes (always safe - pulls, merges, then pushes)
-mcp__gas__local_sync({ scriptId: "..." })
+// Two-phase sync: plan then execute
+mcp__gas__rsync({ operation: "plan", scriptId: "...", direction: "pull" })
+mcp__gas__rsync({ operation: "execute", scriptId: "...", planId: "..." })
 
 // Standard git workflow works in sync folder
 cd ~/gas-repos/project-xxx
@@ -540,7 +542,7 @@ mcp__gas__cat({ scriptId: "...", path: "Calculator" })
 
 ### Git Integration
 ```javascript
-// Create .git/config.gs breadcrumb file
+// Create .git/config breadcrumb file
 mcp__gas__write({
   scriptId: "...",
   path: ".git/config",
@@ -550,8 +552,9 @@ mcp__gas__write({
   })
 })
 
-// Safe pull-merge-push synchronization (ALWAYS pulls first)
-mcp__gas__local_sync({ scriptId: "..." })
+// Two-phase sync: plan then execute
+mcp__gas__rsync({ operation: "plan", scriptId: "...", direction: "pull" })
+mcp__gas__rsync({ operation: "execute", scriptId: "...", planId: "..." })
 
 // Manage sync folder configuration
 mcp__gas__config({

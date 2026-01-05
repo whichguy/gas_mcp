@@ -17,6 +17,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import ignore, { Ignore } from 'ignore';
 import { log } from '../../utils/logger.js';
 import { LockManager } from '../../utils/lockManager.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
@@ -31,6 +32,55 @@ import {
   wrapModuleContent,
   getModuleName
 } from '../../utils/moduleWrapper.js';
+
+// ============================================================================
+// GAS File Filtering Constants
+// ============================================================================
+
+/**
+ * GAS-compatible file extensions (local filesystem)
+ * - .js → SERVER_JS (preferred)
+ * - .gs → SERVER_JS (legacy)
+ * - .html → HTML
+ */
+const GAS_EXTENSIONS = ['.js', '.gs', '.html'];
+
+/**
+ * Files that are always excluded from sync (never sent to GAS)
+ */
+const EXCLUDED_FILES = [
+  '.clasp.json',          // clasp CLI config (contains scriptId)
+  '.rsync-manifest.json', // Internal rsync tracking
+  '.gitignore',           // Git ignore patterns
+];
+
+/**
+ * Directories that are always excluded from sync
+ */
+const EXCLUDED_DIRS = ['.git', 'node_modules', '.idea', '.vscode'];
+
+/**
+ * Check if a file is GAS-compatible based on extension
+ *
+ * Only these file types can be synced to GAS:
+ * - .js/.gs → SERVER_JS
+ * - .html → HTML
+ * - appsscript.json → JSON (manifest only)
+ */
+function isGasCompatible(filename: string): boolean {
+  // appsscript.json is the only JSON file we sync (manifest)
+  if (filename === 'appsscript.json') {
+    return true;
+  }
+
+  // Other JSON files are NOT synced (package.json, tsconfig.json, etc.)
+  if (filename.endsWith('.json')) {
+    return false;
+  }
+
+  // Check for GAS-compatible extensions
+  return GAS_EXTENSIONS.some(ext => filename.endsWith(ext));
+}
 
 /**
  * Error codes for planning phase
@@ -183,8 +233,13 @@ export class SyncPlanner {
         return result;
 
       } finally {
-        // Always release lock
-        await this.releaseLock(scriptId);
+        // Always release lock - wrap in try-catch to prevent masking original errors
+        try {
+          await this.releaseLock(scriptId);
+        } catch (releaseError) {
+          log.error(`[PLANNER] Failed to release lock:`, releaseError);
+          // Continue - don't mask the original error
+        }
       }
 
     } catch (error) {
@@ -215,7 +270,7 @@ export class SyncPlanner {
     if (!breadcrumb?.sync?.localPath) {
       throw new SyncPlanError(
         'BREADCRUMB_MISSING',
-        'No .git/config.gs breadcrumb found in GAS project. Create one with [sync] localPath = ~/path/to/repo',
+        'No .git/config breadcrumb found in GAS project. Create one with [sync] localPath = ~/path/to/repo',
         { scriptId, projectPath }
       );
     }
@@ -345,32 +400,56 @@ export class SyncPlanner {
   }
 
   /**
-   * Scan local files in src directory
+   * Load .gitignore patterns from repository root
+   */
+  private async loadGitignore(repoRoot: string): Promise<Ignore | null> {
+    try {
+      const gitignorePath = path.join(repoRoot, '.gitignore');
+      const content = await fs.readFile(gitignorePath, 'utf-8');
+      log.debug(`[PLANNER] Loaded .gitignore from ${gitignorePath}`);
+      return ignore().add(content);
+    } catch {
+      // No .gitignore file - that's fine
+      return null;
+    }
+  }
+
+  /**
+   * Scan local files in repository root
+   *
+   * Only includes GAS-compatible files:
+   * - .js/.gs → SERVER_JS
+   * - .html → HTML
+   * - appsscript.json → JSON (manifest)
+   *
+   * Respects .gitignore patterns if present.
    */
   private async scanLocalFiles(
     localPath: string,
     excludePatterns?: string[]
   ): Promise<DiffFileInfo[]> {
-    const srcDir = path.join(localPath, 'src');
     const files: DiffFileInfo[] = [];
 
     try {
-      // Check if src directory exists
+      // Check if local path exists
       try {
-        await fs.access(srcDir);
+        await fs.access(localPath);
       } catch {
-        // No src directory yet - return empty (bootstrap case)
-        log.debug(`[PLANNER] No src directory at ${srcDir} - bootstrap sync`);
+        // Directory doesn't exist - return empty (bootstrap case)
+        log.debug(`[PLANNER] Local path does not exist: ${localPath} - bootstrap sync`);
         return [];
       }
 
-      // Recursively scan src directory
-      await this.scanDirectory(srcDir, '', files);
+      // Load .gitignore if it exists
+      const ig = await this.loadGitignore(localPath);
 
-      // Filter out excluded patterns
+      // Recursively scan from repo root (only GAS-compatible files)
+      await this.scanDirectory(localPath, '', files, ig);
+
+      // Filter out user-provided exclude patterns
       const filtered = this.filterDiffFiles(files, excludePatterns);
 
-      log.debug(`[PLANNER] Scanned ${filtered.length} local files (${files.length} total)`);
+      log.debug(`[PLANNER] Scanned ${filtered.length} local GAS files (${files.length} before user excludes)`);
       return filtered;
 
     } catch (error) {
@@ -383,27 +462,65 @@ export class SyncPlanner {
   }
 
   /**
-   * Recursively scan a directory
+   * Recursively scan a directory for GAS-compatible files
+   *
+   * Applies filtering in order:
+   * 1. Skip excluded directories (.git, node_modules, etc.)
+   * 2. Skip .gitignore patterns (if provided)
+   * 3. Skip non-GAS extensions (only .js, .gs, .html, appsscript.json)
+   * 4. Skip hardcoded excluded files (.clasp.json, etc.)
    */
   private async scanDirectory(
     baseDir: string,
     relativePath: string,
-    files: DiffFileInfo[]
+    files: DiffFileInfo[],
+    ig: Ignore | null
   ): Promise<void> {
     const dirPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
 
     for (const entry of entries) {
-      const entryRelPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+      // Use forward slashes for consistent path handling
+      const entryRelPath = relativePath
+        ? `${relativePath}/${entry.name}`
+        : entry.name;
 
       if (entry.isDirectory()) {
-        await this.scanDirectory(baseDir, entryRelPath, files);
+        // Skip excluded directories (hardcoded)
+        if (EXCLUDED_DIRS.includes(entry.name)) {
+          continue;
+        }
+
+        // Skip directories matching .gitignore patterns
+        if (ig?.ignores(entryRelPath + '/')) {
+          log.debug(`[PLANNER] Skipping directory (gitignore): ${entryRelPath}`);
+          continue;
+        }
+
+        await this.scanDirectory(baseDir, entryRelPath, files, ig);
+
       } else if (entry.isFile()) {
+        // Skip non-GAS files (extension whitelist)
+        if (!isGasCompatible(entry.name)) {
+          continue;
+        }
+
+        // Skip hardcoded excluded files
+        if (EXCLUDED_FILES.includes(entry.name)) {
+          continue;
+        }
+
+        // Skip files matching .gitignore patterns
+        if (ig?.ignores(entryRelPath)) {
+          log.debug(`[PLANNER] Skipping file (gitignore): ${entryRelPath}`);
+          continue;
+        }
+
         const filePath = path.join(dirPath, entry.name);
         const content = await fs.readFile(filePath, 'utf-8');
         const stat = await fs.stat(filePath);
 
-        // Convert path to GAS-style filename (remove .gs extension, convert slashes)
+        // Convert path to GAS-style filename (remove extension, convert slashes)
         const filename = this.localPathToGasFilename(entryRelPath);
 
         files.push({
@@ -421,13 +538,14 @@ export class SyncPlanner {
    * Convert local path to GAS filename
    *
    * Examples:
-   * - utils.gs -> utils
-   * - models/User.gs -> models/User
+   * - utils.js -> utils (preferred)
+   * - utils.gs -> utils (legacy)
+   * - models/User.js -> models/User
    * - auth/oauth.gs -> auth/oauth
    */
   private localPathToGasFilename(localPath: string): string {
-    // Remove .gs extension
-    let filename = localPath.replace(/\.gs$/, '');
+    // Remove .js or .gs extension (support both for backward compat)
+    let filename = localPath.replace(/\.(js|gs)$/, '');
 
     // Convert Windows backslashes to forward slashes
     filename = filename.replace(/\\/g, '/');

@@ -102,7 +102,11 @@ __defineModule__(_main);`;
       /raw:\s*["'`]([^"'`]*?)["'`]/s,
       /raw:\s*`([^`]*?)`/s,
       /RAW_CONTENT\s*=\s*["'`]([^"'`]*?)["'`]/s,
-      /RAW_CONTENT\s*=\s*`([^`]*?)`/s
+      /RAW_CONTENT\s*=\s*`([^`]*?)`/s,
+      // Backward compat: simple module.exports = "..." (legacy format from wrapGitConfigAsModule)
+      /^module\.exports\s*=\s*"((?:[^"\\]|\\.)*)"\s*;?\s*$/s,
+      // Backward compat: module.exports with escaped JSON content
+      /module\.exports\s*=\s*"((?:[^"\\]|\\.)*)"\s*;?\s*$/s
     ];
     
     for (const pattern of patterns) {

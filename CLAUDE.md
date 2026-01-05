@@ -134,12 +134,12 @@ exec({scriptId, js_statement: "clearModuleLogging()"})     // Clear all
 
 **Response Enhancement (write/raw_write):**
 - Returns `local: {path, exists}` when file written locally
-- Returns `git: {associated, syncFolder}` when `.git/config.gs` breadcrumbs found
+- Returns `git: {associated, syncFolder}` when `.git/config` breadcrumbs found
 - **NEW:** Returns `git: {localGitDetected, breadcrumbExists, recommendation?}` for discovery
   - Automatically detects local git repos at `~/gas-repos/project-{scriptId}/`
-  - Checks for `.git/config.gs` breadcrumb in GAS project
+  - Checks for `.git/config` breadcrumb in GAS project
   - Provides sync recommendation if local git found but no breadcrumb
-  - Example: `{localGitDetected: true, breadcrumbExists: false, recommendation: {action: 'local_sync', command: '...'}}`
+  - Example: `{localGitDetected: true, breadcrumbExists: false, recommendation: {action: 'rsync', command: '...'}}`
 - Git association signals local sync folder available for standard git commands
 
 #### 2. Ad-hoc Execution
@@ -358,10 +358,10 @@ finalContent = wrapModuleContent(content, moduleName, this.existingOptions);  //
 
 ### Git Integration
 
-#### Git Sync (LOCAL-FIRST, safe merge)
+#### Git Sync (Two-Phase Workflow)
 
-**Pattern:** pull→merge→push (never blind push) | Requires .git/config.gs breadcrumb
-**Tools:** local_sync + config (sync_folder management)
+**Pattern:** plan→execute (two-phase, never blind push) | Requires .git/config breadcrumb
+**Tools:** rsync + config (sync_folder management)
 **See:** docs/GIT_SYNC_WORKFLOWS.md for complete workflow
 
 #### Git Auto-Initialization (Automatic .git setup)
@@ -424,7 +424,7 @@ or
 
 **Two-Phase Discovery:**
 - **Phase A (Local Filesystem):** Scans for git repo at `~/gas-repos/project-{scriptId}/`
-- **Phase B (GAS Breadcrumbs):** Reads `.git/config.gs` from GAS project for sync folder path
+- **Phase B (GAS Breadcrumbs):** Reads `.git/config` from GAS project for sync folder path
 
 **Response with Git Hints:**
 ```typescript
@@ -570,21 +570,21 @@ git -C ~/gas-repos/project-{scriptId} push origin main
 **Architecture:**
 ```
 GAS Project (Single scriptId)
-├── .git/config.gs              → Root repo breadcrumb (main app)
+├── .git/config                 → Root repo breadcrumb (main app)
 ├── common-js/require.gs
 ├── src/main.js
-├── libs/auth/.git/config.gs    → Auth library repo breadcrumb
+├── libs/auth/.git/config       → Auth library repo breadcrumb
 │   ├── libs/auth/oauth.js
 │   └── libs/auth/session.js
-├── libs/utils/.git/config.gs   → Utils library repo breadcrumb
+├── libs/utils/.git/config      → Utils library repo breadcrumb
 │   ├── libs/utils/helpers.js
 │   └── libs/utils/format.js
-└── libs/ui/.git/config.gs      → UI library repo breadcrumb
+└── libs/ui/.git/config         → UI library repo breadcrumb
     ├── libs/ui/sidebar.html
     └── libs/ui/components.js
 ```
 
-Each `.git/config.gs` breadcrumb maps to an independent local git repository:
+Each `.git/config` breadcrumb maps to an independent local git repository:
 ```
 ~/gas-repos/project-{scriptId}/
 ├── .git/                    → Root repo
@@ -597,8 +597,8 @@ Each `.git/config.gs` breadcrumb maps to an independent local git repository:
 
 | Capability | Tool/Mechanism | Status |
 |------------|----------------|--------|
-| Multiple git repos in one GAS | `.git/config.gs` breadcrumbs | ✅ Full |
-| Selective sync per repo | `local_sync({projectPath})` | ✅ Full |
+| Multiple git repos in one GAS | `.git/config` breadcrumbs | ✅ Full |
+| Selective sync per repo | `rsync({operation, projectPath})` | ✅ Full |
 | Write to specific repo | `write({projectPath})` | ✅ Full |
 | Feature branches per repo | `git_feature({projectPath})` | ✅ Full |
 | Auto-discovery of nested repos | `GitProjectManager.loadAllGitProjects()` | ✅ Full |
@@ -607,7 +607,7 @@ Each `.git/config.gs` breadcrumb maps to an independent local git repository:
 **Per-Repo Workflow:**
 ```typescript
 // Sync just the auth library
-local_sync({scriptId, projectPath: 'libs/auth'})
+rsync({operation: 'plan', scriptId, projectPath: 'libs/auth', direction: 'pull'})
 
 // Start feature on auth library
 git_feature({operation: 'start', scriptId, featureName: 'oauth2', projectPath: 'libs/auth'})
@@ -651,7 +651,7 @@ git_feature({operation: 'finish', scriptId, projectPath: 'libs/auth'})
 | **Management** | 4 | auth, project_list, reorder, process_list |
 | **Logging** | 1 | log (list + get operations) |
 | **Triggers** | 1 | trigger (list + create + delete operations) |
-| **Git** | 3 | local_sync, config, git_feature (start/commit/push/finish/rollback/list/switch) |
+| **Git** | 3 | rsync, config, git_feature (start/commit/push/finish/rollback/list/switch) |
 | **Sheets** | 1 | sheet_sql |
 | **Drive** | 2 | create_script, find_drive_script |
 
@@ -769,7 +769,7 @@ it('should prevent command injection in commit message', async () => {
 **File Operations:**
 - **Smart tools** (cat, write, etc.): Auto-handle CommonJS wrapping/unwrapping
 - **Raw tools** (raw_cat, raw_write, etc.): Preserve exact content including system wrappers
-- Virtual files: `.gitignore` ↔ `.gitignore.gs`, `.git/config` ↔ `.git/config.gs`
+- Virtual files: `.gitignore` ↔ `.gitignore.gs` (but `.git/config` stays as-is, no extension)
 
 **CommonJS Integration:**
 - User writes clean code → `write` wraps with `_main()` function
@@ -820,11 +820,53 @@ const call = window.server.exec_api(null, 'MyModule', 'longTask', params)
     messages => messages.forEach(m => console.log('Progress:', m)),
     { continuous: true, maxDuration: 180000 }
   )
-  .then(result => console.log('Complete:', result));
+  .then(response => {
+    console.log('Result:', response.result);
+    console.log('Logs:', response.logger_output);
+  });
 
 // Cancel if needed
 document.getElementById('cancelBtn').onclick = () => call.cancel('User cancelled');
 ```
+
+**Response Format (exec_api & invoke):**
+
+Both `exec_api()` and `invoke()` now return structured responses with logger output capture:
+
+```javascript
+// Success response
+{
+  success: true,
+  result: <your_function_return_value>,
+  logger_output: "All Logger.log() output captured here",
+  execution_type: 'exec_api' | 'invoke_module'
+}
+
+// Error response
+{
+  success: false,
+  error: "Error.toString()",
+  message: "error.message",
+  stack: "error.stack",
+  logger_output: "Logs captured before error"
+}
+```
+
+**Migration from raw return values:**
+```javascript
+// ❌ OLD - exec_api returned raw value:
+server.exec_api(null, 'Math', 'add', [1, 2])
+  .then(result => console.log(result));  // 3
+
+// ✅ NEW - exec_api returns structured response:
+server.exec_api(null, 'Math', 'add', [1, 2])
+  .then(response => {
+    console.log(response.result);         // 3
+    console.log(response.logger_output);  // Any Logger.log() calls
+  });
+```
+
+**Note:** The MCP `exec` tool (HTTP path) is unaffected - it already used structured responses.
 
 **Infrastructure Files:**
 - `common-js/html/gas_client.html` - Main implementation (39KB)

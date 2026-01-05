@@ -1119,8 +1119,8 @@ export class ProjectCreateTool extends BaseTool {
         console.error('    Run deploy({operation: "reset"}) manually to create deployments');
       }
 
-      // Git initialization removed - users must manually create .git/config.gs breadcrumb
-      // See local_sync tool documentation for git workflow
+      // Git initialization removed - users must manually create .git/config breadcrumb
+      // See rsync tool documentation for git workflow
 
       // Add to local configuration
       let localConfigResult = false;
@@ -1153,7 +1153,7 @@ export class ProjectCreateTool extends BaseTool {
           prod: deploymentResult.deployments.prod
         } : null,
         deploymentsCreated: deploymentResult !== null,
-        instructions: `Project created with full CommonJS infrastructure and deployments. For git sync, manually create .git/config.gs breadcrumb in GAS and use local_sync tool.`
+        instructions: `Project created with full CommonJS infrastructure and deployments. For git sync, manually create .git/config breadcrumb in GAS and use rsync tool.`
       };
 
       // Add debug info if there were errors

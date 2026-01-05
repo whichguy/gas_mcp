@@ -297,7 +297,7 @@ function resolveModuleName(name: string): string {
    - [ ] Plan deprecation timeline
 
 3. **Git Integration**
-   - [ ] Impact on local_sync workflows
+   - [ ] Impact on rsync workflows
    - [ ] .clasp.json handling
    - [ ] Breadcrumb file naming (`.git/config.gs` → `.git/config` ?)
 
@@ -333,7 +333,7 @@ function resolveModuleName(name: string): string {
 2. **Integration Tests**
    - [ ] Test with fresh GAS project (new behavior)
    - [ ] Test with existing GAS project (backward compat)
-   - [ ] Test git workflows (local_sync)
+   - [ ] Test git workflows (rsync)
    - [ ] Test CommonJS module resolution
 
 3. **User Testing**

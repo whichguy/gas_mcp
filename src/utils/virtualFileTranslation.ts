@@ -91,13 +91,19 @@ export function virtualToGASName(virtualName: string): string {
   const parts = virtualName.split('/');
   const fileName = parts.pop() || virtualName;
   const path = parts.join('/');
-  
-  // With the new convention, just add .gs extension for dotfiles
+
+  // Git directory files (.git/config, .git/HEAD, etc.) do NOT get .gs extension
+  // GAS stores these as-is without extension transformation
+  if (virtualName.startsWith('.git/')) {
+    return virtualName;  // .git/config stays as .git/config
+  }
+
+  // Regular dotfiles (.gitignore, .env, etc.) get .gs extension for GAS storage
   if (fileName.startsWith('.')) {
     const gasName = fileName + '.gs';
     return path ? `${path}/${gasName}` : gasName;
   }
-  
+
   // Not a virtual file, return as-is
   return virtualName;
 }

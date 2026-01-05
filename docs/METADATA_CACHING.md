@@ -89,8 +89,8 @@ If any condition fails, slow path is used (API call made).
 2. **RawWriteTool** (`raw_write`)
    - Line 174: Caches metadata after remote write
 
-3. **LocalSyncTool** (`local_sync`)
-   - Lines 656, 702: Caches metadata when syncing files from GAS
+3. **RsyncTool** (`rsync`)
+   - Caches metadata when syncing files from GAS
 
 ### Read Operations (Use Cached Metadata)
 

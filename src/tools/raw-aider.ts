@@ -7,6 +7,7 @@ import { translatePathForOperation } from '../utils/virtualFileTranslation.js';
 import { FuzzyMatcher, type EditOperation } from '../utils/fuzzyMatcher.js';
 import { DiffGenerator } from '../utils/diffGenerator.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 
 interface AiderOperation {
   searchText: string;
@@ -34,6 +35,7 @@ interface AiderResult {
     similarity: number;
     applied: boolean;
   }>;
+  gitBreadcrumbHint?: GitBreadcrumbEditHint;
 }
 
 /**
@@ -251,11 +253,19 @@ export class RawAiderTool extends BaseTool {
     await this.gasClient.updateFile(scriptId, filename, modifiedContent, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
 
     // Return minimal response for token efficiency
-    return {
+    const result: AiderResult = {
       success: true,
       editsApplied,
       filePath: params.path
     };
+
+    // Add git breadcrumb hint for .git/* files
+    const gitBreadcrumbHint = getGitBreadcrumbEditHint(filename);
+    if (gitBreadcrumbHint) {
+      result.gitBreadcrumbHint = gitBreadcrumbHint;
+    }
+
+    return result;
   }
 
 }

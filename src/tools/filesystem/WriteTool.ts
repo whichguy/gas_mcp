@@ -2,7 +2,8 @@ import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug } from '../../utils/moduleWrapper.js';
-import { translatePathForOperation, wrapGitConfigAsModule } from '../../utils/virtualFileTranslation.js';
+import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
+import { GitFormatTranslator } from '../../utils/GitFormatTranslator.js';
 import { setFileMtimeToRemote, checkSyncOrThrow } from '../../utils/fileHelpers.js';
 import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
@@ -11,8 +12,11 @@ import { writeLocalAndValidateHooksOnly } from '../../utils/hookIntegration.js';
 import { getUncommittedStatus, buildGitHint } from '../../utils/gitStatus.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitHints, type GitDetection } from '../../utils/localGitDetection.js';
 import { log } from '../../utils/logger.js';
+import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
+import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
 import { join, dirname } from 'path';
-import { mkdir, stat } from 'fs/promises';
+import { mkdir, stat, readFile } from 'fs/promises';
+import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA } from './shared/schemas.js';
 import type { WriteParams, WriteResult } from './shared/types.js';
 
@@ -44,7 +48,13 @@ export class WriteTool extends BaseFileSystemTool {
         ]
       },
       content: {
-        ...CONTENT_SCHEMA
+        ...CONTENT_SCHEMA,
+        description: 'File content to write. Required unless fromLocal is provided.'
+      },
+      fromLocal: {
+        type: 'string',
+        description: 'Read content from this local file instead of content param. Supports ~ expansion (e.g., ~/src/file.js).',
+        examples: ['~/project/utils.js', '/tmp/generated-code.js', '~/gas-repos/backup/Code.js']
       },
       fileType: {
         ...FILE_TYPE_SCHEMA
@@ -88,9 +98,16 @@ export class WriteTool extends BaseFileSystemTool {
         examples: ['', 'backend', 'frontend', 'libs/shared', 'api/v2']
       }
     },
-    required: ['scriptId', 'path', 'content'],
+    required: ['scriptId', 'path'],  // content OR fromLocal must be provided
     additionalProperties: false,
     llmGuidance: {
+      // LOCAL FILE TRANSFER - Prefer fromLocal over inline content
+      localFileSupport: {
+        fromLocal: 'Read content from local file: write({scriptId, path:"app.js", fromLocal:"~/src/app.js"})',
+        useCase: 'Upload generated code, import existing files, bulk migration from local projects',
+        validation: 'Either content or fromLocal required (not both). Supports ~ expansion.',
+        recommendation: 'PREFER fromLocal over inline content when: (1) content exists locally, (2) content is large (>100 lines), (3) content was just generated. Saves tokens + enables local editing.'
+      },
       // GIT INTEGRATION - CRITICAL for LLM behavior
       gitIntegration: {
         CRITICAL: 'This tool does NOT auto-commit to git',
@@ -117,7 +134,7 @@ export class WriteTool extends BaseFileSystemTool {
         'Force: {path:"Code",content:"...",force:true}  // ⚠️ Overwrites remote even if out of sync'
       ],
       errorRecovery: {
-        'sync conflict': 'local_sync first OR force:true (⚠️ overwrites remote)',
+        'sync conflict': 'rsync first OR force:true (⚠️ overwrites remote)',
         'auth expired': 'auth({mode:"status"}) → auth({mode:"start"}) if needed',
         'file locked': 'Wait 30s (auto-unlock) OR check concurrent writes'
       },
@@ -145,10 +162,32 @@ export class WriteTool extends BaseFileSystemTool {
       this.validate.filePath.bind(this.validate),
       'file writing'
     );
-    const originalContent = params.content;
+
+    // Resolve content source: either inline content or from local file
+    let originalContent: string;
+    let contentSource: 'inline' | 'fromLocal' = 'inline';
+
+    if (params.fromLocal) {
+      if (params.content) {
+        throw new ValidationError('content/fromLocal', 'both provided', 'only one of content or fromLocal should be provided');
+      }
+      // Read content from local file
+      const localPath = expandAndValidateLocalPath(params.fromLocal);
+      try {
+        originalContent = await readFile(localPath, 'utf-8');
+        contentSource = 'fromLocal';
+        log.info(`[WRITE] Reading content from local file: ${localPath} (${originalContent.length} chars)`);
+      } catch (readError: any) {
+        throw new FileOperationError('fromLocal', params.fromLocal, `Failed to read local file: ${readError.message}`);
+      }
+    } else if (params.content !== undefined) {
+      originalContent = params.content;
+    } else {
+      throw new ValidationError('content', undefined, 'content or fromLocal is required');
+    }
 
     // Auto-initialize CommonJS infrastructure if needed
-    const fileType = params.fileType || this.determineFileType(filename, originalContent);
+    const fileType = params.fileType || determineFileTypeUtil(filename, originalContent);
     if (!localOnly && shouldWrapContent(fileType, filename)) {
       try {
         const accessToken = await this.getAuthToken(params);
@@ -284,13 +323,12 @@ export class WriteTool extends BaseFileSystemTool {
         }
       };
     } else if (filename.startsWith('.git/') || filename.startsWith('.git')) {
-      // Git config files need to be wrapped as valid JavaScript for GAS compatibility
-      // GAS requires all .gs files to be valid JavaScript, so we wrap git config
-      // content (which has [section] format) as module.exports = JSON.stringify(content)
-      processedContent = wrapGitConfigAsModule(originalContent, filename);
+      // Use GitFormatTranslator for proper CommonJS with parsed structure
+      // Creates: function _main() { const RAW_CONTENT = "..."; module.exports = { raw, parsed, format }; } __defineModule__(_main);
+      processedContent = GitFormatTranslator.toGAS(originalContent, filename);
       commonJsProcessing = {
         wrapperApplied: true,
-        reason: 'Git config file wrapped as module.exports string for GAS compatibility'
+        reason: 'Git config file wrapped as CommonJS with INI parser for structured access'
       };
     } else {
       commonJsProcessing = {
@@ -411,7 +449,7 @@ export class WriteTool extends BaseFileSystemTool {
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
         const existingFile = currentFiles.find((f: any) => f.name === filename);
-        const fileType = existingFile?.type || this.determineFileType(filename, content);
+        const fileType = existingFile?.type || determineFileTypeUtil(filename, content);
 
         const newFile = {
           name: filename,
@@ -579,12 +617,31 @@ export class WriteTool extends BaseFileSystemTool {
     // Check for git association hints AND detect local git (single API call)
     const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken);
 
+    // Analyze content for warnings and hints based on file type
+    let contentAnalysis: { warnings: string[]; hints: string[] } | undefined;
+    const detectedFileType = determineFileTypeUtil(filename, content);
+    if (detectedFileType === 'HTML') {
+      contentAnalysis = analyzeHtmlContent(content);
+    } else if (detectedFileType === 'SERVER_JS') {
+      contentAnalysis = analyzeCommonJsContent(content, params.moduleOptions, filename);
+    }
+
     // Return token-efficient results with local and git hints
     const result: any = {
       success: true,
       path: `${scriptId}/${filename}`,
       size: content.length
     };
+
+    // Add content-specific warnings and hints (before other metadata)
+    if (contentAnalysis) {
+      if (contentAnalysis.warnings.length > 0) {
+        result.warnings = contentAnalysis.warnings;
+      }
+      if (contentAnalysis.hints.length > 0) {
+        result.hints = contentAnalysis.hints;
+      }
+    }
 
     // Add local file info if available
     if (results.localFile && results.localFile.path) {
@@ -619,6 +676,19 @@ export class WriteTool extends BaseFileSystemTool {
         ...(gitDetection || {}),
         ...uncommittedHints
       };
+
+      // Add workflow completion hint with rsync suggestion
+      result.nextAction = {
+        hint: `File written. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
+        required: uncommittedHints.taskCompletionBlocked || false,
+        rsync: `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })`
+      };
+    }
+
+    // Add git breadcrumb hint for .git/* files
+    const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);
+    if (gitBreadcrumbHint) {
+      result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
     return result;
@@ -776,7 +846,7 @@ export class WriteTool extends BaseFileSystemTool {
 
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
         const existingFile = currentFiles.find((f: any) => f.name === filename);
-        const fileType = existingFile?.type || this.determineFileType(filename, finalContent);
+        const fileType = existingFile?.type || determineFileTypeUtil(filename, finalContent);
 
         const newFile = {
           name: filename,
@@ -914,25 +984,20 @@ export class WriteTool extends BaseFileSystemTool {
       taskCompletionBlocked: gitHint.taskCompletionBlocked
     };
 
+    // Add workflow completion hint with rsync suggestion
+    result.nextAction = {
+      hint: `File written. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
+      required: gitHint.taskCompletionBlocked || false,
+      rsync: `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })`
+    };
+
+    // Add git breadcrumb hint for .git/* files
+    const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);
+    if (gitBreadcrumbHint) {
+      result.gitBreadcrumbHint = gitBreadcrumbHint;
+    }
+
     return result;
-  }
-
-  /**
-   * Determine file type from filename and content
-   */
-  private determineFileType(filename: string, content: string): string {
-    if (filename.toLowerCase() === 'appsscript') {
-      return 'JSON';
-    }
-
-    const trimmed = content.trim();
-    if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html>')) {
-      return 'HTML';
-    } else if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      return 'JSON';
-    } else {
-      return 'SERVER_JS';
-    }
   }
 
   /**

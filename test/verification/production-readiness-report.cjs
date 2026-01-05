@@ -55,7 +55,7 @@ testCritical('MCP server implementation exists', checkFile('src/server/mcpServer
 testCritical('Main entry point exists', checkFile('src/index.ts'));
 testCritical('Base tool system exists', checkFile('src/tools/base.ts'));
 testCritical('Server compiles successfully', checkFile('dist/src/server/mcpServer.js'));
-testCritical('Tools compile successfully', fs.existsSync(path.join(__dirname, '../..', 'dist/src/tools')) && checkFile('dist/src/tools/gitSync.js'));
+testCritical('Tools compile successfully', fs.existsSync(path.join(__dirname, '../..', 'dist/src/tools')) && checkFile('dist/src/tools/rsync/RsyncTool.js'));
 
 console.log('\n🔐 CRITICAL: Authentication System');
 testCritical('OAuth authentication works', checkFile('src/auth/oauthClient.ts'));
@@ -73,11 +73,11 @@ testCritical('JavaScript execution (gas_run)', checkFile('src/tools/execution.ts
 testCritical('CommonJS runtime exists', checkFile('src/CommonJS.js'));
 testCritical('MCP execution runtime exists', checkFile('src/__mcp_exec.js'));
 
-console.log('\n🔄 CRITICAL: Git Integration (Our Main Feature)');
-testCritical('Git sync tools exist', checkFile('src/tools/gitSync.ts'));
-testCritical('Git tools compile', checkFile('dist/src/tools/gitSync.js'));
-testCritical('Multi-repo support', checkFile('src/tools/gitSync.ts', 'projectPath'));
-testCritical('Safe git operations', checkFile('src/tools/gitSync.ts', 'git -C'));
+console.log('\n🔄 CRITICAL: Git Integration (rsync + git_feature)');
+testCritical('Rsync tool exists', checkFile('src/tools/rsync/RsyncTool.ts'));
+testCritical('Git feature tool exists', checkFile('src/tools/git/GitFeatureTool.ts'));
+testCritical('Rsync tools compile', checkFile('dist/src/tools/rsync/RsyncTool.js'));
+testCritical('Multi-repo support', checkFile('src/tools/rsync/RsyncTool.ts', 'projectPath'));
 
 console.log('\n📦 NICE-TO-HAVE: Advanced Features');
 testNice('Project management tools', checkFile('src/tools/project.ts'));
@@ -87,7 +87,7 @@ testNice('Trigger management', checkFile('src/tools/triggers.ts'));
 testNice('Process monitoring', checkFile('src/tools/processes.ts'));
 
 console.log('\n🛠️ NICE-TO-HAVE: Utility Systems');
-testNice('Local sync tools', checkFile('src/tools/localSync.ts'));
+testNice('Config tools', checkFile('src/tools/config.ts'));
 testNice('Project context tools', checkFile('src/tools/projectContext.ts'));
 testNice('Version management', checkFile('src/tools/versions.ts'));
 testNice('Proxy setup tools', checkFile('src/tools/proxySetup.ts'));
@@ -113,15 +113,15 @@ if (criticalSuccess) {
   console.log('\n✅ Core capabilities verified:');
   console.log('  • MCP protocol implementation');
   console.log('  • OAuth 2.0 authentication');
-  console.log('  • File system operations (CRUD)');  
+  console.log('  • File system operations (CRUD)');
   console.log('  • JavaScript code execution');
-  console.log('  • Git sync multi-repository support');
-  
+  console.log('  • Git sync via rsync + git_feature');
+
   console.log('\n🎯 Primary use cases supported:');
   console.log('  • Connect Claude to Google Apps Script');
   console.log('  • Read/write/execute GAS code');
-  console.log('  • Multi-repository git synchronization');
-  console.log('  • Safe bidirectional sync workflow');
+  console.log('  • Two-phase sync workflow (plan → execute)');
+  console.log('  • Feature branch management (git_feature)');
   
   if (niceFailed > 0) {
     console.log(`\n💡 ${niceFailed} nice-to-have features missing (non-blocking)`);
@@ -135,4 +135,4 @@ if (criticalSuccess) {
 console.log('\n📋 Quick Start Commands:');
 console.log('  npm run build     - Build for production');
 console.log('  npm start         - Start MCP server');
-console.log('  npm run test:git  - Verify git sync (our key feature)');
+console.log('  npm test          - Run all tests');

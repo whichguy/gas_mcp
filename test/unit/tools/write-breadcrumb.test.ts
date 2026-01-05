@@ -108,8 +108,12 @@ describe('WriteTool - Breadcrumb Handling', () => {
       expect(writeTool.inputSchema.required).to.include('path');
     });
 
-    it('should require content parameter', () => {
-      expect(writeTool.inputSchema.required).to.include('content');
+    it('should have content as optional (fromLocal can provide content)', () => {
+      // Content is optional when fromLocal is provided
+      expect(writeTool.inputSchema.required).to.not.include('content');
+      const schema = writeTool.inputSchema as any;
+      expect(schema.properties.content).to.exist;
+      expect(schema.properties.fromLocal).to.exist;
     });
 
     it('should have scriptId in properties', () => {
