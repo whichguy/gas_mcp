@@ -46,6 +46,7 @@ const GAS_EXTENSIONS = ['.js', '.gs', '.html'];
  */
 const EXCLUDED_FILES = [
   '.clasp.json',
+  '.claspignore',
   '.rsync-manifest.json',
   '.gitignore',
 ];
