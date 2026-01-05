@@ -624,6 +624,18 @@ export class WriteTool extends BaseFileSystemTool {
       contentAnalysis = analyzeHtmlContent(content);
     } else if (detectedFileType === 'SERVER_JS') {
       contentAnalysis = analyzeCommonJsContent(content, params.moduleOptions, filename);
+
+      // Add logging hint for CommonJS modules without log() calls
+      const isCommonJS = shouldWrapContent(detectedFileType, filename);
+      const hasLogCalls = content.includes('log(');
+      if (isCommonJS && !hasLogCalls) {
+        if (!contentAnalysis) {
+          contentAnalysis = { warnings: [], hints: [] };
+        }
+        contentAnalysis.hints.push(
+          'Tip: Use log() (3rd param in _main) for debugging. Enable with: setModuleLogging("' + filename + '", true)'
+        );
+      }
     }
 
     // Return token-efficient results with local and git hints

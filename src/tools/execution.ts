@@ -1098,19 +1098,27 @@ export class ExecTool extends BaseTool {
             logTail
           );
 
+          // Add debug hint if require() used but no logs returned
+          const usesRequire = js_statement.includes('require(');
+          const hasLogs = filteredOutput.trim().length > 0;
+          const debugHint = (usesRequire && !hasLogs)
+            ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
+            : undefined;
+
           return protectResponseSize({
             status: 'success',
             scriptId,
             js_statement,
             result: retryResult && typeof retryResult === 'object' && retryResult.result !== undefined ? retryResult.result : retryResult,
             logger_output: filteredOutput + metadata,
+            ...(debugHint && { debugHint }),
             executedAt: new Date().toISOString(),
             environment: environment,
             versionNumber: envDeployment?.versionNumber || null,
             cookieAuthUsed: true,
             ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
           });
-          
+
         } catch (authError: any) {
           console.error(`[COOKIE AUTH] Domain authorization failed: ${authError.message} - continuing without cookie auth`);
           // Fall through to normal error handling
@@ -1271,6 +1279,12 @@ export class ExecTool extends BaseTool {
             logTail
           );
 
+          // Add debug hint if require() used but no logs returned
+          const usesRequire = js_statement.includes('require(');
+          const hasLogs = filteredOutput.trim().length > 0;
+          const debugHint = (usesRequire && !hasLogs)
+            ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
+            : undefined;
 
           return protectResponseSize({
             status: 'success',
@@ -1278,6 +1292,7 @@ export class ExecTool extends BaseTool {
             js_statement,
             result: result.payload,
             logger_output: filteredOutput + metadata,
+            ...(debugHint && { debugHint }),
             executedAt: new Date().toISOString(),
             environment: environment,
             versionNumber: envDeployment?.versionNumber || null,
@@ -1325,6 +1340,13 @@ export class ExecTool extends BaseTool {
         });
       }
 
+      // Add debug hint if require() used but no logs returned
+      const usesRequire = js_statement.includes('require(');
+      const hasLogs = filteredOutput.trim().length > 0;
+      const debugHint = (usesRequire && !hasLogs)
+        ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
+        : undefined;
+
       // Return simple success response with logger output
       return protectResponseSize({
         status: 'success',
@@ -1332,6 +1354,7 @@ export class ExecTool extends BaseTool {
         js_statement,
         result: result && typeof result === 'object' && result.result !== undefined ? result.result : result,
         logger_output: filteredOutput + metadata,
+        ...(debugHint && { debugHint }),
         executedAt: new Date().toISOString(),
         environment: environment,
         versionNumber: envDeployment?.versionNumber || null,
