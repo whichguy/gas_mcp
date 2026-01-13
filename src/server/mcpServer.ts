@@ -54,8 +54,8 @@ import {
   ProcessListTool
 } from '../tools/processes.js';
 
-// Consolidated log tool with list and get operations
-import { LogTool } from '../tools/logs.js';
+// Consolidated executions tool with list and get operations
+import { ExecutionsTool } from '../tools/executions.js';
 
 // Local sync tools removed - cat/write already provide local caching via LocalFileManager
 // PullTool, PushTool, StatusTool were redundant wrappers around same copyRemoteToLocal() calls
@@ -333,8 +333,8 @@ export class MCPGasServer {
       // Process management
       new ProcessListTool(authManager),
 
-      // Execution logs with Cloud Logging integration (consolidated: list + get operations)
-      new LogTool(authManager),          // Browse logs (list) and get detailed process logs (get)
+      // Execution history browser (consolidated: list + get operations)
+      new ExecutionsTool(authManager),   // Browse executions (list) and get process metadata (get)
 
       // Local-Remote sync removed - cat/write provide auto-sync via LocalFileManager
       // PullTool/PushTool/StatusTool were redundant (used same copyRemoteToLocal calls)
