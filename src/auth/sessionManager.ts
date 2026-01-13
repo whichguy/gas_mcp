@@ -574,6 +574,10 @@ export class SessionAuthManager {
    * Clear authentication session (logout)
    */
   async clearAuth(): Promise<void> {
+    // BUG FIX: Must adopt existing session ID first, otherwise findSessionById
+    // will fail to find the session (new sessionId != stored sessionId)
+    await this.ensureSessionIdConfirmed();
+
     const authSession = await this.findSessionById(this.sessionId);
     if (authSession) {
       await TokenCacheHelpers.deleteTokenCache(authSession.user.email);
