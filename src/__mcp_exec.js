@@ -153,7 +153,7 @@ function _main(module, exports, log) {
       return result;
     } catch (error) {
       const loggerOutput = Logger.getLog();
-      return errorResponse(error, 'doGet', 'unknown', loggerOutput);
+      return errorResponse(error, 'doGet', 'unknown', loggerOutput, 'doGet');
     }
   }
 
@@ -195,7 +195,7 @@ function _main(module, exports, log) {
     } catch (error) {
       // Capture logger output even on setup errors
       const loggerOutput = Logger.getLog();
-      return errorResponse(error, 'doPost', 'unknown', loggerOutput);
+      return errorResponse(error, 'doPost', 'unknown', loggerOutput, 'doPost');
     }
   }
 
@@ -237,37 +237,17 @@ function extractPostData(postData) {
 }
 
 /**
- * Creates a function from a JS string, returning the value of the 
- * last expression. This robust version correctly handles 'return'
- * as a whole word, distinguishing it from variable names.
+ * Creates a function that evaluates code and returns the result.
+ * Simple approach: wrap code to capture the last expression value.
  */
 function createFunction(code) {
-  const trimmedCode = code.trim();
-  if (trimmedCode === '') return new Function('');
+  const c = code.trim();
+  if (c === '') return function() { return undefined; };
 
-  // Regex to test for a standalone 'return' keyword at the start.
-  const isReturnStatement = /^return($|[\s;])/.test(trimmedCode);
-  
-  const lastSemicolon = trimmedCode.lastIndexOf(';');
-
-  // Case 1: No semicolon
-  if (lastSemicolon === -1) {
-    return new Function(
-      isReturnStatement ? trimmedCode : `return ${trimmedCode}`
-    );
-  }
-
-  // Case 2: Semicolon exists
-  const declarations = trimmedCode.substring(0, lastSemicolon + 1);
-  const finalPart = trimmedCode.substring(lastSemicolon + 1).trim();
-
-  const finalPartIsReturn = /^return($|[\s;])/.test(finalPart);
-
-  const functionBody = (finalPart === '' || finalPartIsReturn)
-    ? trimmedCode
-    : `${declarations} return ${finalPart}`;
-
-  return new Function(functionBody);
+  // Use eval to execute code and return result of last expression
+  return function() {
+    return eval(c);
+  };
 }
 
 /**
@@ -301,25 +281,25 @@ function __gas_run(js_statement) {
       
       return jsonResponse({
         function_called: js_statement,
-        result: result,
+        result: result === undefined ? null : result,  // undefined → null for JSON serialization
         success: true,
         execution_time_ms: duration,
         execution_type: 'fast_eval',
         logger_output: loggerOutput
       });
     }
-    
+
     // Standard function construction for complex expressions
     const fn = createFunction(js_statement);
     const result = fn();
     const duration = Date.now() - startTime;
-    
+
     // CRITICAL: Capture logger output after execution
     const loggerOutput = Logger.getLog();
-    
+
     return jsonResponse({
       function_called: js_statement,
-      result: result,
+      result: result === undefined ? null : result,  // undefined → null for JSON serialization
       success: true,
       execution_time_ms: duration,
       execution_type: 'function_constructor',
@@ -332,7 +312,7 @@ function __gas_run(js_statement) {
     // CRITICAL: Capture logger output even on error
     const loggerOutput = Logger.getLog();
     
-    return errorResponse(error, 'execution', js_statement, loggerOutput);
+    return errorResponse(error, 'execution', js_statement, loggerOutput, 'function_constructor');
   }
 }
 
@@ -352,8 +332,19 @@ function jsonResponse(data) {
 /**
  * Standardized error response with logger output
  * Security: Stack traces only shown in /dev mode to prevent information disclosure
+ *
+ * Response structure is consistent with success responses:
+ * - success: boolean (always present - false for errors)
+ * - execution_type: string (always present - identifies the execution path)
+ * - error: boolean (true for errors, absent for success)
+ *
+ * @param {Error} error - The error object
+ * @param {string} context - Where the error occurred (e.g., 'execution', 'doGet')
+ * @param {string} code - The code that was being executed
+ * @param {string} loggerOutput - Captured Logger.log() output
+ * @param {string} executionType - The execution type (e.g., 'function_constructor', 'fast_eval')
  */
-function errorResponse(error, context, code = 'unknown', loggerOutput = '') {
+function errorResponse(error, context, code = 'unknown', loggerOutput = '', executionType = 'unknown') {
   console.error(`Error in ${context}:`, error.toString());
 
   const currentUrl = ScriptApp.getService().getUrl();
@@ -385,7 +376,9 @@ function errorResponse(error, context, code = 'unknown', loggerOutput = '') {
   }
 
   return jsonResponse({
-    error: true,
+    success: false,           // CRITICAL: Always include success field for consistent parsing
+    error: true,              // Keep for backwards compatibility
+    execution_type: executionType, // CRITICAL: Always include execution_type
     context: context,
     function_called: code,
     message: error.toString(),

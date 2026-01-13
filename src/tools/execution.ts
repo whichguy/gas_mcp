@@ -1352,7 +1352,7 @@ export class ExecTool extends BaseTool {
         status: 'success',
         scriptId,
         js_statement,
-        result: result && typeof result === 'object' && result.result !== undefined ? result.result : result,
+        result: result && typeof result === 'object' && 'result' in result ? result.result : result,
         logger_output: filteredOutput + metadata,
         ...(debugHint && { debugHint }),
         executedAt: new Date().toISOString(),
