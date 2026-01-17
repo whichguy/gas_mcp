@@ -31,6 +31,8 @@ import {
   wrapModuleContent,
   getModuleName
 } from '../../utils/moduleWrapper.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
+import { updateCachedContentHash } from '../../utils/gasMetadataCache.js';
 
 // ============================================================================
 // GAS File Filtering Constants (shared with SyncPlanner)
@@ -451,6 +453,9 @@ export class SyncExecutor {
    * IMPORTANT: When pulling from GAS, SERVER_JS files contain CommonJS wrappers
    * (_main function, __defineModule__ call). We must UNWRAP these before writing
    * to local so developers see clean code.
+   *
+   * CRITICAL: After writing, we cache the WRAPPED content hash in xattr so that
+   * sync status checks (which compare local hash vs remote WRAPPED hash) work correctly.
    */
   private async executePull(plan: SyncPlan): Promise<void> {
     log.info(`[EXECUTOR] Executing PULL: ${plan.operations.totalOperations} operations`);
@@ -466,6 +471,14 @@ export class SyncExecutor {
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, contentToWrite));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
+
+      // Cache the WRAPPED content hash for sync status comparison
+      // The remote hash is computed on WRAPPED content, so we cache that same hash
+      const wrappedHash = computeGitSha1(op.content || '');
+      await updateCachedContentHash(filePath, wrappedHash).catch(() => {
+        // Non-fatal: xattr not supported - sync check will fall back to content comparison
+      });
+
       log.debug(`[EXECUTOR] Added: ${op.filename}`);
     }
 
@@ -477,6 +490,13 @@ export class SyncExecutor {
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, contentToWrite));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
+
+      // Cache the WRAPPED content hash for sync status comparison
+      const wrappedHash = computeGitSha1(op.content || '');
+      await updateCachedContentHash(filePath, wrappedHash).catch(() => {
+        // Non-fatal: xattr not supported - sync check will fall back to content comparison
+      });
+
       log.debug(`[EXECUTOR] Updated: ${op.filename}`);
     }
 
