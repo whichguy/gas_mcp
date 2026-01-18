@@ -13,6 +13,7 @@
 
 import { log } from '../../utils/logger.js';
 import { SyncManifest, SyncManifestData } from './SyncManifest.js';
+import { FileFilter, FileFilterOptions } from '../../utils/fileFilter.js';
 
 /**
  * File information for diff computation
@@ -229,20 +230,27 @@ export class SyncDiff {
   /**
    * Filter out system/infrastructure files from diff
    *
+   * Uses centralized FileFilter for consistent behavior.
+   *
    * @param files - Array of file info
-   * @param excludePatterns - Patterns to exclude (e.g., 'common-js/', '__mcp_exec')
+   * @param options - Optional FileFilterOptions overrides
    * @returns Filtered file array
    */
   static filterSystemFiles(
     files: DiffFileInfo[],
-    excludePatterns: string[] = ['common-js/', '__mcp_exec', 'appsscript.json']
+    options?: FileFilterOptions
   ): DiffFileInfo[] {
+    const filter = new FileFilter({
+      excludeSystemFiles: true,
+      excludeGitBreadcrumbs: true,
+      ...options
+    });
+
     return files.filter(file => {
-      for (const pattern of excludePatterns) {
-        if (file.filename.startsWith(pattern) || file.filename === pattern) {
-          log.debug(`[DIFF] Excluding system file: ${file.filename}`);
-          return false;
-        }
+      const result = filter.filter(file.filename);
+      if (result.skip) {
+        log.debug(`[DIFF] Excluding file: ${file.filename} (${result.reason})`);
+        return false;
       }
       return true;
     });

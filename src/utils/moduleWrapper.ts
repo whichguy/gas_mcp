@@ -23,6 +23,8 @@
  * The unwrapping system handles BOTH signatures transparently.
  */
 
+import { FileFilter } from './fileFilter.js';
+
 /**
  * CommonJS feature analysis patterns
  */
@@ -700,24 +702,13 @@ export function unwrapModuleContent(content: string): {
  * @returns True if content should be wrapped
  */
 export function shouldWrapContent(fileType: string, fileName: string): boolean {
-    // Only wrap SERVER_JS files
-    if (fileType !== 'SERVER_JS') {
-        return false;
-    }
-
-    // Don't wrap git directory files (breadcrumbs, config, etc.)
-    // These contain git config format ([core], [sync], etc.) not JavaScript
-    if (fileName.startsWith('.git/') || fileName.startsWith('.git')) {
-        return false;
-    }
-
-    // Don't wrap special system files
-    const specialFiles = ['appsscript', 'common-js/require', 'common-js/__mcp_exec'];
-
-    // For paths with pseudo-directories, use full path; otherwise use base filename
-    const fileIdentifier = fileName.includes('/') ? fileName.split('.')[0] : fileName.split('/').pop()?.split('.')[0] || '';
-
-    return !specialFiles.includes(fileIdentifier);
+    // Use centralized FileFilter for consistent behavior across codebase
+    // FileFilter.shouldWrapContent handles:
+    // - Only wrap SERVER_JS files
+    // - Don't wrap .git/ files (root and poly-repo: libs/auth/.git/config)
+    // - Don't wrap special system files (appsscript, common-js/require, etc.)
+    const filter = new FileFilter();
+    return filter.shouldWrapContent(fileType, fileName);
 }
 
 /**

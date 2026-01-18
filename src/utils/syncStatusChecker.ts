@@ -13,6 +13,7 @@ import * as path from 'path';
 import { getCachedContentHash, updateCachedContentHash } from './gasMetadataCache.js';
 import { computeGitSha1 } from './hashUtils.js';
 import { shouldWrapContent, wrapModuleContent, getModuleName, unwrapModuleContent } from './moduleWrapper.js';
+import { FileFilter } from './fileFilter.js';
 
 /**
  * Sync status for a single file
@@ -67,44 +68,8 @@ export interface SyncCheckOptions {
   maxContentFiles?: number;
 }
 
-/**
- * Default patterns to exclude from sync check
- */
-const DEFAULT_EXCLUDE_PATTERNS = [
-  'common-js/*',
-  '__mcp_exec*',
-  '.claspignore*'
-];
-
-/**
- * System files that are managed by mcp_gas infrastructure
- */
-const SYSTEM_FILE_PREFIXES = [
-  'common-js/',
-  '__mcp_exec'
-];
-
-
-/**
- * Check if a filename matches any exclude pattern
- */
-function matchesExcludePattern(filename: string, patterns: string[]): boolean {
-  for (const pattern of patterns) {
-    // Simple glob matching: * matches anything
-    const regex = new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-    if (regex.test(filename)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Check if a file is a system file (managed by mcp_gas infrastructure)
- */
-function isSystemFile(filename: string): boolean {
-  return SYSTEM_FILE_PREFIXES.some(prefix => filename.startsWith(prefix));
-}
+// Note: File filtering is now handled by the centralized FileFilter utility
+// See fileFilter.ts for SYSTEM_FILE_PREFIXES, DEFAULT_EXCLUDE_PATTERNS, etc.
 
 /**
  * Get the local filename with appropriate extension
@@ -148,8 +113,11 @@ export async function checkSyncStatus(
   summary: SyncSummary;
   drift: DriftDetails;
 }> {
-  const excludePatterns = options.excludePatterns || DEFAULT_EXCLUDE_PATTERNS;
-  const excludeSystemFiles = options.excludeSystemFiles !== false; // Default true
+  // Create file filter with syncStatus preset + user options
+  const filter = FileFilter.forSyncStatus({
+    excludeSystemFiles: options.excludeSystemFiles !== false,  // Default true
+    excludePatterns: options.excludePatterns,
+  });
   const includeContent = options.includeContent === true;
   const maxContentFiles = options.maxContentFiles ?? 5;
 
@@ -176,13 +144,8 @@ export async function checkSyncStatus(
   for (const remoteFile of remoteFiles) {
     const filename = remoteFile.name;
 
-    // Skip excluded patterns
-    if (matchesExcludePattern(filename, excludePatterns)) {
-      continue;
-    }
-
-    // Skip system files if requested
-    if (excludeSystemFiles && isSystemFile(filename)) {
+    // Use centralized filter (handles system files, git breadcrumbs, exclude patterns)
+    if (filter.shouldSkip(filename)) {
       continue;
     }
 
