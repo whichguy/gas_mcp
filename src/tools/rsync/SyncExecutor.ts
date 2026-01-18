@@ -33,39 +33,13 @@ import {
 } from '../../utils/moduleWrapper.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { updateCachedContentHash } from '../../utils/gasMetadataCache.js';
+import {
+  FileFilter,
+  EXCLUDED_DIRS,
+} from '../../utils/fileFilter.js';
 
-// ============================================================================
-// GAS File Filtering Constants (shared with SyncPlanner)
-// ============================================================================
-
-/**
- * GAS-compatible file extensions (local filesystem)
- */
-const GAS_EXTENSIONS = ['.js', '.gs', '.html'];
-
-/**
- * Files that are always excluded from sync
- */
-const EXCLUDED_FILES = [
-  '.clasp.json',
-  '.claspignore',
-  '.rsync-manifest.json',
-  '.gitignore',
-];
-
-/**
- * Directories that are always excluded from sync
- */
-const EXCLUDED_DIRS = ['.git', 'node_modules', '.idea', '.vscode'];
-
-/**
- * Check if a file is GAS-compatible based on extension
- */
-function isGasCompatible(filename: string): boolean {
-  if (filename === 'appsscript.json') return true;
-  if (filename.endsWith('.json')) return false;
-  return GAS_EXTENSIONS.some(ext => filename.endsWith(ext));
-}
+// Note: GAS file filtering constants have been moved to centralized fileFilter.ts
+// Use FileFilter methods for consistent filtering behavior
 
 /**
  * Error codes for execution phase
@@ -372,7 +346,9 @@ export class SyncExecutor {
     }
 
     const ig = await this.loadIgnorePatterns(localPath);
-    await this.scanDirectory(localPath, '', files, ig);
+    // Create filter once for all file checks (performance optimization)
+    const filter = new FileFilter();
+    await this.scanDirectory(localPath, '', files, ig, filter);
     return files;
   }
 
@@ -383,7 +359,8 @@ export class SyncExecutor {
     baseDir: string,
     relativePath: string,
     files: DiffFileInfo[],
-    ig: Ignore | null
+    ig: Ignore | null,
+    filter: FileFilter
   ): Promise<void> {
     const dirPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -394,23 +371,23 @@ export class SyncExecutor {
         : entry.name;
 
       if (entry.isDirectory()) {
-        // Skip excluded directories
-        if (EXCLUDED_DIRS.includes(entry.name)) {
+        // Skip excluded directories (using centralized constants)
+        if ((EXCLUDED_DIRS as readonly string[]).includes(entry.name)) {
           continue;
         }
         // Skip directories matching .gitignore
         if (ig?.ignores(entryRelPath + '/')) {
           continue;
         }
-        await this.scanDirectory(baseDir, entryRelPath, files, ig);
+        await this.scanDirectory(baseDir, entryRelPath, files, ig, filter);
 
       } else if (entry.isFile()) {
         // Skip non-GAS files (extension whitelist)
-        if (!isGasCompatible(entry.name)) {
+        if (!filter.isGasCompatible(entry.name)) {
           continue;
         }
-        // Skip hardcoded exclusions
-        if (EXCLUDED_FILES.includes(entry.name)) {
+        // Skip local config files (.clasp.json, .claspignore, etc.)
+        if (filter.isLocalConfig(entry.name)) {
           continue;
         }
         // Skip files matching .gitignore

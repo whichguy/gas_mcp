@@ -32,56 +32,14 @@ import {
   wrapModuleContent,
   getModuleName
 } from '../../utils/moduleWrapper.js';
+import {
+  FileFilter,
+  EXCLUDED_FILES,
+  EXCLUDED_DIRS,
+} from '../../utils/fileFilter.js';
 
-// ============================================================================
-// GAS File Filtering Constants
-// ============================================================================
-
-/**
- * GAS-compatible file extensions (local filesystem)
- * - .js → SERVER_JS (preferred)
- * - .gs → SERVER_JS (legacy)
- * - .html → HTML
- */
-const GAS_EXTENSIONS = ['.js', '.gs', '.html'];
-
-/**
- * Files that are always excluded from sync (never sent to GAS)
- */
-const EXCLUDED_FILES = [
-  '.clasp.json',          // clasp CLI config (contains scriptId)
-  '.claspignore',         // clasp ignore patterns
-  '.rsync-manifest.json', // Internal rsync tracking
-  '.gitignore',           // Git ignore patterns
-];
-
-/**
- * Directories that are always excluded from sync
- */
-const EXCLUDED_DIRS = ['.git', 'node_modules', '.idea', '.vscode'];
-
-/**
- * Check if a file is GAS-compatible based on extension
- *
- * Only these file types can be synced to GAS:
- * - .js/.gs → SERVER_JS
- * - .html → HTML
- * - appsscript.json → JSON (manifest only)
- */
-function isGasCompatible(filename: string): boolean {
-  // appsscript.json is the only JSON file we sync (manifest)
-  if (filename === 'appsscript.json') {
-    return true;
-  }
-
-  // Other JSON files are NOT synced (package.json, tsconfig.json, etc.)
-  if (filename.endsWith('.json')) {
-    return false;
-  }
-
-  // Check for GAS-compatible extensions
-  return GAS_EXTENSIONS.some(ext => filename.endsWith(ext));
-}
+// Note: GAS file filtering constants have been moved to centralized fileFilter.ts
+// Use FileFilter.isGasCompatible() and FileFilter.isLocalConfig() etc.
 
 /**
  * Error codes for planning phase
@@ -460,8 +418,11 @@ export class SyncPlanner {
       // Load .gitignore and .claspignore if they exist
       const ig = await this.loadIgnorePatterns(localPath);
 
+      // Create filter once for all file checks (performance optimization)
+      const filter = new FileFilter();
+
       // Recursively scan from repo root (only GAS-compatible files)
-      await this.scanDirectory(localPath, '', files, ig);
+      await this.scanDirectory(localPath, '', files, ig, filter);
 
       // Filter out user-provided exclude patterns
       const filtered = this.filterDiffFiles(files, excludePatterns);
@@ -491,7 +452,8 @@ export class SyncPlanner {
     baseDir: string,
     relativePath: string,
     files: DiffFileInfo[],
-    ig: Ignore | null
+    ig: Ignore | null,
+    filter: FileFilter
   ): Promise<void> {
     const dirPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -503,8 +465,8 @@ export class SyncPlanner {
         : entry.name;
 
       if (entry.isDirectory()) {
-        // Skip excluded directories (hardcoded)
-        if (EXCLUDED_DIRS.includes(entry.name)) {
+        // Skip excluded directories (hardcoded - uses centralized constants)
+        if ((EXCLUDED_DIRS as readonly string[]).includes(entry.name)) {
           continue;
         }
 
@@ -514,16 +476,16 @@ export class SyncPlanner {
           continue;
         }
 
-        await this.scanDirectory(baseDir, entryRelPath, files, ig);
+        await this.scanDirectory(baseDir, entryRelPath, files, ig, filter);
 
       } else if (entry.isFile()) {
         // Skip non-GAS files (extension whitelist)
-        if (!isGasCompatible(entry.name)) {
+        if (!filter.isGasCompatible(entry.name)) {
           continue;
         }
 
-        // Skip hardcoded excluded files
-        if (EXCLUDED_FILES.includes(entry.name)) {
+        // Skip local config files (.clasp.json, .claspignore, etc.)
+        if (filter.isLocalConfig(entry.name)) {
           continue;
         }
 
