@@ -137,9 +137,9 @@ export async function verifyInfrastructureFile(
   accessToken?: string
 ): Promise<import('./infrastructure-registry.js').VerificationResult> {
   try {
-    // Get infrastructure file info
-    const { INFRASTRUCTURE_REGISTRY } = await import('./infrastructure-registry.js');
-    const infraFile = INFRASTRUCTURE_REGISTRY[fileName];
+    // Get infrastructure file info (supports with or without extension)
+    const { getInfrastructureFile } = await import('./infrastructure-registry.js');
+    const infraFile = getInfrastructureFile(fileName);
 
     if (!infraFile) {
       return { verified: false, error: `Unknown infrastructure file: ${fileName}` };

@@ -1,6 +1,6 @@
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath } from '../api/pathParser.js';
+import { parsePath, fileNameMatches, stripExtension } from '../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
@@ -58,18 +58,27 @@ export class ReorderTool extends BaseTool {
       throw new ValidationError('newPosition', newPosition, `position between 0 and ${files.length - 1}`);
     }
 
-    // Get current position of the file being moved
-    const currentIndex = files.findIndex((f: any) => f.name === fileName);
+    // Get current position of the file being moved (handle with/without extension)
+    const currentIndex = files.findIndex((f: any) => fileNameMatches(f.name, fileName));
 
     // CRITICAL: Prevent moving critical infrastructure files from their required positions
-    const criticalFiles: Record<string, number> = {
+    const criticalFileBaseNames = [
+      'common-js/require',
+      'common-js/ConfigManager',
+      'common-js/__mcp_exec'
+    ];
+    const criticalFilePositions: Record<string, number> = {
       'common-js/require': 0,
       'common-js/ConfigManager': 1,
       'common-js/__mcp_exec': 2
     };
 
-    if (fileName in criticalFiles) {
-      const requiredPosition = criticalFiles[fileName];
+    // Check if the requested file is a critical file (normalize for comparison)
+    const normalizedFileName = stripExtension(fileName);
+    const isCriticalFile = criticalFileBaseNames.includes(normalizedFileName);
+
+    if (isCriticalFile) {
+      const requiredPosition = criticalFilePositions[normalizedFileName];
       if (currentIndex === requiredPosition && newPosition !== requiredPosition) {
         throw new ValidationError(
           'newPosition',
@@ -100,23 +109,17 @@ export class ReorderTool extends BaseTool {
     // Position 0: common-js/require (module system)
     // Position 1: common-js/ConfigManager (configuration)
     // Position 2: common-js/__mcp_exec (execution infrastructure)
-    // ✅ File names in GAS API don't have extensions
-    const criticalFileNames = [
-      'common-js/require',        // Position 0
-      'common-js/ConfigManager',  // Position 1
-      'common-js/__mcp_exec'      // Position 2
-    ];
-
-    // Extract critical files in order
+    // Extract critical files in order (match with or without extension)
     const extractedCriticalFiles: any[] = [];
-    criticalFileNames.forEach(name => {
-      const file = reorderedFiles.find((f: any) => f.name === name);
+    criticalFileBaseNames.forEach(baseName => {
+      const file = reorderedFiles.find((f: any) => fileNameMatches(f.name, baseName));
       if (file) extractedCriticalFiles.push(file);
     });
 
-    // Remove critical files from array
+    // Remove critical files from array (using actual file names)
+    const criticalActualNames = new Set(extractedCriticalFiles.map(f => f.name));
     const nonCriticalFiles = reorderedFiles.filter(
-      (f: any) => !criticalFileNames.includes(f.name)
+      (f: any) => !criticalActualNames.has(f.name)
     );
 
     // Rebuild: critical files first, then others
