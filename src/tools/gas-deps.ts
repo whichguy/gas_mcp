@@ -8,6 +8,7 @@ import { GASClient } from '../api/gasClient.js';
 import { COMMON_TOOL_SCHEMAS } from '../utils/schemaPatterns.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { fileNameMatches } from '../api/pathParser.js';
 
 export interface DependencyNode {
   name: string;
@@ -95,7 +96,9 @@ export class GasDependencyAnalyzer {
   }
   
   private static getModuleType(fileName: string): 'internal' | 'external' | 'system' {
-    if (fileName === 'common-js/require' || fileName === 'common-js/__mcp_exec' || fileName === 'appsscript') {
+    if (fileNameMatches(fileName, 'common-js/require') ||
+        fileNameMatches(fileName, 'common-js/__mcp_exec') ||
+        fileNameMatches(fileName, 'appsscript')) {
       return 'system';
     }
     
