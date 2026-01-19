@@ -1,6 +1,13 @@
+/**
+ * @fileoverview GAS Code Execution Tool (exec, exec_api)
+ *
+ * FLOW: js_statement → syncCheck → deploy(if needed) → cloud exec → result
+ * KEY: skipSyncCheck=true for testing | autoRedeploy for fresh deploys | environment for dev/staging/prod
+ * ERRORS: SyncDriftError (local drift) | AuthenticationError | GASApiError
+ */
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { ValidationError, GASApiError, AuthenticationError } from '../errors/mcpErrors.js';
+import { ValidationError, GASApiError, AuthenticationError, SyncDriftError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { CodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
@@ -8,6 +15,10 @@ import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
 import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './deployments.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { buildFunctionCall } from '../utils/parameterSerializer.js';
+import { checkSyncStatus, type DriftDetails, type FileSyncStatus } from '../utils/syncStatusChecker.js';
+import { DiffGenerator } from '../utils/diffGenerator.js';
+import type { DriftFileInfo } from '../errors/mcpErrors.js';
+import { fileNameMatches } from '../api/pathParser.js';
 import open from 'open';
 
 /**
@@ -338,6 +349,12 @@ export class ExecTool extends BaseTool {
         minimum: 1,
         maximum: 10000,
         examples: [10, 50, 100]
+      },
+      skipSyncCheck: {
+        type: 'boolean',
+        description: 'Bypass pre-flight sync check that detects local vs remote drift. Default: false. Set true to execute even if local files are stale.',
+        default: false,
+        examples: [true, false]
       }
     },
     required: ['scriptId', 'js_statement'],
@@ -473,8 +490,103 @@ export class ExecTool extends BaseTool {
       throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
     }
 
+    const skipSyncCheck = params.skipSyncCheck === true;
+
     // Compact logging
-    console.error(`[EXEC] ${scriptId.substring(0, 12)}... env:${environment} ${js_statement.substring(0, 60)}...${logFilter ? ` filter:"${logFilter.substring(0, 20)}"` : ''}${logTail ? ` tail:${logTail}` : ''}`);
+    console.error(`[EXEC] ${scriptId.substring(0, 12)}... env:${environment} ${js_statement.substring(0, 60)}...${logFilter ? ` filter:"${logFilter.substring(0, 20)}"` : ''}${logTail ? ` tail:${logTail}` : ''}${skipSyncCheck ? ' (sync check skipped)' : ''}`);
+
+    // PRE-FLIGHT SYNC CHECK: Detect drift between local and remote before execution
+    // This prevents executing stale code when local files have diverged from remote
+    if (!skipSyncCheck) {
+      try {
+        // Get auth token for sync check (best-effort, may be null)
+        const syncCheckToken = params.accessToken || await this.tryGetAuthToken();
+
+        if (syncCheckToken) {
+          console.error(`[SYNC CHECK] Checking for local/remote drift...`);
+
+          // Fetch remote files for comparison
+          const remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
+
+          // Check sync status (excludes system files by default)
+          // Include content for up to 5 files to generate diffs for LLM assistance
+          const { summary, drift } = await checkSyncStatus(scriptId, remoteFiles, {
+            excludeSystemFiles: true,  // Skip common-js/*, __mcp_exec*
+            includeContent: true,      // Include content for diff generation
+            maxContentFiles: 5         // Limit to prevent large responses
+          });
+
+          // If drift detected, throw SyncDriftError with diffs
+          if (summary.stale > 0 || summary.remoteOnly > 0) {
+            console.error(`[SYNC CHECK] Drift detected: ${summary.stale} stale, ${summary.remoteOnly} remote-only files`);
+
+            // Generate diffs for files with content
+            const diffGenerator = new DiffGenerator();
+            const MAX_DIFF_LINES = 50;
+            const MAX_PREVIEW_CHARS = 500;
+
+            const staleWithDiffs: DriftFileInfo[] = drift.staleLocal.map((f: FileSyncStatus) => {
+              const info: DriftFileInfo = {
+                filename: f.filename,
+                localHash: f.localHash,
+                remoteHash: f.remoteHash || '',
+                sizeDiff: f.sizeDiff
+              };
+
+              // Generate diff if we have both local and remote content
+              if (f.localContent && f.remoteContent) {
+                const fullDiff = diffGenerator.generateDiff(f.localContent, f.remoteContent, f.filename);
+                const diffLines = fullDiff.split('\n');
+
+                if (diffLines.length > MAX_DIFF_LINES) {
+                  info.diff = diffLines.slice(0, MAX_DIFF_LINES).join('\n') +
+                    `\n... (${diffLines.length - MAX_DIFF_LINES} more lines truncated)`;
+                } else {
+                  info.diff = fullDiff;
+                }
+              }
+
+              return info;
+            });
+
+            const missingWithPreview: DriftFileInfo[] = drift.missingLocal.map((f: FileSyncStatus) => {
+              const info: DriftFileInfo = {
+                filename: f.filename,
+                remoteHash: f.remoteHash || ''
+              };
+
+              // Include preview of remote content for new files
+              if (f.remoteContent) {
+                if (f.remoteContent.length > MAX_PREVIEW_CHARS) {
+                  info.remotePreview = f.remoteContent.substring(0, MAX_PREVIEW_CHARS) +
+                    `\n... (${f.remoteContent.length - MAX_PREVIEW_CHARS} more chars truncated)`;
+                } else {
+                  info.remotePreview = f.remoteContent;
+                }
+              }
+
+              return info;
+            });
+
+            throw new SyncDriftError(scriptId, {
+              staleLocal: staleWithDiffs,
+              missingLocal: missingWithPreview
+            });
+          }
+
+          console.error(`[SYNC CHECK] ✓ ${summary.inSync} files in sync`);
+        } else {
+          console.error(`[SYNC CHECK] Skipped (no auth token available)`);
+        }
+      } catch (error) {
+        // If the error is SyncDriftError, re-throw it
+        if (error instanceof SyncDriftError) {
+          throw error;
+        }
+        // For other errors (network, API), log but don't block execution
+        console.error(`[SYNC CHECK] Warning: Could not verify sync status: ${(error as Error).message}`);
+      }
+    }
 
     // Try operation first with provided access token (if any) or session auth
     let accessToken: string | null = null;
@@ -1578,9 +1690,9 @@ export class ExecTool extends BaseTool {
         15000, // 15-second timeout
         'Get project content'
       );
-      shimExists = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec');
-      const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec_success');
-      const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec_error');
+      shimExists = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec'));
+      const hasSuccessHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_success'));
+      const hasErrorHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_error'));
       htmlTemplatesExist = hasSuccessHtml && hasErrorHtml;
       console.error(`Shim exists: ${shimExists}, HTML templates exist: ${htmlTemplatesExist}`);
     } catch (error: any) {
@@ -1602,7 +1714,7 @@ export class ExecTool extends BaseTool {
         mcpVersion: '1.0.0'
       });
 
-      const shimFile = shimCode.files.find((file: GASFile) => file.name === 'common-js/__mcp_exec');
+      const shimFile = shimCode.files.find((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec'));
       if (!shimFile?.source) {
         throw new Error('Failed to generate execution shim code');
       }

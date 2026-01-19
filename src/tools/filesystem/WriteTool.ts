@@ -1,6 +1,16 @@
+/**
+ * @fileoverview GAS File Write Tool with CommonJS wrapping and conflict detection
+ *
+ * FLOW: content → wrap(CommonJS) → hashCheck → remote write → local sync → git status
+ * KEY: force=true bypasses conflict | expectedHash for optimistic locking | moduleOptions for loadNow/hoisting
+ * HASH: Computed on WRAPPED content | returns hash for subsequent edits
+ * NO AUTO-COMMIT: Must call git_feature({operation:'commit'}) after writes
+ */
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
-import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
-import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
+import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
+import { ValidationError, FileOperationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
+import { computeGitSha1, isValidGitSha1, hashesEqual } from '../../utils/hashUtils.js';
+import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
 import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { GitFormatTranslator } from '../../utils/GitFormatTranslator.js';
@@ -13,7 +23,7 @@ import { getUncommittedStatus, buildGitHint } from '../../utils/gitStatus.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitHints, type GitDetection } from '../../utils/localGitDetection.js';
 import { log } from '../../utils/logger.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
-import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
+import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, analyzeManifestContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
 import { join, dirname } from 'path';
 import { mkdir, stat, readFile } from 'fs/promises';
 import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
@@ -80,6 +90,12 @@ export class WriteTool extends BaseFileSystemTool {
       },
       force: {
         ...FORCE_SCHEMA
+      },
+      expectedHash: {
+        type: 'string',
+        description: 'Git SHA-1 hash (40 hex chars) from previous cat. If provided and differs from current remote, write fails with ConflictError. Use force:true to bypass.',
+        pattern: '^[a-f0-9]{40}$',
+        examples: ['a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2']
       },
       changeReason: {
         type: 'string',
@@ -188,11 +204,26 @@ export class WriteTool extends BaseFileSystemTool {
 
     // Auto-initialize CommonJS infrastructure if needed
     const fileType = params.fileType || determineFileTypeUtil(filename, originalContent);
+
+    // Validate content/fileType match when user explicitly provides fileType
+    // This prevents accidental CommonJS wrapping of HTML files
+    if (params.fileType) {
+      const { detectContentFileTypeMismatch } = await import('../../utils/contentAnalyzer.js');
+      const mismatch = detectContentFileTypeMismatch(originalContent, params.fileType, filename);
+      if (mismatch) {
+        throw new ValidationError(
+          'fileType',
+          params.fileType,
+          `${mismatch.message} (detected: ${mismatch.detectedType})`
+        );
+      }
+    }
+
     if (!localOnly && shouldWrapContent(fileType, filename)) {
       try {
         const accessToken = await this.getAuthToken(params);
         const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-        const hasCommonJS = existingFiles.some((f: any) => f.name === 'common-js/require.gs');
+        const hasCommonJS = existingFiles.some((f: any) => fileNameMatches(f.name, 'common-js/require'));
 
         if (!hasCommonJS) {
           console.error(`🔧 [AUTO-INIT] CommonJS not found in project ${scriptId}, initializing...`);
@@ -451,6 +482,86 @@ export class WriteTool extends BaseFileSystemTool {
         const existingFile = currentFiles.find((f: any) => f.name === filename);
         const fileType = existingFile?.type || determineFileTypeUtil(filename, content);
 
+        // === HASH-BASED CONFLICT DETECTION ===
+        // Check for concurrent modifications before writing
+        if (existingFile && !params.force) {
+          // Compute current remote hash on WRAPPED content (full file as stored in GAS)
+          // This ensures hash matches `git hash-object <file>` on local synced files
+          const currentRemoteHash = computeGitSha1(existingFile.source || '');
+
+          // Determine expected hash (priority: param > xattr cache)
+          let expectedHash: string | undefined = params.expectedHash;
+          let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+
+          if (!expectedHash) {
+            // Try to get cached hash from xattr
+            try {
+              const { LocalFileManager } = await import('../../utils/localFileManager.js');
+              const localRoot = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+              if (localRoot) {
+                const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+                const localFilePath = join(localRoot, filename + fileExtension);
+                expectedHash = await getCachedContentHash(localFilePath) || undefined;
+                if (expectedHash) {
+                  hashSource = 'xattr';
+                }
+              }
+            } catch {
+              // xattr cache not available - continue without
+            }
+          }
+
+          // Validate hash if we have one
+          if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
+            // Generate unified diff for the conflict
+            const { createTwoFilesPatch } = await import('diff');
+            const { unwrappedContent: expectedUnwrapped } = unwrapModuleContent(existingFile.source || '');
+
+            // For diff, we need original content (what user expected) vs current remote
+            // Since we don't have the original, we show remote content changed
+            // Unwrap for diff display only (hash is computed on wrapped content)
+            const { unwrappedContent: remoteUnwrappedForDiff } = unwrapModuleContent(existingFile.source || '');
+            const diffContent = createTwoFilesPatch(
+              `${filename} (expected)`,
+              `${filename} (current remote)`,
+              '', // We don't have expected content, so show as empty diff note
+              remoteUnwrappedForDiff,
+              'baseline from your last read',
+              'modified by another session'
+            );
+
+            const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
+            const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+
+            const conflict: ConflictDetails = {
+              scriptId,
+              filename,
+              operation: 'write',
+              expectedHash,
+              currentHash: currentRemoteHash,
+              hashSource,
+              changeDetails: {
+                sizeChange: `${remoteUnwrappedForDiff.length} bytes (unwrapped)`
+              },
+              diff: {
+                format: 'unified',
+                content: diffContent.length > 5000
+                  ? diffContent.slice(0, 5000) + '\n... (truncated)'
+                  : diffContent,
+                linesAdded,
+                linesRemoved,
+                truncated: diffContent.length > 5000,
+                truncatedMessage: diffContent.length > 5000
+                  ? `Diff truncated (showing first 5000 of ${diffContent.length} chars)`
+                  : undefined
+              }
+            };
+
+            throw new ConflictError(conflict);
+          }
+        }
+        // === END HASH-BASED CONFLICT DETECTION ===
+
         const newFile = {
           name: filename,
           type: fileType as any,
@@ -487,6 +598,10 @@ export class WriteTool extends BaseFileSystemTool {
           console.error(`⚠️ [SYNC] WARNING: Could not determine remote updateTime for ${filename}`);
         }
 
+        // Compute hash of written content on WRAPPED content (full file as stored in GAS)
+        // This ensures hash matches `git hash-object <file>` on local synced files
+        const writtenHash = computeGitSha1(content);
+
         results.remoteFile = {
           scriptId,
           filename,
@@ -497,7 +612,14 @@ export class WriteTool extends BaseFileSystemTool {
           originalLocalMtime: originalLocalMtime?.toISOString()
         };
 
+        // Store written hash for response
+        results.hash = writtenHash;
+
       } catch (remoteError: any) {
+        // Re-throw ConflictError as-is (don't wrap it)
+        if (remoteError instanceof ConflictError) {
+          throw remoteError;
+        }
         throw new Error(`Remote write failed - aborting local operations: ${remoteError.message}`);
       }
     }
@@ -601,6 +723,17 @@ export class WriteTool extends BaseFileSystemTool {
           console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
         }
 
+        // Update xattr cache with new hash for future conflict detection
+        if (results.hash) {
+          try {
+            await updateCachedContentHash(filePath, results.hash);
+            console.error(`🔒 [HASH] Updated xattr cache with hash: ${results.hash.slice(0, 8)}...`);
+          } catch (cacheError) {
+            // Non-fatal: xattr not supported on filesystem
+            console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
+          }
+        }
+
         results.localFile = {
           path: filePath,
           size: content.length,
@@ -636,13 +769,17 @@ export class WriteTool extends BaseFileSystemTool {
           'Tip: Use log() (3rd param in _main) for debugging. Enable with: setModuleLogging("' + filename + '", true)'
         );
       }
+    } else if (detectedFileType === 'JSON' && filename.toLowerCase() === 'appsscript') {
+      // Analyze manifest for scope change hints
+      contentAnalysis = analyzeManifestContent(content);
     }
 
     // Return token-efficient results with local and git hints
     const result: any = {
       success: true,
       path: `${scriptId}/${filename}`,
-      size: content.length
+      size: content.length,
+      hash: results.hash  // Git SHA-1 of written content (WRAPPED) for future conflict detection
     };
 
     // Add content-specific warnings and hints (before other metadata)
@@ -860,6 +997,76 @@ export class WriteTool extends BaseFileSystemTool {
         const existingFile = currentFiles.find((f: any) => f.name === filename);
         const fileType = existingFile?.type || determineFileTypeUtil(filename, finalContent);
 
+        // === HASH-BASED CONFLICT DETECTION (Git Path) ===
+        if (existingFile && !params.force) {
+          // Compute current remote hash on WRAPPED content (full file as stored in GAS)
+          // This ensures hash matches `git hash-object <file>` on local synced files
+          const currentRemoteHash = computeGitSha1(existingFile.source || '');
+
+          // Determine expected hash (priority: param > xattr cache)
+          let expectedHash: string | undefined = params.expectedHash;
+          let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+
+          if (!expectedHash) {
+            // Try to get cached hash from xattr
+            try {
+              expectedHash = await getCachedContentHash(filePath) || undefined;
+              if (expectedHash) {
+                hashSource = 'xattr';
+              }
+            } catch {
+              // xattr cache not available - continue without
+            }
+          }
+
+          // Validate hash if we have one
+          if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
+            // Generate unified diff for the conflict
+            // Unwrap for diff display only (hash is computed on wrapped content)
+            const { createTwoFilesPatch } = await import('diff');
+            const { unwrappedContent: remoteUnwrappedForDiff } = unwrapModuleContent(existingFile.source || '');
+
+            const diffContent = createTwoFilesPatch(
+              `${filename} (expected)`,
+              `${filename} (current remote)`,
+              '',
+              remoteUnwrappedForDiff,
+              'baseline from your last read',
+              'modified by another session'
+            );
+
+            const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
+            const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+
+            const conflict: ConflictDetails = {
+              scriptId,
+              filename,
+              operation: 'write',
+              expectedHash,
+              currentHash: currentRemoteHash,
+              hashSource,
+              changeDetails: {
+                sizeChange: `${remoteUnwrappedForDiff.length} bytes (unwrapped)`
+              },
+              diff: {
+                format: 'unified',
+                content: diffContent.length > 5000
+                  ? diffContent.slice(0, 5000) + '\n... (truncated)'
+                  : diffContent,
+                linesAdded,
+                linesRemoved,
+                truncated: diffContent.length > 5000,
+                truncatedMessage: diffContent.length > 5000
+                  ? `Diff truncated (showing first 5000 of ${diffContent.length} chars)`
+                  : undefined
+              }
+            };
+
+            throw new ConflictError(conflict);
+          }
+        }
+        // === END HASH-BASED CONFLICT DETECTION ===
+
         const newFile = {
           name: filename,
           type: fileType as any,
@@ -903,6 +1110,19 @@ export class WriteTool extends BaseFileSystemTool {
           console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
         }
 
+        // Compute hash of written content on WRAPPED content (full file as stored in GAS)
+        // This ensures hash matches `git hash-object <file>` on local synced files
+        const writtenHash = computeGitSha1(finalContent);
+
+        // Update xattr cache with new hash for future conflict detection
+        try {
+          await updateCachedContentHash(filePath, writtenHash);
+          console.error(`🔒 [HASH] Updated xattr cache with hash: ${writtenHash.slice(0, 8)}...`);
+        } catch (cacheError) {
+          // Non-fatal: xattr not supported on filesystem
+          console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
+        }
+
         results.remoteFile = {
           scriptId,
           filename,
@@ -911,6 +1131,9 @@ export class WriteTool extends BaseFileSystemTool {
           updated: true,
           updateTime: authoritativeUpdateTime
         };
+
+        // Store written hash for response
+        results.hash = writtenHash;
 
       } catch (remoteError: any) {
         // PHASE 3: Remote failed - unstage changes (simple cleanup, no commit to revert)
@@ -959,6 +1182,10 @@ export class WriteTool extends BaseFileSystemTool {
           log.warn(`[WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
         }
 
+        // Re-throw ConflictError as-is (don't wrap it)
+        if (remoteError instanceof ConflictError) {
+          throw remoteError;
+        }
         throw new Error(`Remote write failed for ${filename} in project ${scriptId} - local changes unstaged: ${remoteError.message}`);
       }
     }
@@ -971,12 +1198,34 @@ export class WriteTool extends BaseFileSystemTool {
     const uncommittedStatus = await getUncommittedStatus(projectPath);
     const gitHint = await buildGitHint(scriptId, projectPath, uncommittedStatus, filename);
 
+    // Analyze content for warnings and hints based on file type
+    let contentAnalysis: { warnings: string[]; hints: string[] } | undefined;
+    const detectedFileType = determineFileTypeUtil(filename, finalContent);
+    if (detectedFileType === 'HTML') {
+      contentAnalysis = analyzeHtmlContent(finalContent);
+    } else if (detectedFileType === 'SERVER_JS') {
+      contentAnalysis = analyzeCommonJsContent(finalContent, params.moduleOptions, filename);
+    } else if (detectedFileType === 'JSON' && filename.toLowerCase() === 'appsscript') {
+      contentAnalysis = analyzeManifestContent(finalContent);
+    }
+
     // Build result with local and git hints
     const result: any = {
       success: true,
       path: `${scriptId}/${filename}`,
-      size: finalContent.length
+      size: finalContent.length,
+      hash: results.hash  // Git SHA-1 of written content (WRAPPED) for future conflict detection
     };
+
+    // Add content-specific warnings and hints (before other metadata)
+    if (contentAnalysis) {
+      if (contentAnalysis.warnings.length > 0) {
+        result.warnings = contentAnalysis.warnings;
+      }
+      if (contentAnalysis.hints.length > 0) {
+        result.hints = contentAnalysis.hints;
+      }
+    }
 
     // Add local file info
     result.local = {

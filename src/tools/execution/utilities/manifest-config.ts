@@ -6,6 +6,7 @@
  */
 
 import { GASClient } from '../../../api/gasClient.js';
+import { fileNameMatches } from '../../../api/pathParser.js';
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -31,9 +32,9 @@ export async function ensureManifestEntryPoints(
     const files = await gasClient.getProjectContent(scriptId, accessToken);
 
     // Find manifest file (prefer 'appsscript' over 'appsscript.json' to avoid duplicates)
-    let manifestFile = files.find(f => f.name === 'appsscript');
+    let manifestFile = files.find(f => fileNameMatches(f.name, 'appsscript'));
     if (!manifestFile) {
-      manifestFile = files.find(f => f.name === 'appsscript.json');
+      manifestFile = files.find(f => fileNameMatches(f.name, 'appsscript.json'));
     }
 
     let manifest: any;
@@ -54,7 +55,7 @@ export async function ensureManifestEntryPoints(
 
       // If we found appsscript.json but we're going to save as appsscript,
       // we should clean up the duplicate later
-      if (manifestFile.name === 'appsscript.json') {
+      if (fileNameMatches(manifestFile.name, 'appsscript.json')) {
         console.error('Will use standard "appsscript" filename to prevent duplicates');
       }
     }

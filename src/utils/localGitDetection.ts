@@ -7,6 +7,7 @@
 
 import { access, stat, constants } from 'fs/promises';
 import * as path from 'path';
+import { fileNameMatches } from '../api/pathParser.js';
 
 /**
  * Recommendation object for establishing sync
@@ -152,10 +153,8 @@ export function checkBreadcrumbExists(
   files: Array<{ name: string; [key: string]: any }>
 ): boolean {
   // Check if .git/config exists in the file list
-  // Note: GAS stores this as ".git/config" (no .gs extension), but check both for safety
-  return files.some(file =>
-    file.name === '.git/config.gs' || file.name === '.git/config'
-  );
+  // Uses fileNameMatches to handle both with and without .gs extension
+  return files.some(file => fileNameMatches(file.name, '.git/config'));
 }
 
 /**

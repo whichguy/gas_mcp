@@ -6,6 +6,7 @@ import { SCRIPT_ID_SCHEMA } from '../utils/schemaPatterns.js';
 import { SHIM_TEMPLATE } from '../config/shimTemplate.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { extractUrlInfo as extractUrlInfoUtil, UrlExtractionResult } from '../utils/urlParser.js';
+import { fileNameMatches, stripExtension } from '../api/pathParser.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -188,7 +189,7 @@ async function ensureManifestEntryPoints(
     const files = await gasClient.getProjectContent(scriptId, accessToken);
     
     // Find manifest file
-    const manifestFile = files.find(f => f.name === 'appsscript' || f.name === 'appsscript.json');
+    const manifestFile = files.find(f => fileNameMatches(f.name, 'appsscript') || fileNameMatches(f.name, 'appsscript.json'));
     
     if (!manifestFile || !manifestFile.source) {
       console.error('⚠️  No manifest file found, creating one with proper entry points...');
@@ -2000,10 +2001,10 @@ export class ProjectInitTool extends BaseTool {
       // Get current files
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
 
-      // Find infrastructure files (no extensions - GAS API stores without .gs)
-      const requireIndex = files.findIndex((f: any) => f.name === 'common-js/require');
-      const configManagerIndex = files.findIndex((f: any) => f.name === 'common-js/ConfigManager');
-      const execIndex = files.findIndex((f: any) => f.name === 'common-js/__mcp_exec');
+      // Find infrastructure files (may have .gs extension)
+      const requireIndex = files.findIndex((f: any) => fileNameMatches(f.name, 'common-js/require'));
+      const configManagerIndex = files.findIndex((f: any) => fileNameMatches(f.name, 'common-js/ConfigManager'));
+      const execIndex = files.findIndex((f: any) => fileNameMatches(f.name, 'common-js/__mcp_exec'));
 
       // Check if reordering is needed (critical files: require(0), ConfigManager(1), __mcp_exec(2))
       if ((requireIndex !== -1 && requireIndex !== 0) ||
@@ -2012,22 +2013,23 @@ export class ProjectInitTool extends BaseTool {
 
         // Enforce critical file ordering using extract-and-insert pattern
         // This avoids position shifting issues when moving multiple files
-        const criticalFileNames = [
+        const criticalFileBaseNames = [
           'common-js/require',        // Position 0: Module system
           'common-js/ConfigManager',  // Position 1: Configuration
           'common-js/__mcp_exec'      // Position 2: Execution infrastructure
         ];
 
-        // Extract critical files in order
+        // Extract critical files in order (match with or without extension)
         const criticalFiles: any[] = [];
-        criticalFileNames.forEach(name => {
-          const file = files.find((f: any) => f.name === name);
+        criticalFileBaseNames.forEach(baseName => {
+          const file = files.find((f: any) => fileNameMatches(f.name, baseName));
           if (file) criticalFiles.push(file);
         });
 
-        // Remove critical files from array
+        // Remove critical files from array (using actual file names)
+        const criticalActualNames = new Set(criticalFiles.map(f => f.name));
         const nonCriticalFiles = files.filter(
-          (f: any) => !criticalFileNames.includes(f.name)
+          (f: any) => !criticalActualNames.has(f.name)
         );
 
         // Rebuild: critical files first, then others
