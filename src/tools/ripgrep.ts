@@ -16,7 +16,8 @@ import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fi
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
-import { sortRipgrepResults, trimRipgrepResultLines } from '../utils/ripgrepUtils.js';
+import { GuidanceFragments } from '../utils/guidanceFragments.js';
+import { sortRipgrepResults } from '../utils/ripgrepUtils.js';
 
 // Enhanced error types for ripgrep operations
 export class RipgrepError extends Error {
@@ -98,16 +99,14 @@ export interface RipgrepSearchOptions extends GrepSearchOptions {
   // New features
   ignoreCase?: boolean;           // Case-insensitive search (overrides smartCase)
   sort?: 'none' | 'path' | 'modified';  // Result sorting
-  trim?: boolean;                 // Trim whitespace from result lines
 }
 
 // Normalized options with all defaults resolved
-export interface NormalizedRipgrepOptions extends Required<Omit<RipgrepSearchOptions, 'replace' | 'contextBefore' | 'contextAfter' | 'context' | 'pseudoDepth' | 'ignoreCase' | 'sort' | 'trim'>> {
+export interface NormalizedRipgrepOptions extends Required<Omit<RipgrepSearchOptions, 'replace' | 'contextBefore' | 'contextAfter' | 'context' | 'pseudoDepth' | 'ignoreCase' | 'sort'>> {
   // Optional fields that may remain undefined
   replace?: string;
   ignoreCase?: boolean;
   sort?: 'none' | 'path' | 'modified';
-  trim?: boolean;
   contextBefore: number;
   contextAfter: number;
   context: number;
@@ -976,20 +975,16 @@ export class RipgrepTool extends BaseTool {
         default: 'none',
         description: 'Sort results: "path" (alphabetical by file path), "modified" (by modification time), "none" (API order)'
       },
-      trim: {
-        type: 'boolean',
-        default: false,
-        description: 'Remove leading and trailing whitespace from result lines'
-      },
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
       unixLike: 'rg (fast grep) | multi-pattern | smart-case | GAS',
-      whenToUse: 'Multi-pattern search with context, smart case, and advanced regex. Searches clean user code (CommonJS unwrapped).',
-      features: 'smartCase: auto case detection | multiline: cross-line patterns | replace: non-destructive suggestions | sort/trim: result formatting',
-      examples: ['Multi: patterns:["TODO","FIXME"]', 'Context: context:2,path:"api/*"', 'Advanced: sort:"path",trim:true'],
-      antiPatterns: ['❌ ripgrep to read full file → use cat instead', '❌ complex replace logic → use sed for actual replacement', '❌ search without context → add context:2 for understanding']
+      toolSelection: GuidanceFragments.toolSelectionGuide.searchContent,
+      whenToUse: 'PREFERRED for all searches: multi-pattern, context, smart case, stats. Searches clean user code (CommonJS unwrapped).',
+      features: 'smartCase: auto case detection | multiline: cross-line patterns | replace: non-destructive suggestions | sort: result ordering',
+      examples: ['Multi: patterns:["TODO","FIXME"]', 'Context: context:2,path:"api/*"', 'Advanced: sort:"path"'],
+      antiPatterns: ['ripgrep to read full file -> use cat instead', 'complex replace logic -> use sed for actual replacement', 'search without context -> add context:2 for understanding']
     }
   };
 
@@ -1053,8 +1048,7 @@ export class RipgrepTool extends BaseTool {
       filesWithMatches: params.filesWithMatches || false,
       maxCount: params.maxCount || 50,
       ignoreCase: params.ignoreCase,
-      sort: params.sort || 'none',
-      trim: params.trim || false
+      sort: params.sort || 'none'
     };
 
     // Normalize all options with centralized defaults
@@ -1088,11 +1082,6 @@ export class RipgrepTool extends BaseTool {
     // Sort results if requested
     if (params.sort && params.sort !== 'none' && results.matches && Array.isArray(results.matches)) {
       results.matches = sortRipgrepResults(results.matches, params.sort, files);
-    }
-
-    // Apply trim to result lines if requested
-    if (params.trim && results.matches && Array.isArray(results.matches)) {
-      results.matches = trimRipgrepResultLines(results.matches);
     }
 
     // Add metadata about content processing
@@ -1358,11 +1347,6 @@ export class RawRipgrepTool extends BaseTool {
         default: 'none',
         description: 'Sort results: "path" (alphabetical by file path), "modified" (by modification time), "none" (API order)'
       },
-      trim: {
-        type: 'boolean',
-        default: false,
-        description: 'Remove leading and trailing whitespace from result lines'
-      },
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern'],
@@ -1428,8 +1412,7 @@ export class RawRipgrepTool extends BaseTool {
       filesWithMatches: params.filesWithMatches || false,
       maxCount: params.maxCount || 50,
       ignoreCase: params.ignoreCase,
-      sort: params.sort || 'none',
-      trim: params.trim || false
+      sort: params.sort || 'none'
     };
 
     // Normalize all options with centralized defaults
@@ -1440,7 +1423,7 @@ export class RawRipgrepTool extends BaseTool {
 
     // 🔧 ADVANCED: Get target files via direct API calls only (never uses local files)
     const files = await this.getTargetFilesViaAPI(params, accessToken);
-    
+
     if (files.length === 0) {
       return this.createEmptyRawResult(allPatterns, searchOptions);
     }
@@ -1454,11 +1437,6 @@ export class RawRipgrepTool extends BaseTool {
     // Sort results if requested
     if (params.sort && params.sort !== 'none' && results.matches && Array.isArray(results.matches)) {
       results.matches = sortRipgrepResults(results.matches, params.sort, files);
-    }
-
-    // Apply trim to result lines if requested
-    if (params.trim && results.matches && Array.isArray(results.matches)) {
-      results.matches = trimRipgrepResultLines(results.matches);
     }
 
     // Add metadata about raw content processing and data source

@@ -1,17 +1,28 @@
+/**
+ * @fileoverview Token-Efficient File Editing - exact string replacement
+ *
+ * SAVINGS: ~95% token reduction vs write (40 tokens vs 4500 for typical edit)
+ * FLOW: fetch → unwrap → apply edits → rewrap → hashCheck → write
+ * KEY: edits=[{oldText, newText, index?}] | dryRun=true for preview | expectedHash for conflict detection
+ * CONFLICT: force=true bypasses | ConflictError includes diff + hints
+ * NO AUTO-COMMIT: Must call git_feature({operation:'commit'}) after edits
+ */
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
+import { ValidationError, FileOperationError, ConflictError, type ConflictDetails } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
-import { parsePath, resolveHybridScriptId } from '../api/pathParser.js';
+import { parsePath, resolveHybridScriptId, fileNameMatches } from '../api/pathParser.js';
 import { unwrapModuleContent, wrapModuleContent, shouldWrapContent } from '../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../utils/virtualFileTranslation.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { GuidanceFragments } from '../utils/guidanceFragments.js';
 import { GitOperationManager } from '../core/git/GitOperationManager.js';
 import { GitPathResolver } from '../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../core/git/SyncStrategyFactory.js';
 import { EditOperationStrategy } from '../core/git/operations/EditOperationStrategy.js';
 import { analyzeContent, determineFileType } from '../utils/contentAnalyzer.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
+import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 
 interface EditOperation {
   oldText: string;
@@ -28,6 +39,10 @@ interface EditParams {
   changeReason?: string;
   workingDir?: string;
   accessToken?: string;
+  /** Git SHA-1 hash (40 hex chars) from previous cat. If differs from remote, edit fails with ConflictError. */
+  expectedHash?: string;
+  /** Force edit even if local and remote are out of sync (bypasses hash check). */
+  force?: boolean;
 }
 
 interface GitHints {
@@ -61,6 +76,8 @@ interface EditResult {
   editsApplied: number;
   diff?: string;
   filePath: string;
+  /** Git SHA-1 hash of the edited content (WRAPPED, full file as stored in GAS). Use for expectedHash on subsequent edits. */
+  hash?: string;
   tokenSavings?: {
     vsFullFile: number;
     outputTokensUsed: number;
@@ -126,6 +143,17 @@ export class EditTool extends BaseTool {
         description: 'Optional commit message for git integration. If omitted, defaults to "Update {filename}". Git repo is created automatically if it doesn\'t exist.',
         examples: ['Fix typo in validation', 'Update configuration', 'Refactor error handling']
       },
+      expectedHash: {
+        type: 'string',
+        description: 'Git SHA-1 hash (40 hex chars) from previous cat. If differs from remote, edit fails with ConflictError. Pass the hash from cat response to detect concurrent modifications.',
+        pattern: '^[a-f0-9]{40}$',
+        examples: ['a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2']
+      },
+      force: {
+        type: 'boolean',
+        description: '⚠️ Force edit even if local and remote are out of sync. Use only when intentionally discarding external changes.',
+        default: false
+      },
       ...SchemaFragments.workingDir,
       ...SchemaFragments.accessToken
     },
@@ -133,33 +161,18 @@ export class EditTool extends BaseTool {
     additionalProperties: false,
     llmGuidance: {
       // GIT INTEGRATION - CRITICAL for LLM behavior
-      gitIntegration: {
-        CRITICAL: 'This tool does NOT auto-commit to git',
-        behavior: 'Edits push to GAS but do NOT commit locally',
-        workflowSignal: 'Response includes git.taskCompletionBlocked=true when uncommitted',
-        taskCompletionRule: 'Task is NOT complete while git.uncommittedChanges.count > 0',
-        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
-      },
+      gitIntegration: GuidanceFragments.gitIntegration,
+      tokenEfficiency: GuidanceFragments.editTokenEfficiency,
+      errorResolutions: GuidanceFragments.errorResolutions,
 
       whenToUse: 'Token-efficient: LLM outputs only changed text (~40tok) vs full file (~4.5k tok)',
-      tokenSavings: '95%+ vs write (4.5k file+25tok change: write=4.5k | edit=~10tok)',
       examples: ['Single: edits:[{oldText:"const DEBUG=false",newText:"const DEBUG=true"}]', 'Multi: edits:[{oldText:"port:3000",newText:"port:8080"},{oldText:"host:localhost",newText:"host:0.0.0.0"}]', 'Dry-run: dryRun:true', 'Duplicates: edits:[{oldText:"assert(true)",newText:"expect(true)",index:1}]'],
       vsGasWrite: 'write: full file (4.5k tok) | edit: changed text (40 tok)',
       vsGasSed: 'sed: regex patterns | edit: exact strings (more reliable)',
       vsGasAider: 'edit: exact (simple,fast) | aider: fuzzy (handles variations)',
-      commonJsIntegration: 'Auto: unwrap→edit→rewrap | clean code→system handles infra',
+      commonJsIntegration: 'Auto: unwrap->edit->rewrap | clean code->system handles infra',
       scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal token-efficient editing'},
-      errorRecovery: {
-        'text not found': 'cat file → verify exact text → copy-paste OR use aider for fuzzy',
-        'multiple matches': 'Add index:N (0-based) OR include more context in oldText',
-        'sync conflict': 'rsync first OR retry with force flag'
-      },
-      antiPatterns: [
-        '❌ edit new file → use write instead',
-        '❌ edit >20 operations → split into multiple calls',
-        '❌ guess oldText → cat first to verify exact content',
-        '❌ assuming auto-commit happened → MUST call git_feature commit'
-      ]
+      antiPatterns: GuidanceFragments.editAntiPatterns
     },
     llmHints: {
       preferOver: 'write (95% save) | sed (exact vs regex) | cat+write (never)',
@@ -205,7 +218,7 @@ export class EditTool extends BaseTool {
 
     // Read current file content from remote
     const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-    const fileContent = allFiles.find((f: any) => f.name === filename);
+    const fileContent = allFiles.find((f: any) => fileNameMatches(f.name, filename));
 
     if (!fileContent) {
       throw new ValidationError('filename', filename, 'existing file in the project');
@@ -221,6 +234,44 @@ export class EditTool extends BaseTool {
         existingOptions = result.existingOptions;
       }
     }
+
+    // === HASH-BASED CONFLICT DETECTION ===
+    // Compute hash at READ time on WRAPPED content (full file as stored in GAS)
+    // This ensures hash matches `git hash-object <file>` on local synced files
+    const readHash = computeGitSha1(fileContent.source || '');
+
+    // Check for conflicts if expectedHash provided and not forcing
+    if (params.expectedHash && !params.force) {
+      if (!hashesEqual(params.expectedHash, readHash)) {
+        // Generate diff showing what changed
+        const { createTwoFilesPatch } = await import('diff');
+        // We don't have the "expected content" directly, but we can indicate the hash mismatch
+        const diffContent = `File content has changed since your last read.
+Expected hash: ${params.expectedHash}
+Current hash:  ${readHash}
+
+Current file content (first 500 chars):
+${content.substring(0, 500)}${content.length > 500 ? '...' : ''}`;
+
+        const conflict: ConflictDetails = {
+          scriptId,
+          filename,
+          operation: 'edit',
+          expectedHash: params.expectedHash,
+          currentHash: readHash,
+          hashSource: 'param',
+          diff: {
+            format: 'info',
+            content: diffContent,
+            truncated: content.length > 500
+          }
+          // Note: hints are auto-generated by ConflictError constructor
+        };
+
+        throw new ConflictError(conflict);
+      }
+    }
+
     const originalContent = content;
     let editsApplied = 0;
 
@@ -284,6 +335,7 @@ export class EditTool extends BaseTool {
         success: true,
         editsApplied: 0,
         filePath: params.path,
+        hash: readHash,  // File unchanged, return current hash
         diff: 'No changes (edits already applied)',
         ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
         ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
@@ -293,11 +345,24 @@ export class EditTool extends BaseTool {
     // Dry-run mode: return diff without writing
     if (params.dryRun) {
       const diff = this.generateDiff(originalContent, content, params.path);
+      // Compute hash of what would be written on WRAPPED content (full file as stored in GAS)
+      // Re-wrap the edited content to get the correct hash
+      let previewWrapped = content;
+      if (fileContent.type === 'SERVER_JS' && shouldWrapContent(fileContent.type, filename)) {
+        // Convert null to undefined for type compatibility
+        const options = existingOptions ? {
+          loadNow: existingOptions.loadNow ?? undefined,
+          hoistedFunctions: existingOptions.hoistedFunctions
+        } : undefined;
+        previewWrapped = wrapModuleContent(content, filename.replace(/\.\w+$/, ''), options);
+      }
+      const previewHash = computeGitSha1(previewWrapped);
       return {
         success: true,
         editsApplied,
         diff,
         filePath: params.path,
+        hash: previewHash,  // Hash of WRAPPED content that would be written (dry-run preview)
         ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
         ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
       };
@@ -335,12 +400,26 @@ export class EditTool extends BaseTool {
     const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
+    // Compute hash of the edited content on WRAPPED content (full file as stored in GAS)
+    // Re-wrap the edited content to get the correct hash that matches git hash-object
+    let editedWrapped = content;
+    if (fileContent.type === 'SERVER_JS' && shouldWrapContent(fileContent.type, filename)) {
+      // Convert null to undefined for type compatibility
+      const options = existingOptions ? {
+        loadNow: existingOptions.loadNow ?? undefined,
+        hoistedFunctions: existingOptions.hoistedFunctions
+      } : undefined;
+      editedWrapped = wrapModuleContent(content, filename.replace(/\.\w+$/, ''), options);
+    }
+    const editedHash = computeGitSha1(editedWrapped);
+
     // Return response with git hints for LLM guidance
     // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
     const result: EditResult = {
       success: true,
       editsApplied,
       filePath: params.path,
+      hash: editedHash,  // Git SHA-1 of WRAPPED content. Use for expectedHash on subsequent edits.
       // Pass through git hints from GitOperationManager
       git: gitResult.git ? {
         detected: gitResult.git.detected,
