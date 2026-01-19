@@ -19,6 +19,7 @@
 
 import { ValidationError } from '../errors/mcpErrors.js';
 import { GASErrorHandler, ErrorContext } from './errorHandler.js';
+import { fileNameMatches } from '../api/pathParser.js';
 
 export interface ValidationRule<T = any> {
   field: string;
@@ -494,4 +495,159 @@ export class MCPValidator {
       }
     }
   };
+}
+
+/**
+ * CommonJS file ordering validation result
+ */
+export interface CommonJSOrderingResult {
+  /** Whether the ordering is correct */
+  valid: boolean;
+
+  /** List of issues found (empty if valid) */
+  issues: CommonJSOrderingIssue[];
+
+  /** Current file positions for debugging */
+  positions: {
+    require: number | null;
+    configManager: number | null;
+    mcpExec: number | null;
+  };
+
+  /** Suggested fix command if issues found */
+  fix?: string;
+}
+
+export interface CommonJSOrderingIssue {
+  file: string;
+  expected: number;
+  actual: number;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+/**
+ * Critical CommonJS infrastructure files and their required positions
+ *
+ * Order matters because:
+ * - require.gs (position 0): Module system must load first to enable require() calls
+ * - ConfigManager.gs (position 1): Configuration must be available before other modules
+ * - __mcp_exec.gs (position 2): Execution infrastructure depends on both above
+ */
+const CRITICAL_FILES = [
+  { baseName: 'common-js/require', position: 0, description: 'Module system' },
+  { baseName: 'common-js/ConfigManager', position: 1, description: 'Configuration' },
+  { baseName: 'common-js/__mcp_exec', position: 2, description: 'Execution infrastructure' }
+];
+
+/**
+ * Validate CommonJS file ordering in a GAS project
+ *
+ * Ensures critical infrastructure files are in the correct positions:
+ * - common-js/require must be at position 0 (module system)
+ * - common-js/ConfigManager must be at position 1 (configuration)
+ * - common-js/__mcp_exec must be at position 2 (execution infrastructure)
+ *
+ * @param files - Array of GAS files with {name: string} property, in execution order
+ * @returns Validation result with issues and suggested fixes
+ */
+export function validateCommonJSOrdering(files: Array<{ name: string }>): CommonJSOrderingResult {
+  const issues: CommonJSOrderingIssue[] = [];
+  const positions: CommonJSOrderingResult['positions'] = {
+    require: null,
+    configManager: null,
+    mcpExec: null
+  };
+
+  // Find actual positions of critical files
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+
+    if (fileNameMatches(file.name, 'common-js/require')) {
+      positions.require = i;
+    } else if (fileNameMatches(file.name, 'common-js/ConfigManager')) {
+      positions.configManager = i;
+    } else if (fileNameMatches(file.name, 'common-js/__mcp_exec')) {
+      positions.mcpExec = i;
+    }
+  }
+
+  // Check each critical file's position
+  for (const criticalFile of CRITICAL_FILES) {
+    const positionKey = criticalFile.baseName === 'common-js/require'
+      ? 'require'
+      : criticalFile.baseName === 'common-js/ConfigManager'
+        ? 'configManager'
+        : 'mcpExec';
+
+    const actualPosition = positions[positionKey];
+
+    if (actualPosition === null) {
+      // File not found - this is a warning, not an error (might be intentional)
+      // Only warn for require.gs which is truly critical
+      if (criticalFile.baseName === 'common-js/require') {
+        issues.push({
+          file: criticalFile.baseName,
+          expected: criticalFile.position,
+          actual: -1,
+          severity: 'warning',
+          message: `${criticalFile.baseName} not found - CommonJS module system may not work`
+        });
+      }
+    } else if (actualPosition !== criticalFile.position) {
+      // File is in wrong position
+      const severity = criticalFile.baseName === 'common-js/require' ? 'error' : 'warning';
+      issues.push({
+        file: criticalFile.baseName,
+        expected: criticalFile.position,
+        actual: actualPosition,
+        severity,
+        message: `${criticalFile.baseName} is at position ${actualPosition}, should be at position ${criticalFile.position} (${criticalFile.description})`
+      });
+    }
+  }
+
+  const result: CommonJSOrderingResult = {
+    valid: issues.filter(i => i.severity === 'error').length === 0,
+    issues,
+    positions
+  };
+
+  // Add fix suggestion if there are issues
+  if (issues.length > 0) {
+    result.fix = 'Run project_init({ scriptId, force: true }) to fix file ordering';
+  }
+
+  return result;
+}
+
+/**
+ * Format CommonJS ordering issues for display
+ *
+ * @param result - Validation result from validateCommonJSOrdering
+ * @returns Formatted string for logging/display
+ */
+export function formatCommonJSOrderingIssues(result: CommonJSOrderingResult): string {
+  if (result.valid && result.issues.length === 0) {
+    return '✓ CommonJS file ordering is correct';
+  }
+
+  const lines: string[] = [];
+
+  if (!result.valid) {
+    lines.push('⚠️ CommonJS file ordering issues detected:');
+  } else {
+    lines.push('⚠️ CommonJS file ordering warnings:');
+  }
+
+  for (const issue of result.issues) {
+    const icon = issue.severity === 'error' ? '❌' : '⚠️';
+    lines.push(`  ${icon} ${issue.message}`);
+  }
+
+  if (result.fix) {
+    lines.push(`  💡 Fix: ${result.fix}`);
+  }
+
+  return lines.join('\n');
 } 
