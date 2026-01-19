@@ -1,9 +1,11 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
-import { parsePath } from '../../api/pathParser.js';
-import { ValidationError } from '../../errors/mcpErrors.js';
+import { parsePath, fileNameMatches } from '../../api/pathParser.js';
+import { ValidationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
 import { checkSyncOrThrow, setFileMtimeToRemote } from '../../utils/fileHelpers.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/localGitDetection.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
+import { computeGitSha1, hashesEqual } from '../../utils/hashUtils.js';
+import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
 import { join, dirname } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, CONTENT_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA } from './shared/schemas.js';
@@ -73,6 +75,17 @@ export class RawWriteTool extends BaseFileSystemTool {
         default: '',
         description: 'Optional path to nested git project within GAS (for polyrepo support). Enables independent git repositories within a single GAS project.',
         examples: ['', 'backend', 'frontend', 'libs/shared', 'api/v2']
+      },
+      expectedHash: {
+        type: 'string',
+        description: 'Git SHA-1 hash (40 hex chars) from previous raw_cat. If provided and differs from current remote RAW content, write fails with ConflictError. Use force:true to bypass.',
+        pattern: '^[a-f0-9]{40}$',
+        examples: ['a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2']
+      },
+      force: {
+        type: 'boolean',
+        description: '⚠️ DANGEROUS: Force write even if local and remote are out of sync (WARNING: may overwrite remote changes)',
+        default: false
       }
     },
     required: ['path', 'content', 'fileType'],
@@ -191,6 +204,88 @@ export class RawWriteTool extends BaseFileSystemTool {
       }
     }
 
+    // === HASH-BASED CONFLICT DETECTION (RAW content) ===
+    // Note: For raw_write, hash is computed on RAW content (including CommonJS wrappers)
+    let writtenHash: string | undefined;
+
+    if (!params.force) {
+      // Fetch current remote files to check for conflicts
+      const currentFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
+      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
+
+      if (existingFile) {
+        // Compute hash on RAW content (no unwrapping for raw_write)
+        const currentRemoteHash = computeGitSha1(existingFile.source || '');
+
+        // Determine expected hash (priority: param > xattr cache)
+        let expectedHash: string | undefined = params.expectedHash;
+        let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+
+        if (!expectedHash) {
+          // Try to get cached hash from xattr
+          try {
+            const { LocalFileManager } = await import('../../utils/localFileManager.js');
+            const localRoot = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+            if (localRoot) {
+              const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+              const localPath = join(localRoot, filename + fileExtension);
+              expectedHash = await getCachedContentHash(localPath) || undefined;
+              if (expectedHash) {
+                hashSource = 'xattr';
+              }
+            }
+          } catch {
+            // xattr cache not available - continue without
+          }
+        }
+
+        // Validate hash if we have one
+        if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
+          // Generate unified diff for the conflict
+          const { createTwoFilesPatch } = await import('diff');
+
+          const diffContent = createTwoFilesPatch(
+            `${filename} (expected)`,
+            `${filename} (current remote)`,
+            '',
+            existingFile.source || '',
+            'baseline from your last read',
+            'modified by another session'
+          );
+
+          const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
+          const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+
+          const conflict: ConflictDetails = {
+            scriptId: parsedPath.scriptId,
+            filename,
+            operation: 'write',
+            expectedHash,
+            currentHash: currentRemoteHash,
+            hashSource,
+            changeDetails: {
+              sizeChange: `${(existingFile.source?.length || 0) - (existingFile.source?.length || 0)} bytes`
+            },
+            diff: {
+              format: 'unified',
+              content: diffContent.length > 5000
+                ? diffContent.slice(0, 5000) + '\n... (truncated)'
+                : diffContent,
+              linesAdded,
+              linesRemoved,
+              truncated: diffContent.length > 5000,
+              truncatedMessage: diffContent.length > 5000
+                ? `Diff truncated (showing first 5000 of ${diffContent.length} chars)`
+                : undefined
+            }
+          };
+
+          throw new ConflictError(conflict);
+        }
+      }
+    }
+    // === END HASH-BASED CONFLICT DETECTION ===
+
     const updatedFiles = await this.gasClient.updateFile(
       parsedPath.scriptId,
       filename,
@@ -199,6 +294,9 @@ export class RawWriteTool extends BaseFileSystemTool {
       accessToken,
       gasFileType
     );
+
+    // Compute hash of written content for response and cache
+    writtenHash = computeGitSha1(content);
 
     // ✅ NEW: Sync to local cache with remote mtime (write-through cache)
     try {
@@ -213,9 +311,20 @@ export class RawWriteTool extends BaseFileSystemTool {
         await writeFile(localPath, content, 'utf-8');
 
         // Find remote updateTime and set local mtime to match
-        const remoteFile = updatedFiles.find((f: any) => f.name === filename);
+        const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, filename));
         if (remoteFile?.updateTime) {
           await setFileMtimeToRemote(localPath, remoteFile.updateTime, remoteFile.type);
+        }
+
+        // Update xattr cache with new hash for future conflict detection
+        if (writtenHash) {
+          try {
+            await updateCachedContentHash(localPath, writtenHash);
+            console.error(`🔒 [HASH] Updated xattr cache with hash: ${writtenHash.slice(0, 8)}...`);
+          } catch (cacheError) {
+            // Non-fatal: xattr not supported on filesystem
+            console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
+          }
         }
       }
     } catch (syncError) {
@@ -267,7 +376,9 @@ export class RawWriteTool extends BaseFileSystemTool {
       scriptId: parsedPath.scriptId,
       filename: filename,
       size: content.length,
-      position: updatedFiles.findIndex((f: any) => f.name === filename),
+      hash: writtenHash,  // Git SHA-1 of RAW content for future conflict detection
+      hashNote: 'Hash computed on raw content (including CommonJS wrappers if present).',
+      position: updatedFiles.findIndex((f: any) => fileNameMatches(f.name, filename)),
       totalFiles: updatedFiles.length
     };
 
@@ -327,6 +438,78 @@ export class RawWriteTool extends BaseFileSystemTool {
 
     log.info(`[RAW_WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
 
+    // === HASH-BASED CONFLICT DETECTION (Git Path - RAW content) ===
+    if (!params.force) {
+      const currentFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
+      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
+
+      if (existingFile) {
+        // Compute hash on RAW content (no unwrapping for raw_write)
+        const currentRemoteHash = computeGitSha1(existingFile.source || '');
+
+        // Determine expected hash (priority: param > xattr cache)
+        let expectedHash: string | undefined = params.expectedHash;
+        let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+
+        if (!expectedHash) {
+          // Try to get cached hash from xattr
+          try {
+            expectedHash = await getCachedContentHash(filePath) || undefined;
+            if (expectedHash) {
+              hashSource = 'xattr';
+            }
+          } catch {
+            // xattr cache not available - continue without
+          }
+        }
+
+        // Validate hash if we have one
+        if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
+          // Generate unified diff for the conflict
+          const { createTwoFilesPatch } = await import('diff');
+
+          const diffContent = createTwoFilesPatch(
+            `${filename} (expected)`,
+            `${filename} (current remote)`,
+            '',
+            existingFile.source || '',
+            'baseline from your last read',
+            'modified by another session'
+          );
+
+          const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
+          const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+
+          const conflict: ConflictDetails = {
+            scriptId: parsedPath.scriptId,
+            filename,
+            operation: 'write',
+            expectedHash,
+            currentHash: currentRemoteHash,
+            hashSource,
+            changeDetails: {
+              sizeChange: `${(existingFile.source?.length || 0)} bytes`
+            },
+            diff: {
+              format: 'unified',
+              content: diffContent.length > 5000
+                ? diffContent.slice(0, 5000) + '\n... (truncated)'
+                : diffContent,
+              linesAdded,
+              linesRemoved,
+              truncated: diffContent.length > 5000,
+              truncatedMessage: diffContent.length > 5000
+                ? `Diff truncated (showing first 5000 of ${diffContent.length} chars)`
+                : undefined
+            }
+          };
+
+          throw new ConflictError(conflict);
+        }
+      }
+    }
+    // === END HASH-BASED CONFLICT DETECTION ===
+
     // PHASE 0: Ensure feature branch
     const branchResult = await ensureFeatureBranch(projectRoot);
     log.info(
@@ -361,9 +544,19 @@ export class RawWriteTool extends BaseFileSystemTool {
       );
 
       // Set local mtime to match remote
-      const remoteFile = updatedFiles.find((f: any) => f.name === filename);
+      const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, filename));
       if (remoteFile?.updateTime) {
         await setFileMtimeToRemote(filePath, remoteFile.updateTime, remoteFile.type);
+      }
+
+      // Compute hash of written content for response and cache
+      const writtenHash = computeGitSha1(finalContent);
+
+      // Update xattr cache with new hash
+      try {
+        await updateCachedContentHash(filePath, writtenHash);
+      } catch (cacheError) {
+        console.error(`⚠️ [HASH] Could not cache hash for ${filePath}: ${cacheError}`);
       }
 
       // Success - return result
@@ -373,7 +566,9 @@ export class RawWriteTool extends BaseFileSystemTool {
         scriptId: parsedPath.scriptId,
         filename,
         size: finalContent.length,
-        position: updatedFiles.findIndex((f: any) => f.name === filename),
+        hash: writtenHash,  // Git SHA-1 of written content (RAW, includes CommonJS wrappers)
+        hashNote: 'Hash computed on raw content including CommonJS wrappers. Use for expectedHash on subsequent raw_write calls.',
+        position: updatedFiles.findIndex((f: any) => fileNameMatches(f.name, filename)),
         totalFiles: updatedFiles.length,
         git: {
           enabled: true,

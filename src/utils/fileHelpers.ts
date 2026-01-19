@@ -1,6 +1,7 @@
 import { stat, utimes } from 'fs/promises';
 import { GASFile } from '../api/gasClient.js';
 import { cacheGASMetadata } from './gasMetadataCache.js';
+import { fileNameMatches } from '../api/pathParser.js';
 
 /**
  * Set file modification time to match remote updateTime
@@ -206,10 +207,10 @@ export async function getFileMtime(localPath: string): Promise<Date | null> {
 }
 
 /**
- * Find remote file metadata by name
+ * Find remote file metadata by name (extension-agnostic)
  */
 export function findRemoteFile(files: GASFile[], filename: string): GASFile | undefined {
-  return files.find(f => f.name === filename);
+  return files.find(f => fileNameMatches(f.name, filename));
 }
 
 /**

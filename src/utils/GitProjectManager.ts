@@ -7,6 +7,7 @@
 import { GitFormatTranslator, type GitFileFormat } from './GitFormatTranslator.js';
 import { parseINI, serializeINI, parseAttributes, parseRef } from './iniParser.js';
 import { GASClient } from '../api/gasClient.js';
+import { fileNameMatches } from '../api/pathParser.js';
 import * as GitUtils from './GitUtilities.js';
 
 export interface GitProject {
@@ -102,13 +103,15 @@ export class GitProjectManager {
     const configPath = projectPath
       ? `${projectPath}/.git/config`
       : '.git/config';
-    
+
     try {
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-      const file = files.find(f => f.name === configPath);
-      
+
+      // Use extension-agnostic matching to find .git/config with or without .gs extension
+      const file = files.find(f => fileNameMatches(f.name, configPath));
+
       if (!file) return null;
-      
+
       const content = GitFormatTranslator.fromGAS(file.source || '');
       return parseINI(content) as GitConfigData;
     } catch (error) {
@@ -256,8 +259,8 @@ export class GitProjectManager {
     
     try {
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-      const file = files.find(f => f.name === excludePath);
-      
+      const file = files.find(f => fileNameMatches(f.name, excludePath));
+
       if (file) {
         const content = GitFormatTranslator.fromGAS(file.source || '');
         return content.split('\n').filter(line => line.trim() && !line.startsWith('#'));
@@ -323,7 +326,7 @@ export class GitProjectManager {
     
     try {
       const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-      return files.some(f => f.name === configPath);
+      return files.some(f => fileNameMatches(f.name, configPath));
     } catch {
       return false;
     }

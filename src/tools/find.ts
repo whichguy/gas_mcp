@@ -9,7 +9,7 @@
 
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, getBaseName } from '../api/pathParser.js';
+import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, getBaseName, fileNameMatches } from '../api/pathParser.js';
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
@@ -209,7 +209,7 @@ export class FindTool extends BaseTool {
       const sizeFilter = this.parseSizeFilter(options.size);
       filtered = filtered.filter(file => {
         // Find original file to get source content
-        const originalFile = originalFiles.find(f => f.name === file.name);
+        const originalFile = originalFiles.find(f => fileNameMatches(f.name, file.name));
         const size = (originalFile?.source || '').length;
         
         if (sizeFilter.operator === '+') {

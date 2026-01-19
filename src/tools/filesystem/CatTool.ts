@@ -1,10 +1,19 @@
+/**
+ * @fileoverview GAS File Read Tool with CommonJS unwrapping
+ *
+ * FLOW: remote/local fetch → unwrap(CommonJS) → return clean content + hash
+ * HASH: Computed on WRAPPED content (before unwrap) for expectedHash compatibility
+ * CONTENT: Returns UNWRAPPED user code for editing
+ * FAST PATH: local cache (~5ms) vs remote API (~800ms) when preferLocal=true
+ */
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
-import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
+import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { unwrapModuleContent, shouldWrapContent } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { setFileMtimeToRemote, isFileInSync } from '../../utils/fileHelpers.js';
-import { getCachedGASMetadata } from '../../utils/gasMetadataCache.js';
+import { getCachedGASMetadata, cacheGASMetadata, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { join, dirname } from 'path';
 import { writeFile, unlink, mkdir } from 'fs/promises';
 import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
@@ -174,6 +183,16 @@ export class CatTool extends BaseFileSystemTool {
               result.content = finalContent;
               result.commonJsInfo = commonJsInfo;
 
+              // Compute hash on WRAPPED content (full file as stored in GAS)
+              // This ensures hash matches `git hash-object <file>` on local synced files
+              const contentHash = computeGitSha1(localContent);
+              result.hash = contentHash;
+
+              // Update cached hash if different from stored (or not stored)
+              if (cachedMeta.contentHash !== contentHash) {
+                await updateCachedContentHash(localFilePath, contentHash);
+              }
+
               // Add git breadcrumb hint for .git/* files
               const gitHint = getGitBreadcrumbHint(filename);
               if (gitHint) {
@@ -227,7 +246,7 @@ export class CatTool extends BaseFileSystemTool {
     }
 
     // mtime-based sync check
-    const remoteFile = remoteFiles.find((file: any) => file.name === filename);
+    const remoteFile = remoteFiles.find((file: any) => fileNameMatches(file.name, filename));
 
     if (!remoteFile) {
       const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
@@ -254,7 +273,7 @@ export class CatTool extends BaseFileSystemTool {
       console.error(`⚠️ [SYNC] No updateTime from getProjectContent, fetching from metadata API...`);
       try {
         const metadata = await this.gasClient.getProjectMetadata(scriptId, accessToken);
-        const fileMetadata = metadata.find((f: any) => f.name === filename);
+        const fileMetadata = metadata.find((f: any) => fileNameMatches(f.name, filename));
 
         if (fileMetadata?.updateTime) {
           updateTime = fileMetadata.updateTime;
@@ -344,6 +363,8 @@ export class CatTool extends BaseFileSystemTool {
     }
 
     // CommonJS integration - unwrap for editing
+    // Store raw content BEFORE unwrapping for hash computation
+    const rawContent = result.content;
     let finalContent = result.content;
     let commonJsInfo: any = null;
 
@@ -386,6 +407,18 @@ export class CatTool extends BaseFileSystemTool {
 
     result.content = finalContent;
     result.commonJsInfo = commonJsInfo;
+
+    // Compute hash on WRAPPED content (full file as stored in GAS)
+    // This ensures hash matches `git hash-object <file>` on local synced files
+    const contentHash = computeGitSha1(rawContent);
+    result.hash = contentHash;
+
+    // Cache the hash in xattr for future reads
+    const fileExtensionForCache = LocalFileManager.getFileExtensionFromName(filename);
+    const fullFilenameForCache = filename + fileExtensionForCache;
+    const projectPathForCache = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+    const localFilePathForCache = join(projectPathForCache, fullFilenameForCache);
+    await updateCachedContentHash(localFilePathForCache, contentHash);
 
     // Add git breadcrumb hint for .git/* files
     const gitHint = getGitBreadcrumbHint(filename);
