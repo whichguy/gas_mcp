@@ -25,6 +25,7 @@ import { SyncManifest } from './SyncManifest.js';
 import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
 import { PlanStore, SyncPlan } from './PlanStore.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
+import { isManifestFile } from '../../utils/fileHelpers.js';
 import {
   shouldWrapContent,
   unwrapModuleContent,
@@ -415,13 +416,14 @@ export class SyncExecutor {
 
   /**
    * Convert local path to GAS filename
+   *
+   * GAS now stores files WITH extensions in the name, so preserve them.
+   * Only convert backslashes to forward slashes for path consistency.
    */
   private localPathToGasFilename(localPath: string): string {
-    // Remove .js, .gs, or .html extension (support all local extensions)
-    // Note: .html files keep their extension in GAS, but we strip for consistency
-    let filename = localPath.replace(/\.(js|gs)$/, '');
-    filename = filename.replace(/\\/g, '/');
-    return filename;
+    // GAS stores files WITH extensions, so preserve the extension
+    // Only convert Windows backslashes to forward slashes
+    return localPath.replace(/\\/g, '/');
   }
 
   /**
@@ -444,8 +446,8 @@ export class SyncExecutor {
     for (const op of plan.operations.add) {
       // Unwrap CommonJS for SERVER_JS files
       const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
-      // Pass content to detect HTML files
-      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, contentToWrite));
+      // Use fileType (not content) for extension mapping - matches syncStatusChecker behavior
+      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
@@ -456,15 +458,15 @@ export class SyncExecutor {
         // Non-fatal: xattr not supported - sync check will fall back to content comparison
       });
 
-      log.debug(`[EXECUTOR] Added: ${op.filename}`);
+      log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
     }
 
     // Process UPDATE operations
     for (const op of plan.operations.update) {
       // Unwrap CommonJS for SERVER_JS files
       const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
-      // Pass content to detect HTML files
-      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, contentToWrite));
+      // Use fileType (not content) for extension mapping - matches syncStatusChecker behavior
+      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
@@ -474,15 +476,15 @@ export class SyncExecutor {
         // Non-fatal: xattr not supported - sync check will fall back to content comparison
       });
 
-      log.debug(`[EXECUTOR] Updated: ${op.filename}`);
+      log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
     }
 
-    // Process DELETE operations - no content available, use filename only
+    // Process DELETE operations - use fileType for extension mapping
     for (const op of plan.operations.delete) {
-      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename));
+      const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       try {
         await fs.unlink(filePath);
-        log.debug(`[EXECUTOR] Deleted: ${op.filename}`);
+        log.debug(`[EXECUTOR] Deleted: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
       } catch (error: any) {
         if (error.code !== 'ENOENT') {
           throw error;
@@ -642,7 +644,7 @@ export class SyncExecutor {
     if (filename.endsWith('.html') || filename.includes('.html')) {
       return 'HTML';
     }
-    if (filename === 'appsscript' || filename === 'appsscript.json') {
+    if (isManifestFile(filename)) {
       return 'JSON';
     }
     return 'SERVER_JS';
@@ -651,32 +653,33 @@ export class SyncExecutor {
   /**
    * Convert GAS filename to local path
    *
+   * Uses GAS file type (not content detection) for extension mapping.
+   * This ensures consistency with syncStatusChecker which also uses file type.
+   *
    * @param filename - GAS filename (without extension for SERVER_JS/HTML)
-   * @param content - Optional content to detect HTML files
+   * @param fileType - GAS file type (SERVER_JS, HTML, JSON)
    */
-  private gasFilenameToLocalPath(filename: string, content?: string): string {
+  private gasFilenameToLocalPath(filename: string, fileType?: string): string {
     // JSON files (manifest)
-    if (filename === 'appsscript' || filename.endsWith('.json')) {
+    if (isManifestFile(filename) || filename.endsWith('.json')) {
       return filename.endsWith('.json') ? filename : filename + '.json';
     }
 
-    // HTML files - check filename pattern or content
-    if (filename.endsWith('.html')) {
+    // Already has extension - preserve it
+    if (filename.endsWith('.html') || filename.endsWith('.js') || filename.endsWith('.gs')) {
       return filename;
     }
 
-    // Detect HTML by content (GAS HTML files often don't have .html in name)
-    if (content) {
-      const trimmed = content.trim();
-      if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') ||
-          trimmed.startsWith('<head') || trimmed.startsWith('<body') ||
-          (trimmed.startsWith('<') && trimmed.includes('</script>'))) {
+    // Use file type for extension mapping
+    switch (fileType?.toUpperCase()) {
+      case 'HTML':
         return filename + '.html';
-      }
+      case 'JSON':
+        return filename + '.json';
+      case 'SERVER_JS':
+      default:
+        return filename + '.gs';  // Use .gs for GAS files (matches GAS native extension)
     }
-
-    // Default: JavaScript files
-    return filename + '.js';
   }
 
   /**

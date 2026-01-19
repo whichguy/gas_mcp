@@ -7,6 +7,7 @@ import { SHIM_TEMPLATE } from '../config/shimTemplate.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { extractUrlInfo as extractUrlInfoUtil, UrlExtractionResult } from '../utils/urlParser.js';
 import { fileNameMatches, stripExtension } from '../api/pathParser.js';
+import { findManifestFile } from '../utils/fileHelpers.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -189,7 +190,7 @@ async function ensureManifestEntryPoints(
     const files = await gasClient.getProjectContent(scriptId, accessToken);
     
     // Find manifest file
-    const manifestFile = files.find(f => fileNameMatches(f.name, 'appsscript') || fileNameMatches(f.name, 'appsscript.json'));
+    const manifestFile = findManifestFile(files);
     
     if (!manifestFile || !manifestFile.source) {
       console.error('⚠️  No manifest file found, creating one with proper entry points...');
