@@ -290,6 +290,26 @@ export function getBaseName(filename: string): string {
 }
 
 /**
+ * Strip file extension from a filename (handles .gs, .html, .json)
+ * E.g., "common-js/require.gs" -> "common-js/require"
+ */
+export function stripExtension(filename: string): string {
+  return filename.replace(/\.(gs|js|html|json)$/, '');
+}
+
+/**
+ * Check if a file name matches a base name (with or without extension)
+ * Useful for comparing file names when the actual file may have .gs/.html/.json extension
+ * E.g., fileNameMatches("common-js/__mcp_exec.gs", "common-js/__mcp_exec") -> true
+ */
+export function fileNameMatches(actualName: string, baseName: string): boolean {
+  // Direct match
+  if (actualName === baseName) return true;
+  // Match after stripping extension
+  return stripExtension(actualName) === baseName;
+}
+
+/**
  * Join path components safely
  */
 export function joinPath(scriptId: string, ...parts: string[]): string {

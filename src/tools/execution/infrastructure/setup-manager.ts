@@ -13,6 +13,7 @@ import { SessionAuthManager } from '../../../auth/sessionManager.js';
 import { CodeGenerator } from '../../../utils/codeGeneration.js';
 import { getSuccessHtmlTemplate, getErrorHtmlTemplate, verifyInfrastructureFile } from '../../deployments.js';
 import { ensureManifestEntryPoints } from '../utilities/manifest-config.js';
+import { fileNameMatches } from '../../../api/pathParser.js';
 
 /**
  * Sets up execution infrastructure for a Google Apps Script project
@@ -56,9 +57,9 @@ export async function setupInfrastructure(
       15000, // 15-second timeout
       'Get project content'
     );
-    shimExists = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec');
-    const hasSuccessHtml = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec_success');
-    const hasErrorHtml = existingFiles.some((file: GASFile) => file.name === 'common-js/__mcp_exec_error');
+    shimExists = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec'));
+    const hasSuccessHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_success'));
+    const hasErrorHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_error'));
     htmlTemplatesExist = hasSuccessHtml && hasErrorHtml;
     console.error(`Shim exists: ${shimExists}, HTML templates exist: ${htmlTemplatesExist}`);
   } catch (error: any) {
@@ -80,7 +81,7 @@ export async function setupInfrastructure(
       mcpVersion: '1.0.0'
     });
 
-    const shimFile = shimCode.files.find((file: GASFile) => file.name === 'common-js/__mcp_exec');
+    const shimFile = shimCode.files.find((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec'));
     if (!shimFile?.source) {
       throw new Error('Failed to generate execution shim code');
     }
