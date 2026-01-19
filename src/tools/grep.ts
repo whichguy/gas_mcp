@@ -9,7 +9,7 @@
 
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../api/pathParser.js';
+import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fileNameMatches } from '../api/pathParser.js';
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { 
@@ -25,6 +25,7 @@ import {
   gasNameToVirtual
 } from '../utils/virtualFileTranslation.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { GuidanceFragments } from '../utils/guidanceFragments.js';
 
 /**
  * grep - Search clean user code (unwrapped from CommonJS)
@@ -41,11 +42,12 @@ export class GrepTool extends BaseTool {
     type: 'object',
     llmGuidance: {
       unixLike: 'grep -rn (search) | GAS | CommonJS unwrap | max 200 results',
-      whenToUse: '⚠️ PREFER ripgrep (multi-pattern+smart case) | grep for simple single-pattern',
+      toolSelection: GuidanceFragments.searchToolHints,
+      whenToUse: 'PREFER ripgrep (multi-pattern+smart case) | grep for simple single-pattern',
       limitations: '200 result max, 500 file max',
-      nextSteps: ['cat→context', 'sed→replace', 'write→save'],
+      nextSteps: ['cat->context', 'sed->replace', 'write->save'],
       contentType: 'unwrapped user code (no CommonJS wrappers)',
-      antiPatterns: ['❌ grep for multi-pattern → use ripgrep instead', '❌ grep >200 results needed → use ripgrep with maxCount', '❌ grep without file filter → add path pattern for efficiency']
+      antiPatterns: GuidanceFragments.searchAntiPatterns
     },
     properties: {
       pattern: {
@@ -333,7 +335,7 @@ export class GrepTool extends BaseTool {
         if (!parsedPath.scriptId) continue;
 
         const projectFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
-        const targetFile = projectFiles.find((f: any) => f.name === (parsedPath.filename || parsedPath.directory));
+        const targetFile = projectFiles.find((f: any) => fileNameMatches(f.name, parsedPath.filename || parsedPath.directory || ''));
         
         if (targetFile) {
           files.push({
@@ -624,7 +626,7 @@ export class RawGrepTool extends BaseTool {
         // 🔧 DIRECT API CALL: Get project files (never uses local cache)
         console.error(`🔧 [GAS_RAW_GREP] Making direct API call for file: ${fileName}`);
         const projectFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
-        const targetFile = projectFiles.find((f: any) => f.name === (parsedPath.filename || parsedPath.directory));
+        const targetFile = projectFiles.find((f: any) => fileNameMatches(f.name, parsedPath.filename || parsedPath.directory || ''));
         
         if (targetFile) {
           files.push({

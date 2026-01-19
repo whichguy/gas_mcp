@@ -7,7 +7,6 @@
  */
 
 import { google, logging_v2 } from 'googleapis';
-import { rateLimiter } from './rateLimiter.js';
 import { GASApiError } from '../errors/mcpErrors.js';
 
 /**
@@ -201,8 +200,6 @@ export class GASLoggingOperations {
     paginationOptions: LogPaginationOptions = {},
     accessToken: string
   ): Promise<LogListResult> {
-    await rateLimiter.checkLimit();
-
     const loggingApi = await this.initializeClient(accessToken);
 
     // Build the filter

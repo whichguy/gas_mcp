@@ -12,7 +12,6 @@
 
 import { google } from 'googleapis';
 import { GASAuthClient } from '../auth/oauthClient.js';
-import { rateLimiter } from './rateLimiter.js';
 import { GASApiError } from '../errors/mcpErrors.js';
 import { loadOAuthConfigFromJson } from '../tools/authConfig.js';
 
@@ -112,8 +111,6 @@ export class GASAuthOperations {
    */
   async makeApiCall<T>(apiCall: () => Promise<T>, accessToken?: string): Promise<T> {
     console.error(`🚀 makeApiCall called with accessToken: ${accessToken ? accessToken.substring(0, 20) + '...' : 'undefined'}`);
-
-    await rateLimiter.checkLimit();
 
     const startTime = Date.now();
     let operationName = 'Unknown Google API Call';

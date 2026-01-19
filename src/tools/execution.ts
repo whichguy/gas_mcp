@@ -21,6 +21,141 @@ import type { DriftFileInfo } from '../errors/mcpErrors.js';
 import { fileNameMatches } from '../api/pathParser.js';
 import { validateCommonJSOrdering, formatCommonJSOrderingIssues } from '../utils/validation.js';
 import open from 'open';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/**
+ * Output file management for large exec responses
+ * Automatically writes to file when response exceeds threshold
+ */
+const OUTPUT_FILE_DIR = '/tmp';
+const OUTPUT_FILE_PREFIX = 'mcp-gas-exec';
+const OUTPUT_SIZE_THRESHOLD = 8 * 1024; // 8KB threshold (~2K tokens) for auto-file output
+const OUTPUT_FILE_MAX_AGE_DAYS = 2;
+
+/**
+ * Clean up old output files (older than 2 days)
+ * Called lazily on new file creation to avoid startup overhead
+ */
+function cleanupOldOutputFiles(): void {
+  try {
+    const files = fs.readdirSync(OUTPUT_FILE_DIR);
+    const now = Date.now();
+    const maxAge = OUTPUT_FILE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+
+    for (const file of files) {
+      if (file.startsWith(OUTPUT_FILE_PREFIX)) {
+        const filePath = path.join(OUTPUT_FILE_DIR, file);
+        try {
+          const stats = fs.statSync(filePath);
+          if (now - stats.mtimeMs > maxAge) {
+            fs.unlinkSync(filePath);
+            console.error(`[OUTPUT CLEANUP] Removed old file: ${file}`);
+          }
+        } catch (err) {
+          // Ignore errors for individual files
+        }
+      }
+    }
+  } catch (err) {
+    // Ignore cleanup errors - non-critical
+  }
+}
+
+/**
+ * Write large response to file and return metadata
+ * @param response - The full response object to write
+ * @param scriptId - Script ID for filename
+ * @returns Object with file path and metadata for LLM
+ */
+function writeResponseToFile(response: any, scriptId: string): {
+  outputFile: string;
+  resultSize: number;
+  loggerLines: number;
+  summary: string;
+} {
+  // Lazy cleanup of old files
+  cleanupOldOutputFiles();
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const shortScriptId = scriptId.substring(0, 12);
+  const filename = `${OUTPUT_FILE_PREFIX}-${timestamp}-${shortScriptId}.json`;
+  const filePath = path.join(OUTPUT_FILE_DIR, filename);
+
+  const content = JSON.stringify(response, null, 2);
+  fs.writeFileSync(filePath, content, 'utf-8');
+
+  const resultSize = content.length;
+  const loggerLines = (response.logger_output || '').split('\n').filter((l: string) => l.trim()).length;
+
+  // Generate a brief summary of the result for the LLM
+  let summary = '';
+  if (response.status === 'success') {
+    const resultType = typeof response.result;
+    if (resultType === 'object' && response.result !== null) {
+      if (Array.isArray(response.result)) {
+        summary = `Array with ${response.result.length} items`;
+      } else {
+        const keys = Object.keys(response.result);
+        summary = `Object with ${keys.length} keys: ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''}`;
+      }
+    } else {
+      summary = `${resultType} value`;
+    }
+  } else {
+    summary = `Error: ${response.error?.message || 'Unknown error'}`;
+  }
+
+  console.error(`[OUTPUT FILE] Large response (${(resultSize / 1024).toFixed(1)}KB) written to: ${filePath}`);
+
+  return {
+    outputFile: filePath,
+    resultSize,
+    loggerLines,
+    summary
+  };
+}
+
+/**
+ * Check if response should be written to file based on size
+ * @param response - The response object to check
+ * @returns true if response exceeds threshold and should be written to file
+ */
+function shouldWriteToFile(response: any): boolean {
+  try {
+    const size = JSON.stringify(response).length;
+    return size > OUTPUT_SIZE_THRESHOLD;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Wrap response with automatic file output for large responses
+ * @param response - The full response object
+ * @param scriptId - Script ID for filename
+ * @returns Either the original response or file metadata if too large
+ */
+function wrapLargeResponse(response: any, scriptId: string): any {
+  if (shouldWriteToFile(response)) {
+    const fileInfo = writeResponseToFile(response, scriptId);
+    return {
+      status: response.status,
+      scriptId: response.scriptId,
+      js_statement: response.js_statement,
+      outputWrittenToFile: true,
+      outputFile: fileInfo.outputFile,
+      resultSize: fileInfo.resultSize,
+      loggerLines: fileInfo.loggerLines,
+      summary: fileInfo.summary,
+      hint: `Response exceeded ${(OUTPUT_SIZE_THRESHOLD / 1024).toFixed(0)}KB (~${Math.round(OUTPUT_SIZE_THRESHOLD / 4)} tokens). Full result written to file. Use Read tool to access: ${fileInfo.outputFile}`,
+      executedAt: response.executedAt,
+      environment: response.environment,
+      versionNumber: response.versionNumber
+    };
+  }
+  return response;
+}
 
 /**
  * Structured error response with consistent metadata fields.
@@ -356,7 +491,7 @@ export class ExecTool extends BaseTool {
         description: 'Bypass pre-flight sync check that detects local vs remote drift. Default: false. Set true to execute even if local files are stale.',
         default: false,
         examples: [true, false]
-      }
+      },
     },
     required: ['scriptId', 'js_statement'],
     additionalProperties: false,
@@ -384,7 +519,8 @@ export class ExecTool extends BaseTool {
       response: {
         check: 'status first: "success"→result, "error"→error object',
         errorTypes: ['ExecutionError', 'EXECUTION_ERROR', 'AutoRedeployDisabled', 'TimeoutError'],
-        stack: '/dev=full, staging/prod="[hidden]"'
+        stack: '/dev=full, staging/prod="[hidden]"',
+        largeOutput: 'Auto-writes to /tmp/mcp-gas-exec-*.json if >8KB (~2K tokens). Response includes outputFile path + summary. Use Read tool to access full result.'
       },
 
       // DEBUG: Troubleshooting - PRESERVE DIAGNOSTICS
@@ -1231,7 +1367,7 @@ export class ExecTool extends BaseTool {
             ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
             : undefined;
 
-          return protectResponseSize({
+          return wrapLargeResponse(protectResponseSize({
             status: 'success',
             scriptId,
             js_statement,
@@ -1243,7 +1379,7 @@ export class ExecTool extends BaseTool {
             versionNumber: envDeployment?.versionNumber || null,
             cookieAuthUsed: true,
             ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
-          });
+          }), scriptId);
 
         } catch (authError: any) {
           console.error(`[COOKIE AUTH] Domain authorization failed: ${authError.message} - continuing without cookie auth`);
@@ -1412,7 +1548,7 @@ export class ExecTool extends BaseTool {
             ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
             : undefined;
 
-          return protectResponseSize({
+          return wrapLargeResponse(protectResponseSize({
             status: 'success',
             scriptId,
             js_statement,
@@ -1423,7 +1559,7 @@ export class ExecTool extends BaseTool {
             environment: environment,
             versionNumber: envDeployment?.versionNumber || null,
             ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
-          });
+          }), scriptId);
         } else if (result.type === 'exception') {
           const error = new Error(result.payload.error.message);
           error.name = result.payload.error.name || 'FunctionExecutionError';
@@ -1474,7 +1610,7 @@ export class ExecTool extends BaseTool {
         : undefined;
 
       // Return simple success response with logger output
-      return protectResponseSize({
+      return wrapLargeResponse(protectResponseSize({
         status: 'success',
         scriptId,
         js_statement,
@@ -1485,7 +1621,7 @@ export class ExecTool extends BaseTool {
         environment: environment,
         versionNumber: envDeployment?.versionNumber || null,
         ide_url_hint: `${executionUrl}?_mcp_run=true&action=auth_ide`
-      });
+      }), scriptId);
     } catch (error: any) {
       const duration = Date.now() - startTime;
       

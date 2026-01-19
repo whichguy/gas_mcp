@@ -1,19 +1,11 @@
 /**
- * @fileoverview sed-inspired find/replace tools for Google Apps Script projects
- * 
- * Implements sed and raw_sed tools that provide powerful find/replace operations
- * using regular expressions with capture groups. Leverages existing ripgrep infrastructure
- * for maximum code reuse and efficiency.
- * 
- * Key Features:
- * - Regex-based find/replace with capture group support ($1, $2, etc.)
- * - Multi-pattern operations with OR logic
- * - File filtering by type and patterns
- * - In-place modifications without backup complexity
- * - Seamless integration with existing GAS APIs
- * - Smart vs Raw variants for CommonJS handling
- * 
- * @author MCP Gas Server
+ * @fileoverview sed-style Regex Find/Replace across multiple files
+ *
+ * FLOW: ripgrep(find matches) → cat(read) → regex replace → write(save) per file
+ * KEY: pattern + replacement | $1,$2 for capture groups | dryRun=true for preview
+ * MULTI-FILE: Processes all matching files | per-file hash validation prevents cascading conflicts
+ * VS EDIT: sed=regex patterns across files | edit=exact strings single file
+ * NO AUTO-COMMIT: Must call git_feature({operation:'commit'}) after sed
  */
 
 import { BaseTool } from './base.js';
@@ -24,6 +16,7 @@ import { CatTool, RawCatTool } from './filesystem/index.js';
 import { WriteTool, RawWriteTool } from './filesystem/index.js';
 import { RegexProcessor } from '../utils/regexProcessor.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { GuidanceFragments } from '../utils/guidanceFragments.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 
 /**
@@ -131,21 +124,23 @@ export class SedTool extends BaseTool {
         minimum: 1,
         maximum: 200
       },
+      force: {
+        type: 'boolean',
+        description: '⚠️ Force replacements even if files were modified externally. Use only when intentionally overwriting concurrent changes.',
+        default: false
+      },
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern', 'replacement'],
     additionalProperties: false,
     llmGuidance: {
       unixLike: 'sed s/old/new/g (replace) | GAS | CommonJS wrap/unwrap',
+      toolSelection: GuidanceFragments.searchToolHints,
+      errorResolutions: GuidanceFragments.errorResolutions,
       whenToUse: 'Regex find/replace across files. Use capture groups ($1, $2) for complex transformations.',
       examples: ['sed({scriptId,pattern:"oldFunc",replacement:"newFunc"})', 'sed({scriptId,pattern:"console\\\\.log",replacement:"Logger.log",path:"*.gs"})'],
-      nextSteps: ['exec→test changes', 'ripgrep→verify replacements', 'git_feature finish→commit'],
-      errorRecovery: {
-        'invalid regex': 'Escape special chars: . → \\\\. | ( → \\\\( | use dryRun:true to test',
-        'no matches': 'ripgrep pattern first → verify exists → check caseSensitive flag',
-        'partial replace': 'Check global:true (default) | verify pattern specificity'
-      },
-      antiPatterns: ['❌ sed for exact string → use edit (more reliable)', '❌ complex regex without dryRun → test with dryRun:true first', '❌ sed single file → edit is more efficient']
+      nextSteps: ['exec->test changes', 'ripgrep->verify replacements', 'git_feature finish->commit'],
+      antiPatterns: ['sed for exact string -> use edit (more reliable)', 'complex regex without dryRun -> test with dryRun:true first', 'sed single file -> edit is more efficient']
     }
   };
 
@@ -209,12 +204,15 @@ export class SedTool extends BaseTool {
 
       for (const matchFile of searchResult.matches) {
         try {
-          // Read file content
+          // Read file content (catTool now returns hash for conflict detection)
           const catResult = await this.catTool.execute({
             scriptId,
             path: matchFile.fileName,
             accessToken: params.accessToken
-          });
+          }) as any;  // catResult includes hash
+
+          // Capture file hash at read time for conflict detection
+          const fileHash = catResult.hash;
 
           // Perform replacements on the actual content string
           const { newContent, replacementCount } = this.performReplacements(
@@ -228,11 +226,16 @@ export class SedTool extends BaseTool {
           );
 
           // Apply changes if not dry run and replacements were made
+          // HASH-BASED CONFLICT DETECTION: Pass hash from cat to write
+          // If file was modified externally between cat and write, ConflictError is thrown
           if (!params.dryRun && replacementCount > 0) {
             const writeResult = await this.writeTool.execute({
               scriptId,
               path: matchFile.fileName,
               content: newContent,
+              // Pass hash for conflict detection (catches concurrent modifications)
+              expectedHash: fileHash,
+              force: params.force === true,  // Allow override if user explicitly requests
               accessToken: params.accessToken
             }) as any;  // WriteTool returns extended result with git info
             // Capture branch name from first successful write
@@ -390,6 +393,11 @@ export class RawSedTool extends BaseTool {
         minimum: 1,
         maximum: 200
       },
+      force: {
+        type: 'boolean',
+        description: '⚠️ Force replacements even if files were modified externally. Use only when intentionally overwriting concurrent changes.',
+        default: false
+      },
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern', 'replacement'],
@@ -453,11 +461,14 @@ export class RawSedTool extends BaseTool {
 
       for (const matchFile of searchResult.matches) {
         try {
-          // Read raw file content
+          // Read raw file content (catTool now returns hash for conflict detection)
           const catResult = await this.catTool.execute({
             path: `${scriptId}/${matchFile.fileName}`,
             accessToken: params.accessToken
-          });
+          }) as any;  // catResult includes hash
+
+          // Capture file hash at read time for conflict detection
+          const fileHash = catResult.hash;
 
           // Perform replacements on raw content
           const { newContent, replacementCount } = this.performReplacements(
@@ -471,11 +482,16 @@ export class RawSedTool extends BaseTool {
           );
 
           // Apply changes if not dry run and replacements were made
+          // HASH-BASED CONFLICT DETECTION: Pass hash from cat to write
+          // If file was modified externally between cat and write, ConflictError is thrown
           if (!params.dryRun && replacementCount > 0) {
             await this.writeTool.execute({
               path: `${scriptId}/${matchFile.fileName}`,
               content: newContent,
               fileType: 'SERVER_JS', // Default for raw operations
+              // Pass hash for conflict detection (catches concurrent modifications)
+              expectedHash: fileHash,
+              force: params.force === true,  // Allow override if user explicitly requests
               accessToken: params.accessToken
             });
           }

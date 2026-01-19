@@ -28,6 +28,7 @@ import { join, dirname } from 'path';
 import { mkdir, stat, readFile } from 'fs/promises';
 import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA } from './shared/schemas.js';
+import { GuidanceFragments } from '../../utils/guidanceFragments.js';
 import type { WriteParams, WriteResult } from './shared/types.js';
 
 /**
@@ -125,41 +126,22 @@ export class WriteTool extends BaseFileSystemTool {
         recommendation: 'PREFER fromLocal over inline content when: (1) content exists locally, (2) content is large (>100 lines), (3) content was just generated. Saves tokens + enables local editing.'
       },
       // GIT INTEGRATION - CRITICAL for LLM behavior
-      gitIntegration: {
-        CRITICAL: 'This tool does NOT auto-commit to git',
-        behavior: 'File writes push to GAS but do NOT commit locally',
-        workflowSignal: 'Response includes git.taskCompletionBlocked=true when uncommitted',
-        taskCompletionRule: 'Task is NOT complete while git.uncommittedChanges.count > 0',
-        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
-      },
+      gitIntegration: GuidanceFragments.gitIntegration,
+      commonJs: GuidanceFragments.commonJsProcessing,
+      moduleOptions: GuidanceFragments.moduleOptions,
+      errorRecovery: GuidanceFragments.errorRecovery,
+      errorResolutions: GuidanceFragments.errorResolutions,
 
       whenToUse: 'Normal file write with auto CommonJS wrapping. Use edit/aider for small changes (95%+ token savings).',
       alternatives: 'edit: exact text match, aider: fuzzy match, raw_write: no CommonJS processing',
-      commonJs: 'Auto-wraps SERVER_JS with require(), module, exports. Never manually add _main() or __defineModule__.',
-      moduleOptions: {
-        loadNow: 'true=eager startup, false=lazy on require()',
-        eventHandlerPattern: 'If code contains module.exports.__events__, MUST include moduleOptions: { loadNow: true }',
-        troubleshooting: 'Log "[WARN] No X handlers found" means missing loadNow: true',
-        hoistedFunctions: '[{name,params,jsdoc}] for Sheets autocomplete'
-      },
-      force: '⚠️ DANGEROUS: Skips sync validation. Use only when intentionally discarding remote changes.',
+      force: GuidanceFragments.forceWarning,
       examples: [
         'Basic: {path:"utils",content:"function add(a,b){return a+b}"}',
         'Module: {path:"calc",content:"module.exports={add,multiply}"}',
         'Event: {path:"Menu",content:"module.exports.__events__={onOpen:\\"onOpen\\"}",moduleOptions:{loadNow:true}}',
-        'Force: {path:"Code",content:"...",force:true}  // ⚠️ Overwrites remote even if out of sync'
+        'Force: {path:"Code",content:"...",force:true}  // Overwrites remote even if out of sync'
       ],
-      errorRecovery: {
-        'sync conflict': 'rsync first OR force:true (⚠️ overwrites remote)',
-        'auth expired': 'auth({mode:"status"}) → auth({mode:"start"}) if needed',
-        'file locked': 'Wait 30s (auto-unlock) OR check concurrent writes'
-      },
-      antiPatterns: [
-        '❌ write for small edits → use edit/aider (95% token savings)',
-        '❌ manual _main() wrapper → let write auto-wrap',
-        '❌ __events__ without loadNow:true → handlers won\'t register',
-        '❌ assuming auto-commit happened → MUST call git_feature commit'
-      ]
+      antiPatterns: GuidanceFragments.writeAntiPatterns
     }
   };
 
