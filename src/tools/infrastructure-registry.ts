@@ -8,6 +8,7 @@
  */
 
 import crypto from 'crypto';
+import { fileNameMatches } from '../api/pathParser.js';
 
 /**
  * Represents a deployable infrastructure file with verification support
@@ -176,4 +177,19 @@ export function getUniversalInfrastructure(): InfrastructureFile[] {
 export function getOptionalInfrastructure(): InfrastructureFile[] {
   return Object.values(INFRASTRUCTURE_REGISTRY)
     .filter(file => file.category === 'optional');
+}
+
+/**
+ * Get infrastructure file by name (with or without extension)
+ * E.g., both 'common-js/require' and 'common-js/require.gs' will match
+ */
+export function getInfrastructureFile(fileName: string): InfrastructureFile | undefined {
+  // Direct key lookup first (fastest path)
+  if (INFRASTRUCTURE_REGISTRY[fileName]) {
+    return INFRASTRUCTURE_REGISTRY[fileName];
+  }
+
+  // Fall back to extension-agnostic matching
+  return Object.values(INFRASTRUCTURE_REGISTRY)
+    .find(file => fileNameMatches(file.name, fileName));
 }
