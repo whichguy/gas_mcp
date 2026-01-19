@@ -23,6 +23,7 @@ import { LockManager } from '../../utils/lockManager.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncManifest, ManifestLoadResult } from './SyncManifest.js';
 import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
+import { fileNameMatches } from '../../api/pathParser.js';
 import { PlanStore, SyncPlan } from './PlanStore.js';
 import { getUncommittedStatus, getCurrentBranchName } from '../../utils/gitStatus.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
@@ -517,19 +518,18 @@ export class SyncPlanner {
    * Convert local path to GAS filename
    *
    * Examples:
-   * - utils.js -> utils (preferred)
-   * - utils.gs -> utils (legacy)
-   * - models/User.js -> models/User
-   * - auth/oauth.gs -> auth/oauth
+   * - utils.gs -> utils.gs
+   * - models/User.gs -> models/User.gs
+   * - Sidebar.html -> Sidebar.html
+   * - appsscript.json -> appsscript.json
+   *
+   * CRITICAL: Must match how SyncExecutor.gasFilenameToLocalPath() adds extensions.
+   * GAS now stores files WITH extensions in the name.
    */
   private localPathToGasFilename(localPath: string): string {
-    // Remove .js or .gs extension (support both for backward compat)
-    let filename = localPath.replace(/\.(js|gs)$/, '');
-
-    // Convert Windows backslashes to forward slashes
-    filename = filename.replace(/\\/g, '/');
-
-    return filename;
+    // GAS stores files WITH extensions, so preserve the extension
+    // Only convert Windows backslashes to forward slashes
+    return localPath.replace(/\\/g, '/');
   }
 
   /**
@@ -542,7 +542,7 @@ export class SyncPlanner {
 
     return files.filter(file => {
       for (const pattern of excludePatterns) {
-        if (file.name.startsWith(pattern) || file.name === pattern) {
+        if (file.name.startsWith(pattern) || fileNameMatches(file.name, pattern)) {
           return false;
         }
       }
@@ -626,7 +626,8 @@ export class SyncPlanner {
           lastModified: f.updateTime,
           size: contentForComparison.length,
           // Store original wrapped content for operations
-          originalContent: source
+          originalContent: source,
+          fileType: fileType  // Pass through GAS file type for extension mapping
         };
       });
   }

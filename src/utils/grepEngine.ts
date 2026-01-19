@@ -3,7 +3,7 @@
  * Handles file filtering, content searching, and result management
  */
 
-import { parsePath, isWildcardPattern, matchesPattern } from '../api/pathParser.js';
+import { parsePath, isWildcardPattern, matchesPattern, fileNameMatches } from '../api/pathParser.js';
 import { 
   validateGrepPattern, 
   compileGrepPattern, 
@@ -504,7 +504,7 @@ export class GrepSearchEngine {
           if (isWildcardPattern(excludePattern)) {
             return matchesPattern(file.name, excludePattern);
           }
-          return file.name === excludePattern;
+          return fileNameMatches(file.name, excludePattern);
         });
       });
     }

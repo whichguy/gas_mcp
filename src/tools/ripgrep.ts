@@ -12,7 +12,7 @@
 
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
-import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../api/pathParser.js';
+import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fileNameMatches } from '../api/pathParser.js';
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
@@ -1184,8 +1184,8 @@ export class RipgrepTool extends BaseTool {
         // Sort by modification time (newest first)
         // Note: GAS files don't have lastModified in standard API response
         // This is a placeholder for future enhancement
-        const aFile = files.find(f => f.name === a.fileName);
-        const bFile = files.find(f => f.name === b.fileName);
+        const aFile = files.find(f => fileNameMatches(f.name, a.fileName));
+        const bFile = files.find(f => fileNameMatches(f.name, b.fileName));
         const aTime = (aFile as any)?.lastModified || 0;
         const bTime = (bFile as any)?.lastModified || 0;
         return bTime - aTime;
@@ -1560,8 +1560,8 @@ export class RawRipgrepTool extends BaseTool {
         // Sort by modification time (newest first)
         // Note: GAS files don't have lastModified in standard API response
         // This is a placeholder for future enhancement
-        const aFile = files.find(f => f.name === a.fileName);
-        const bFile = files.find(f => f.name === b.fileName);
+        const aFile = files.find(f => fileNameMatches(f.name, a.fileName));
+        const bFile = files.find(f => fileNameMatches(f.name, b.fileName));
         const aTime = (aFile as any)?.lastModified || 0;
         const bTime = (bFile as any)?.lastModified || 0;
         return bTime - aTime;

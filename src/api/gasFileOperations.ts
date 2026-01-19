@@ -12,7 +12,7 @@
 
 import { GASAuthOperations } from './gasAuthOperations.js';
 import { GASFile } from './gasTypes.js';
-import { getFileType } from './pathParser.js';
+import { getFileType, fileNameMatches } from './pathParser.js';
 import { GASApiError } from '../errors/mcpErrors.js';
 import { LockManager } from '../utils/lockManager.js';
 
@@ -106,7 +106,7 @@ export class GASFileOperations {
       fileType = explicitType;
     } else {
       // Check if file already exists and preserve its type
-      const existingFile = currentFiles.find(f => f.name === fileName);
+      const existingFile = currentFiles.find(f => fileNameMatches(f.name, fileName));
       if (existingFile?.type) {
         fileType = existingFile.type;
       } else {
@@ -115,8 +115,8 @@ export class GASFileOperations {
       }
     }
 
-    // Find existing file by exact name match ONLY
-    const existingIndex = currentFiles.findIndex(f => f.name === fileName);
+    // Find existing file by extension-agnostic name match
+    const existingIndex = currentFiles.findIndex(f => fileNameMatches(f.name, fileName));
 
     const newFile: GASFile = {
       name: fileName, // ✅ Use exact fileName as provided
@@ -202,7 +202,7 @@ export class GASFileOperations {
 
     // Validate all files exist
     for (const fileName of fileOrder) {
-      if (!currentFiles.find(f => f.name === fileName)) {
+      if (!currentFiles.find(f => fileNameMatches(f.name, fileName))) {
         throw new GASApiError(`File ${fileName} not found`, 404);
       }
     }
@@ -212,7 +212,7 @@ export class GASFileOperations {
 
     // Add files in specified order
     for (const fileName of fileOrder) {
-      const file = currentFiles.find(f => f.name === fileName)!;
+      const file = currentFiles.find(f => fileNameMatches(f.name, fileName))!;
       orderedFiles.push(file);
     }
 

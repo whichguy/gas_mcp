@@ -17,7 +17,7 @@
 
 import { GASClient } from '../../../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../../../errors/mcpErrors.js';
-import { resolveHybridScriptId } from '../../../api/pathParser.js';
+import { resolveHybridScriptId, fileNameMatches } from '../../../api/pathParser.js';
 import { shouldWrapContent, unwrapModuleContent, wrapModuleContent, getModuleName, type ModuleOptions } from '../../../utils/moduleWrapper.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
@@ -83,7 +83,7 @@ export class MoveOperationStrategy implements FileOperationStrategy<MoveResult> 
       this.fromProjectId,
       this.params.accessToken
     );
-    this.sourceFile = sourceFiles.find((f: any) => f.name === this.fromFilename);
+    this.sourceFile = sourceFiles.find((f: any) => fileNameMatches(f.name, this.fromFilename!));
 
     if (!this.sourceFile) {
       throw new FileOperationError('move', this.params.from, 'source file not found');

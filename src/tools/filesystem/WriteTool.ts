@@ -270,7 +270,7 @@ export class WriteTool extends BaseFileSystemTool {
         try {
           const accessToken = await this.getAuthToken(params);
           const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-          const existingFile = existingFiles.find((f: any) => f.name === filename);
+          const existingFile = existingFiles.find((f: any) => fileNameMatches(f.name, filename));
 
           let existingHoistedFunctions = undefined;
           if (existingFile && existingFile.source) {
@@ -295,7 +295,7 @@ export class WriteTool extends BaseFileSystemTool {
         try {
           const accessToken = await this.getAuthToken(params);
           const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-          const existingFile = existingFiles.find((f: any) => f.name === filename);
+          const existingFile = existingFiles.find((f: any) => fileNameMatches(f.name, filename));
 
           if (existingFile && existingFile.source) {
             const extractionDebug = extractDefineModuleOptionsWithDebug(existingFile.source);
@@ -479,7 +479,7 @@ export class WriteTool extends BaseFileSystemTool {
       try {
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
-        const existingFile = currentFiles.find((f: any) => f.name === filename);
+        const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
         const fileType = existingFile?.type || determineFileTypeUtil(filename, content);
 
         // === HASH-BASED CONFLICT DETECTION ===
@@ -572,14 +572,14 @@ export class WriteTool extends BaseFileSystemTool {
 
         if (existingFile) {
           updatedFiles = currentFiles.map((f: any) =>
-            f.name === filename ? newFile : f
+            fileNameMatches(f.name, filename) ? newFile : f
           );
         } else {
           updatedFiles = [...currentFiles, newFile];
         }
 
         const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
-        const updatedFile = remoteResult.find((f: any) => f.name === filename);
+        const updatedFile = remoteResult.find((f: any) => fileNameMatches(f.name, filename));
 
         // ✅ Fetch authoritative remote updateTime (with fallback to metadata)
         const authoritativeUpdateTime = await this.fetchRemoteUpdateTime(
@@ -994,7 +994,7 @@ export class WriteTool extends BaseFileSystemTool {
         const accessToken = await this.getAuthToken(params);
 
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-        const existingFile = currentFiles.find((f: any) => f.name === filename);
+        const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
         const fileType = existingFile?.type || determineFileTypeUtil(filename, finalContent);
 
         // === HASH-BASED CONFLICT DETECTION (Git Path) ===
@@ -1074,11 +1074,11 @@ export class WriteTool extends BaseFileSystemTool {
         };
 
         const updatedFiles = existingFile
-          ? currentFiles.map((f: any) => f.name === filename ? newFile : f)
+          ? currentFiles.map((f: any) => fileNameMatches(f.name, filename) ? newFile : f)
           : [...currentFiles, newFile];
 
         const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
-        const updatedFile = remoteResult.find((f: any) => f.name === filename);
+        const updatedFile = remoteResult.find((f: any) => fileNameMatches(f.name, filename));
 
         // ✅ Fetch authoritative remote updateTime (with fallback to metadata)
         const authoritativeUpdateTime = await this.fetchRemoteUpdateTime(
@@ -1283,7 +1283,7 @@ export class WriteTool extends BaseFileSystemTool {
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
 
     // Check if file exists in remote
-    const remoteFile = remoteFiles.find((f: any) => f.name === filename);
+    const remoteFile = remoteFiles.find((f: any) => fileNameMatches(f.name, filename));
     if (!remoteFile) {
       return false; // File doesn't exist remotely, nothing to pull
     }
@@ -1342,7 +1342,7 @@ export class WriteTool extends BaseFileSystemTool {
     console.error(`⚠️ [SYNC] updateTime not returned by updateProjectContent, fetching metadata...`);
     try {
       const metadata = await this.gasClient.getProjectMetadata(scriptId, accessToken);
-      const fileMetadata = metadata.find((f: any) => f.name === filename);
+      const fileMetadata = metadata.find((f: any) => fileNameMatches(f.name, filename));
 
       if (fileMetadata?.updateTime) {
         console.error(`✅ [SYNC] Retrieved updateTime via metadata: ${fileMetadata.updateTime}`);

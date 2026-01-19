@@ -15,7 +15,7 @@
 
 import { GASClient } from '../../../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../../../errors/mcpErrors.js';
-import { parsePath, resolveHybridScriptId } from '../../../api/pathParser.js';
+import { parsePath, resolveHybridScriptId, fileNameMatches } from '../../../api/pathParser.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
 interface DeleteStrategyParams {
@@ -68,7 +68,7 @@ export class DeleteOperationStrategy implements FileOperationStrategy<DeleteResu
       this.scriptId,
       this.params.accessToken
     );
-    this.deletedFile = allFiles.find((f: any) => f.name === this.filename);
+    this.deletedFile = allFiles.find((f: any) => fileNameMatches(f.name, this.filename!));
 
     if (!this.deletedFile) {
       throw new FileOperationError('delete', this.params.path, 'file not found');

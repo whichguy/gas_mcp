@@ -48,7 +48,7 @@ export class ReorderTool extends BaseTool {
     const files = await this.gasClient.getProjectContent(scriptId, accessToken);
 
     // Find the target file
-    const targetFile = files.find((f: any) => f.name === fileName);
+    const targetFile = files.find((f: any) => fileNameMatches(f.name, fileName));
     if (!targetFile) {
       throw new FileOperationError('reorder', fileName, 'file not found');
     }
