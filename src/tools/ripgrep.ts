@@ -16,6 +16,7 @@ import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fi
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { sortRipgrepResults, trimRipgrepResultLines } from '../utils/ripgrepUtils.js';
 
 // Enhanced error types for ripgrep operations
 export class RipgrepError extends Error {
@@ -1086,12 +1087,12 @@ export class RipgrepTool extends BaseTool {
 
     // Sort results if requested
     if (params.sort && params.sort !== 'none' && results.matches && Array.isArray(results.matches)) {
-      results.matches = this.sortResults(results.matches, params.sort, files);
+      results.matches = sortRipgrepResults(results.matches, params.sort, files);
     }
 
     // Apply trim to result lines if requested
     if (params.trim && results.matches && Array.isArray(results.matches)) {
-      results.matches = this.trimResultLines(results.matches);
+      results.matches = trimRipgrepResultLines(results.matches);
     }
 
     // Add metadata about content processing
@@ -1170,53 +1171,6 @@ export class RipgrepTool extends BaseTool {
    */
   private extractScriptId(params: any): string | undefined {
     return params.scriptId;
-  }
-
-  /**
-   * Sort search results by specified criteria
-   */
-  private sortResults(matches: any[], sortBy: 'path' | 'modified', files: GASFile[]): any[] {
-    return [...matches].sort((a, b) => {
-      if (sortBy === 'path') {
-        // Sort alphabetically by file name
-        return a.fileName.localeCompare(b.fileName);
-      } else if (sortBy === 'modified') {
-        // Sort by modification time (newest first)
-        // Note: GAS files don't have lastModified in standard API response
-        // This is a placeholder for future enhancement
-        const aFile = files.find(f => fileNameMatches(f.name, a.fileName));
-        const bFile = files.find(f => fileNameMatches(f.name, b.fileName));
-        const aTime = (aFile as any)?.lastModified || 0;
-        const bTime = (bFile as any)?.lastModified || 0;
-        return bTime - aTime;
-      }
-      return 0;
-    });
-  }
-
-  /**
-   * Trim leading and trailing whitespace from result lines
-   */
-  private trimResultLines(matches: any[]): any[] {
-    return matches.map(fileResult => {
-      if (fileResult.lines && Array.isArray(fileResult.lines)) {
-        return {
-          ...fileResult,
-          lines: fileResult.lines.map((line: any) => {
-            if (typeof line === 'string') {
-              return line.trim();
-            } else if (line && typeof line.content === 'string') {
-              return {
-                ...line,
-                content: line.content.trim()
-              };
-            }
-            return line;
-          })
-        };
-      }
-      return fileResult;
-    });
   }
 
   /**
@@ -1499,12 +1453,12 @@ export class RawRipgrepTool extends BaseTool {
 
     // Sort results if requested
     if (params.sort && params.sort !== 'none' && results.matches && Array.isArray(results.matches)) {
-      results.matches = this.sortResults(results.matches, params.sort, files);
+      results.matches = sortRipgrepResults(results.matches, params.sort, files);
     }
 
     // Apply trim to result lines if requested
     if (params.trim && results.matches && Array.isArray(results.matches)) {
-      results.matches = this.trimResultLines(results.matches);
+      results.matches = trimRipgrepResultLines(results.matches);
     }
 
     // Add metadata about raw content processing and data source
@@ -1546,53 +1500,6 @@ export class RawRipgrepTool extends BaseTool {
    */
   private extractScriptId(params: any): string | undefined {
     return params.scriptId;
-  }
-
-  /**
-   * Sort search results by specified criteria
-   */
-  private sortResults(matches: any[], sortBy: 'path' | 'modified', files: GASFile[]): any[] {
-    return [...matches].sort((a, b) => {
-      if (sortBy === 'path') {
-        // Sort alphabetically by file name
-        return a.fileName.localeCompare(b.fileName);
-      } else if (sortBy === 'modified') {
-        // Sort by modification time (newest first)
-        // Note: GAS files don't have lastModified in standard API response
-        // This is a placeholder for future enhancement
-        const aFile = files.find(f => fileNameMatches(f.name, a.fileName));
-        const bFile = files.find(f => fileNameMatches(f.name, b.fileName));
-        const aTime = (aFile as any)?.lastModified || 0;
-        const bTime = (bFile as any)?.lastModified || 0;
-        return bTime - aTime;
-      }
-      return 0;
-    });
-  }
-
-  /**
-   * Trim leading and trailing whitespace from result lines
-   */
-  private trimResultLines(matches: any[]): any[] {
-    return matches.map(fileResult => {
-      if (fileResult.lines && Array.isArray(fileResult.lines)) {
-        return {
-          ...fileResult,
-          lines: fileResult.lines.map((line: any) => {
-            if (typeof line === 'string') {
-              return line.trim();
-            } else if (line && typeof line.content === 'string') {
-              return {
-                ...line,
-                content: line.content.trim()
-              };
-            }
-            return line;
-          })
-        };
-      }
-      return fileResult;
-    });
   }
 
   /**
