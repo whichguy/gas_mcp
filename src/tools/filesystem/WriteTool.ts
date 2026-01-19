@@ -14,7 +14,7 @@ import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMe
 import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { GitFormatTranslator } from '../../utils/GitFormatTranslator.js';
-import { setFileMtimeToRemote, checkSyncOrThrow } from '../../utils/fileHelpers.js';
+import { setFileMtimeToRemote, checkSyncOrThrow, isManifestFile } from '../../utils/fileHelpers.js';
 import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
@@ -769,7 +769,7 @@ export class WriteTool extends BaseFileSystemTool {
           'Tip: Use log() (3rd param in _main) for debugging. Enable with: setModuleLogging("' + filename + '", true)'
         );
       }
-    } else if (detectedFileType === 'JSON' && filename.toLowerCase() === 'appsscript') {
+    } else if (detectedFileType === 'JSON' && isManifestFile(filename)) {
       // Analyze manifest for scope change hints
       contentAnalysis = analyzeManifestContent(content);
     }
@@ -1205,7 +1205,7 @@ export class WriteTool extends BaseFileSystemTool {
       contentAnalysis = analyzeHtmlContent(finalContent);
     } else if (detectedFileType === 'SERVER_JS') {
       contentAnalysis = analyzeCommonJsContent(finalContent, params.moduleOptions, filename);
-    } else if (detectedFileType === 'JSON' && filename.toLowerCase() === 'appsscript') {
+    } else if (detectedFileType === 'JSON' && isManifestFile(filename)) {
       contentAnalysis = analyzeManifestContent(finalContent);
     }
 

@@ -1,7 +1,7 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
-import { checkSyncOrThrow, setFileMtimeToRemote } from '../../utils/fileHelpers.js';
+import { checkSyncOrThrow, setFileMtimeToRemote, isManifestFile } from '../../utils/fileHelpers.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/localGitDetection.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../../utils/hashUtils.js';
@@ -110,7 +110,7 @@ export class RawWriteTool extends BaseFileSystemTool {
 
     // ⚠️ SPECIAL FILE VALIDATION: appsscript.json must be in root
     let filename = parsedPath.filename!;
-    if (filename.toLowerCase() === 'appsscript' || filename.toLowerCase() === 'appsscript.json') {
+    if (isManifestFile(filename)) {
       // Check if appsscript is being placed in subfolder (path has directory)
       if (parsedPath.directory && parsedPath.directory !== '') {
         throw new ValidationError(

@@ -214,6 +214,23 @@ export function findRemoteFile(files: GASFile[], filename: string): GASFile | un
 }
 
 /**
+ * Check if a filename is the appsscript.json manifest file
+ * Handles various naming conventions: appsscript, appsscript.json, APPSSCRIPT
+ */
+export function isManifestFile(filename: string): boolean {
+  const normalized = filename.toLowerCase();
+  return normalized === 'appsscript' || normalized === 'appsscript.json';
+}
+
+/**
+ * Find the appsscript.json manifest file in a list of GAS files
+ * Handles extension-agnostic matching
+ */
+export function findManifestFile(files: GASFile[]): GASFile | undefined {
+  return files.find(f => isManifestFile(f.name));
+}
+
+/**
  * Check sync status and throw error if out of sync
  * Used by write operations to prevent writing when local/remote differ
  *

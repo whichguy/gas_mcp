@@ -3,6 +3,7 @@ import * as path from 'path';
 import { FileOperationError, ValidationError } from '../errors/mcpErrors.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 import { ensureGitInitialized } from './gitInit.js';
+import { isManifestFile } from './fileHelpers.js';
 
 /**
  * Local file representation
@@ -116,10 +117,13 @@ export class LocalFileManager {
 
   /**
    * Get the project-specific directory path (NO src/ subdirectory)
+   * Always uses project-{scriptId} prefix for consistency across codebase
    */
   static async getProjectDirectory(projectName: string, workingDir?: string): Promise<string> {
     const localRoot = await this.getLocalRoot(workingDir);
-    return path.join(localRoot, projectName);
+    // Use consistent project- prefix for all GAS projects
+    const dirName = projectName.startsWith('project-') ? projectName : `project-${projectName}`;
+    return path.join(localRoot, dirName);
   }
 
 
@@ -1029,7 +1033,7 @@ node_modules/
    * Get file extension for a given filename (different from the private method that takes type/content)
    */
   static getFileExtensionFromName(filename: string): string {
-    if (filename.toLowerCase() === 'appsscript') {
+    if (isManifestFile(filename)) {
       return '.json';
     } else if (filename.includes('.')) {
       return '';  // Already has extension

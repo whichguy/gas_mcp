@@ -7,6 +7,8 @@
  * @module contentAnalyzer
  */
 
+import { isManifestFile } from './fileHelpers.js';
+
 /**
  * Analysis result containing warnings (critical issues) and hints (suggestions)
  */
@@ -31,7 +33,7 @@ export interface ModuleOptions {
  * @returns 'JSON' | 'HTML' | 'SERVER_JS'
  */
 export function determineFileType(filename: string, content: string): string {
-  if (filename.toLowerCase() === 'appsscript') {
+  if (isManifestFile(filename)) {
     return 'JSON';
   }
 
@@ -43,6 +45,72 @@ export function determineFileType(filename: string, content: string): string {
   } else {
     return 'SERVER_JS';
   }
+}
+
+/**
+ * Result from content/fileType mismatch detection
+ */
+export interface FileTypeMismatch {
+  mismatch: boolean;
+  detectedType: string;
+  message: string;
+}
+
+/**
+ * Detect if content type doesn't match declared fileType
+ *
+ * CONSERVATIVE APPROACH: Only blocks when we're highly confident
+ * content is HTML but user declared SERVER_JS. This prevents
+ * the dangerous case of CommonJS wrappers being applied to HTML.
+ *
+ * Also blocks appsscript filename with SERVER_JS (must be JSON - it's the manifest).
+ *
+ * NOTE: We do NOT block general JSON content with SERVER_JS because:
+ * - Per GAS API docs, JSON type is ONLY for the manifest (appsscript.json)
+ * - JSON content in SERVER_JS files is valid (e.g., config objects in JS modules)
+ *
+ * @param content - The file content to analyze
+ * @param declaredFileType - User-provided fileType (SERVER_JS, HTML, JSON)
+ * @param filename - Filename for context (e.g., 'appsscript' is always JSON)
+ * @returns Mismatch info if dangerous mismatch detected, null if OK
+ */
+export function detectContentFileTypeMismatch(
+  content: string,
+  declaredFileType: string,
+  filename: string
+): FileTypeMismatch | null {
+  // Only check if user declares SERVER_JS - that's the only dangerous case
+  // (wrapping HTML with CommonJS breaks the file)
+  if (declaredFileType !== 'SERVER_JS') {
+    return null;
+  }
+
+  // Special case: appsscript.json is always JSON (it's the manifest)
+  if (isManifestFile(filename)) {
+    return {
+      mismatch: true,
+      detectedType: 'JSON',
+      message: 'appsscript.json is the manifest file and must be JSON type. ' +
+               'Use fileType: "JSON" or omit fileType for auto-detection.'
+    };
+  }
+
+  const trimmedLower = content.trim().toLowerCase();
+
+  // Check for unambiguous HTML patterns (conservative)
+  if (trimmedLower.startsWith('<!doctype') ||
+      trimmedLower.startsWith('<html') ||
+      trimmedLower.startsWith('<?xml')) {
+    return {
+      mismatch: true,
+      detectedType: 'HTML',
+      message: 'Content appears to be HTML but fileType is SERVER_JS. ' +
+               'HTML files cannot have CommonJS wrappers (would break the HTML). ' +
+               'Use fileType: "HTML" or omit fileType for auto-detection.'
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -337,6 +405,36 @@ export function analyzeCommonJsContent(
 }
 
 /**
+ * Analyze appsscript.json manifest and provide helpful hints
+ *
+ * When the manifest contains oauthScopes, reminds the user that scope changes
+ * may require re-authentication since MCP caches OAuth tokens.
+ *
+ * @param content - The JSON content of appsscript.json
+ * @returns Analysis result with hints about scope changes
+ */
+export function analyzeManifestContent(content: string): AnalysisResult {
+  const warnings: string[] = [];
+  const hints: string[] = [];
+
+  try {
+    const manifest = JSON.parse(content);
+
+    // If manifest has oauthScopes, remind about re-auth
+    if (manifest.oauthScopes && manifest.oauthScopes.length > 0) {
+      hints.push(
+        'appsscript.json updated with oauthScopes. If scopes changed, ' +
+        'run auth({mode:\'start\'}) to re-authenticate with the new scopes.'
+      );
+    }
+  } catch {
+    // JSON parse failed - skip analysis
+  }
+
+  return { warnings, hints };
+}
+
+/**
  * Analyze content based on file type
  * Convenience function that determines file type and calls appropriate analyzer
  *
@@ -358,6 +456,10 @@ export function analyzeContent(
     return analyzeCommonJsContent(content, moduleOptions, filename);
   }
 
-  // JSON files don't need analysis
+  // JSON files - analyze manifest for scope hints
+  if (fileType === 'JSON' && isManifestFile(filename)) {
+    return analyzeManifestContent(content);
+  }
+
   return { warnings: [], hints: [] };
 }
