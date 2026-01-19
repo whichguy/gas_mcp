@@ -19,6 +19,7 @@ import { checkSyncStatus, type DriftDetails, type FileSyncStatus } from '../util
 import { DiffGenerator } from '../utils/diffGenerator.js';
 import type { DriftFileInfo } from '../errors/mcpErrors.js';
 import { fileNameMatches } from '../api/pathParser.js';
+import { validateCommonJSOrdering, formatCommonJSOrderingIssues } from '../utils/validation.js';
 import open from 'open';
 
 /**
@@ -575,6 +576,19 @@ export class ExecTool extends BaseTool {
           }
 
           console.error(`[SYNC CHECK] ✓ ${summary.inSync} files in sync`);
+
+          // Validate CommonJS file ordering (critical for module system to work)
+          const orderingResult = validateCommonJSOrdering(remoteFiles);
+          if (!orderingResult.valid) {
+            console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
+            // Log but don't block - the module system may still work in some cases
+            // Severe ordering issues will manifest as runtime errors
+          } else if (orderingResult.issues.length > 0) {
+            // Warnings only - log but don't block
+            console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
+          } else {
+            console.error(`[COMMONJS CHECK] ✓ Critical files in correct order`);
+          }
         } else {
           console.error(`[SYNC CHECK] Skipped (no auth token available)`);
         }
