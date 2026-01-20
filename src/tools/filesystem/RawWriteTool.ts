@@ -1,7 +1,7 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
-import { checkSyncOrThrow, setFileMtimeToRemote, isManifestFile } from '../../utils/fileHelpers.js';
+import { checkSyncOrThrowByHash, setFileMtimeToRemote, isManifestFile } from '../../utils/fileHelpers.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/localGitDetection.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../../utils/hashUtils.js';
@@ -190,10 +190,10 @@ export class RawWriteTool extends BaseFileSystemTool {
         const localPath = join(localRoot, filename + fileExtension);
 
         try {
-          // Get remote metadata to check sync
-          const remoteFiles = await this.gasClient.getProjectMetadata(parsedPath.scriptId, accessToken);
+          // Get remote files with content to check sync using hash comparison
+          const remoteFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
           // Allow write even if file exists remotely but not locally (user intent to write)
-          await checkSyncOrThrow(localPath, filename, remoteFiles, true);
+          await checkSyncOrThrowByHash(localPath, filename, remoteFiles, true);
         } catch (syncError: any) {
           // Only throw if it's an actual sync conflict, not "file doesn't exist"
           if (syncError.message && syncError.message.includes('out of sync')) {

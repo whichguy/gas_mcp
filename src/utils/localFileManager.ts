@@ -4,6 +4,7 @@ import { FileOperationError, ValidationError } from '../errors/mcpErrors.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 import { ensureGitInitialized } from './gitInit.js';
 import { isManifestFile } from './fileHelpers.js';
+import { clearGASMetadata } from './gasMetadataCache.js';
 
 /**
  * Local file representation
@@ -676,13 +677,15 @@ export class LocalFileManager {
   static async deleteLocalFile(name: string, workingDir?: string): Promise<void> {
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
     const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
-    
+
     // Try different extensions
     for (const extension of this.SUPPORTED_EXTENSIONS) {
       try {
         const fileName = this.normalizeFileName(name);
         const filePath = path.join(projectPath, `${fileName}${extension}`);
         await fs.unlink(filePath);
+        // Clear xattr cache to prevent stale hash detection if file is recreated
+        await clearGASMetadata(filePath).catch(() => {});
         return;
       } catch (error: any) {
         if (error.code !== 'ENOENT') {

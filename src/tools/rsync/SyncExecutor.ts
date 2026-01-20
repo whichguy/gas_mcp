@@ -33,7 +33,7 @@ import {
   getModuleName
 } from '../../utils/moduleWrapper.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
-import { updateCachedContentHash } from '../../utils/gasMetadataCache.js';
+import { updateCachedContentHash, getCachedContentHash, clearGASMetadata } from '../../utils/gasMetadataCache.js';
 import {
   FileFilter,
   EXCLUDED_DIRS,
@@ -273,7 +273,11 @@ export class SyncExecutor {
   }
 
   /**
-   * Convert GAS files to DiffFileInfo format with unwrapped content for comparison
+   * Convert GAS files to DiffFileInfo format
+   *
+   * IMPORTANT: Uses WRAPPED content hashes for sync detection.
+   * This ensures that ANY change to the file (including CommonJS wrapper
+   * options like loadNow, hoistedFunctions, etc.) triggers a sync.
    *
    * Matches the behavior in SyncPlanner.convertGasFilesToDiff()
    */
@@ -284,19 +288,23 @@ export class SyncExecutor {
         const source = f.source as string;
         const fileType = f.type || 'SERVER_JS';
 
-        // Unwrap CommonJS for SERVER_JS files for accurate comparison
-        let contentForComparison = source;
+        // Compute hash on WRAPPED content (full file as stored in GAS)
+        // This ensures wrapper changes (loadNow, hoistedFunctions, etc.) trigger sync
+        const wrappedHash = SyncManifest.computeGitSha1(source);
+
+        // Unwrap content for display/comparison readability
+        let contentForDisplay = source;
         if (shouldWrapContent(fileType, f.name)) {
           const { unwrappedContent } = unwrapModuleContent(source);
-          contentForComparison = unwrappedContent;
+          contentForDisplay = unwrappedContent;
         }
 
         return {
           filename: f.name,
-          content: contentForComparison,  // Unwrapped for comparison
-          sha1: SyncManifest.computeGitSha1(contentForComparison),
+          content: contentForDisplay,  // Unwrapped for display
+          sha1: wrappedHash,           // WRAPPED hash for sync detection
           lastModified: f.updateTime,
-          size: contentForComparison.length,
+          size: source.length,         // Full file size
           originalContent: source  // Keep wrapped for operations
         };
       });
@@ -403,10 +411,22 @@ export class SyncExecutor {
         // Convert path to GAS-style filename
         const filename = this.localPathToGasFilename(entryRelPath);
 
+        // Use cached hash if available (from previous sync)
+        // Local files are stored WRAPPED (with CommonJS), so file hash = wrapped hash
+        let sha1: string;
+        const cachedHash = await getCachedContentHash(filePath);
+        if (cachedHash) {
+          sha1 = cachedHash;
+        } else {
+          // No cached hash - compute from file content
+          // File should be WRAPPED content, so direct hash is correct
+          sha1 = SyncManifest.computeGitSha1(content);
+        }
+
         files.push({
           filename,
           content,
-          sha1: SyncManifest.computeGitSha1(content),
+          sha1,
           lastModified: stat.mtime.toISOString(),
           size: stat.size
         });
@@ -444,18 +464,19 @@ export class SyncExecutor {
 
     // Process ADD operations
     for (const op of plan.operations.add) {
-      // Unwrap CommonJS for SERVER_JS files
-      const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
+      // Store WRAPPED content locally (full file as stored in GAS)
+      // This ensures file hash = remote hash for accurate sync detection
+      const contentToWrite = op.content || '';
       // Use fileType (not content) for extension mapping - matches syncStatusChecker behavior
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
-      // Cache the WRAPPED content hash for sync status comparison
-      // The remote hash is computed on WRAPPED content, so we cache that same hash
-      const wrappedHash = computeGitSha1(op.content || '');
-      await updateCachedContentHash(filePath, wrappedHash).catch(() => {
-        // Non-fatal: xattr not supported - sync check will fall back to content comparison
+      // Cache the content hash for sync status comparison
+      // Since local = wrapped content, file hash = wrapped hash
+      const contentHash = computeGitSha1(contentToWrite);
+      await updateCachedContentHash(filePath, contentHash).catch(() => {
+        // Non-fatal: xattr not supported - sync check will compute from file content
       });
 
       log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
@@ -463,17 +484,17 @@ export class SyncExecutor {
 
     // Process UPDATE operations
     for (const op of plan.operations.update) {
-      // Unwrap CommonJS for SERVER_JS files
-      const contentToWrite = this.unwrapForLocal(op.filename, op.content || '');
+      // Store WRAPPED content locally (full file as stored in GAS)
+      const contentToWrite = op.content || '';
       // Use fileType (not content) for extension mapping - matches syncStatusChecker behavior
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
-      // Cache the WRAPPED content hash for sync status comparison
-      const wrappedHash = computeGitSha1(op.content || '');
-      await updateCachedContentHash(filePath, wrappedHash).catch(() => {
-        // Non-fatal: xattr not supported - sync check will fall back to content comparison
+      // Cache the content hash for sync status comparison
+      const contentHash = computeGitSha1(contentToWrite);
+      await updateCachedContentHash(filePath, contentHash).catch(() => {
+        // Non-fatal: xattr not supported - sync check will compute from file content
       });
 
       log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
@@ -485,6 +506,11 @@ export class SyncExecutor {
       try {
         await fs.unlink(filePath);
         log.debug(`[EXECUTOR] Deleted: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
+
+        // Clear xattr cache to prevent stale hash detection if file is recreated
+        await clearGASMetadata(filePath).catch(() => {
+          // Non-fatal: xattr may not be supported or file already gone
+        });
       } catch (error: any) {
         if (error.code !== 'ENOENT') {
           throw error;

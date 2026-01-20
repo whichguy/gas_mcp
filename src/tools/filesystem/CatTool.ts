@@ -11,8 +11,8 @@ import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWil
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { unwrapModuleContent, shouldWrapContent } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
-import { setFileMtimeToRemote, isFileInSync } from '../../utils/fileHelpers.js';
-import { getCachedGASMetadata, cacheGASMetadata, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
+import { setFileMtimeToRemote, isFileInSyncByHash } from '../../utils/fileHelpers.js';
+import { getCachedGASMetadata, cacheGASMetadata, updateCachedContentHash, getCachedContentHash, clearGASMetadata } from '../../utils/gasMetadataCache.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { join, dirname } from 'path';
 import { writeFile, unlink, mkdir } from 'fs/promises';
@@ -104,115 +104,135 @@ export class CatTool extends BaseFileSystemTool {
     const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
     const accessToken = await this.getAuthToken(params);
 
-    // Fast path optimization: Check if we can use local cache without API call
+    // Hash-based sync optimization: Compare cached hash with remote hash
+    // Still requires API call for hash, but avoids re-processing if content unchanged
     if (preferLocal) {
       const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
       const fullFilename = filename + fileExtension;
       const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
       const localFilePath = join(projectPath, fullFilename);
 
+      // Get cached hash from xattr (fast - no file read needed)
+      const cachedHash = await getCachedContentHash(localFilePath);
       const cachedMeta = await getCachedGASMetadata(localFilePath);
 
-      if (cachedMeta) {
-        const inSync = await isFileInSync(localFilePath, cachedMeta.updateTime);
+      if (cachedHash && cachedMeta) {
+        // We have a cached hash - fetch remote to compare hashes
+        // This API call is necessary for reliable sync detection (never trust mtime)
+        try {
+          const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+          const remoteFile = remoteFiles.find((f: any) => fileNameMatches(f.name, filename));
 
-        if (inSync) {
-          // Fast path: Return local content without API call
-          try {
-            const localContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
+          if (remoteFile) {
+            // Compute remote hash on WRAPPED content (full file as stored in GAS)
+            const remoteHash = computeGitSha1(remoteFile.source || '');
 
-            if (localContent) {
-              // Format result directly (skip expensive API call)
-              let result: any = {
-                path: fullPath,
-                scriptId: scriptId,
-                filename,
-                content: localContent,
-                source: 'local',
-                fileType: cachedMeta.fileType,
-                fileExtension,
-                syncStatus: { inSync: true, differences: [], message: 'In sync (cached metadata)' },
-                gitRepository: {
-                  initialized: gitStatus.gitInitialized,
-                  path: gitStatus.repoPath,
-                  isNewRepo: gitStatus.isNewRepo
+            if (cachedHash === remoteHash) {
+              // Hash match! Safe to use local cached content - avoids re-processing
+              try {
+                const localContent = await LocalFileManager.readFileFromProject(projectName, filename, workingDir);
+
+                if (localContent) {
+                  // Verify local file content hash still matches cached hash
+                  const verifyHash = computeGitSha1(localContent);
+                  if (verifyHash !== cachedHash) {
+                    // Local file changed without cache update - fall through to slow path
+                    console.error(`⚠️ [SYNC] Local file hash mismatch (cached: ${cachedHash.slice(0, 8)}..., actual: ${verifyHash.slice(0, 8)}...)`);
+                    // Continue to slow path for proper sync
+                  } else {
+                    // All hashes match - return local content (optimized path)
+                    let result: any = {
+                      path: fullPath,
+                      scriptId: scriptId,
+                      filename,
+                      content: localContent,
+                      source: 'local',
+                      fileType: cachedMeta.fileType,
+                      fileExtension,
+                      syncStatus: { inSync: true, differences: [], message: 'In sync (hash verified)' },
+                      gitRepository: {
+                        initialized: gitStatus.gitInitialized,
+                        path: gitStatus.repoPath,
+                        isNewRepo: gitStatus.isNewRepo
+                      }
+                    };
+
+                    // CommonJS integration - unwrap for editing
+                    let finalContent = result.content;
+                    let commonJsInfo: any = null;
+
+                    if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
+                      const { unwrappedContent } = unwrapModuleContent(finalContent);
+
+                      if (unwrappedContent !== finalContent) {
+                        finalContent = unwrappedContent;
+
+                        const { analyzeCommonJsUsage } = await import('../../utils/moduleWrapper.js');
+                        const featureAnalysis = analyzeCommonJsUsage(unwrappedContent);
+
+                        commonJsInfo = {
+                          moduleUnwrapped: true,
+                          originalLength: result.content.length,
+                          unwrappedLength: finalContent.length,
+                          commonJsFeatures: {
+                            hasRequireFunction: true,
+                            hasModuleObject: true,
+                            hasExportsObject: true,
+                            userRequireCalls: featureAnalysis.requireCalls,
+                            userModuleExports: featureAnalysis.moduleExports,
+                            userExportsUsage: featureAnalysis.exportsUsage
+                          },
+                          systemNote: 'When executed, this code has access to require(), module, and exports via the CommonJS system',
+                          editingNote: 'CommonJS wrapper removed for editing convenience - will be re-applied automatically on write'
+                        };
+                      } else {
+                        commonJsInfo = {
+                          moduleUnwrapped: false,
+                          reason: 'No CommonJS wrapper structure found in content'
+                        };
+                      }
+                    } else {
+                      commonJsInfo = {
+                        moduleUnwrapped: false,
+                        reason: `${result.fileType || 'unknown'} files don't use the CommonJS module system`
+                      };
+                    }
+
+                    result.content = finalContent;
+                    result.commonJsInfo = commonJsInfo;
+                    result.hash = cachedHash;  // Use verified cached hash
+
+                    // Add git breadcrumb hint for .git/* files
+                    const gitHint = getGitBreadcrumbHint(filename);
+                    if (gitHint) {
+                      result.gitBreadcrumbHint = gitHint;
+                    }
+
+                    // Save to local file if requested
+                    if (params.toLocal) {
+                      const localPath = expandAndValidateLocalPath(params.toLocal);
+                      await mkdir(dirname(localPath), { recursive: true });
+                      await writeFile(localPath, result.content, 'utf-8');
+                      result.savedTo = localPath;
+                    }
+
+                    // Optimized path success - return with hash-verified local content
+                    console.error(`✅ [SYNC] Using cached local content (hash: ${cachedHash.slice(0, 8)}...)`);
+                    return result;
+                  }
                 }
-              };
-
-              // CommonJS integration - unwrap for editing
-              let finalContent = result.content;
-              let commonJsInfo: any = null;
-
-              if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
-                const { unwrappedContent } = unwrapModuleContent(finalContent);
-
-                if (unwrappedContent !== finalContent) {
-                  finalContent = unwrappedContent;
-
-                  const { analyzeCommonJsUsage } = await import('../../utils/moduleWrapper.js');
-                  const featureAnalysis = analyzeCommonJsUsage(unwrappedContent);
-
-                  commonJsInfo = {
-                    moduleUnwrapped: true,
-                    originalLength: result.content.length,
-                    unwrappedLength: finalContent.length,
-                    commonJsFeatures: {
-                      hasRequireFunction: true,
-                      hasModuleObject: true,
-                      hasExportsObject: true,
-                      userRequireCalls: featureAnalysis.requireCalls,
-                      userModuleExports: featureAnalysis.moduleExports,
-                      userExportsUsage: featureAnalysis.exportsUsage
-                    },
-                    systemNote: 'When executed, this code has access to require(), module, and exports via the CommonJS system',
-                    editingNote: 'CommonJS wrapper removed for editing convenience - will be re-applied automatically on write'
-                  };
-                } else {
-                  commonJsInfo = {
-                    moduleUnwrapped: false,
-                    reason: 'No CommonJS wrapper structure found in content'
-                  };
-                }
-              } else {
-                commonJsInfo = {
-                  moduleUnwrapped: false,
-                  reason: `${result.fileType || 'unknown'} files don't use the CommonJS module system`
-                };
+              } catch (localError: any) {
+                // Fall through to slow path
+                console.error(`⚠️ [SYNC] Failed to read local file, falling through to slow path: ${localError.message}`);
               }
-
-              result.content = finalContent;
-              result.commonJsInfo = commonJsInfo;
-
-              // Compute hash on WRAPPED content (full file as stored in GAS)
-              // This ensures hash matches `git hash-object <file>` on local synced files
-              const contentHash = computeGitSha1(localContent);
-              result.hash = contentHash;
-
-              // Update cached hash if different from stored (or not stored)
-              if (cachedMeta.contentHash !== contentHash) {
-                await updateCachedContentHash(localFilePath, contentHash);
-              }
-
-              // Add git breadcrumb hint for .git/* files
-              const gitHint = getGitBreadcrumbHint(filename);
-              if (gitHint) {
-                result.gitBreadcrumbHint = gitHint;
-              }
-
-              // Save to local file if requested
-              if (params.toLocal) {
-                const localPath = expandAndValidateLocalPath(params.toLocal);
-                await mkdir(dirname(localPath), { recursive: true });
-                await writeFile(localPath, result.content, 'utf-8');
-                result.savedTo = localPath;
-              }
-
-              // Fast path success - return immediately without API call
-              return result;
+            } else {
+              // Hash mismatch - remote changed, need to update local
+              console.error(`📥 [SYNC] Remote hash differs (local: ${cachedHash.slice(0, 8)}..., remote: ${remoteHash.slice(0, 8)}...)`);
             }
-          } catch (localError: any) {
-            // Fall through to slow path with API call
           }
+        } catch (apiError: any) {
+          // API call failed - fall through to slow path
+          console.error(`⚠️ [SYNC] API call failed in fast path, falling through: ${apiError.message}`);
         }
       }
     }
@@ -256,6 +276,8 @@ export class CatTool extends BaseFileSystemTool {
 
       try {
         await unlink(localFilePath);
+        // Clear xattr cache to prevent stale hash detection if file is recreated
+        await clearGASMetadata(localFilePath).catch(() => {});
       } catch (unlinkError) {
         // File doesn't exist locally either
       }
@@ -288,22 +310,29 @@ export class CatTool extends BaseFileSystemTool {
       }
     }
 
-    // Now sync local file with the updateTime we have
+    // Now sync local file using hash comparison (never trust mtime)
     const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
     const fullFilename = filename + fileExtension;
     const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
     const localFilePath = join(projectPath, fullFilename);
 
-    const inSync = await isFileInSync(localFilePath, updateTime);
+    // Compute remote hash on WRAPPED content (full file as stored in GAS)
+    const remoteContent = remoteFile.source || remoteFile.content || '';
+    const remoteHash = computeGitSha1(remoteContent);
+
+    // Check sync using hash comparison
+    const inSync = await isFileInSyncByHash(localFilePath, remoteHash);
 
     if (!inSync) {
-      const content = remoteFile.source || remoteFile.content || '';
       await mkdir(dirname(localFilePath), { recursive: true });
-      await writeFile(localFilePath, content, 'utf-8');
+      await writeFile(localFilePath, remoteContent, 'utf-8');
+      // Still set mtime for user convenience (file explorer sorting, etc.) but NOT for sync detection
       await setFileMtimeToRemote(localFilePath, updateTime, remoteFile.type);
-      console.error(`📥 [SYNC] Updated local cache for ${filename} (mtime: ${updateTime})`);
+      // Update the content hash cache
+      await updateCachedContentHash(localFilePath, remoteHash);
+      console.error(`📥 [SYNC] Updated local cache for ${filename} (hash: ${remoteHash.slice(0, 8)}...)`);
     } else {
-      console.error(`✅ [SYNC] Local file already in sync with remote (mtime: ${updateTime})`);
+      console.error(`✅ [SYNC] Local file already in sync with remote (hash: ${remoteHash.slice(0, 8)}...)`);
     }
 
     let result: any;
