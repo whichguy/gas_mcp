@@ -18,6 +18,7 @@
 
 import { log } from '../../utils/logger.js';
 import { ensureFeatureBranch } from '../../utils/gitAutoCommit.js';
+import { clearGASMetadata } from '../../utils/gasMetadataCache.js';
 // Note: writeLocalAndValidateWithHooks no longer used - GitOperationManager stages only, doesn't commit
 // import { writeLocalAndValidateWithHooks } from '../../utils/hookIntegration.js';
 import type { GASClient } from '../../api/gasClient.js';
@@ -219,6 +220,11 @@ export class GitOperationManager {
             try {
               await unlink(filePath);
               log.debug(`[GIT-MANAGER] Deleted local file: ${fullFilename}`);
+
+              // Clear xattr cache to prevent stale hash detection if file is recreated
+              await clearGASMetadata(filePath).catch(() => {
+                // Non-fatal: xattr may not be supported or file already gone
+              });
             } catch (error: any) {
               if (error.code !== 'ENOENT') {
                 log.warn(`[GIT-MANAGER] Failed to delete ${fullFilename}: ${error.message}`);

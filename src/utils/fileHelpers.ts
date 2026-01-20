@@ -1,12 +1,17 @@
-import { stat, utimes } from 'fs/promises';
+import { stat, utimes, readFile } from 'fs/promises';
 import { GASFile } from '../api/gasClient.js';
-import { cacheGASMetadata } from './gasMetadataCache.js';
+import { cacheGASMetadata, getCachedContentHash } from './gasMetadataCache.js';
 import { fileNameMatches } from '../api/pathParser.js';
+import { computeGitSha1 } from './hashUtils.js';
 
 /**
  * Set file modification time to match remote updateTime
- * This marks the file as synced with the remote GAS project
- * Also caches GAS metadata (updateTime, fileType) in extended attributes for fast sync detection
+ *
+ * NOTE: This is INFORMATIONAL ONLY - sync detection now uses hash comparison.
+ * Mtime is still set for user convenience (file explorer sorting, etc.)
+ * but is NOT used for sync decisions.
+ *
+ * Also caches GAS metadata (updateTime, fileType) in extended attributes.
  */
 export async function setFileMtimeToRemote(
   localPath: string,
@@ -15,28 +20,37 @@ export async function setFileMtimeToRemote(
 ): Promise<void> {
   const remoteTime = new Date(remoteUpdateTime);
 
-  // Set both atime and mtime to remote timestamp
+  // Set both atime and mtime to remote timestamp (informational only)
   await utimes(localPath, remoteTime, remoteTime);
 
-  // Cache GAS metadata in extended attributes for fast sync detection
+  // Cache GAS metadata in extended attributes
   if (fileType) {
     await cacheGASMetadata(localPath, remoteUpdateTime, fileType);
   }
 }
 
 /**
- * Check if local file is in sync with remote based on mtime
- * Returns true if local mtime matches remote updateTime
+ * Check if local file is in sync with remote based on hash comparison
+ *
+ * @param localPath - Path to local file
+ * @param remoteWrappedHash - Git SHA-1 hash of WRAPPED remote content (full file as stored in GAS)
+ * @returns true if hashes match (file is in sync)
  */
-export async function isFileInSync(localPath: string, remoteUpdateTime: string): Promise<boolean> {
+export async function isFileInSyncByHash(
+  localPath: string,
+  remoteWrappedHash: string
+): Promise<boolean> {
   try {
-    const stats = await stat(localPath);
-    const localMtime = stats.mtime;
-    const remoteTime = new Date(remoteUpdateTime);
+    // Fast path: check cached hash from xattr
+    const cachedHash = await getCachedContentHash(localPath);
+    if (cachedHash && cachedHash === remoteWrappedHash) {
+      return true;
+    }
 
-    // Compare timestamps (allow 1 second tolerance for filesystem precision)
-    const diffMs = Math.abs(localMtime.getTime() - remoteTime.getTime());
-    return diffMs < 1000; // Within 1 second = synced
+    // Slow path: compute local hash from file content
+    const content = await readFile(localPath, 'utf-8');
+    const localHash = computeGitSha1(content);
+    return localHash === remoteWrappedHash;
   } catch (error) {
     // File doesn't exist locally = out of sync
     return false;
@@ -44,126 +58,99 @@ export async function isFileInSync(localPath: string, remoteUpdateTime: string):
 }
 
 /**
- * Diagnostic information from sync check
+ * Diagnostic information from hash-based sync check
  */
-export interface SyncCheckResult {
+export interface SyncCheckResultByHash {
   inSync: boolean;
   diagnosis: {
-    localMtime: Date | null;
-    remoteTime: Date;
-    timeDiffMs: number;
+    localHash: string | null;
+    remoteHash: string;
     cacheExists: boolean;
-    cachedUpdateTime?: string;
+    cachedHash?: string;
     cacheMatched: boolean;
-    syncMethod: 'cache-exact' | 'cache-fallback-ok' | 'mtime-ok' | 'mtime-fail' | 'no-local-file';
-    reason?: string;
+    syncMethod: 'cache-exact' | 'computed-match' | 'hash-mismatch' | 'no-local-file';
+    reason: string;
   };
 }
 
 /**
- * Check sync using cached metadata first (fast path), then mtime (fallback)
+ * Check sync status using cached hash first (fast path), then computed hash (fallback)
  * Returns detailed diagnostic information about sync status
  *
- * This provides a performance optimization by checking xattr cache before
- * doing the more expensive mtime comparison
+ * Uses hash comparison (not mtime) for reliable sync detection.
+ *
+ * @param localPath - Path to local file
+ * @param remoteWrappedHash - Git SHA-1 hash of WRAPPED remote content
+ * @returns SyncCheckResultByHash with detailed diagnostics
  */
-export async function isFileInSyncWithCache(
+export async function isFileInSyncWithCacheByHash(
   localPath: string,
-  remoteUpdateTime: string
-): Promise<SyncCheckResult> {
-  const remoteTime = new Date(remoteUpdateTime);
+  remoteWrappedHash: string
+): Promise<SyncCheckResultByHash> {
+  // Try cached hash first (fast path - no file read needed)
+  const cachedHash = await getCachedContentHash(localPath);
 
-  // Try cached metadata first (fast path - no filesystem stat needed)
-  const { getCachedGASMetadata } = await import('./gasMetadataCache.js');
-  const cachedMeta = await getCachedGASMetadata(localPath);
-
-  const cacheExists = !!cachedMeta;
-  const cacheMatched = cachedMeta?.updateTime === remoteUpdateTime;
-
-  if (cachedMeta && cacheMatched) {
-    // Fast path: cached metadata matches exactly
+  if (cachedHash && cachedHash === remoteWrappedHash) {
+    // Fast path: cached hash matches exactly
     return {
       inSync: true,
       diagnosis: {
-        localMtime: null, // Not checked in fast path
-        remoteTime,
-        timeDiffMs: 0,
+        localHash: cachedHash,
+        remoteHash: remoteWrappedHash,
         cacheExists: true,
-        cachedUpdateTime: cachedMeta.updateTime,
+        cachedHash,
         cacheMatched: true,
         syncMethod: 'cache-exact',
-        reason: 'xattr cache matches remote updateTime exactly'
+        reason: 'Cached hash matches remote hash exactly'
       }
     };
   }
 
-  // Fallback to mtime check (slower but still reliable)
+  // Slow path: compute local hash from file content
   try {
-    const stats = await stat(localPath);
-    const localMtime = stats.mtime;
-    const timeDiffMs = Math.abs(localMtime.getTime() - remoteTime.getTime());
-    const inSync = timeDiffMs < 1000; // Within 1 second = synced
+    const content = await readFile(localPath, 'utf-8');
+    const computedLocalHash = computeGitSha1(content);
+    const inSync = computedLocalHash === remoteWrappedHash;
 
-    if (inSync) {
-      return {
-        inSync: true,
-        diagnosis: {
-          localMtime,
-          remoteTime,
-          timeDiffMs,
-          cacheExists,
-          cachedUpdateTime: cachedMeta?.updateTime,
-          cacheMatched,
-          syncMethod: 'cache-fallback-ok',
-          reason: cacheExists
-            ? 'xattr cache outdated but filesystem mtime within 1s tolerance'
-            : 'xattr cache not found but filesystem mtime within 1s tolerance'
-        }
-      };
-    } else {
-      // Out of sync
-      let reason: string;
-      if (cacheExists && !cacheMatched) {
-        reason = 'Both xattr cache and filesystem mtime indicate file is out of sync (remote modified in GAS editor or elsewhere)';
-      } else if (!cacheExists && localMtime < remoteTime) {
-        reason = 'xattr cache not found and local file is older than remote (remote was modified after last sync)';
-      } else if (!cacheExists && localMtime > remoteTime) {
-        reason = 'xattr cache not found and local file is newer than remote (possible clock skew or local modifications not synced)';
-      } else {
-        reason = 'Filesystem mtime does not match remote updateTime';
+    return {
+      inSync,
+      diagnosis: {
+        localHash: computedLocalHash,
+        remoteHash: remoteWrappedHash,
+        cacheExists: !!cachedHash,
+        cachedHash: cachedHash || undefined,
+        cacheMatched: false,
+        syncMethod: inSync ? 'computed-match' : 'hash-mismatch',
+        reason: inSync
+          ? 'Computed local hash matches remote hash'
+          : cachedHash
+            ? `Hash mismatch: cached=${cachedHash.slice(0, 8)}..., computed=${computedLocalHash.slice(0, 8)}..., remote=${remoteWrappedHash.slice(0, 8)}...`
+            : `Hash mismatch: local=${computedLocalHash.slice(0, 8)}..., remote=${remoteWrappedHash.slice(0, 8)}...`
       }
-
+    };
+  } catch (error: any) {
+    // File doesn't exist locally
+    if (error.code === 'ENOENT') {
       return {
         inSync: false,
         diagnosis: {
-          localMtime,
-          remoteTime,
-          timeDiffMs,
-          cacheExists,
-          cachedUpdateTime: cachedMeta?.updateTime,
-          cacheMatched,
-          syncMethod: 'mtime-fail',
-          reason
+          localHash: null,
+          remoteHash: remoteWrappedHash,
+          cacheExists: !!cachedHash,
+          cachedHash: cachedHash || undefined,
+          cacheMatched: false,
+          syncMethod: 'no-local-file',
+          reason: 'Local file does not exist'
         }
       };
     }
-  } catch (error: any) {
-    // File doesn't exist locally
-    return {
-      inSync: false,
-      diagnosis: {
-        localMtime: null,
-        remoteTime,
-        timeDiffMs: -1,
-        cacheExists,
-        cachedUpdateTime: cachedMeta?.updateTime,
-        cacheMatched,
-        syncMethod: 'no-local-file',
-        reason: 'Local file does not exist'
-      }
-    };
+    throw error;
   }
 }
+
+// ============================================================================
+// Utility functions
+// ============================================================================
 
 /**
  * Format time difference in human-readable format
@@ -231,16 +218,21 @@ export function findManifestFile(files: GASFile[]): GASFile | undefined {
 }
 
 /**
- * Check sync status and throw error if out of sync
+ * Check sync status using hash comparison and throw error if out of sync
  * Used by write operations to prevent writing when local/remote differ
  *
  * Sync Rules:
  * 1. File doesn't exist in GAS → Allow (new file creation)
  * 2. File exists in GAS but not locally → Allow if allowNewLocalFile=true (intentional write)
- * 3. File exists in both + dates match → Allow (in sync)
- * 4. File exists in both + dates mismatch → Error (must cat first to sync)
+ * 3. File exists in both + hashes match → Allow (in sync)
+ * 4. File exists in both + hashes differ → Error (must cat first to sync)
+ *
+ * @param localPath - Path to local file
+ * @param filename - Filename for error messages
+ * @param remoteFiles - Array of remote files from GAS API
+ * @param allowNewLocalFile - If true, allow writing to files that don't exist locally
  */
-export async function checkSyncOrThrow(
+export async function checkSyncOrThrowByHash(
   localPath: string,
   filename: string,
   remoteFiles: GASFile[],
@@ -253,51 +245,39 @@ export async function checkSyncOrThrow(
     return; // Allow write - creating new file
   }
 
-  // File exists in GAS - verify sync with local
-  let updateTime = remoteFile.updateTime;
-  if (!updateTime) {
-    console.warn(`⚠️  No updateTime for ${filename}, using current time as fallback`);
-    updateTime = new Date().toISOString();
-  }
+  // Compute remote hash on WRAPPED content (full file as stored in GAS)
+  const remoteHash = computeGitSha1(remoteFile.source || '');
 
-  // Check if local file exists
+  // Check sync status using hash comparison
   try {
-    await stat(localPath);
-
-    // Local file exists - check if dates match using cache-aware check (Rule 3 vs Rule 4)
-    const syncResult = await isFileInSyncWithCache(localPath, updateTime);
+    const syncResult = await isFileInSyncWithCacheByHash(localPath, remoteHash);
 
     if (!syncResult.inSync) {
-      // Rule 4: Dates mismatch - must sync first (strict enforcement)
+      // Rule 4: Hashes differ - must sync first (strict enforcement)
       const diag = syncResult.diagnosis;
-      const localMtimeStr = diag.localMtime ? diag.localMtime.toISOString() : 'N/A';
-      const timeDiffFormatted = diag.timeDiffMs >= 0 ? formatTimeDifference(diag.timeDiffMs) : 'N/A';
 
       throw new Error(
         `File out of sync: ${filename}\n` +
         `\n` +
-        `SYNC STATUS:\n` +
+        `SYNC STATUS (Hash-based):\n` +
         `  Local file:  ${localPath}\n` +
-        `  Local mtime: ${localMtimeStr}${diag.localMtime ? ` (${diag.localMtime.getTime()})` : ''}\n` +
-        `  Remote time: ${updateTime} (${diag.remoteTime.getTime()})\n` +
-        `  Difference:  ${diag.timeDiffMs}ms (${timeDiffFormatted})\n` +
+        `  Local hash:  ${diag.localHash || 'N/A'}\n` +
+        `  Remote hash: ${diag.remoteHash}\n` +
         `\n` +
         `CACHE DIAGNOSTICS:\n` +
         `  xattr cached: ${diag.cacheExists ? 'Yes' : 'No'}\n` +
-        `${diag.cacheExists ? `  Cache value:  ${diag.cachedUpdateTime}\n` : `  Cache status: Not found or not readable\n`}` +
-        `${diag.cacheExists ? `  Cache match:  ${diag.cacheMatched ? 'Yes (but mtime differs)' : 'No'}\n` : ''}` +
+        `${diag.cacheExists ? `  Cached hash:  ${diag.cachedHash}\n` : ''}` +
         `  Sync method:  ${diag.syncMethod}\n` +
         `\n` +
         `DIAGNOSIS:\n` +
         `  ${diag.reason}\n` +
         `\n` +
         `ACTION REQUIRED:\n` +
-        `  Run 'cat' to download latest remote version and sync timestamps\n` +
-        `  Remote was last modified: ${updateTime}`
+        `  Run 'cat' to download latest remote version and update local cache`
       );
     }
 
-    // Rule 3: Dates match - allow write
+    // Rule 3: Hashes match - allow write
     return;
 
   } catch (error: any) {
@@ -312,7 +292,7 @@ export async function checkSyncOrThrow(
       throw new Error(
         `File exists in GAS but not locally: ${filename}\n` +
         `Run cat to download before writing.\n` +
-        `Remote updateTime: ${updateTime}`
+        `Remote hash: ${remoteHash}`
       );
     }
 
@@ -325,3 +305,4 @@ export async function checkSyncOrThrow(
     throw error;
   }
 }
+

@@ -14,7 +14,7 @@ import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMe
 import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { GitFormatTranslator } from '../../utils/GitFormatTranslator.js';
-import { setFileMtimeToRemote, checkSyncOrThrow, isManifestFile } from '../../utils/fileHelpers.js';
+import { setFileMtimeToRemote, isManifestFile } from '../../utils/fileHelpers.js';
 import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
@@ -1253,8 +1253,8 @@ export class WriteTool extends BaseFileSystemTool {
    * @param workingDir - Working directory
    * @returns true if file was pulled, false if no pull was needed
    *
-   * NOTE: Callers should pass fresh metadata from getProjectMetadata() to ensure
-   * atomic consistency with subsequent checkSyncOrThrow() calls
+   * NOTE: Callers should pass fresh content from getProjectContent() to ensure
+   * atomic consistency with subsequent checkSyncOrThrowByHash() calls
    */
   private async pullRemoteFileIfNeeded(
     projectName: string,

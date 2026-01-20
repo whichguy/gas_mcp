@@ -128,32 +128,41 @@ export class ReorderTool extends BaseTool {
     // Update the project with new file order
     const updatedFiles = await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
 
-    // ✅ Sync local cache with updated remote mtimes
+    // ✅ Sync local cache with updated remote content hashes
+    // Also update mtimes for user convenience (file explorer sorting)
     try {
       const { LocalFileManager } = await import('../utils/localFileManager.js');
       const { setFileMtimeToRemote } = await import('../utils/fileHelpers.js');
+      const { updateCachedContentHash } = await import('../utils/gasMetadataCache.js');
+      const { computeGitSha1 } = await import('../utils/hashUtils.js');
       const { join } = await import('path');
 
       const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
 
       if (localRoot) {
-        // Update mtimes for all files since reordering changes updateTime for all files
+        // Update hash cache and mtimes for all files since reordering changes content for all files
         for (const file of updatedFiles) {
-          if (file.updateTime) {
-            const fileExtension = LocalFileManager.getFileExtensionFromName(file.name);
-            const localPath = join(localRoot, file.name + fileExtension);
-            try {
-              await setFileMtimeToRemote(localPath, file.updateTime, file.type);
-            } catch (mtimeError) {
-              // File might not exist locally - that's okay
+          const fileExtension = LocalFileManager.getFileExtensionFromName(file.name);
+          const localPath = join(localRoot, file.name + fileExtension);
+          try {
+            // Update hash cache with WRAPPED content hash (primary sync mechanism)
+            if (file.source) {
+              const contentHash = computeGitSha1(file.source);
+              await updateCachedContentHash(localPath, contentHash);
             }
+            // Update mtime for user convenience (informational only, not for sync)
+            if (file.updateTime) {
+              await setFileMtimeToRemote(localPath, file.updateTime, file.type);
+            }
+          } catch (cacheError) {
+            // File might not exist locally - that's okay
           }
         }
-        console.error(`⏰ [SYNC] Updated local mtimes after reorder operation`);
+        console.error(`🔄 [SYNC] Updated local hash cache after reorder operation`);
       }
     } catch (syncError) {
       // Don't fail the operation if local sync fails - remote update succeeded
-      console.error(`⚠️ [SYNC] Failed to update local mtimes after reorder: ${syncError}`);
+      console.error(`⚠️ [SYNC] Failed to update local cache after reorder: ${syncError}`);
     }
 
     return {

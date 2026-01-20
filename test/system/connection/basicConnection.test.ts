@@ -1,10 +1,10 @@
 import { expect } from 'chai';
 import { describe, it, before } from 'mocha';
-import { MCPTestClient } from '../../helpers/mcpClient.js';
+import { InProcessTestClient } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
 
 describe('MCP Server Basic Connection Tests', () => {
-  let client: MCPTestClient;
+  let client: InProcessTestClient;
 
   before(function() {
     // Use the shared global client to avoid multiple server processes

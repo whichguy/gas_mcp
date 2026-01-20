@@ -38,6 +38,7 @@ import {
   EXCLUDED_FILES,
   EXCLUDED_DIRS,
 } from '../../utils/fileFilter.js';
+import { getCachedContentHash } from '../../utils/gasMetadataCache.js';
 
 // Note: GAS file filtering constants have been moved to centralized fileFilter.ts
 // Use FileFilter.isGasCompatible() and FileFilter.isLocalConfig() etc.
@@ -503,10 +504,23 @@ export class SyncPlanner {
         // Convert path to GAS-style filename (remove extension, convert slashes)
         const filename = this.localPathToGasFilename(entryRelPath);
 
+        // Use cached WRAPPED hash if available (from previous sync)
+        // Local files are stored WRAPPED (with CommonJS), so file hash = wrapped hash
+        // This ensures hash comparison works correctly with GAS remote files
+        let sha1: string;
+        const cachedHash = await getCachedContentHash(filePath);
+        if (cachedHash) {
+          sha1 = cachedHash;
+        } else {
+          // No cached hash - compute from file content
+          // File should be WRAPPED content, so direct hash is correct
+          sha1 = SyncManifest.computeGitSha1(content);
+        }
+
         files.push({
           filename,
           content,
-          sha1: SyncManifest.computeGitSha1(content),
+          sha1,
           lastModified: stat.mtime.toISOString(),
           size: stat.size
         });
@@ -600,10 +614,14 @@ export class SyncPlanner {
   }
 
   /**
-   * Convert GAS files to DiffFileInfo format with unwrapped content
+   * Convert GAS files to DiffFileInfo format
    *
-   * This ensures that when comparing GAS files with local files,
-   * we compare the actual user code (without CommonJS wrappers).
+   * IMPORTANT: Uses WRAPPED content hashes for sync detection.
+   * This ensures that ANY change to the file (including CommonJS wrapper
+   * options like loadNow, hoistedFunctions, etc.) triggers a sync.
+   *
+   * The unwrapped content is still stored for display purposes,
+   * but the sha1 hash is computed on the FULL WRAPPED content.
    */
   private convertGasFilesToDiff(gasFiles: GASFile[]): DiffFileInfo[] {
     return gasFiles
@@ -612,19 +630,23 @@ export class SyncPlanner {
         const source = f.source as string;
         const fileType = f.type || 'SERVER_JS';
 
-        // Unwrap CommonJS for SERVER_JS files for accurate comparison
-        let contentForComparison = source;
+        // Compute hash on WRAPPED content (full file as stored in GAS)
+        // This ensures wrapper changes (loadNow, hoistedFunctions, etc.) trigger sync
+        const wrappedHash = SyncManifest.computeGitSha1(source);
+
+        // Unwrap content for display/comparison readability
+        let contentForDisplay = source;
         if (shouldWrapContent(fileType, f.name)) {
           const { unwrappedContent } = unwrapModuleContent(source);
-          contentForComparison = unwrappedContent;
+          contentForDisplay = unwrappedContent;
         }
 
         return {
           filename: f.name,
-          content: contentForComparison,  // Unwrapped for comparison
-          sha1: SyncManifest.computeGitSha1(contentForComparison),
+          content: contentForDisplay,  // Unwrapped for display
+          sha1: wrappedHash,           // WRAPPED hash for sync detection
           lastModified: f.updateTime,
-          size: contentForComparison.length,
+          size: source.length,         // Full file size
           // Store original wrapped content for operations
           originalContent: source,
           fileType: fileType  // Pass through GAS file type for extension mapping
