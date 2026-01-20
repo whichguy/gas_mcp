@@ -27,7 +27,7 @@ import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, analyzeMani
 import { join, dirname } from 'path';
 import { mkdir, stat, readFile } from 'fs/promises';
 import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
-import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA } from './shared/schemas.js';
+import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA, EXPECTED_HASH_SCHEMA } from './shared/schemas.js';
 import { GuidanceFragments } from '../../utils/guidanceFragments.js';
 import type { WriteParams, WriteResult } from './shared/types.js';
 
@@ -93,10 +93,8 @@ export class WriteTool extends BaseFileSystemTool {
         ...FORCE_SCHEMA
       },
       expectedHash: {
-        type: 'string',
-        description: 'Git SHA-1 hash (40 hex chars) from previous cat. If provided and differs from current remote, write fails with ConflictError. Use force:true to bypass.',
-        pattern: '^[a-f0-9]{40}$',
-        examples: ['a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2']
+        ...EXPECTED_HASH_SCHEMA,
+        description: 'Git SHA-1 hash (40 hex chars) from previous cat. If provided and differs from current remote, write fails with ConflictError. Use force:true to bypass.'
       },
       changeReason: {
         type: 'string',
@@ -466,6 +464,12 @@ export class WriteTool extends BaseFileSystemTool {
 
         // === HASH-BASED CONFLICT DETECTION ===
         // Check for concurrent modifications before writing
+        if (existingFile && params.force) {
+          // Log when force bypasses conflict detection
+          const currentRemoteHash = computeGitSha1(existingFile.source || '');
+          log.warn(`[WRITE] force=true: bypassing conflict detection for ${filename} (remote hash: ${currentRemoteHash.slice(0, 8)}...)`);
+        }
+
         if (existingFile && !params.force) {
           // Compute current remote hash on WRAPPED content (full file as stored in GAS)
           // This ensures hash matches `git hash-object <file>` on local synced files
@@ -495,25 +499,19 @@ export class WriteTool extends BaseFileSystemTool {
 
           // Validate hash if we have one
           if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
-            // Generate unified diff for the conflict
-            const { createTwoFilesPatch } = await import('diff');
-            const { unwrappedContent: expectedUnwrapped } = unwrapModuleContent(existingFile.source || '');
-
-            // For diff, we need original content (what user expected) vs current remote
-            // Since we don't have the original, we show remote content changed
             // Unwrap for diff display only (hash is computed on wrapped content)
             const { unwrappedContent: remoteUnwrappedForDiff } = unwrapModuleContent(existingFile.source || '');
-            const diffContent = createTwoFilesPatch(
-              `${filename} (expected)`,
-              `${filename} (current remote)`,
-              '', // We don't have expected content, so show as empty diff note
-              remoteUnwrappedForDiff,
-              'baseline from your last read',
-              'modified by another session'
-            );
 
-            const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
-            const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+            // Use 'info' format consistently - we don't have expected content, only expected hash
+            // Using 'unified' with empty baseline produces misleading diffs showing all as additions
+            const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
+            const diffContent = `File was modified externally since your last read.
+  Expected hash: ${expectedHash.slice(0, 8)}... (from ${hashSourceLabel})
+  Current hash:  ${currentRemoteHash.slice(0, 8)}...
+  Size:          ${remoteUnwrappedForDiff.length} bytes (unwrapped)
+
+To resolve: Use cat() to fetch current content, then re-apply your changes.
+Or use force:true to overwrite (destructive).`;
 
             const conflict: ConflictDetails = {
               scriptId,
@@ -526,16 +524,9 @@ export class WriteTool extends BaseFileSystemTool {
                 sizeChange: `${remoteUnwrappedForDiff.length} bytes (unwrapped)`
               },
               diff: {
-                format: 'unified',
-                content: diffContent.length > 20000
-                  ? diffContent.slice(0, 20000) + '\n... (truncated)'
-                  : diffContent,
-                linesAdded,
-                linesRemoved,
-                truncated: diffContent.length > 20000,
-                truncatedMessage: diffContent.length > 20000
-                  ? `Diff truncated (showing first 20000 of ${diffContent.length} chars)`
-                  : undefined
+                format: 'info',
+                content: diffContent,
+                truncated: false
               }
             };
 
@@ -552,6 +543,7 @@ export class WriteTool extends BaseFileSystemTool {
 
         let updatedFiles: any[];
 
+        const isNewFile = !existingFile;
         if (existingFile) {
           updatedFiles = currentFiles.map((f: any) =>
             fileNameMatches(f.name, filename) ? newFile : f
@@ -980,6 +972,12 @@ export class WriteTool extends BaseFileSystemTool {
         const fileType = existingFile?.type || determineFileTypeUtil(filename, finalContent);
 
         // === HASH-BASED CONFLICT DETECTION (Git Path) ===
+        if (existingFile && params.force) {
+          // Log when force bypasses conflict detection
+          const currentRemoteHash = computeGitSha1(existingFile.source || '');
+          log.warn(`[WRITE] force=true: bypassing conflict detection for ${filename} (remote hash: ${currentRemoteHash.slice(0, 8)}...)`);
+        }
+
         if (existingFile && !params.force) {
           // Compute current remote hash on WRAPPED content (full file as stored in GAS)
           // This ensures hash matches `git hash-object <file>` on local synced files
@@ -1003,22 +1001,19 @@ export class WriteTool extends BaseFileSystemTool {
 
           // Validate hash if we have one
           if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
-            // Generate unified diff for the conflict
             // Unwrap for diff display only (hash is computed on wrapped content)
-            const { createTwoFilesPatch } = await import('diff');
             const { unwrappedContent: remoteUnwrappedForDiff } = unwrapModuleContent(existingFile.source || '');
 
-            const diffContent = createTwoFilesPatch(
-              `${filename} (expected)`,
-              `${filename} (current remote)`,
-              '',
-              remoteUnwrappedForDiff,
-              'baseline from your last read',
-              'modified by another session'
-            );
+            // Use 'info' format consistently - we don't have expected content, only expected hash
+            // Using 'unified' with empty baseline produces misleading diffs showing all as additions
+            const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
+            const diffContent = `File was modified externally since your last read.
+  Expected hash: ${expectedHash.slice(0, 8)}... (from ${hashSourceLabel})
+  Current hash:  ${currentRemoteHash.slice(0, 8)}...
+  Size:          ${remoteUnwrappedForDiff.length} bytes (unwrapped)
 
-            const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
-            const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+To resolve: Use cat() to fetch current content, then re-apply your changes.
+Or use force:true to overwrite (destructive).`;
 
             const conflict: ConflictDetails = {
               scriptId,
@@ -1031,16 +1026,9 @@ export class WriteTool extends BaseFileSystemTool {
                 sizeChange: `${remoteUnwrappedForDiff.length} bytes (unwrapped)`
               },
               diff: {
-                format: 'unified',
-                content: diffContent.length > 20000
-                  ? diffContent.slice(0, 20000) + '\n... (truncated)'
-                  : diffContent,
-                linesAdded,
-                linesRemoved,
-                truncated: diffContent.length > 20000,
-                truncatedMessage: diffContent.length > 20000
-                  ? `Diff truncated (showing first 20000 of ${diffContent.length} chars)`
-                  : undefined
+                format: 'info',
+                content: diffContent,
+                truncated: false
               }
             };
 
@@ -1055,6 +1043,7 @@ export class WriteTool extends BaseFileSystemTool {
           source: finalContent
         };
 
+        const isNewFileRemoteOnly = !existingFile;
         const updatedFiles = existingFile
           ? currentFiles.map((f: any) => fileNameMatches(f.name, filename) ? newFile : f)
           : [...currentFiles, newFile];

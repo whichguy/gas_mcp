@@ -94,3 +94,10 @@ export const FORCE_SCHEMA = {
   description: '⚠️ Force write even if local and remote are out of sync (WARNING: may overwrite remote changes)',
   default: false
 } as const;
+
+export const EXPECTED_HASH_SCHEMA = {
+  type: 'string',
+  description: 'Git SHA-1 hash (40 hex chars) from previous cat. If provided and differs from current remote, operation fails with ConflictError. Use force:true to bypass.',
+  pattern: '^[a-f0-9]{40}$',
+  examples: ['a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2']
+} as const;

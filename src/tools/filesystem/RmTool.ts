@@ -1,14 +1,13 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
-import { parsePath, resolveHybridScriptId } from '../../api/pathParser.js';
+import { parsePath, resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError } from '../../errors/mcpErrors.js';
-import { join } from 'path';
-import { unlink } from 'fs/promises';
-import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
+import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, ACCESS_TOKEN_SCHEMA, FORCE_SCHEMA, EXPECTED_HASH_SCHEMA } from './shared/schemas.js';
 import type { RemoveParams, RemoveResult } from './shared/types.js';
 import { GitOperationManager } from '../../core/git/GitOperationManager.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { DeleteOperationStrategy } from '../../core/git/operations/DeleteOperationStrategy.js';
+import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
 
 /**
  * Remove files from Google Apps Script project
@@ -35,6 +34,13 @@ export class RmTool extends BaseFileSystemTool {
         description: 'Optional commit message for git integration. If omitted, defaults to "Delete {filename}". Git repo is created automatically if it doesn\'t exist.',
         examples: ['Remove unused utility', 'Delete deprecated file', 'Clean up old backup']
       },
+      expectedHash: {
+        ...EXPECTED_HASH_SCHEMA
+      },
+      force: {
+        ...FORCE_SCHEMA,
+        description: 'Bypass hash conflict detection. Use when you want to delete regardless of external changes.'
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -55,7 +61,7 @@ export class RmTool extends BaseFileSystemTool {
     }
   };
 
-  async execute(params: RemoveParams): Promise<RemoveResult> {
+  async execute(params: RemoveParams & { expectedHash?: string; force?: boolean }): Promise<RemoveResult> {
     const hybridResolution = resolveHybridScriptId(params.scriptId, params.path);
     const fullPath = `${hybridResolution.scriptId}/${hybridResolution.cleanPath}`;
 
@@ -68,6 +74,26 @@ export class RmTool extends BaseFileSystemTool {
 
     const accessToken = await this.getAuthToken(params);
     const filename = parsedPath.filename!;
+
+    // === HASH-BASED CONFLICT DETECTION ===
+    // Only fetch when expectedHash is provided (avoids unnecessary API calls when just force=true)
+    if (params.expectedHash) {
+      const currentFiles = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
+      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
+
+      if (existingFile) {
+        checkForConflictOrThrow({
+          scriptId: parsedPath.scriptId,
+          filename,
+          operation: 'rm',
+          currentRemoteContent: existingFile.source || '',
+          expectedHash: params.expectedHash,
+          hashSource: 'param',
+          force: params.force
+        });
+      }
+    }
+    // === END HASH-BASED CONFLICT DETECTION ===
 
     // Always use GitOperationManager for proper workflow:
     // 1. Compute changes (read file for backup)

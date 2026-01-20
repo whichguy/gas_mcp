@@ -1,12 +1,13 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
-import { resolveHybridScriptId } from '../../api/pathParser.js';
-import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
-import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
+import { resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
+import { ValidationError } from '../../errors/mcpErrors.js';
+import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA, FORCE_SCHEMA, EXPECTED_HASH_SCHEMA } from './shared/schemas.js';
 import type { MoveParams, MoveResult } from './shared/types.js';
 import { GitOperationManager } from '../../core/git/GitOperationManager.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { MoveOperationStrategy } from '../../core/git/operations/MoveOperationStrategy.js';
+import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
 
 /**
  * Move or rename files in Google Apps Script project
@@ -48,6 +49,14 @@ export class MvTool extends BaseFileSystemTool {
         description: 'Optional commit message for git integration. If omitted, defaults to "Move {from} to {to}". Git repo is created automatically if it doesn\'t exist.',
         examples: ['Rename utility file', 'Reorganize project structure', 'Move to backup folder']
       },
+      expectedHash: {
+        ...EXPECTED_HASH_SCHEMA,
+        description: 'Git SHA-1 hash (40 hex chars) of source file from previous cat. If provided and differs from current remote, operation fails with ConflictError. Use force:true to bypass.'
+      },
+      force: {
+        ...FORCE_SCHEMA,
+        description: 'Bypass hash conflict detection on source file. Use when you want to move regardless of external changes.'
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -68,7 +77,7 @@ export class MvTool extends BaseFileSystemTool {
     }
   };
 
-  async execute(params: MoveParams): Promise<MoveResult> {
+  async execute(params: MoveParams & { expectedHash?: string; force?: boolean }): Promise<MoveResult> {
     // SECURITY: Validate parameters BEFORE authentication
     const accessToken = await this.getAuthToken(params);
 
@@ -85,6 +94,26 @@ export class MvTool extends BaseFileSystemTool {
     if (!fromFilename || !toFilename) {
       throw new ValidationError('path', 'from/to', 'valid filenames (cannot be empty)');
     }
+
+    // === HASH-BASED CONFLICT DETECTION ===
+    // Only fetch when expectedHash is provided (avoids unnecessary API calls when just force=true)
+    if (params.expectedHash) {
+      const currentFiles = await this.gasClient.getProjectContent(fromProjectId, accessToken);
+      const sourceFile = currentFiles.find((f: any) => fileNameMatches(f.name, fromFilename));
+
+      if (sourceFile) {
+        checkForConflictOrThrow({
+          scriptId: fromProjectId,
+          filename: fromFilename,
+          operation: 'mv',
+          currentRemoteContent: sourceFile.source || '',
+          expectedHash: params.expectedHash,
+          hashSource: 'param',
+          force: params.force
+        });
+      }
+    }
+    // === END HASH-BASED CONFLICT DETECTION ===
 
     // Always use GitOperationManager for proper workflow:
     // 1. Compute changes (source delete + dest create)
