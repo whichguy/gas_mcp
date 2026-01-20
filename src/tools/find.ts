@@ -13,11 +13,12 @@ import { parsePath, isWildcardPattern, matchesPattern, resolveHybridScriptId, ge
 import { ValidationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
-import { 
+import {
   translatePathForOperation,
   gasNameToVirtual,
   translateFilesForDisplay
 } from '../utils/virtualFileTranslation.js';
+import { generateFindHints } from '../utils/searchHints.js';
 
 interface FindOptions {
   name?: string;        // Pattern to match file names (supports wildcards and regex)
@@ -147,15 +148,29 @@ export class FindTool extends BaseTool {
       newer: params.newer,
       older: params.older
     }, allFiles, accessToken);
-    
+
     // Format output based on options
-    return this.formatOutput(matchedFiles, {
+    const result = this.formatOutput(matchedFiles, {
       print: params.print !== false,
       print0: params.print0 || false,
       ls: params.ls || false
     }, scriptId);
+
+    // Generate context-aware hints based on results
+    const hints = generateFindHints(
+      matchedFiles.length,
+      params.name,
+      params.type,
+      params.size
+    );
+
+    if (Object.keys(hints).length > 0) {
+      result.hints = hints;
+    }
+
+    return result;
   }
-  
+
   private async filterFiles(
     files: any[],
     options: FindOptions,
@@ -400,15 +415,29 @@ export class RawFindTool extends BaseTool {
       newer: params.newer,
       older: params.older
     }, accessToken);
-    
+
     // Format output based on options
-    return this.formatOutput(matchedFiles, {
+    const result = this.formatOutput(matchedFiles, {
       print: params.print !== false,
       print0: params.print0 || false,
       ls: params.ls || false
     }, scriptId);
+
+    // Generate context-aware hints based on results
+    const hints = generateFindHints(
+      matchedFiles.length,
+      params.name,
+      params.type,
+      params.size
+    );
+
+    if (Object.keys(hints).length > 0) {
+      result.hints = hints;
+    }
+
+    return result;
   }
-  
+
   private async filterFiles(
     files: any[],
     options: FindOptions,

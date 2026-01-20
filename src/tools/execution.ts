@@ -20,6 +20,7 @@ import { DiffGenerator } from '../utils/diffGenerator.js';
 import type { DriftFileInfo } from '../errors/mcpErrors.js';
 import { fileNameMatches } from '../api/pathParser.js';
 import { validateCommonJSOrdering, formatCommonJSOrderingIssues } from '../utils/validation.js';
+import { generateExecHints, ExecHints } from '../utils/execHints.js';
 import open from 'open';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -146,6 +147,18 @@ function wrapLargeResponse(response: any, scriptId: string): any {
   // Large response - try to write to file
   try {
     const fileInfo = writeResponseToFileWithContent(response, content, scriptId);
+
+    // Generate hints for large output case
+    const largeOutputHints = generateExecHints(
+      response.status === 'success' ? 'success' : 'error',
+      response.js_statement || '',
+      response.result,
+      response.logger_output || '',
+      undefined,
+      true,  // outputWrittenToFile
+      response.environment
+    );
+
     return {
       status: response.status,
       scriptId: response.scriptId,
@@ -156,6 +169,7 @@ function wrapLargeResponse(response: any, scriptId: string): any {
       loggerLines: fileInfo.loggerLines,
       summary: fileInfo.summary,
       hint: `Response exceeded ${(OUTPUT_SIZE_THRESHOLD / 1024).toFixed(0)}KB (~${Math.round(OUTPUT_SIZE_THRESHOLD / 4)} tokens). Full result written to file. Use Read tool to access: ${fileInfo.outputFile}`,
+      ...(Object.keys(largeOutputHints).length > 0 && { hints: largeOutputHints }),
       executedAt: response.executedAt,
       environment: response.environment,
       versionNumber: response.versionNumber,
@@ -224,13 +238,25 @@ function buildExecErrorResponse(
     versionNumber?: number | null;
     executionUrl?: string | null;
   } = {}
-): ExecErrorResponse {
+): ExecErrorResponse & { hints?: ExecHints } {
+  // Generate context-aware hints for the error
+  const errorHints = generateExecHints(
+    'error',
+    js_statement,
+    error.message || error.type,
+    loggerOutput,
+    undefined,
+    false,
+    options.environment || 'dev'
+  );
+
   return {
     status: 'error',
     scriptId,
     js_statement,
     error,
     logger_output: loggerOutput,
+    ...(Object.keys(errorHints).length > 0 && { hints: errorHints }),
     executedAt: new Date().toISOString(),
     environment: options.environment || 'dev',
     versionNumber: options.versionNumber ?? null,
@@ -1381,6 +1407,17 @@ export class ExecTool extends BaseTool {
             ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
             : undefined;
 
+          // Generate context-aware hints for the response
+          const retryHints = generateExecHints(
+            'success',
+            js_statement,
+            retryResult && typeof retryResult === 'object' && retryResult.result !== undefined ? retryResult.result : retryResult,
+            filteredOutput,
+            undefined,
+            false,
+            environment
+          );
+
           return wrapLargeResponse(protectResponseSize({
             status: 'success',
             scriptId,
@@ -1388,6 +1425,7 @@ export class ExecTool extends BaseTool {
             result: retryResult && typeof retryResult === 'object' && retryResult.result !== undefined ? retryResult.result : retryResult,
             logger_output: filteredOutput + metadata,
             ...(debugHint && { debugHint }),
+            ...(Object.keys(retryHints).length > 0 && { hints: retryHints }),
             executedAt: new Date().toISOString(),
             environment: environment,
             versionNumber: envDeployment?.versionNumber || null,
@@ -1562,6 +1600,17 @@ export class ExecTool extends BaseTool {
             ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
             : undefined;
 
+          // Generate context-aware hints for the response
+          const dataHints = generateExecHints(
+            'success',
+            js_statement,
+            result.payload,
+            filteredOutput,
+            undefined,
+            false,
+            environment
+          );
+
           return wrapLargeResponse(protectResponseSize({
             status: 'success',
             scriptId,
@@ -1569,6 +1618,7 @@ export class ExecTool extends BaseTool {
             result: result.payload,
             logger_output: filteredOutput + metadata,
             ...(debugHint && { debugHint }),
+            ...(Object.keys(dataHints).length > 0 && { hints: dataHints }),
             executedAt: new Date().toISOString(),
             environment: environment,
             versionNumber: envDeployment?.versionNumber || null,
@@ -1623,6 +1673,17 @@ export class ExecTool extends BaseTool {
         ? 'No logs returned. Enable module logging: setModuleLogging("ModuleName", true)'
         : undefined;
 
+      // Generate context-aware hints for the response
+      const successHints = generateExecHints(
+        'success',
+        js_statement,
+        result && typeof result === 'object' && 'result' in result ? result.result : result,
+        filteredOutput,
+        Date.now() - startTime,
+        false,
+        environment
+      );
+
       // Return simple success response with logger output
       return wrapLargeResponse(protectResponseSize({
         status: 'success',
@@ -1631,6 +1692,7 @@ export class ExecTool extends BaseTool {
         result: result && typeof result === 'object' && 'result' in result ? result.result : result,
         logger_output: filteredOutput + metadata,
         ...(debugHint && { debugHint }),
+        ...(Object.keys(successHints).length > 0 && { hints: successHints }),
         executedAt: new Date().toISOString(),
         environment: environment,
         versionNumber: envDeployment?.versionNumber || null,

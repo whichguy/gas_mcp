@@ -362,8 +362,20 @@ export class InProcessTestClient {
       };
     }
 
+    // Import and execute sheet_sql tool
+    if (name === 'sheet_sql') {
+      const { SheetSqlTool } = await import('../../src/tools/sheets/sheetsSql.js');
+      const tool = new SheetSqlTool(this.sessionManager);
+
+      // Execute the tool - returns result directly (not MCP format)
+      const result = await tool.execute(args);
+
+      // SheetSqlTool returns the result directly, not wrapped in MCP format
+      return result;
+    }
+
     // For tools we haven't implemented, throw error
-    const supportedTools = ['auth', 'deploy', 'config', 'cat', 'raw_cat', 'ls', 'write', 'git_feature', 'rsync'];
+    const supportedTools = ['auth', 'deploy', 'config', 'cat', 'raw_cat', 'ls', 'write', 'git_feature', 'rsync', 'sheet_sql'];
     throw new Error(
       `Tool '${name}' not yet supported in direct execution mode.\n` +
       `Supported tools: ${supportedTools.join(', ')}\n` +
@@ -460,7 +472,21 @@ export class InProcessTestClient {
       { name: 'cat', description: 'Read file contents' },
       { name: 'write', description: 'Write file contents' },
       { name: 'ls', description: 'List files in project' },
-      { name: 'exec', description: 'Execute code in GAS environment' }
+      { name: 'exec', description: 'Execute code in GAS environment' },
+      {
+        name: 'sheet_sql',
+        description: 'Execute SQL-style operations on Google Sheets',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID or full URL' },
+            range: { type: 'string', description: 'Sheet and cell range in A1 notation' },
+            statement: { type: 'string', description: 'SQL statement using column letters' },
+            returnMetadata: { type: 'boolean', default: false, description: 'Return cell metadata' }
+          },
+          required: ['spreadsheetId', 'range', 'statement']
+        }
+      }
     ];
   }
 

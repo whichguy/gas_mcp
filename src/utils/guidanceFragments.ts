@@ -197,6 +197,60 @@ export class GuidanceFragments {
   ];
 
   // ==========================================
+  // RESPONSE HINTS GUIDANCE (NEW)
+  // ==========================================
+
+  /**
+   * Hints field explanation - included in responses when context-aware guidance is available
+   * Tools with hints: grep, ripgrep, find, exec, deploy
+   */
+  static readonly responseHintsExplanation = {
+    purpose: 'Context-aware guidance based on operation results',
+    fields: {
+      context: 'Brief description of result state',
+      suggestions: 'Actionable improvements for current operation',
+      warning: 'Important alerts (large results, errors, limits)',
+      nextSteps: 'Recommended follow-up operations',
+      performance: 'Timing info when operation was slow',
+      debugging: 'Troubleshooting steps for CommonJS/module issues',
+      workflow: 'Multi-step workflow guidance (deployment operations)'
+    },
+    usage: 'Hints are auto-generated based on results - no action needed to receive them'
+  };
+
+  /**
+   * Common hint scenarios and recommended actions
+   */
+  static readonly hintScenarios = {
+    zeroResults: {
+      search: 'Check pattern spelling, try case-insensitive, broaden pattern',
+      find: 'Use ls to see all files, remove filters, check path spelling'
+    },
+    largeResults: {
+      search: 'Add path filter, use more specific pattern, add maxResults limit',
+      find: 'Add name pattern, add type filter, narrow path scope'
+    },
+    slowOperation: {
+      search: 'Add path filter, reduce maxFilesSearched',
+      exec: 'Break into smaller operations, use Logger.log checkpoints'
+    },
+    outputTruncated: {
+      search: 'Increase maxResults to see more matches',
+      exec: 'Response >8KB written to file - use Read tool on outputFile path'
+    }
+  };
+
+  /**
+   * Deployment workflow hints
+   */
+  static readonly deploymentWorkflow = {
+    standard: 'dev (HEAD) → promote → staging (versioned) → promote → prod',
+    afterPromoteStaging: 'Test staging URL, then promote staging→prod when ready',
+    afterPromoteProd: 'Verify prod URL, rollback if issues',
+    afterReset: 'All deployments at HEAD - promote dev→staging to create first version'
+  };
+
+  // ==========================================
   // HELPER METHODS
   // ==========================================
 
@@ -234,6 +288,31 @@ export class GuidanceFragments {
     return {
       toolSelection: GuidanceFragments.searchToolHints,
       antiPatterns: GuidanceFragments.searchAntiPatterns,
+      responseHints: 'This tool returns context-aware hints in response.hints field',
+      ...toolSpecificHints
+    };
+  }
+
+  /**
+   * Build standard llmGuidance for execution tools (exec, exec_api)
+   */
+  static buildExecGuidance(toolSpecificHints: Record<string, any> = {}): Record<string, any> {
+    return {
+      responseHints: 'This tool returns context-aware hints in response.hints field',
+      hintScenarios: GuidanceFragments.hintScenarios,
+      errorRecovery: GuidanceFragments.errorRecovery,
+      ...toolSpecificHints
+    };
+  }
+
+  /**
+   * Build standard llmGuidance for deployment tools
+   */
+  static buildDeployGuidance(toolSpecificHints: Record<string, any> = {}): Record<string, any> {
+    return {
+      workflow: GuidanceFragments.deploymentWorkflow,
+      responseHints: 'This tool returns context-aware hints in response.hints field',
+      errorRecovery: GuidanceFragments.errorRecovery,
       ...toolSpecificHints
     };
   }
