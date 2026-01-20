@@ -118,6 +118,10 @@ export interface CopyResult {
   size: number;
   totalFiles: number;
   message: string;
+  /** Git SHA-1 hash of the destination file after copy (computed on unwrapped content). */
+  hash?: string;
+  /** Explanation of hash computation for LLM guidance. */
+  hashNote?: string;
   git?: GitHints;
   nextAction?: NextActionHint;
 }
@@ -152,6 +156,8 @@ export interface WriteParams extends FileParams {
     }>;
   };
   force?: boolean;
+  /** Git SHA-1 hash (40 hex chars) from previous cat. If differs from remote, write fails with ConflictError. */
+  expectedHash?: string;
   changeReason?: string;
   projectPath?: string;
 }
@@ -185,6 +191,10 @@ export interface CopyParams {
   from: string;
   to: string;
   changeReason?: string;
+  /** Git SHA-1 hash (40 hex chars) of source file from previous cat. If source differs, copy fails with ConflictError. */
+  expectedHash?: string;
+  /** Force copy even if source file hash mismatches. Use only when intentionally copying modified source. */
+  force?: boolean;
   workingDir?: string;
   accessToken?: string;
 }

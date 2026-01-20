@@ -1,9 +1,10 @@
 /**
- * Test suite for new ripgrep features: ignoreCase, sort, trim
+ * Test suite for new ripgrep features: ignoreCase, sort
  */
 
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
+import { sortRipgrepResults } from '../../src/utils/ripgrepUtils.js';
 
 describe('Ripgrep New Features', () => {
   describe('Parameter Validation', () => {
@@ -31,15 +32,6 @@ describe('Ripgrep New Features', () => {
       });
     });
 
-    it('should accept trim parameter', () => {
-      const params = {
-        scriptId: '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-        pattern: 'class',
-        trim: true
-      };
-
-      expect(params.trim).to.be.true;
-    });
   });
 
   describe('ignoreCase Logic', () => {
@@ -101,51 +93,6 @@ describe('Ripgrep New Features', () => {
     });
   });
 
-  describe('Trim Whitespace', () => {
-    it('should trim leading and trailing whitespace from string lines', () => {
-      const line = '   const foo = "bar";   ';
-      const trimmed = line.trim();
-
-      expect(trimmed).to.equal('const foo = "bar";');
-    });
-
-    it('should trim whitespace from line objects with content property', () => {
-      const lineObj = {
-        lineNumber: 42,
-        content: '   function test() {   '
-      };
-
-      const trimmed = {
-        ...lineObj,
-        content: lineObj.content.trim()
-      };
-
-      expect(trimmed.content).to.equal('function test() {');
-      expect(trimmed.lineNumber).to.equal(42);
-    });
-
-    it('should handle arrays of mixed line types', () => {
-      const lines: any[] = [
-        '  line one  ',
-        { content: '  line two  ', lineNumber: 2 },
-        '  line three  '
-      ];
-
-      const trimmed = lines.map(line => {
-        if (typeof line === 'string') {
-          return line.trim();
-        } else if (line && typeof line.content === 'string') {
-          return { ...line, content: line.content.trim() };
-        }
-        return line;
-      });
-
-      expect(trimmed[0]).to.equal('line one');
-      expect(trimmed[1].content).to.equal('line two');
-      expect(trimmed[2]).to.equal('line three');
-    });
-  });
-
   describe('Feature Combinations', () => {
     it('should support using ignoreCase and sort together', () => {
       const params = {
@@ -158,19 +105,122 @@ describe('Ripgrep New Features', () => {
       expect(params.ignoreCase).to.be.true;
       expect(params.sort).to.equal('path');
     });
+  });
+});
 
-    it('should support using all three new features together', () => {
-      const params = {
-        scriptId: '1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789',
-        pattern: 'function',
-        ignoreCase: true,
-        sort: 'path',
-        trim: true
-      };
+describe('sortRipgrepResults', () => {
+  describe('path sorting', () => {
+    it('should sort results alphabetically by fileName', () => {
+      const matches = [
+        { fileName: 'zebra/file' },
+        { fileName: 'alpha/file' },
+        { fileName: 'middle/file' }
+      ];
+      const sorted = sortRipgrepResults(matches, 'path', []);
+      expect(sorted.map(m => m.fileName)).to.deep.equal([
+        'alpha/file', 'middle/file', 'zebra/file'
+      ]);
+    });
 
-      expect(params.ignoreCase).to.be.true;
-      expect(params.sort).to.equal('path');
-      expect(params.trim).to.be.true;
+    it('should handle empty array', () => {
+      const sorted = sortRipgrepResults([], 'path', []);
+      expect(sorted).to.deep.equal([]);
+    });
+
+    it('should handle single item', () => {
+      const matches = [{ fileName: 'only/file' }];
+      const sorted = sortRipgrepResults(matches, 'path', []);
+      expect(sorted).to.deep.equal(matches);
+    });
+
+    it('should not mutate original array', () => {
+      const matches = [
+        { fileName: 'b/file' },
+        { fileName: 'a/file' }
+      ];
+      const original = [...matches];
+      sortRipgrepResults(matches, 'path', []);
+      expect(matches).to.deep.equal(original);
+    });
+
+    it('should handle files with same name prefix', () => {
+      const matches = [
+        { fileName: 'utils/helper2' },
+        { fileName: 'utils/helper1' },
+        { fileName: 'utils/helper10' }
+      ];
+      const sorted = sortRipgrepResults(matches, 'path', []);
+      // localeCompare handles string sorting (not numeric)
+      expect(sorted[0].fileName).to.equal('utils/helper1');
+      expect(sorted[1].fileName).to.equal('utils/helper10');
+      expect(sorted[2].fileName).to.equal('utils/helper2');
+    });
+  });
+
+  describe('modified sorting', () => {
+    it('should sort by modification time (newest first)', () => {
+      const matches = [
+        { fileName: 'old.js' },
+        { fileName: 'new.js' },
+        { fileName: 'middle.js' }
+      ];
+      const files = [
+        { name: 'old.js', lastModified: 1000 },
+        { name: 'new.js', lastModified: 3000 },
+        { name: 'middle.js', lastModified: 2000 }
+      ];
+      const sorted = sortRipgrepResults(matches, 'modified', files);
+      expect(sorted.map(m => m.fileName)).to.deep.equal([
+        'new.js', 'middle.js', 'old.js'
+      ]);
+    });
+
+    it('should handle files not found in files array (default to 0)', () => {
+      const matches = [
+        { fileName: 'known.js' },
+        { fileName: 'unknown.js' }
+      ];
+      const files = [
+        { name: 'known.js', lastModified: 1000 }
+      ];
+      const sorted = sortRipgrepResults(matches, 'modified', files);
+      // known.js (1000) should come before unknown.js (0)
+      expect(sorted[0].fileName).to.equal('known.js');
+    });
+
+    it('should handle undefined lastModified', () => {
+      const matches = [
+        { fileName: 'a.js' },
+        { fileName: 'b.js' }
+      ];
+      const files = [
+        { name: 'a.js' }, // no lastModified
+        { name: 'b.js', lastModified: 1000 }
+      ];
+      const sorted = sortRipgrepResults(matches, 'modified', files);
+      // b.js (1000) before a.js (0)
+      expect(sorted[0].fileName).to.equal('b.js');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should preserve additional properties on match objects', () => {
+      const matches = [
+        { fileName: 'b.js', totalMatches: 5, extra: 'data' },
+        { fileName: 'a.js', totalMatches: 3, extra: 'info' }
+      ];
+      const sorted = sortRipgrepResults(matches, 'path', []);
+      expect(sorted[0]).to.deep.include({ fileName: 'a.js', totalMatches: 3, extra: 'info' });
+    });
+
+    it('should handle special characters in filenames', () => {
+      const matches = [
+        { fileName: 'café/file' },
+        { fileName: 'apple/file' }
+      ];
+      const sorted = sortRipgrepResults(matches, 'path', []);
+      // localeCompare handles unicode
+      expect(sorted[0].fileName).to.equal('apple/file');
     });
   });
 });

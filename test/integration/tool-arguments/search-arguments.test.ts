@@ -330,20 +330,6 @@ describe('MCP Tool: Search Tools - Argument Validation', function() {
       expect(result).to.have.property('matches');
     });
 
-    it('should accept with trim option', async function() {
-      const result = await ArgumentTestHelper.expectSuccess(
-        context.client,
-        'ripgrep',
-        {
-          scriptId: testProjectId!,
-          pattern: 'function',
-          trim: true
-        },
-        'ripgrep with trim=true'
-      );
-
-      expect(result).to.have.property('matches');
-    });
   });
 
   describe('ripgrep: Invalid Arguments', function() {

@@ -1,9 +1,12 @@
-import { createHash } from 'crypto';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getBaseName, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
 import { translateFilesForDisplay } from '../../utils/virtualFileTranslation.js';
 import { DETAILED_SCHEMA, RECURSIVE_SCHEMA, WILDCARD_MODE_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
 import { SchemaFragments } from '../../utils/schemaFragments.js';
+import { getCachedContentHash } from '../../utils/gasMetadataCache.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
 import type { ListParams, ListResult } from './shared/types.js';
 
 /**
@@ -52,6 +55,12 @@ export class LsTool extends BaseFileSystemTool {
         default: false,
         examples: [true, false]
       },
+      checkSync: {
+        type: 'boolean',
+        description: 'Compare local vs remote hashes to detect sync status. Returns syncStatus per file (in_sync, local_stale, remote_only, local_only) and syncSummary.',
+        default: false,
+        examples: [true, false]
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -74,27 +83,28 @@ export class LsTool extends BaseFileSystemTool {
   async execute(params: ListParams): Promise<ListResult> {
     const accessToken = await this.getAuthToken(params);
 
-    const path = params.path || '';
+    const pathParam = params.path || '';
     const scriptId = params.scriptId || '';
     const detailed = params.detailed !== false;
     const recursive = params.recursive !== false;
     const wildcardMode = params.wildcardMode || 'auto';
     const checksums = params.checksums === true;
+    const checkSync = (params as any).checkSync === true;
 
     // Use hybrid resolution to get scriptId and clean path
     let finalScriptId: string;
     let cleanPath: string;
 
-    if (!path || path === '') {
+    if (!pathParam || pathParam === '') {
       finalScriptId = '';
       cleanPath = '';
     } else {
       try {
-        const resolved = resolveHybridScriptId(scriptId, path);
+        const resolved = resolveHybridScriptId(scriptId, pathParam);
         finalScriptId = resolved.scriptId;
         cleanPath = resolved.cleanPath;
       } catch (error: any) {
-        const parsedPath = parsePath(path);
+        const parsedPath = parsePath(pathParam);
         finalScriptId = parsedPath.scriptId || '';
         cleanPath = parsedPath.directory || parsedPath.pattern || '';
       }
@@ -103,7 +113,7 @@ export class LsTool extends BaseFileSystemTool {
     if (!finalScriptId) {
       return await this.listProjects(detailed, accessToken);
     } else {
-      return await this.listProjectFiles(finalScriptId, cleanPath, detailed, recursive, wildcardMode, checksums, accessToken);
+      return await this.listProjectFiles(finalScriptId, cleanPath, detailed, recursive, wildcardMode, checksums, checkSync, accessToken);
     }
   }
 
@@ -126,23 +136,6 @@ export class LsTool extends BaseFileSystemTool {
     };
   }
 
-  /**
-   * Compute Git-compatible SHA-1 checksum for file content
-   *
-   * Uses Git's blob format: sha1("blob " + <size> + "\0" + <content>)
-   * This matches the output of `git hash-object <file>`
-   *
-   * @param content - File content as string
-   * @returns Git-compatible SHA-1 hash as hex string
-   */
-  private computeGitSha1(content: string): string {
-    const size = Buffer.byteLength(content, 'utf8');
-    const header = `blob ${size}\0`;
-    return createHash('sha1')
-      .update(header)
-      .update(content, 'utf8')
-      .digest('hex');
-  }
 
   private async listProjectFiles(
     scriptId: string,
@@ -151,6 +144,7 @@ export class LsTool extends BaseFileSystemTool {
     recursive: boolean,
     wildcardMode: string,
     checksums: boolean,
+    checkSync: boolean,
     accessToken?: string
   ): Promise<any> {
     const files = await this.gasClient.getProjectContent(scriptId, accessToken);
@@ -188,25 +182,118 @@ export class LsTool extends BaseFileSystemTool {
         : translatedFiles;
     }
 
-    const items = filteredFiles.map((file: any) => ({
-      name: file.displayName || file.name,
-      type: file.type || 'server_js',
-      virtualFile: file.virtualFile || false,
-      ...(detailed && {
-        size: (file.source || '').length,
-        // Use actual GAS execution order position from API, not filtered array index
-        // This preserves execution order even when displaying subset of files
-        // Critical for file ordering requirements (require@0, ConfigManager@1, __mcp_exec@2)
-        position: file.position ?? 0,
-        createTime: file.createTime || null,
-        updateTime: file.updateTime || null,
-        lastModifyUser: file.lastModifyUser || null,
-        actualName: file.virtualFile ? file.name : undefined
-      }),
-      ...(checksums && {
-        gitSha1: this.computeGitSha1(file.source || '')
-      })
+    // Prepare sync status tracking if checkSync is enabled
+    let syncSummary: {
+      total: number;
+      inSync: number;
+      stale: number;
+      localOnly: number;
+      remoteOnly: number;
+      hint?: string;
+    } | undefined;
+
+    if (checkSync) {
+      syncSummary = { total: 0, inSync: 0, stale: 0, localOnly: 0, remoteOnly: 0 };
+    }
+
+    // Get local sync folder path
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    const syncFolder = path.join(homeDir, 'gas-repos', `project-${scriptId}`);
+
+    // Build items with optional sync status
+    const items = await Promise.all(filteredFiles.map(async (file: any) => {
+      const fileName = file.displayName || file.name;
+
+      // Compute hash on WRAPPED content (full file as stored in GAS)
+      // This matches `git hash-object <file>` on local synced files
+      const remoteHash = computeGitSha1(file.source || '');
+
+      // Base item properties
+      const item: Record<string, any> = {
+        name: fileName,
+        type: file.type || 'server_js',
+        virtualFile: file.virtualFile || false,
+        ...(detailed && {
+          size: (file.source || '').length,
+          position: file.position ?? 0,
+          createTime: file.createTime || null,
+          updateTime: file.updateTime || null,
+          lastModifyUser: file.lastModifyUser || null,
+          actualName: file.virtualFile ? file.name : undefined
+        }),
+        ...(checksums && {
+          gitSha1: remoteHash
+        })
+      };
+
+      // Add sync status if checkSync is enabled
+      if (checkSync && syncSummary) {
+        // Construct local file path
+        const localFileName = this.getLocalFileName(file.name, file.type);
+        const localFilePath = path.join(syncFolder, localFileName);
+
+        let localHash: string | null = null;
+        let localFileExists = false;
+
+        try {
+          await fs.access(localFilePath);
+          localFileExists = true;
+          // Try to get cached hash from xattr
+          localHash = await getCachedContentHash(localFilePath);
+        } catch {
+          // Local file doesn't exist
+        }
+
+        let syncStatus: 'in_sync' | 'local_stale' | 'remote_only' | 'local_only';
+        let hint: { action: string; command: string; reason: string } | undefined;
+
+        if (!localFileExists) {
+          syncStatus = 'remote_only';
+          hint = {
+            action: 'pull',
+            command: `rsync({operation: "plan", scriptId: "${scriptId}", direction: "pull"})`,
+            reason: 'File exists in GAS but not locally'
+          };
+          syncSummary.remoteOnly++;
+        } else if (!localHash) {
+          // Local file exists but no cached hash - treat as potentially stale
+          syncStatus = 'local_stale';
+          hint = {
+            action: 'verify',
+            command: `cat({scriptId: "${scriptId}", path: "${fileName}"})`,
+            reason: 'Local file has no cached hash - cat to refresh'
+          };
+          syncSummary.stale++;
+        } else if (localHash === remoteHash) {
+          syncStatus = 'in_sync';
+          syncSummary.inSync++;
+        } else {
+          syncStatus = 'local_stale';
+          hint = {
+            action: 'pull',
+            command: `rsync({operation: "plan", scriptId: "${scriptId}", direction: "pull"})`,
+            reason: 'Local hash differs from remote'
+          };
+          syncSummary.stale++;
+        }
+
+        item.syncStatus = syncStatus;
+        if (localHash) item.localHash = localHash;
+        item.remoteHash = remoteHash;
+        if (hint) item.hint = hint;
+
+        syncSummary.total++;
+      }
+
+      return item;
     }));
+
+    // Add sync summary hint
+    if (syncSummary) {
+      if (syncSummary.stale > 0 || syncSummary.remoteOnly > 0) {
+        syncSummary.hint = `rsync({operation: "plan", scriptId: "${scriptId}", direction: "pull"})`;
+      }
+    }
 
     return {
       type: 'files',
@@ -218,7 +305,29 @@ export class LsTool extends BaseFileSystemTool {
       wildcardMode: wildcardMode,
       matchedFiles: filteredFiles.length,
       items,
-      totalFiles: files.length
+      totalFiles: files.length,
+      ...(syncSummary && { syncSummary })
     };
+  }
+
+  /**
+   * Get the local filename with appropriate extension
+   */
+  private getLocalFileName(gasFileName: string, fileType: string): string {
+    // If the name already has an extension, use it
+    if (gasFileName.includes('.')) {
+      return gasFileName;
+    }
+
+    // Add extension based on file type
+    switch (fileType?.toUpperCase()) {
+      case 'HTML':
+        return `${gasFileName}.html`;
+      case 'JSON':
+        return `${gasFileName}.json`;
+      case 'SERVER_JS':
+      default:
+        return `${gasFileName}.gs`;
+    }
   }
 }

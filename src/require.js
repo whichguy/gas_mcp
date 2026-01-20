@@ -189,24 +189,31 @@ function require(moduleName) {
     // Remove leading './' or '../'
     name = name.replace(/^\.\/?/, '');
     name = name.replace(/^\.\.\/?/, '');
-    // Remove trailing .js
+    // Remove trailing .js or .gs (GAS native extension)
     if (name.endsWith('.js')) name = name.slice(0, -3);
+    if (name.endsWith('.gs')) name = name.slice(0, -3);
     return name;
   }
 
   const candidates = [];
   // 1. As given
   candidates.push(moduleName);
-  // 2. Normalized (strip ./, ../, .js)
+  // 2. Normalized (strip ./, ../, .js, .gs)
   const norm = normalize(moduleName);
   if (norm !== moduleName) candidates.push(norm);
-  // 3. Add .js if not present
-  if (!norm.endsWith('.js')) candidates.push(norm + '.js');
+  // 3. Add .js and .gs if not present (GAS files may register with either extension)
+  if (!norm.endsWith('.js') && !norm.endsWith('.gs')) {
+    candidates.push(norm + '.gs');  // Try .gs first (native GAS extension)
+    candidates.push(norm + '.js');  // Fallback to .js
+  }
   // 4. Remove directory if present (try just the basename)
   const base = norm.split('/').pop();
   if (base && base !== norm) {
     candidates.push(base);
-    if (!base.endsWith('.js')) candidates.push(base + '.js');
+    if (!base.endsWith('.js') && !base.endsWith('.gs')) {
+      candidates.push(base + '.gs');
+      candidates.push(base + '.js');
+    }
   }
 
   // Try all candidates in order

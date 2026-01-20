@@ -268,14 +268,14 @@ export class RawWriteTool extends BaseFileSystemTool {
             },
             diff: {
               format: 'unified',
-              content: diffContent.length > 5000
-                ? diffContent.slice(0, 5000) + '\n... (truncated)'
+              content: diffContent.length > 20000
+                ? diffContent.slice(0, 20000) + '\n... (truncated)'
                 : diffContent,
               linesAdded,
               linesRemoved,
-              truncated: diffContent.length > 5000,
-              truncatedMessage: diffContent.length > 5000
-                ? `Diff truncated (showing first 5000 of ${diffContent.length} chars)`
+              truncated: diffContent.length > 20000,
+              truncatedMessage: diffContent.length > 20000
+                ? `Diff truncated (showing first 20000 of ${diffContent.length} chars)`
                 : undefined
             }
           };
@@ -492,14 +492,14 @@ export class RawWriteTool extends BaseFileSystemTool {
             },
             diff: {
               format: 'unified',
-              content: diffContent.length > 5000
-                ? diffContent.slice(0, 5000) + '\n... (truncated)'
+              content: diffContent.length > 20000
+                ? diffContent.slice(0, 20000) + '\n... (truncated)'
                 : diffContent,
               linesAdded,
               linesRemoved,
-              truncated: diffContent.length > 5000,
-              truncatedMessage: diffContent.length > 5000
-                ? `Diff truncated (showing first 5000 of ${diffContent.length} chars)`
+              truncated: diffContent.length > 20000,
+              truncatedMessage: diffContent.length > 20000
+                ? `Diff truncated (showing first 20000 of ${diffContent.length} chars)`
                 : undefined
             }
           };

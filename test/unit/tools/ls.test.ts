@@ -4,6 +4,7 @@ import { stub, restore } from 'sinon';
 import { createHash } from 'crypto';
 import { LsTool } from '../../../src/tools/filesystem/LsTool.js';
 import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
+import { computeGitSha1 } from '../../../src/utils/hashUtils.js';
 
 describe('LsTool', () => {
   let lsTool: LsTool;
@@ -64,8 +65,8 @@ describe('LsTool', () => {
         .update(content, 'utf8')
         .digest('hex');
 
-      // Access private method for testing
-      const actual = (lsTool as any).computeGitSha1(content);
+      // Use the centralized hash utility function
+      const actual = computeGitSha1(content);
 
       expect(actual).to.equal(expected);
       expect(actual).to.be.a('string');
@@ -84,7 +85,7 @@ describe('LsTool', () => {
         .update(content, 'utf8')
         .digest('hex');
 
-      const actual = (lsTool as any).computeGitSha1(content);
+      const actual = computeGitSha1(content);
 
       expect(actual).to.equal(expected);
       expect(actual).to.equal('30d74d258442c7c65512eafab474568dd706c430');
@@ -95,7 +96,7 @@ describe('LsTool', () => {
       const content = '';
       const expected = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'; // Git SHA-1 for empty file
 
-      const actual = (lsTool as any).computeGitSha1(content);
+      const actual = computeGitSha1(content);
 
       expect(actual).to.equal(expected);
     });
@@ -104,7 +105,7 @@ describe('LsTool', () => {
       const content = 'function test() {\n  return 42;\n}\n';
 
       // Verify it computes a valid SHA-1 hash
-      const actual = (lsTool as any).computeGitSha1(content);
+      const actual = computeGitSha1(content);
 
       expect(actual).to.be.a('string');
       expect(actual).to.have.lengthOf(40);
@@ -122,7 +123,7 @@ describe('LsTool', () => {
         .update(content, 'utf8')
         .digest('hex');
 
-      const actual = (lsTool as any).computeGitSha1(content);
+      const actual = computeGitSha1(content);
 
       expect(actual).to.equal(expected);
       expect(actual).to.be.a('string');
@@ -130,224 +131,41 @@ describe('LsTool', () => {
     });
   });
 
-  describe.skip('checksums parameter behavior', () => {
-    // SKIPPED: Tests make real API calls - stubs don't intercept the actual execution path
-    // Requires architectural changes to properly mock gasClient.makeApiCall or create fresh tool instance
-    beforeEach(() => {
-      // Mock getAuthToken to bypass authentication
-      stub(lsTool as any, 'getAuthToken').resolves('mock-token');
-
-      // Mock gasClient.getProjectContent to return sample files
-      stub((lsTool as any).gasClient, 'getProjectContent').resolves([
-        {
-          name: 'test1.gs',
-          type: 'SERVER_JS',
-          source: 'function test1() { return 1; }',
-          createTime: '2024-01-01T00:00:00Z',
-          updateTime: '2024-01-02T00:00:00Z'
-        },
-        {
-          name: 'test2.gs',
-          type: 'SERVER_JS',
-          source: 'function test2() { return 2; }',
-          createTime: '2024-01-01T00:00:00Z',
-          updateTime: '2024-01-02T00:00:00Z'
-        }
-      ]);
-    });
-
-    it('should not include checksums by default', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: '',
-        detailed: true
-      });
-
-      expect(result.items).to.be.an('array');
-      expect(result.items[0]).to.not.have.property('gitSha1');
-    });
-
-    it('should include checksums when explicitly enabled', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: '',
-        checksums: true
-      });
-
-      expect(result.items).to.be.an('array');
-      expect(result.items).to.have.lengthOf(2);
-
-      // Verify each file has gitSha1
-      result.items.forEach((item: any) => {
-        expect(item).to.have.property('gitSha1');
-        expect(item.gitSha1).to.be.a('string');
-        expect(item.gitSha1).to.have.lengthOf(40);
-        expect(item.gitSha1).to.match(/^[0-9a-f]{40}$/);
-      });
-    });
-
-    it('should compute correct checksums for file content', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: '',
-        checksums: true
-      });
-
-      expect(result.items).to.have.lengthOf(2);
-
-      // Manually compute expected SHA-1 for first file
-      const content1 = 'function test1() { return 1; }';
-      const size1 = Buffer.byteLength(content1, 'utf8');
-      const header1 = `blob ${size1}\0`;
-      const expected1 = createHash('sha1')
-        .update(header1)
-        .update(content1, 'utf8')
-        .digest('hex');
-
-      expect(result.items[0].gitSha1).to.equal(expected1);
-    });
-
-    it('should work with detailed=true and checksums=true', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: '',
-        detailed: true,
-        checksums: true
-      });
-
-      expect(result.items).to.have.lengthOf(2);
-
-      result.items.forEach((item: any) => {
-        // Should have both detailed fields and checksums
-        expect(item).to.have.property('size');
-        expect(item).to.have.property('createTime');
-        expect(item).to.have.property('updateTime');
-        expect(item).to.have.property('gitSha1');
-        expect(item.gitSha1).to.be.a('string');
-        expect(item.gitSha1).to.have.lengthOf(40);
-      });
-    });
-
-    it('should handle checksums=false explicitly', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: '',
-        checksums: false
-      });
-
-      expect(result.items).to.be.an('array');
-      expect(result.items[0]).to.not.have.property('gitSha1');
-    });
-  });
-
-  describe.skip('position field preservation', () => {
-    // SKIPPED: Tests make real API calls - stubs don't intercept the actual execution path
-    // Same issue as checksums tests above - requires architectural changes to properly mock
-    beforeEach(() => {
-      // Mock getAuthToken to bypass authentication
-      stub(lsTool as any, 'getAuthToken').resolves('mock-token');
-
-      // Mock gasClient.getProjectContent to return files with position field
-      stub((lsTool as any).gasClient, 'getProjectContent').resolves([
-        {
-          name: 'common-js/require',
-          type: 'SERVER_JS',
-          source: 'function require() {}',
-          position: 0
-        },
-        {
-          name: 'common-js/ConfigManager',
-          type: 'SERVER_JS',
-          source: 'function ConfigManager() {}',
-          position: 1
-        },
-        {
-          name: 'utils/helpers',
-          type: 'SERVER_JS',
-          source: 'function helpers() {}',
-          position: 3
-        },
-        {
-          name: 'api/endpoints',
-          type: 'SERVER_JS',
-          source: 'function endpoints() {}',
-          position: 5
-        }
-      ]);
-    });
-
-    it('should preserve original position values from API (no filtering)', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: '',
-        detailed: true
-      });
-
-      expect(result.items).to.have.lengthOf(4);
-
-      // Verify positions match original API values, not filtered array indices
-      expect(result.items[0].position).to.equal(0);
-      expect(result.items[1].position).to.equal(1);
-      expect(result.items[2].position).to.equal(3);
-      expect(result.items[3].position).to.equal(5);
-    });
-
-    it('should preserve original position when filtering by wildcard', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: 'api/*',
-        detailed: true
-      });
-
-      // Filter returns only 1 file (api/endpoints)
-      expect(result.items).to.have.lengthOf(1);
-
-      // Position should be 5 (original), NOT 0 (filtered array index)
-      expect(result.items[0].name).to.equal('api/endpoints');
-      expect(result.items[0].position).to.equal(5);
-    });
-
-    it('should preserve original positions when filtering by directory', async () => {
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: 'common-js',
-        detailed: true
-      });
-
-      // Filter returns 2 files (require, ConfigManager)
-      expect(result.items).to.have.lengthOf(2);
-
-      // Positions should be 0, 1 (original), NOT 0, 1 by coincidence
-      expect(result.items[0].name).to.equal('common-js/require');
-      expect(result.items[0].position).to.equal(0);
-
-      expect(result.items[1].name).to.equal('common-js/ConfigManager');
-      expect(result.items[1].position).to.equal(1);
-    });
-
-    it('should use fallback value 0 if position is undefined', async () => {
-      // Override stub to return file without position field
-      restore();
-      stub(lsTool as any, 'getAuthToken').resolves('mock-token');
-      stub((lsTool as any).gasClient, 'getProjectContent').resolves([
-        {
-          name: 'test.gs',
-          type: 'SERVER_JS',
-          source: 'function test() {}',
-          // position field intentionally omitted
-        }
-      ]);
-
-      const result: any = await lsTool.execute({
-        scriptId: 'test-script-id-12345678901234567890123456789012',
-        path: '',
-        detailed: true
-      });
-
-      expect(result.items).to.have.lengthOf(1);
-      expect(result.items[0].position).to.equal(0); // Fallback value
-    });
-  });
+  /*
+   * =========================================================================
+   * INTEGRATION TEST COVERAGE NOTE
+   * =========================================================================
+   * The following LsTool behaviors require real GAS API responses and are
+   * tested via integration tests, not unit tests:
+   *
+   * CHECKSUMS PARAMETER:
+   * - checksums=false (default) excludes gitSha1 from response
+   * - checksums=true includes Git-compatible SHA-1 for each file
+   * - Hash computation uses WRAPPED content (full file as stored in GAS)
+   * - Verified in: test/integration/filesystem/fileStatus.test.ts
+   *
+   * POSITION FIELD PRESERVATION:
+   * - Original API position values are preserved (not re-indexed after filtering)
+   * - Wildcard/directory filtering maintains original execution order positions
+   * - Undefined positions fallback to 0
+   * - Verified in: test/integration/filesystem/ls-operations.test.ts
+   *
+   * WHY NOT UNIT TESTS:
+   * LsTool creates its own GASClient internally. Stubbing lsTool.gasClient
+   * doesn't intercept the actual instance used in execute(). Proper unit
+   * testing would require dependency injection refactoring.
+   *
+   * UNIT TESTS HERE VERIFY:
+   * - Tool properties (name, description, input schema)
+   * - Git SHA-1 computation algorithm (via computeGitSha1 utility)
+   * - Schema documentation (llmGuidance)
+   *
+   * INTEGRATION TESTS VERIFY:
+   * - Full execute() behavior with real API responses
+   * - Checksums parameter end-to-end
+   * - Position field preservation through filtering
+   * =========================================================================
+   */
 
   describe('llmGuidance documentation', () => {
     it('should have checksums examples in llmGuidance', () => {

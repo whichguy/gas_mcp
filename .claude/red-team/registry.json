@@ -1,0 +1,64 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-01-06T16:45:00Z",
+  "runs": [
+    {
+      "run_id": "2026-01-06-164500-remed",
+      "plan_title": "Reflection System Remediation - Red Team Fixes Applied",
+      "verdict": "REMEDIATED",
+      "timestamp": "2026-01-06T16:45:00Z",
+      "severity_counts": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0
+      },
+      "remediation_summary": {
+        "original_run_id": "2026-01-06-131652-be3b",
+        "issues_fixed": 8,
+        "fixes_applied": [
+          "Shell variable bugs in reflect.md",
+          "Atomic write operations in stop-hook.sh",
+          "File locking (flock) in stop-hook.sh",
+          "Escape hatch with 5-min timeout and max iterations",
+          "Startup state validation",
+          "Credential sanitization before subagent",
+          "Phase boundary contracts (JSON Schema)",
+          "Skills discovery format (SKILL.md structure)"
+        ]
+      }
+    },
+    {
+      "run_id": "2026-01-06-131652-be3b",
+      "plan_title": "Claude Code Master Architect: Distributed Skills + Independent Audit/Analyze/Reconcile Loop",
+      "verdict": "HOLD_FOR_REDESIGN",
+      "timestamp": "2026-01-06T13:16:52Z",
+      "severity_counts": {
+        "critical": 8,
+        "high": 14,
+        "medium": 9
+      },
+      "status": "REMEDIATED - see run 2026-01-06-164500-remed"
+    },
+    {
+      "run_id": "2026-01-02-084048-8dbd",
+      "plan_title": "Local Sync Plan",
+      "verdict": "LEGACY",
+      "timestamp": "2026-01-02T08:40:48Z",
+      "severity_counts": {}
+    },
+    {
+      "run_id": "2026-01-02-local-sync-remediation",
+      "plan_title": "Local Sync Remediation Plan Review",
+      "verdict": "LEGACY",
+      "timestamp": "2026-01-02T00:00:00Z",
+      "severity_counts": {}
+    },
+    {
+      "run_id": "2026-01-02-re-review",
+      "plan_title": "Re-Review Local Sync Remediation",
+      "verdict": "LEGACY",
+      "timestamp": "2026-01-02T00:00:00Z",
+      "severity_counts": {}
+    }
+  ]
+}

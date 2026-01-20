@@ -1290,7 +1290,7 @@
         return type;
       },
 
-      formatValue: function(value, maxLength = 40) {
+      formatValue: function(value, maxLength = 100) {
         const type = typeof value;
         if (value === null) return 'null';
         if (value === undefined) return 'undefined';

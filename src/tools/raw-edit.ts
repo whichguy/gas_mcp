@@ -2,9 +2,12 @@ import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
-import { parsePath } from '../api/pathParser.js';
+import { parsePath, fileNameMatches } from '../api/pathParser.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
+import { computeGitSha1 } from '../utils/hashUtils.js';
+import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
+import path from 'path';
 
 interface RawEditOperation {
   oldText: string;
@@ -144,7 +147,7 @@ export class RawEditTool extends BaseTool {
 
     // Read current file content from remote (raw content)
     const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-    const fileContent = allFiles.find((f: any) => f.name === filename);
+    const fileContent = allFiles.find((f: any) => fileNameMatches(f.name, filename));
 
     if (!fileContent) {
       throw new ValidationError('filename', filename, 'existing file in the project');
@@ -172,7 +175,7 @@ export class RawEditTool extends BaseTool {
         throw new FileOperationError(
           `raw_edit (${idx + 1})`,
           params.path,
-          `Text not found: "${oldText.substring(0, 50)}${oldText.length > 50 ? '...' : ''}"`
+          `Text not found: "${oldText.substring(0, 200)}${oldText.length > 200 ? '...' : ''}"`
         );
       }
 
@@ -226,6 +229,21 @@ export class RawEditTool extends BaseTool {
 
     // Write modified content back to remote
     await this.gasClient.updateFile(scriptId, filename, content, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
+
+    // Compute hash and update xattr cache to prevent false "stale" errors on subsequent exec calls
+    const editedHash = computeGitSha1(content);
+    try {
+      const { LocalFileManager } = await import('../utils/localFileManager.js');
+      const projectPath = await LocalFileManager.getProjectDirectory(scriptId);
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const localFileName = filename + fileExtension;
+      const localFilePath = path.join(projectPath, localFileName);
+      await updateCachedContentHash(localFilePath, editedHash);
+      console.error(`🔒 [RAW_EDIT] Updated xattr cache: ${editedHash.slice(0, 8)}...`);
+    } catch (cacheError) {
+      // Non-fatal: sync drift checker will fall back to content comparison
+      console.error(`⚠️ [RAW_EDIT] Hash cache update failed: ${cacheError}`);
+    }
 
     // Return minimal response for token efficiency
     const result: RawEditResult = {

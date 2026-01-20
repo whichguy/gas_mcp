@@ -169,7 +169,7 @@ export class GASLoggingOperations {
     }
 
     // Truncate long messages
-    const MAX_MESSAGE_LENGTH = 200;
+    const MAX_MESSAGE_LENGTH = 500;
     if (message.length > MAX_MESSAGE_LENGTH) {
       message = message.substring(0, MAX_MESSAGE_LENGTH) + '...';
     }

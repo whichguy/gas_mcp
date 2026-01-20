@@ -407,28 +407,28 @@ export class DepsTool extends BaseTool {
 
   private formatSummaryAnalysis(graph: DependencyGraph, showComplexity: boolean) {
     const modules = Array.from(graph.nodes.values());
-    
+
     const summary = {
       mostDependedOn: modules
         .sort((a, b) => b.dependents.length - a.dependents.length)
-        .slice(0, 5)
+        .slice(0, 20)
         .map(m => ({ name: m.name, dependents: m.dependents.length })),
-      
+
       mostDependencies: modules
         .sort((a, b) => b.dependencies.length - a.dependencies.length)
-        .slice(0, 5)
+        .slice(0, 20)
         .map(m => ({ name: m.name, dependencies: m.dependencies.length })),
-      
+
       largestFiles: modules
         .sort((a, b) => (b.size || 0) - (a.size || 0))
-        .slice(0, 5)
+        .slice(0, 20)
         .map(m => ({ name: m.name, size: m.size }))
     };
 
     if (showComplexity) {
       (summary as any).mostComplex = modules
         .sort((a, b) => (b.complexity || 0) - (a.complexity || 0))
-        .slice(0, 5)
+        .slice(0, 20)
         .map(m => ({ name: m.name, complexity: m.complexity }));
     }
 

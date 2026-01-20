@@ -48,55 +48,23 @@ describe('AuthTool', () => {
     });
   });
 
-  describe('execute method routing', () => {
-    it.skip('should route to correct handler based on mode', async () => {
-      // SKIPPED: Cannot stub private methods without architectural changes
-      // Would require dependency injection or making methods testable
-    });
-
-    it.skip('should default to start mode', async () => {
-      // SKIPPED: Cannot stub private methods without architectural changes
-    });
-
-    it.skip('should throw error for invalid mode', async () => {
-      // SKIPPED: Requires testing internal error handling that needs architectural changes
-    });
-  });
-
-  describe.skip('start authentication mode', () => {
-    // SKIPPED: All tests in this suite try to stub private methods/properties
-    // Requires architectural refactoring to make testable
-  });
-
-  describe.skip('callback mode', () => {
-    // SKIPPED: Tests try to stub private methods that don't exist
-    // Requires architectural refactoring
-  });
-
-  describe.skip('logout mode', () => {
-    // SKIPPED: Tests try to stub private methods/properties
-    // Requires architectural refactoring
-  });
-
-  describe.skip('error handling', () => {
-    // SKIPPED: Tests try to stub private methods
-  });
-
-  describe.skip('browser integration', () => {
-    // SKIPPED: Tests try to stub private methods
-  });
-
-  describe.skip('OAuth flow integration', () => {
-    // SKIPPED: Tests try to stub private methods
-  });
-
-  describe.skip('mode validation', () => {
-    // SKIPPED: Tests try to stub private methods
-  });
-
-  describe.skip('callback mode validation', () => {
-    // SKIPPED: Tests try to stub private methods
-  });
+  /*
+   * =========================================================================
+   * INTEGRATION TEST COVERAGE NOTE
+   * =========================================================================
+   * The following behaviors are tested via integration tests, not unit tests:
+   *
+   * - Mode routing (start/status/logout) - AuthTool uses private methods
+   *   that cannot be stubbed without architectural changes. The actual
+   *   OAuth flow is verified in: test/integration/mcp-gas-validation/auth-workflow.test.ts
+   *
+   * - Browser integration, callback handling, error scenarios - These require
+   *   real OAuth server interaction and are covered by integration tests.
+   *
+   * Unit tests here verify: tool properties, input schema validation.
+   * Integration tests verify: actual authentication flow, token persistence.
+   * =========================================================================
+   */
 
   describe.skip('status mode', () => {
     // SKIPPED: Tests try to stub private methods/properties
