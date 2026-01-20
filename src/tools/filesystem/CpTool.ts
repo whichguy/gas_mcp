@@ -1,15 +1,16 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
-import { ValidationError, FileOperationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
+import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 // Note: moduleWrapper imports removed - CopyOperationStrategy handles wrapping internally
-import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
+import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA, EXPECTED_HASH_SCHEMA, FORCE_SCHEMA } from './shared/schemas.js';
 import type { CopyParams, CopyResult } from './shared/types.js';
 import { GitOperationManager } from '../../core/git/GitOperationManager.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { CopyOperationStrategy } from '../../core/git/operations/CopyOperationStrategy.js';
-import { computeGitSha1, hashesEqual } from '../../utils/hashUtils.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
+import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
 
 /**
  * Copy files in Google Apps Script project with CommonJS processing
@@ -52,15 +53,12 @@ export class CpTool extends BaseFileSystemTool {
         examples: ['Create backup copy', 'Duplicate for testing', 'Copy to archive folder']
       },
       expectedHash: {
-        type: 'string',
-        description: 'Git SHA-1 hash (40 hex chars) of the source file from previous cat. If source file\'s hash differs, copy fails with ConflictError. Pass the hash from cat response to detect concurrent modifications to the source.',
-        pattern: '^[a-f0-9]{40}$',
-        examples: ['a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2']
+        ...EXPECTED_HASH_SCHEMA,
+        description: 'Git SHA-1 hash (40 hex chars) of the source file from previous cat. If source file\'s hash differs, copy fails with ConflictError.'
       },
       force: {
-        type: 'boolean',
-        description: '⚠️ Force copy even if source file hash mismatches. Use only when intentionally copying from a modified source.',
-        default: false
+        ...FORCE_SCHEMA,
+        description: '⚠️ Force copy even if source file hash mismatches. Use only when intentionally copying from a modified source.'
       },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
@@ -108,9 +106,8 @@ export class CpTool extends BaseFileSystemTool {
     }
 
     // === HASH-BASED CONFLICT DETECTION FOR SOURCE FILE ===
-    // Validate source file hasn't changed since last cat (if expectedHash provided)
-    if (params.expectedHash && !params.force) {
-      // Fetch source file to compute its current hash
+    // Only fetch when expectedHash is provided (avoids unnecessary API calls)
+    if (params.expectedHash) {
       const sourceFiles = await this.gasClient.getProjectContent(fromProjectId, accessToken);
       const sourceFile = sourceFiles.find((f: any) => fileNameMatches(f.name, fromFilename));
 
@@ -118,29 +115,15 @@ export class CpTool extends BaseFileSystemTool {
         throw new FileOperationError('copy', params.from, 'source file not found');
       }
 
-      // Compute hash on WRAPPED content (full file as stored in GAS)
-      // This ensures hash matches `git hash-object <file>` on local synced files
-      const currentSourceHash = computeGitSha1(sourceFile.source || '');
-
-      if (!hashesEqual(params.expectedHash, currentSourceHash)) {
-        // Source file was modified since last read
-        const diffContent = `Source file hash mismatch.\nExpected: ${params.expectedHash}\nCurrent:  ${currentSourceHash}\n\nThe source file has been modified since you last read it.`;
-
-        const conflict: ConflictDetails = {
-          scriptId: fromProjectId,
-          filename: fromFilename,
-          operation: 'cp',
-          expectedHash: params.expectedHash,
-          currentHash: currentSourceHash,
-          hashSource: 'param',
-          diff: {
-            format: 'info',
-            content: diffContent,
-            truncated: false
-          }
-        };
-        throw new ConflictError(conflict);
-      }
+      checkForConflictOrThrow({
+        scriptId: fromProjectId,
+        filename: fromFilename,
+        operation: 'cp',
+        currentRemoteContent: sourceFile.source || '',
+        expectedHash: params.expectedHash,
+        hashSource: 'param',
+        force: params.force
+      });
     }
 
     // Always use GitOperationManager for proper workflow:

@@ -144,7 +144,7 @@ export class LockTimeoutError extends MCPGasError {
 export interface ConflictDetails {
   scriptId: string;
   filename: string;
-  operation: 'write' | 'edit' | 'aider' | 'cp' | 'sed';
+  operation: 'write' | 'edit' | 'aider' | 'cp' | 'mv' | 'rm' | 'sed';
   expectedHash: string;
   currentHash: string;
   hashSource: 'param' | 'xattr' | 'computed';
