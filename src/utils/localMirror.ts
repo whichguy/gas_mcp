@@ -15,8 +15,8 @@ import { access, mkdir, writeFile, readFile, appendFile, stat, constants } from 
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
-import * as os from 'os';
 import { unwrapModuleContent } from './moduleWrapper.js';
+import { expandTilde } from './pathExpansion.js';
 
 const execAsync = promisify(exec);
 
@@ -45,13 +45,9 @@ export interface MirrorOptions {
 
 /**
  * Expand tilde (~) in paths
+ * @deprecated Local alias for expandTilde - use expandTilde directly
  */
-function expandPath(filePath: string): string {
-  if (filePath.startsWith('~/')) {
-    return path.join(os.homedir(), filePath.slice(2));
-  }
-  return filePath;
-}
+const expandPath = expandTilde;
 
 /**
  * Check if a directory exists
