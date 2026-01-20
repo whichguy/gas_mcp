@@ -26,6 +26,7 @@ import {
 } from '../utils/virtualFileTranslation.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { GuidanceFragments } from '../utils/guidanceFragments.js';
+import { generateSearchHints, SearchHints } from '../utils/searchHints.js';
 
 /**
  * grep - Search clean user code (unwrapped from CommonJS)
@@ -236,6 +237,18 @@ export class GrepTool extends BaseTool {
       (results as any).formattedOutput = this.grepEngine.formatCompactResults(results);
     } else {
       (results as any).formattedOutput = this.grepEngine.formatDetailedResults(results);
+    }
+
+    // Generate context-aware hints based on results
+    const hints = generateSearchHints(
+      results.totalMatches,
+      results.filesSearched,
+      params.pattern,
+      results.truncated,
+      results.searchTime
+    );
+    if (Object.keys(hints).length > 0) {
+      (results as any).hints = hints;
     }
 
     return results;
@@ -565,6 +578,18 @@ export class RawGrepTool extends BaseTool {
       (results as any).formattedOutput = this.grepEngine.formatCompactResults(results);
     } else {
       (results as any).formattedOutput = this.grepEngine.formatDetailedResults(results);
+    }
+
+    // Generate context-aware hints based on results
+    const hints = generateSearchHints(
+      results.totalMatches,
+      results.filesSearched,
+      params.pattern,
+      results.truncated,
+      results.searchTime
+    );
+    if (Object.keys(hints).length > 0) {
+      (results as any).hints = hints;
     }
 
     return results;

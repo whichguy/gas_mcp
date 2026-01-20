@@ -289,7 +289,12 @@ export class SchemaFragments {
     versionNumber: {
       type: 'number' as const,
       description: 'Version number',
-      minimum: 1
+      minimum: 1,
+      examples: [1, 5, 10],
+      llmHints: {
+        typical: 'Versions start at 1 and increment with each deployment',
+        discovery: 'Use deploy({operation:"status"}) to see current versions'
+      }
     }
   };
 
@@ -302,7 +307,12 @@ export class SchemaFragments {
       type: 'number' as const,
       description: 'Maximum number of results to return',
       default: 50,
-      minimum: 1
+      minimum: 1,
+      examples: [10, 25, 50, 100],
+      llmHints: {
+        performance: 'Smaller values (10-25) for faster responses',
+        typical: 'Use default 50 for most listing operations'
+      }
     }
   };
 

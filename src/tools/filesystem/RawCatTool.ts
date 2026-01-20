@@ -22,14 +22,39 @@ export class RawCatTool extends BaseFileSystemTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Full path to file: scriptId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected). REQUIRED: Must include explicit scriptId prefix (e.g., "abc123def.../filename") - current project context is not used.'
+        description: 'Full path to file: scriptId/path/to/filename_WITHOUT_EXTENSION (supports virtual paths, extensions auto-detected). REQUIRED: Must include explicit scriptId prefix (e.g., "abc123def.../filename") - current project context is not used.',
+        examples: ['abc123.../common-js/require', 'abc123.../__mcp_exec', 'abc123.../Code']
       },
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation (optional)'
       }
     },
-    required: ['path']
+    required: ['path'],
+    additionalProperties: false,
+    llmGuidance: {
+      whenToUse: 'Debug CommonJS wrapper issues | View system infrastructure code | Compare wrapped vs unwrapped content',
+      catVsRawCat: {
+        cat: 'Use 99% of the time - returns clean user code without _main() wrapper, hash matches unwrapped content',
+        raw_cat: 'Use for debugging - returns full file including _main() wrapper, initModule(), and system code'
+      },
+      whenToUseRawCat: [
+        'Debugging CommonJS require() resolution issues',
+        'Viewing system files (common-js/require, __mcp_exec)',
+        'Understanding how loadNow/hoistedFunctions affect wrapper generation',
+        'Comparing local git hash with remote (raw_cat hash matches git hash-object)'
+      ],
+      responseFields: {
+        content: 'Full file content INCLUDING _main() wrapper and module infrastructure',
+        hash: 'Git SHA-1 of WRAPPED content (matches git hash-object on local synced file)',
+        hashNote: 'Explains that hash is on wrapped content'
+      },
+      troubleshooting: {
+        wrongHash: 'If cat hash != raw_cat hash, the difference is the CommonJS wrapper',
+        systemFiles: 'common-js/require and __mcp_exec are system files - use raw_cat to view',
+        wrapperIssues: 'Check loadNow setting in moduleOptions if module not initializing'
+      }
+    }
   };
 
   async execute(params: any): Promise<any> {

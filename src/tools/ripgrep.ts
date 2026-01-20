@@ -18,6 +18,7 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { GuidanceFragments } from '../utils/guidanceFragments.js';
 import { sortRipgrepResults } from '../utils/ripgrepUtils.js';
+import { generateSearchHints, generateRipgrepHints, mergeHints, SearchHints } from '../utils/searchHints.js';
 
 // Enhanced error types for ripgrep operations
 export class RipgrepError extends Error {
@@ -1091,6 +1092,26 @@ export class RipgrepTool extends BaseTool {
     // Add formatted output
     results.formattedOutput = this.ripgrepEngine.formatRipgrepResults(results, searchOptions.compact);
 
+    // Generate context-aware hints based on results
+    const baseHints = generateSearchHints(
+      results.totalMatches,
+      results.filesSearched,
+      params.pattern,
+      results.truncated,
+      results.stats?.searchTimeMs
+    );
+    const ripgrepHints = generateRipgrepHints(
+      results.totalMatches,
+      allPatterns,
+      searchOptions.multiline,
+      searchOptions.smartCase,
+      !!params.replace
+    );
+    const hints = mergeHints(baseHints, ripgrepHints);
+    if (Object.keys(hints).length > 0) {
+      (results as any).hints = hints;
+    }
+
     return results;
   }
 
@@ -1445,6 +1466,26 @@ export class RawRipgrepTool extends BaseTool {
 
     // Add formatted output
     results.formattedOutput = this.ripgrepEngine.formatRipgrepResults(results, searchOptions.compact);
+
+    // Generate context-aware hints based on results
+    const baseHints = generateSearchHints(
+      results.totalMatches,
+      results.filesSearched,
+      params.pattern,
+      results.truncated,
+      results.stats?.searchTimeMs
+    );
+    const ripgrepHints = generateRipgrepHints(
+      results.totalMatches,
+      allPatterns,
+      searchOptions.multiline,
+      searchOptions.smartCase,
+      !!params.replace
+    );
+    const hints = mergeHints(baseHints, ripgrepHints);
+    if (Object.keys(hints).length > 0) {
+      (results as any).hints = hints;
+    }
 
     return results;
   }

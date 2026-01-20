@@ -9,6 +9,7 @@ import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { ExecTool } from './execution.js';
+import { generateDeployHints, generateDeployErrorHints, DeployHints } from '../utils/deployHints.js';
 
 /**
  * Environment tags for deployment identification
@@ -89,20 +90,47 @@ export class DeployTool extends BaseTool {
     );
 
     try {
+      let result: any;
       switch (operation) {
         case 'promote':
-          return await this.handlePromote(scriptId, params, accessToken);
+          result = await this.handlePromote(scriptId, params, accessToken);
+          break;
         case 'rollback':
-          return await this.handleRollback(scriptId, params, accessToken);
+          result = await this.handleRollback(scriptId, params, accessToken);
+          break;
         case 'status':
-          return await this.handleStatus(scriptId, accessToken);
+          result = await this.handleStatus(scriptId, accessToken);
+          break;
         case 'reset':
-          return await this.handleReset(scriptId, accessToken);
+          result = await this.handleReset(scriptId, accessToken);
+          break;
         default:
           throw new ValidationError('operation', operation, 'one of: promote, rollback, status, reset');
       }
+
+      // Generate context-aware hints for the response
+      const hints = generateDeployHints(
+        operation as 'promote' | 'rollback' | 'status' | 'reset',
+        params.environment,
+        result
+      );
+
+      // Add hints to result if any were generated
+      if (Object.keys(hints).length > 0) {
+        result.hints = hints;
+      }
+
+      return result;
     } catch (error: any) {
-      throw new GASApiError(`Deployment operation failed: ${error.message}`);
+      // Generate error-specific hints
+      const errorHints = generateDeployErrorHints(operation, error.message);
+
+      // Wrap error with hints if available
+      const wrappedError = new GASApiError(`Deployment operation failed: ${error.message}`);
+      if (Object.keys(errorHints).length > 0) {
+        (wrappedError as any).hints = errorHints;
+      }
+      throw wrappedError;
     }
   }
 

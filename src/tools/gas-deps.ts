@@ -302,7 +302,32 @@ export class DepsTool extends BaseTool {
       ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
-    additionalProperties: false
+    additionalProperties: false,
+    llmGuidance: {
+      whenToUse: 'Analyze module dependencies | Find circular imports | Identify orphaned files | Understand project structure',
+      analysisTypes: {
+        full: 'Complete analysis with all modules, dependencies, and relationships (default)',
+        summary: 'Top 20 most depended-on, most dependencies, largest, most complex modules',
+        circular: 'Focus on circular dependency detection with impact analysis',
+        orphaned: 'Find files with dependencies but no dependents (may be unused)',
+        graph: 'Returns nodes and edges for visualization (compatible with D3.js, Graphviz)'
+      },
+      outputInterpretation: {
+        dependents: 'Files that require() THIS module - high count = critical shared module',
+        dependencies: 'Files THIS module requires() - high count = complex module',
+        circular: 'Array of files forming a cycle - refactor to break the loop',
+        complexity: 'Weighted score: functions*3 + conditionals*2 + loops*2 + size/1000',
+        entryPoints: 'Files with dependents but no dependencies (or system files) - start here when debugging',
+        orphanedFiles: 'Files that import others but nothing imports them - check if still needed'
+      },
+      bestPractices: [
+        'High complexity + many dependents = refactoring priority',
+        'Circular dependencies block dead code elimination',
+        'Orphaned files may indicate dead code',
+        'Use includeSystem:true to see CommonJS infrastructure dependencies'
+      ],
+      exampleWorkflow: 'deps({analysisType:"summary"}) → identify high-impact modules → deps({analysisType:"circular"}) → fix cycles'
+    }
   };
 
   async execute(params: any): Promise<any> {

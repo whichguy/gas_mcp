@@ -18,6 +18,7 @@ export class ProcessListTool extends BaseTool {
         description: 'Maximum number of processes to return (default: 50). Use larger values for comprehensive data, smaller for quick checks.',
         minimum: 1,
         default: 50,
+        examples: [10, 25, 50],
         llmHints: {
           typical: 'Use default 50 for most cases',
           performance: 'Smaller values (10-20) for faster responses',
@@ -55,11 +56,21 @@ export class ProcessListTool extends BaseTool {
           },
           startTime: {
             type: 'string',
-            description: 'Optional field used to limit returned processes to those that were started on or after the given timestamp. RFC3339 UTC "Zulu" format (e.g., "2014-10-02T15:01:23Z").'
+            description: 'Optional field used to limit returned processes to those that were started on or after the given timestamp. RFC3339 UTC "Zulu" format.',
+            examples: ['2024-01-15T00:00:00Z', '2024-01-15T08:30:00Z'],
+            llmHints: {
+              format: 'RFC3339 UTC: YYYY-MM-DDTHH:MM:SSZ',
+              tip: 'Use new Date().toISOString() to generate current timestamp'
+            }
           },
           endTime: {
             type: 'string',
-            description: 'Optional field used to limit returned processes to those that completed on or before the given timestamp. RFC3339 UTC "Zulu" format (e.g., "2014-10-02T15:01:23Z").'
+            description: 'Optional field used to limit returned processes to those that completed on or before the given timestamp. RFC3339 UTC "Zulu" format.',
+            examples: ['2024-01-15T23:59:59Z', '2024-01-16T17:00:00Z'],
+            llmHints: {
+              format: 'RFC3339 UTC: YYYY-MM-DDTHH:MM:SSZ',
+              timeRange: 'Combine with startTime for specific time windows'
+            }
           },
           types: {
             type: 'array',

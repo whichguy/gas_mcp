@@ -65,10 +65,32 @@ export class FindDriveScriptTool extends BaseTool {
     properties: {
       fileName: {
         type: 'string',
-        description: 'Name of container file to search for (supports partial matches)'
+        description: 'Name of container file to search for (supports partial matches)',
+        examples: ['Budget 2024', 'Customer Survey', 'Meeting Notes']
       }
     },
-    required: ['fileName']
+    required: ['fileName'],
+    additionalProperties: false,
+    llmGuidance: {
+      whenToUse: 'Find scriptId for existing container-bound scripts | Check if Sheets/Docs/Forms have associated scripts',
+      workflow: 'find_drive_script → get scriptId from hasScript:true result → use with exec/cat/write tools',
+      containerTypes: {
+        spreadsheet: 'Google Sheets - most common, supports onEdit/onChange/onFormSubmit triggers',
+        document: 'Google Docs - onOpen trigger only',
+        form: 'Google Forms - onFormSubmit trigger',
+        site: 'Google Sites - limited API access'
+      },
+      responseFields: {
+        hasScript: 'true if container has bound Apps Script project',
+        scriptId: 'Use this ID with exec/cat/write tools (only present when hasScript:true)',
+        scriptUrl: 'Direct link to script editor',
+        containerUrl: 'Link to open the container (Sheet/Doc/Form/Site)'
+      },
+      nextSteps: {
+        hasScript: 'Use scriptId with cat/exec/write tools',
+        noScript: 'Use create_script tool to bind new script to container'
+      }
+    }
   } as const;
 
   constructor(sessionAuthManager?: SessionAuthManager) {
@@ -302,18 +324,43 @@ export class CreateScriptTool extends BaseTool {
     properties: {
       containerName: {
         type: 'string',
-        description: 'Name of container to bind the new script to'
+        description: 'Exact name of container to bind the new script to (must match exactly)',
+        examples: ['Budget 2024', 'Customer Survey', 'Meeting Notes']
       },
       scriptName: {
         type: 'string',
-        description: 'Optional custom name for the new script (auto-generated if not provided)'
+        description: 'Optional custom name for the new script (auto-generated if not provided)',
+        examples: ['Budget Automation', 'Survey Processor', 'Meeting Assistant']
       },
       description: {
         type: 'string',
-        description: 'Optional description for the new script'
+        description: 'Optional description for the new script',
+        examples: ['Automates monthly budget reports', 'Processes form submissions']
       }
     },
-    required: ['containerName']
+    required: ['containerName'],
+    additionalProperties: false,
+    llmGuidance: {
+      whenToUse: 'Create new automation for Sheets/Docs/Forms/Sites | Bind script to container without existing script',
+      workflow: 'find_drive_script (check hasScript:false) → create_script → use returned scriptId with write/exec tools',
+      whatItCreates: {
+        project: 'New Apps Script project bound to the container',
+        starterCode: 'Container-specific template code with common patterns',
+        menu: 'Custom menu for spreadsheet/document containers'
+      },
+      starterCodeIncludes: {
+        spreadsheet: 'onOpen menu, processData, generateReport, CUSTOM_PROCESS formula, clearCache',
+        document: 'onOpen menu, formatDocument, insertTemplate, generateTableOfContents',
+        form: 'onFormSubmit handler, processFormResponse, sendConfirmationEmail, updateSummarySheet',
+        site: 'updateSiteContent, analytics tracking, report generation, scheduled automation'
+      },
+      afterCreation: [
+        'Use cat({scriptId}) to view generated code',
+        'Use write({scriptId, path, content}) to customize code',
+        'Use trigger({scriptId}) to set up automation triggers',
+        'Use exec({scriptId, js_statement}) to test functions'
+      ]
+    }
   } as const;
 
   constructor(sessionAuthManager?: SessionAuthManager) {

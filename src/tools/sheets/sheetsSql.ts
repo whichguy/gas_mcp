@@ -4,6 +4,85 @@ import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { SchemaFragments } from '../../utils/schemaFragments.js';
 
 /**
+ * LLM Guidance hints for sheet_sql operations
+ * Provides contextual hints to help LLM understand results and take appropriate action
+ */
+interface SheetSqlHints {
+  context?: string;
+  suggestions?: string[];
+  warning?: string;
+  nextSteps?: string[];
+}
+
+/**
+ * Generate contextual hints for SELECT operations
+ */
+function generateSelectHints(rowCount: number, statement: string): SheetSqlHints {
+  const hints: SheetSqlHints = {};
+
+  if (rowCount === 0) {
+    hints.context = 'Query returned no results';
+    hints.suggestions = [
+      'Verify the WHERE clause matches existing data',
+      'Use SELECT * LIMIT 5 to see sample data and column values',
+      'Check column names match actual sheet headers (case-sensitive)',
+      'If filtering by text, try using "contains" instead of exact match'
+    ];
+  } else if (rowCount > 1000) {
+    hints.warning = `Large result set (${rowCount} rows) may impact performance`;
+    hints.suggestions = [
+      'Add LIMIT clause for pagination: LIMIT 100 OFFSET 0',
+      'Use GROUP BY with aggregates for summaries',
+      'Add WHERE clause to filter data'
+    ];
+  } else if (rowCount > 100 && !statement.toUpperCase().includes('LIMIT')) {
+    hints.suggestions = [
+      `Consider adding LIMIT clause (returned ${rowCount} rows)`,
+      'For large datasets, use OFFSET for pagination'
+    ];
+  }
+
+  // Check for common query optimization opportunities
+  if (statement.toUpperCase().includes('SELECT *') && rowCount > 50) {
+    hints.suggestions = hints.suggestions || [];
+    hints.suggestions.push('SELECT only needed columns instead of * for better performance');
+  }
+
+  return hints;
+}
+
+/**
+ * Generate contextual hints for INSERT operations
+ */
+function generateInsertHints(updatedRange: string, updatedRows: number): SheetSqlHints {
+  return {
+    context: `Inserted ${updatedRows} row(s) at ${updatedRange}`,
+    nextSteps: [
+      `Verify with: SELECT * WHERE <column> = '<inserted_value>' LIMIT 1`,
+      'Note: Inserted data appears at end of used range'
+    ]
+  };
+}
+
+/**
+ * Generate hints for UPDATE/DELETE blocked operations
+ */
+function generateMutationBlockedHints(operation: 'UPDATE' | 'DELETE'): SheetSqlHints {
+  return {
+    warning: `${operation} operations are currently broken due to ROW() function not being supported`,
+    context: 'The Google Visualization Query API does not support the ROW() function needed for row identification',
+    suggestions: [
+      'WORKAROUND: Use Google Sheets UI or Apps Script for UPDATE/DELETE',
+      'ALTERNATIVE: Export data, modify locally, then re-upload via INSERT',
+      'For DELETE: Consider adding a "deleted" flag column and filtering in SELECT'
+    ],
+    nextSteps: [
+      'This is a known bug in sheet_sql tool - fix requires fetching full rows and tracking indices locally'
+    ]
+  };
+}
+
+/**
  * Execute SQL-style operations on Google Sheets using Google's REST APIs
  *
  * Provides unified SQL interface for SELECT, INSERT, UPDATE, DELETE operations on Google Sheets.
@@ -19,6 +98,19 @@ import { SchemaFragments } from '../../utils/schemaFragments.js';
  * - Required range parameter in A1 notation
  * - Must include sheet name: "Transactions!A:Z", "Sheet1!A1:Z1000"
  * - Google auto-trims to used data when open ranges used (e.g., "A:Z")
+ *
+ * ## KNOWN BUG: UPDATE and DELETE operations are broken
+ * The findMatchingRows() method uses `SELECT ROW() WHERE ...` but ROW() is NOT
+ * a valid Google Visualization Query API function. This causes a parse error:
+ * "PARSE_ERROR: Encountered \" \"(\" \"( \"\" at line 1, column 11"
+ *
+ * FIX REQUIRED: Replace ROW() with alternative approach:
+ * 1. Download all rows with `SELECT * WHERE {whereClause}`
+ * 2. Track row indices locally during iteration
+ * 3. Use those indices for update/delete operations
+ *
+ * Reference: https://developers.google.com/chart/interactive/docs/querylanguage
+ * (ROW() is not listed in the supported functions)
  */
 export class SheetSqlTool extends BaseTool {
   public name = 'sheet_sql';
@@ -64,7 +156,34 @@ export class SheetSqlTool extends BaseTool {
       }
     },
     required: ['spreadsheetId', 'range', 'statement'],
-    additionalProperties: false
+    additionalProperties: false,
+    llmGuidance: {
+      operationSupport: {
+        SELECT: 'Fully supported - uses Google Visualization Query API',
+        INSERT: 'Fully supported - uses Google Sheets API v4 append',
+        UPDATE: '⚠️ BLOCKED - ROW() function not supported, will throw error with workarounds',
+        DELETE: '⚠️ BLOCKED - ROW() function not supported, will throw error with workarounds'
+      },
+      responseHints: {
+        description: 'Responses include contextual "hints" object with suggestions',
+        emptyResults: 'hints.suggestions will provide debugging steps for empty result sets',
+        largeResults: 'hints.warning when >1000 rows, suggests pagination',
+        insert: 'hints.nextSteps will suggest verification query after INSERT'
+      },
+      queryLanguageFeatures: {
+        supported: ['SELECT', 'WHERE', 'GROUP BY', 'PIVOT', 'ORDER BY', 'LIMIT', 'OFFSET', 'LABEL', 'FORMAT'],
+        aggregates: ['COUNT', 'SUM', 'AVG', 'MAX', 'MIN'],
+        operators: ['=', '<', '>', '<=', '>=', '<>', 'contains', 'starts with', 'ends with', 'matches', 'like'],
+        functions: ['lower', 'upper', 'year', 'month', 'day', 'hour', 'minute', 'second', 'now', 'dateDiff'],
+        notSupported: ['ROW()', 'JOIN', 'UNION', 'Subqueries']
+      },
+      bestPractices: [
+        'Always include sheet name in range for multi-sheet workbooks',
+        'Use LIMIT for large datasets to avoid timeout',
+        'For filtering text, use "contains" for partial match, "=" for exact',
+        'After INSERT, verify with SELECT WHERE <column> = <inserted_value>'
+      ]
+    }
   };
 
   constructor(sessionAuthManager?: SessionAuthManager) {
@@ -201,6 +320,10 @@ export class SheetSqlTool extends BaseTool {
       throw new Error(`Query error: ${json.errors?.map((e: any) => e.detailed_message || e.message).join(', ')}`);
     }
 
+    // Generate contextual hints for LLM
+    const rowCount = json.table?.rows?.length || 0;
+    const hints = generateSelectHints(rowCount, statement);
+
     // Fetch metadata if requested
     if (returnMetadata) {
       const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?ranges=${encodeURIComponent(range)}&includeGridData=true&fields=sheets(data(rowData(values(formattedValue,userEnteredValue,effectiveFormat))))`;
@@ -217,14 +340,16 @@ export class SheetSqlTool extends BaseTool {
         return {
           operation: 'SELECT',
           data: json.table,
-          metadata: metadata.sheets?.[0]?.data?.[0]?.rowData || []
+          metadata: metadata.sheets?.[0]?.data?.[0]?.rowData || [],
+          ...(Object.keys(hints).length > 0 ? { hints } : {})
         };
       }
     }
 
     return {
       operation: 'SELECT',
-      data: json.table
+      data: json.table,
+      ...(Object.keys(hints).length > 0 ? { hints } : {})
     };
   }
 
@@ -268,12 +393,19 @@ export class SheetSqlTool extends BaseTool {
 
     const result = await response.json();
 
+    // Generate hints for INSERT operation
+    const hints = generateInsertHints(
+      result.updates.updatedRange,
+      result.updates.updatedRows
+    );
+
     return {
       operation: 'INSERT',
       updatedRange: result.updates.updatedRange,
       updatedRows: result.updates.updatedRows,
       updatedColumns: result.updates.updatedColumns,
-      updatedCells: result.updates.updatedCells
+      updatedCells: result.updates.updatedCells,
+      hints
     };
   }
 
@@ -311,7 +443,14 @@ export class SheetSqlTool extends BaseTool {
       return {
         operation: 'UPDATE',
         updatedRows: 0,
-        message: 'No rows matched WHERE clause'
+        message: 'No rows matched WHERE clause',
+        hints: {
+          context: 'No rows matched the WHERE clause',
+          suggestions: [
+            'Verify the WHERE clause matches existing data',
+            'Use SELECT * WHERE <same_condition> LIMIT 5 to test the condition'
+          ]
+        }
       };
     }
 
@@ -385,7 +524,14 @@ export class SheetSqlTool extends BaseTool {
       return {
         operation: 'DELETE',
         deletedRows: 0,
-        message: 'No rows matched WHERE clause'
+        message: 'No rows matched WHERE clause',
+        hints: {
+          context: 'No rows matched the WHERE clause',
+          suggestions: [
+            'Verify the WHERE clause matches existing data',
+            'Use SELECT * WHERE <same_condition> LIMIT 5 to test the condition'
+          ]
+        }
       };
     }
 
@@ -474,7 +620,22 @@ export class SheetSqlTool extends BaseTool {
     const json = JSON.parse(jsonMatch[1]);
 
     if (json.status === 'error') {
-      throw new Error(`WHERE clause error: ${json.errors?.map((e: any) => e.detailed_message || e.message).join(', ')}`);
+      const errorMessages = json.errors?.map((e: any) => e.detailed_message || e.message).join(', ') || 'Unknown error';
+
+      // Check if this is the ROW() function error
+      if (errorMessages.includes('PARSE_ERROR') || errorMessages.includes('Encountered')) {
+        // Throw with hints for the LLM
+        const hints = generateMutationBlockedHints('UPDATE');
+        const error = new Error(
+          `UPDATE/DELETE operations are currently blocked: ROW() function is not supported by Google Visualization Query API.\n` +
+          `Original error: ${errorMessages}\n\n` +
+          `WORKAROUNDS:\n` +
+          hints.suggestions?.map(s => `  - ${s}`).join('\n')
+        );
+        throw error;
+      }
+
+      throw new Error(`WHERE clause error: ${errorMessages}`);
     }
 
     // Extract row numbers from results
