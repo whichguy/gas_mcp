@@ -67,11 +67,11 @@ async function main() {
       console.error('⚠️  UNCOMMITTED CHANGES DETECTED from previous session:');
       for (const project of uncommittedProjects) {
         console.error(`   📁 Project ${project.scriptId.substring(0, 12)}...: ${project.count} file(s)`);
-        for (const file of project.files.slice(0, 3)) {
+        for (const file of project.files.slice(0, 10)) {
           console.error(`      - ${file}`);
         }
-        if (project.files.length > 3) {
-          console.error(`      ... and ${project.files.length - 3} more`);
+        if (project.files.length > 10) {
+          console.error(`      ... and ${project.files.length - 10} more`);
         }
       }
       console.error('');

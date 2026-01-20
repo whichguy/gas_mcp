@@ -407,7 +407,7 @@ export class CloudLogsTool extends BaseTool {
         reason: `${errorCount} error(s) found - investigate immediately`,
         command: `cloud_logs({scriptId: "${scriptId}", severity: "ERROR"})`,
         context: recentError
-          ? `Most recent: ${recentError.message.substring(0, 50)}...`
+          ? `Most recent: ${recentError.message.substring(0, 150)}...`
           : undefined
       });
     }
@@ -519,22 +519,22 @@ export class CloudLogsTool extends BaseTool {
    */
   private shapeEntriesByVolume(entries: ParsedLogEntry[], total: number): ParsedLogEntry[] {
     // Small volume: return all
-    if (total <= 50) {
+    if (total <= 100) {
       return entries;
     }
 
-    // Medium volume: return first 50
-    if (total <= 200) {
-      return entries.slice(0, 50);
+    // Medium volume: return first 100
+    if (total <= 300) {
+      return entries.slice(0, 100);
     }
 
-    // Large volume: prioritize errors, limit to 30
+    // Large volume: prioritize errors, limit to 100
     const errors = entries.filter(e =>
       e.severity === 'ERROR' || e.severity === 'CRITICAL'
     );
 
-    if (errors.length >= 30) {
-      return errors.slice(0, 30);
+    if (errors.length >= 100) {
+      return errors.slice(0, 100);
     }
 
     // Fill remaining with other entries
@@ -542,6 +542,6 @@ export class CloudLogsTool extends BaseTool {
       e.severity !== 'ERROR' && e.severity !== 'CRITICAL'
     );
 
-    return [...errors, ...others].slice(0, 30);
+    return [...errors, ...others].slice(0, 100);
   }
 }

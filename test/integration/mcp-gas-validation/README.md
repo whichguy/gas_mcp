@@ -63,7 +63,7 @@ Tests search, pattern matching, text processing, and fuzzy matching capabilities
 
 **Key Coverage**:
 - ✅ Basic search with gas_grep (pattern matching, regex, case-sensitive, multi-file)
-- ✅ Advanced search with gas_ripgrep (multi-pattern, context lines, sorting, trimming)
+- ✅ Advanced search with gas_ripgrep (multi-pattern, context lines, sorting)
 - ✅ Text processing with gas_sed (find/replace, regex capture groups, multi-file, dry-run)
 - ✅ Find operations (name pattern matching, file type filtering, detailed listing)
 - ✅ Fuzzy matching with gas_aider (whitespace variations, similarity thresholds, performance)

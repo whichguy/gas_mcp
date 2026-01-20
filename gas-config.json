@@ -83,9 +83,9 @@
       "description": "Created: 7/17/2025"
     },
     "logger-test": {
-      "scriptId": "1iWuidRfd_VvJqyvxXzyppLcttoWsDu4SWEfyOvAzA_mAZw-3xUdS09Kn",
+      "scriptId": "1FqVdqKphO3YyHpdaBtbcXjNdk6MrbbTV6DyGKGGf8RVQrPng3J9P-xpP",
       "name": "logger-test",
-      "description": "Created: 1/4/2026"
+      "description": "Created: 1/19/2026"
     },
     "logger-test-fresh": {
       "scriptId": "1zoYXqGqYNpGWF1FHwmPrK8m8_cegWPZkzlZ5T6uUH86ahF-mqlLGxYUW",
@@ -508,24 +508,24 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1gEZvJonB1zt-EJAjComvJYPHHMKI_sCTpXtXIG-AwNgt8Z0xsbu53Gqa",
+      "scriptId": "1Vk9TEKqGoGdmHnsAqOt4bXyracKjs-zUsTcuhRJj4n7nvJkX-s4STZVI",
       "name": "consolidated-test-project",
-      "description": "Created: 1/4/2026"
+      "description": "Created: 1/19/2026"
     },
     "exec-test": {
-      "scriptId": "18Pm9TuVuiecwXolVs_HTAu1p1hV3kfRONDY9ERP6iX8yPclr56qiKE2U",
+      "scriptId": "1sezrSspS2S_799hMocHU7X3z7pMRBwLv7vOup2s6xfeWxNiB17Vsk_VU",
       "name": "exec-test",
-      "description": "Created: 1/4/2026"
+      "description": "Created: 1/19/2026"
     },
     "gas-services-test": {
-      "scriptId": "1CELOhmX7m4ZXLpL6rrFRMmECZ9UUXy3a4lxBibVn0XAu_GXNxs9oFGTx",
+      "scriptId": "19GhSXsvx3ox2Mq56WFFF-UT8M565VwK7y54z6zq0d3kbdfwksWMnlOH2",
       "name": "gas-services-test",
-      "description": "Created: 1/4/2026"
+      "description": "Created: 1/19/2026"
     },
     "complex-js-test": {
-      "scriptId": "1_it1AztsIBRztUfZ65tT0dpyLWtkLaQIWjAYB0SQkc8dZX6POIE1mKZZ",
+      "scriptId": "1qvl3Qjvs7hs1RjZClCJj7rORvtoQIZTUGgkG_KCFh68Gna7TLzUIDLfI",
       "name": "complex-js-test",
-      "description": "Created: 1/4/2026"
+      "description": "Created: 1/18/2026"
     },
     "file-ops-test": {
       "scriptId": "1vNr8LT_OHLbmlUn1ZzVPBQfYdSJZgbc8mIXChZAVSTc2MFm0SGtzAEvJ",
@@ -721,6 +721,16 @@
       "scriptId": "1NImvNSWs6nq00Cg4OoGHprLwiH3yGtS8jazhkzsF4CUzJ0T8DTMZiAYf",
       "name": "mcp-git-auto-init-test",
       "description": "Created: 1/3/2026"
+    },
+    "mcp-git-feature-test": {
+      "scriptId": "10dg0zgXRWODaLwI8e-nPO5X8wjRM1UG9Z9oW_2lq---irZ81Eoph8yL3",
+      "name": "mcp-git-feature-test",
+      "description": "Created: 1/12/2026"
+    },
+    "mcp-git-master-test": {
+      "scriptId": "1sDtTt3VLS5r27RJsGCJqTQ4VrhicvceY4UZ9zFnNZ6_PbSKuangD7CHY",
+      "name": "mcp-git-master-test",
+      "description": "Created: 1/12/2026"
     }
   },
   "localRoot": {
@@ -730,7 +740,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-01-05T00:16:31.406Z"
+    "lastModified": "2026-01-19T22:39:23.761Z"
   },
   "debug": true,
   "currentProject": {

@@ -519,6 +519,13 @@ export class GitFeatureTool extends BaseFileSystemTool {
       required: true
     } : undefined;
 
+    // Add promotion hint after successful finish
+    const promotionHint = pushed ? {
+      message: `Feature '${featureDesc}' merged and pushed to ${defaultBranch}.`,
+      hint: `Consider promoting to staging: deploy({ operation: 'promote', environment: 'staging', scriptId, description: 'Feature: ${featureDesc}' })`,
+      workflow: 'dev (HEAD) → staging (versioned) → prod (stable)'
+    } : undefined;
+
     return {
       status: 'success',
       operation: 'finish',
@@ -529,7 +536,8 @@ export class GitFeatureTool extends BaseFileSystemTool {
       currentBranch: defaultBranch,
       pushed,
       ...(pushError && { pushError }),
-      ...(nextAction && { nextAction })
+      ...(nextAction && { nextAction }),
+      ...(promotionHint && { promotionHint })
     };
   }
 

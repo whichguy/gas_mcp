@@ -34,6 +34,7 @@ export interface DiffFileInfo {
   lastModified?: string;
   size?: number;
   originalContent?: string;  // Original content for operations (wrapped for GAS files)
+  fileType?: string;         // GAS file type (SERVER_JS, HTML, JSON) for extension mapping
 }
 
 /**
@@ -46,6 +47,7 @@ export interface SyncFileOperation {
   destHash?: string;       // Hash at destination
   size?: number;
   content?: string;        // Content for add/update operations
+  fileType?: string;       // GAS file type (SERVER_JS, HTML, JSON) for extension mapping
 }
 
 /**
@@ -127,7 +129,8 @@ export class SyncDiff {
           action: 'add',
           sourceHash: sourceFile.sha1,
           size: sourceFile.size,
-          content: operationContent
+          content: operationContent,
+          fileType: sourceFile.fileType
         });
 
         log.debug(`[DIFF] ADD: ${filename}`);
@@ -140,7 +143,8 @@ export class SyncDiff {
           sourceHash: sourceFile.sha1,
           destHash: destFile.sha1,
           size: sourceFile.size,
-          content: operationContent
+          content: operationContent,
+          fileType: sourceFile.fileType
         });
 
         log.debug(`[DIFF] UPDATE: ${filename} (${destFile.sha1.slice(0, 8)} -> ${sourceFile.sha1.slice(0, 8)})`);
@@ -160,7 +164,8 @@ export class SyncDiff {
             result.delete.push({
               filename,
               action: 'delete',
-              destHash: destFile.sha1
+              destHash: destFile.sha1,
+              fileType: destFile.fileType
             });
 
             log.debug(`[DIFF] DELETE: ${filename}`);

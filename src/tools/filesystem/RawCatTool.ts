@@ -1,8 +1,9 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
-import { parsePath } from '../../api/pathParser.js';
+import { parsePath, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { setFileMtimeToRemote } from '../../utils/fileHelpers.js';
 import { getGitBreadcrumbHint } from '../../utils/gitBreadcrumbHints.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { join, dirname } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 
@@ -42,7 +43,7 @@ export class RawCatTool extends BaseFileSystemTool {
     const accessToken = await this.getAuthToken(params);
 
     const files = await this.gasClient.getProjectContent(parsedPath.scriptId, accessToken);
-    const file = files.find((f: any) => f.name === parsedPath.filename);
+    const file = files.find((f: any) => fileNameMatches(f.name, parsedPath.filename!));
 
     if (!file) {
       throw new FileOperationError('read', path, 'file not found');
@@ -64,14 +65,23 @@ export class RawCatTool extends BaseFileSystemTool {
       // Don't fail if local sync fails
     }
 
+    const content = file.source || '';
+
+    // Compute hash on WRAPPED content (full file as stored in GAS)
+    // Both CatTool and RawCatTool hash WRAPPED content for consistency
+    // This ensures hash matches `git hash-object <file>` on local synced files
+    const rawHash = computeGitSha1(content);
+
     const result: any = {
       path,
       scriptId: parsedPath.scriptId,
       filename: parsedPath.filename,
       type: file.type,
-      content: file.source || '',
-      size: (file.source || '').length,
-      updateTime: file.updateTime
+      content,
+      size: content.length,
+      updateTime: file.updateTime,
+      hash: rawHash,  // Hash of RAW content (with wrappers)
+      hashNote: 'Hash computed on raw content including CommonJS wrappers. For unwrapped content hash, use cat tool.'
     };
 
     // Add git breadcrumb hint for .git/* files

@@ -65,10 +65,15 @@ function cleanupOldOutputFiles(): void {
 /**
  * Write large response to file and return metadata
  * @param response - The full response object to write
+ * @param content - Pre-serialized JSON content (to avoid double stringify)
  * @param scriptId - Script ID for filename
  * @returns Object with file path and metadata for LLM
  */
-function writeResponseToFile(response: any, scriptId: string): {
+function writeResponseToFileWithContent(
+  response: any,
+  content: string,
+  scriptId: string
+): {
   outputFile: string;
   resultSize: number;
   loggerLines: number;
@@ -78,11 +83,10 @@ function writeResponseToFile(response: any, scriptId: string): {
   cleanupOldOutputFiles();
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const shortScriptId = scriptId.substring(0, 12);
+  const shortScriptId = (scriptId || 'unknown').substring(0, 12);  // Guard against undefined/null
   const filename = `${OUTPUT_FILE_PREFIX}-${timestamp}-${shortScriptId}.json`;
   const filePath = path.join(OUTPUT_FILE_DIR, filename);
 
-  const content = JSON.stringify(response, null, 2);
   fs.writeFileSync(filePath, content, 'utf-8');
 
   const resultSize = content.length;
@@ -117,28 +121,31 @@ function writeResponseToFile(response: any, scriptId: string): {
 }
 
 /**
- * Check if response should be written to file based on size
- * @param response - The response object to check
- * @returns true if response exceeds threshold and should be written to file
- */
-function shouldWriteToFile(response: any): boolean {
-  try {
-    const size = JSON.stringify(response).length;
-    return size > OUTPUT_SIZE_THRESHOLD;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Wrap response with automatic file output for large responses
+ * Combines size check and file writing to avoid double JSON.stringify
+ *
  * @param response - The full response object
  * @param scriptId - Script ID for filename
  * @returns Either the original response or file metadata if too large
  */
 function wrapLargeResponse(response: any, scriptId: string): any {
-  if (shouldWriteToFile(response)) {
-    const fileInfo = writeResponseToFile(response, scriptId);
+  // Serialize once and check size
+  let content: string;
+  try {
+    content = JSON.stringify(response, null, 2);
+  } catch {
+    // Non-serializable response, return as-is
+    return response;
+  }
+
+  // Check if within threshold - return original response
+  if (content.length <= OUTPUT_SIZE_THRESHOLD) {
+    return response;
+  }
+
+  // Large response - try to write to file
+  try {
+    const fileInfo = writeResponseToFileWithContent(response, content, scriptId);
     return {
       status: response.status,
       scriptId: response.scriptId,
@@ -151,10 +158,17 @@ function wrapLargeResponse(response: any, scriptId: string): any {
       hint: `Response exceeded ${(OUTPUT_SIZE_THRESHOLD / 1024).toFixed(0)}KB (~${Math.round(OUTPUT_SIZE_THRESHOLD / 4)} tokens). Full result written to file. Use Read tool to access: ${fileInfo.outputFile}`,
       executedAt: response.executedAt,
       environment: response.environment,
-      versionNumber: response.versionNumber
+      versionNumber: response.versionNumber,
+      ide_url_hint: response.ide_url_hint  // Preserve ide_url_hint for debugging
+    };
+  } catch (err) {
+    // File write failed - return original response with warning
+    console.error(`[OUTPUT FILE] Failed to write large response: ${err}`);
+    return {
+      ...response,
+      _fileWriteWarning: `Large response (${(content.length / 1024).toFixed(1)}KB) could not be written to file: ${err}`
     };
   }
-  return response;
 }
 
 /**
@@ -659,8 +673,8 @@ export class ExecTool extends BaseTool {
 
             // Generate diffs for files with content
             const diffGenerator = new DiffGenerator();
-            const MAX_DIFF_LINES = 50;
-            const MAX_PREVIEW_CHARS = 500;
+            const MAX_DIFF_LINES = 200;      // Increased from 50 - LLM needs more context
+            const MAX_PREVIEW_CHARS = 2000;  // Increased from 500 - show more of new files
 
             const staleWithDiffs: DriftFileInfo[] = drift.staleLocal.map((f: FileSyncStatus) => {
               const info: DriftFileInfo = {

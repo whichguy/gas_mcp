@@ -2,12 +2,15 @@ import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { ValidationError, FileOperationError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
-import { parsePath, resolveHybridScriptId } from '../api/pathParser.js';
+import { parsePath, resolveHybridScriptId, fileNameMatches } from '../api/pathParser.js';
 import { translatePathForOperation } from '../utils/virtualFileTranslation.js';
 import { FuzzyMatcher, type EditOperation } from '../utils/fuzzyMatcher.js';
 import { DiffGenerator } from '../utils/diffGenerator.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
+import { computeGitSha1 } from '../utils/hashUtils.js';
+import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
+import path from 'path';
 
 interface AiderOperation {
   searchText: string;
@@ -148,7 +151,7 @@ export class RawAiderTool extends BaseTool {
       if (edit.searchText.length > 1000) {
         throw new ValidationError(
           `edits[${i}].searchText`,
-          edit.searchText.substring(0, 50) + '...',
+          edit.searchText.substring(0, 200) + '...',
           'searchText maximum 1,000 characters. For larger patterns, use grep or ripgrep instead.'
         );
       }
@@ -173,7 +176,7 @@ export class RawAiderTool extends BaseTool {
 
     // Read current file content from remote (RAW - no unwrapping)
     const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-    const fileContent = allFiles.find((f: any) => f.name === filename);
+    const fileContent = allFiles.find((f: any) => fileNameMatches(f.name, filename));
 
     if (!fileContent) {
       throw new ValidationError('filename', filename, 'existing file in the project');
@@ -220,7 +223,7 @@ export class RawAiderTool extends BaseTool {
       throw new FileOperationError(
         'raw_aider',
         params.path,
-        `No match found above ${(threshold * 100).toFixed(0)}% similarity for: "${firstFailed.searchText.substring(0, 50)}${firstFailed.searchText.length > 50 ? '...' : ''}"`
+        `No match found above ${(threshold * 100).toFixed(0)}% similarity for: "${firstFailed.searchText.substring(0, 200)}${firstFailed.searchText.length > 200 ? '...' : ''}"`
       );
     }
 
@@ -251,6 +254,21 @@ export class RawAiderTool extends BaseTool {
 
     // Write raw content back to remote (no CommonJS wrapping)
     await this.gasClient.updateFile(scriptId, filename, modifiedContent, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
+
+    // Compute hash and update xattr cache to prevent false "stale" errors on subsequent exec calls
+    const editedHash = computeGitSha1(modifiedContent);
+    try {
+      const { LocalFileManager } = await import('../utils/localFileManager.js');
+      const projectPath = await LocalFileManager.getProjectDirectory(scriptId);
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const localFileName = filename + fileExtension;
+      const localFilePath = path.join(projectPath, localFileName);
+      await updateCachedContentHash(localFilePath, editedHash);
+      console.error(`🔒 [RAW_AIDER] Updated xattr cache: ${editedHash.slice(0, 8)}...`);
+    } catch (cacheError) {
+      // Non-fatal: sync drift checker will fall back to content comparison
+      console.error(`⚠️ [RAW_AIDER] Hash cache update failed: ${cacheError}`);
+    }
 
     // Return minimal response for token efficiency
     const result: AiderResult = {

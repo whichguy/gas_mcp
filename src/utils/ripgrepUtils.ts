@@ -46,31 +46,3 @@ export function sortRipgrepResults<T extends { fileName: string }>(
   });
 }
 
-/**
- * Trim leading and trailing whitespace from result lines
- *
- * @param matches - Array of match results to process (must have optional lines property)
- * @returns Processed matches with trimmed line content
- */
-export function trimRipgrepResultLines<T>(matches: T[]): T[] {
-  return matches.map(fileResult => {
-    const result = fileResult as any;
-    if (result.lines && Array.isArray(result.lines)) {
-      return {
-        ...result,
-        lines: result.lines.map((line: any) => {
-          if (typeof line === 'string') {
-            return line.trim();
-          } else if (line && typeof line.content === 'string') {
-            return {
-              ...line,
-              content: line.content.trim()
-            };
-          }
-          return line;
-        })
-      } as T;
-    }
-    return fileResult;
-  });
-}

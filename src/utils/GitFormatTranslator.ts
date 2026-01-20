@@ -93,27 +93,34 @@ __defineModule__(_main);`;
    */
   static fromGAS(gasContent: string): string {
     if (!gasContent) return '';
-    
+
     // First unwrap CommonJS if present
     const unwrapped = this.unwrapCommonJS(gasContent);
-    
+
     // Look for raw content in various formats
+    // IMPORTANT: Patterns must handle escaped quotes within the string
+    // The pattern `(?:[^"\\]|\\.)*` matches: any char except " or \, OR a backslash followed by any char
     const patterns = [
-      /raw:\s*["'`]([^"'`]*?)["'`]/s,
-      /raw:\s*`([^`]*?)`/s,
-      /RAW_CONTENT\s*=\s*["'`]([^"'`]*?)["'`]/s,
-      /RAW_CONTENT\s*=\s*`([^`]*?)`/s,
-      // Backward compat: simple module.exports = "..." (legacy format from wrapGitConfigAsModule)
+      // RAW_CONTENT = "..." with proper escape handling
+      /RAW_CONTENT\s*=\s*"((?:[^"\\]|\\.)*)"/s,
+      // raw: "..." with proper escape handling
+      /raw:\s*"((?:[^"\\]|\\.)*)"/s,
+      // Template literal versions (backtick strings don't need escape handling for quotes)
+      /RAW_CONTENT\s*=\s*`([^`]*)`/s,
+      /raw:\s*`([^`]*)`/s,
+      // Single quote versions with escape handling
+      /RAW_CONTENT\s*=\s*'((?:[^'\\]|\\.)*)'/s,
+      /raw:\s*'((?:[^'\\]|\\.)*)'/s,
+      // Backward compat: simple module.exports = "..." (legacy format)
       /^module\.exports\s*=\s*"((?:[^"\\]|\\.)*)"\s*;?\s*$/s,
-      // Backward compat: module.exports with escaped JSON content
       /module\.exports\s*=\s*"((?:[^"\\]|\\.)*)"\s*;?\s*$/s
     ];
-    
+
     for (const pattern of patterns) {
       const match = unwrapped.match(pattern);
       if (match && match[1]) {
         try {
-          // Try to parse as JSON string (handles escaping)
+          // Try to parse as JSON string (handles escaping like \n, \t, \", etc.)
           return JSON.parse('"' + match[1] + '"');
         } catch {
           // Return as-is if not valid JSON string
@@ -121,7 +128,7 @@ __defineModule__(_main);`;
         }
       }
     }
-    
+
     // Fallback: return the unwrapped content
     return unwrapped;
   }

@@ -81,6 +81,7 @@ function getLocalFileName(gasFileName: string, fileType: string): string {
   }
 
   // Add extension based on file type
+  // MUST match SyncExecutor.gasFilenameToLocalPath() for consistency
   switch (fileType?.toUpperCase()) {
     case 'HTML':
       return `${gasFileName}.html`;
@@ -88,7 +89,7 @@ function getLocalFileName(gasFileName: string, fileType: string): string {
       return `${gasFileName}.json`;
     case 'SERVER_JS':
     default:
-      return `${gasFileName}.gs`;
+      return `${gasFileName}.gs`;  // Use .gs for GAS files (matches GAS native extension)
   }
 }
 
