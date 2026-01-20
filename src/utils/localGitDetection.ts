@@ -8,6 +8,7 @@
 import { access, stat, constants } from 'fs/promises';
 import * as path from 'path';
 import { fileNameMatches } from '../api/pathParser.js';
+import { expandTilde } from './pathExpansion.js';
 
 /**
  * Recommendation object for establishing sync
@@ -42,18 +43,10 @@ export interface GitDetection {
 /**
  * Expand tilde (~) in paths to actual home directory
  *
- * @throws Error if HOME/USERPROFILE environment variables are not set
+ * @deprecated Use expandTilde from pathExpansion.ts directly
+ * This re-export maintained for backward compatibility
  */
-export function expandPath(filepath: string): string {
-  if (filepath.startsWith('~/')) {
-    const home = process.env.HOME || process.env.USERPROFILE;
-    if (!home) {
-      throw new Error('Cannot expand ~ - HOME/USERPROFILE environment variable not set');
-    }
-    return path.join(home, filepath.slice(2));
-  }
-  return filepath;
-}
+export const expandPath = expandTilde;
 
 /**
  * Validate scriptId format for filesystem safety

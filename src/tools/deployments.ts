@@ -8,117 +8,38 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { extractUrlInfo as extractUrlInfoUtil, UrlExtractionResult } from '../utils/urlParser.js';
 import { fileNameMatches, stripExtension } from '../api/pathParser.js';
 import { findManifestFile } from '../utils/fileHelpers.js';
-import * as fs from 'fs';
-import * as path from 'path';
+import { loadTemplate, loadJsonTemplate } from '../utils/templateLoader.js';
 
 /**
  * Get the __mcp_exec.js template content
- * @returns {string} The execution infrastructure template content
+ * Uses centralized template loader utility.
  */
 function getExecutionTemplate(): string {
-  try {
-    // Get the directory of this file - when compiled, this will be in dist/src/tools/
-    const currentDir = path.dirname(new URL(import.meta.url).pathname);
-    
-    // Determine if we're running from compiled code (dist/) or source code (src/)
-    let srcDir: string;
-    if (currentDir.includes('/dist/')) {
-      // Running from compiled code: dist/src/tools -> go up to project root, then to src
-      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
-      srcDir = path.join(projectRoot, 'src');
-    } else {
-      // Running from source code: src/tools -> go up to src
-      srcDir = path.join(currentDir, '..');
-    }
-    
-    const templatePath = path.join(srcDir, '__mcp_exec.js');
-    
-    return fs.readFileSync(templatePath, 'utf8');
-  } catch (error) {
-    console.error('Error reading __mcp_exec.js template:', error);
-    throw new Error(`Failed to read execution template: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  return loadTemplate('__mcp_exec.js');
 }
 
 /**
  * Get the appsscript.json template content
- * @returns {object} The manifest template object
+ * Uses centralized template loader utility.
  */
 function getManifestTemplate(): any {
-  try {
-    // Get the directory of this file - when compiled, this will be in dist/src/tools/
-    const currentDir = path.dirname(new URL(import.meta.url).pathname);
-
-    // Determine if we're running from compiled code (dist/) or source code (src/)
-    let srcDir: string;
-    if (currentDir.includes('/dist/')) {
-      // Running from compiled code: dist/src/tools -> go up to project root, then to src
-      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
-      srcDir = path.join(projectRoot, 'src');
-    } else {
-      // Running from source code: src/tools -> go up to src
-      srcDir = path.join(currentDir, '..');
-    }
-
-    const templatePath = path.join(srcDir, 'appsscript.json');
-
-    const content = fs.readFileSync(templatePath, 'utf8');
-    return JSON.parse(content);
-  } catch (error) {
-    console.error('Error reading appsscript.json template:', error);
-    throw new Error(`Failed to read manifest template: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  return loadJsonTemplate('appsscript.json');
 }
-
 
 /**
  * Get the __mcp_exec_success.html template content
- * @returns {string} The success HTML template content
+ * Uses centralized template loader utility.
  */
 export function getSuccessHtmlTemplate(): string {
-  try {
-    const currentDir = path.dirname(new URL(import.meta.url).pathname);
-
-    let srcDir: string;
-    if (currentDir.includes('/dist/')) {
-      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
-      srcDir = path.join(projectRoot, 'src');
-    } else {
-      srcDir = path.join(currentDir, '..');
-    }
-
-    const templatePath = path.join(srcDir, '__mcp_exec_success.html');
-
-    return fs.readFileSync(templatePath, 'utf8');
-  } catch (error) {
-    console.error('Error reading __mcp_exec_success.html template:', error);
-    throw new Error(`Failed to read success HTML template: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  return loadTemplate('__mcp_exec_success.html');
 }
 
 /**
  * Get the __mcp_exec_error.html template content
- * @returns {string} The error HTML template content
+ * Uses centralized template loader utility.
  */
 export function getErrorHtmlTemplate(): string {
-  try {
-    const currentDir = path.dirname(new URL(import.meta.url).pathname);
-
-    let srcDir: string;
-    if (currentDir.includes('/dist/')) {
-      const projectRoot = currentDir.replace(/\/dist\/.*$/, '');
-      srcDir = path.join(projectRoot, 'src');
-    } else {
-      srcDir = path.join(currentDir, '..');
-    }
-
-    const templatePath = path.join(srcDir, '__mcp_exec_error.html');
-
-    return fs.readFileSync(templatePath, 'utf8');
-  } catch (error) {
-    console.error('Error reading __mcp_exec_error.html template:', error);
-    throw new Error(`Failed to read error HTML template: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  return loadTemplate('__mcp_exec_error.html');
 }
 
 
@@ -1747,14 +1668,8 @@ export class ProjectInitTool extends BaseTool {
         }
       }
 
-      // Read template
-      const { readFile } = await import('fs/promises');
-      const { fileURLToPath } = await import('url');
-      const { dirname, join } = await import('path');
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = dirname(__filename);
-      const templatePath = join(__dirname, '..', 'templates', 'ConfigManager.template.js');
-      const content = await readFile(templatePath, 'utf-8');
+      // Read template using centralized loader
+      const content = loadTemplate('templates/ConfigManager.template.js');
 
       const { RawWriteTool } = await import('./filesystem/index.js');
       const rawWriteTool = new RawWriteTool(this.sessionAuthManager);

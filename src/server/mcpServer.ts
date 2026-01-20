@@ -280,96 +280,51 @@ export class MCPGasServer {
    * ```
    */
   private createSessionTools(authManager: SessionAuthManager): Map<string, any> {
-    const tools = new Map();
-    
-    const toolInstances = [
-      // Authentication (with session-specific auth manager)
-      new AuthTool(authManager),
-      
-      // 📂 Filesystem operations - RECOMMENDED auto-sync tools
-      new LsTool(authManager),
-      new FileStatusTool(authManager),    // Get comprehensive file status with SHA checksums
-      new CatTool(authManager),           // Smart reader (local-first)
-      new WriteTool(authManager),         // Auto-sync writer
-      new GrepTool(authManager),          // Content search with pattern matching
-      new RipgrepTool(authManager),       // High-performance search with ripgrep-inspired features
-      new SedTool(authManager),           // sed-style find/replace with CommonJS processing
-      new EditTool(authManager),          // Token-efficient exact string editing
-      new AiderTool(authManager),         // Token-efficient fuzzy string editing
-      new FindTool(authManager),          // Find files with virtual names
-      new DepsTool(authManager),          // Dependency analysis with circular detection and complexity metrics
-      new RmTool(authManager),
-      new MvTool(authManager),
-      new CpTool(authManager),
-      new CacheClearTool(authManager),    // Clear cached GAS metadata from extended attributes
+    // Tool registry: organized by category for readability
+    // Each tool is instantiated with session-specific authManager for isolation
+    const toolClasses = [
+      // 🔐 Authentication
+      AuthTool,
 
-      // Filesystem operations - ADVANCED raw tools (explicit project IDs)
-      new RawCatTool(authManager),        // Advanced: Explicit project ID paths
-      new RawWriteTool(authManager),      // Advanced: Explicit project ID paths
-      new RawGrepTool(authManager),       // Advanced: Search full content (API-only, never local files)
-      new RawRipgrepTool(authManager),    // Advanced: High-performance search on raw content with ripgrep features
-      new RawSedTool(authManager),        // Advanced: sed-style find/replace on raw content including wrappers
-      new RawEditTool(authManager),       // Advanced: Token-efficient editing on raw content
-      new RawAiderTool(authManager),      // Advanced: Token-efficient fuzzy editing on raw content
-      new RawFindTool(authManager),       // Advanced: Find with actual GAS names
-      new RawCpTool(authManager),        // Advanced: Bulk copy without CommonJS processing
-      
-      // 🏗Project management
-      new ReorderTool(authManager),
+      // 📂 Filesystem - Smart tools (auto CommonJS unwrap/wrap)
+      LsTool, FileStatusTool, CatTool, WriteTool,
+      GrepTool, RipgrepTool, SedTool, EditTool, AiderTool,
+      FindTool, DepsTool, RmTool, MvTool, CpTool, CacheClearTool,
 
-      // Script execution tools
-      new ExecTool(authManager),        // JavaScript execution with explicit script ID
-      new ExecApiTool(authManager),     // Alternative API-based execution
-      
-      // Deployment management (with session-specific auth manager)
-      new DeployTool(authManager),          // Consolidated deployment management across dev/staging/prod
+      // 📂 Filesystem - Raw tools (preserve exact content)
+      RawCatTool, RawWriteTool, RawGrepTool, RawRipgrepTool,
+      RawSedTool, RawEditTool, RawAiderTool, RawFindTool, RawCpTool,
 
-      // Project creation and initialization (separate from deployment workflow)
-      new ProjectCreateTool(authManager),
-      new ProjectInitTool(authManager),
+      // 🏗️ Project management
+      ReorderTool, ProjectCreateTool, ProjectInitTool, ProjectListTool,
 
-      
-      // Drive container and script discovery/management
-      new FindDriveScriptTool(authManager),
-      new CreateScriptTool(authManager),
-      
-      // Process management
-      new ProcessListTool(authManager),
+      // ⚡ Execution
+      ExecTool, ExecApiTool,
 
-      /// Execution history browser (consolidated: list + get operations)
-      new ExecutionsTool(authManager),   // Browse executions (list) and get process metadata (get)
+      // 🚀 Deployment
+      DeployTool,
 
-      // Cloud Logging for historical Logger.log() output
-      new CloudLogsTool(authManager),    // Fetch logs via Cloud Logging API with dynamic LLM hints
+      // 📁 Drive & Scripts
+      FindDriveScriptTool, CreateScriptTool,
 
-      // Local-Remote sync removed - cat/write provide auto-sync via LocalFileManager
-      // PullTool/PushTool/StatusTool were redundant (used same copyRemoteToLocal calls)
+      // 📊 Processes & Logs
+      ProcessListTool, ExecutionsTool, CloudLogsTool,
 
-      // Project context - WORKFLOW tools (visible to MCP)
-      new ProjectListTool(authManager),   // List all configured projects
-      
-      // Local root management removed - all projects now use git sync pattern:
-      // ~/gas-repos/project-{scriptId}/ for consistent file management
-      
-      // Trigger management - AUTOMATION tools (consolidated: list + create + delete operations)
-      new TriggerTool(authManager),        // List, create, and delete installable triggers
-      
-      // Git Sync - SAFE GIT INTEGRATION (3 tools - LOCAL-FIRST, no auto-bootstrap)
-      new RsyncTool(authManager),             // Unidirectional sync: plan → execute (two-phase workflow)
-      new GitFeatureTool(authManager),        // Feature branch workflow (start/finish/rollback/list/switch)
-      new ConfigTool(authManager),            // Generic configuration (sync_folder get/set)
+      // ⏰ Triggers
+      TriggerTool,
 
-      // Google Sheets SQL - SQL-STYLE OPERATIONS on Google Sheets
-      new SheetSqlTool(authManager),          // Execute SELECT/INSERT/UPDATE/DELETE on Google Sheets with SQL syntax
+      // 🔄 Git Sync
+      RsyncTool, GitFeatureTool, ConfigTool,
 
-      // NOTE: All project context tools are now VISIBLE to MCP users/LLMs
-      // This provides full project management capabilities
+      // 📊 Sheets
+      SheetSqlTool,
     ];
 
-    toolInstances.forEach(tool => {
+    const tools = new Map<string, any>();
+    for (const ToolClass of toolClasses) {
+      const tool = new ToolClass(authManager);
       tools.set(tool.name, tool);
-    });
-
+    }
     return tools;
   }
 
