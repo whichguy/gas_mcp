@@ -15,7 +15,8 @@
  */
 export const SYSTEM_FILE_PREFIXES = [
   'common-js/',
-  '__mcp_exec'
+  '__mcp_exec',
+  'appsscript'  // Manifest is infrastructure, excluded from sync checks
 ] as const;
 
 /**
