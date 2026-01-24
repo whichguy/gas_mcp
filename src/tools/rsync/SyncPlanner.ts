@@ -585,12 +585,12 @@ export class SyncPlanner {
   /**
    * Compute diff between source and destination
    *
-   * IMPORTANT: For accurate comparison, we must compare UNWRAPPED content.
-   * - GAS files have CommonJS wrappers (_main, __defineModule__)
-   * - Local files have clean user code
+   * For diff DISPLAY, we show UNWRAPPED content (user's clean code).
+   * - GAS files are unwrapped to remove CommonJS wrapper for readability
+   * - Local files (also stored WRAPPED per line 508) are unwrapped for display
    *
-   * We unwrap GAS content before comparison so SHA1 hashes match when
-   * the actual user code is identical.
+   * Note: HASH comparison uses WRAPPED content - see lines 507-518, 633-635.
+   * This ensures wrapper changes (loadNow, hoistedFunctions) trigger sync.
    */
   private computeDiff(
     direction: 'pull' | 'push',
