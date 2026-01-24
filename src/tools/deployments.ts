@@ -9,6 +9,11 @@ import { extractUrlInfo as extractUrlInfoUtil, UrlExtractionResult } from '../ut
 import { fileNameMatches, stripExtension } from '../api/pathParser.js';
 import { findManifestFile } from '../utils/fileHelpers.js';
 import { loadTemplate, loadJsonTemplate } from '../utils/templateLoader.js';
+import { LocalFileManager } from '../utils/localFileManager.js';
+import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
+import { computeGitSha1 } from '../utils/hashUtils.js';
+import { mkdir, writeFile } from 'fs/promises';
+import { join } from 'path';
 
 /**
  * Get the __mcp_exec.js template content
@@ -97,6 +102,27 @@ export async function verifyInfrastructureFile(
 
 
 /**
+ * Sync manifest file to local cache after remote write
+ * Ensures exec() doesn't see SyncDriftError for manifest
+ */
+async function syncManifestLocally(scriptId: string, content: string): Promise<void> {
+  try {
+    const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
+    if (localRoot) {
+      const localPath = join(localRoot, 'appsscript.json');
+      await mkdir(localRoot, { recursive: true });
+      await writeFile(localPath, content, 'utf-8');
+      const hash = computeGitSha1(content);
+      await updateCachedContentHash(localPath, hash);
+      console.error('✅ [MANIFEST] Synced appsscript.json locally');
+    }
+  } catch (error) {
+    // Non-fatal - remote write succeeded
+    console.error(`⚠️ [MANIFEST] Local sync warning: ${error}`);
+  }
+}
+
+/**
  * Helper function to ensure manifest has proper entry point configuration
  */
 async function ensureManifestEntryPoints(
@@ -131,7 +157,9 @@ async function ensureManifestEntryPoints(
         runtimeVersion: 'V8'
       };
       
-      await gasClient.updateFile(scriptId, 'appsscript', JSON.stringify(newManifest, null, 2), undefined, accessToken);
+      const manifestContent = JSON.stringify(newManifest, null, 2);
+      await gasClient.updateFile(scriptId, 'appsscript', manifestContent, undefined, accessToken);
+      await syncManifestLocally(scriptId, manifestContent);
       console.error('✅ Created manifest with proper entry points');
       return;
     }
@@ -157,7 +185,9 @@ async function ensureManifestEntryPoints(
         runtimeVersion: 'V8'
       };
       
-      await gasClient.updateFile(scriptId, 'appsscript', JSON.stringify(newManifest, null, 2), undefined, accessToken);
+      const manifestContent = JSON.stringify(newManifest, null, 2);
+      await gasClient.updateFile(scriptId, 'appsscript', manifestContent, undefined, accessToken);
+      await syncManifestLocally(scriptId, manifestContent);
       console.error('✅ Recreated manifest with proper entry points');
       return;
     }
@@ -190,7 +220,9 @@ async function ensureManifestEntryPoints(
     
     // Update manifest if needed
     if (needsUpdate) {
-      await gasClient.updateFile(scriptId, 'appsscript', JSON.stringify(manifest, null, 2), undefined, accessToken);
+      const manifestContent = JSON.stringify(manifest, null, 2);
+      await gasClient.updateFile(scriptId, 'appsscript', manifestContent, undefined, accessToken);
+      await syncManifestLocally(scriptId, manifestContent);
       console.error('✅ Updated manifest with proper entry points');
     } else {
       console.error('✅ Manifest already has proper entry point configuration');
