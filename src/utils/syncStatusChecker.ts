@@ -12,7 +12,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getCachedContentHash, updateCachedContentHash } from './gasMetadataCache.js';
 import { computeGitSha1 } from './hashUtils.js';
-import { shouldWrapContent, wrapModuleContent, getModuleName, unwrapModuleContent } from './moduleWrapper.js';
+// Note: moduleWrapper imports removed - local files are stored WRAPPED, no re-wrapping needed
 import { FileFilter } from './fileFilter.js';
 
 /**
@@ -191,24 +191,13 @@ export async function checkSyncStatus(
       // Local file exists but no cached hash
       // Compare actual content to determine sync status (auto-populate hash if matching)
       //
-      // CRITICAL: Local files are stored UNWRAPPED (clean user code), but remote hashes
-      // are computed on WRAPPED content (full file with CommonJS). To compare correctly,
-      // we must WRAP the local content before hashing to match the remote format.
+      // Local files are stored WRAPPED (full CommonJS content), same as remote.
+      // Hash the local content directly - no re-wrapping needed.
       try {
         const localContent = await fs.readFile(localFilePath, 'utf-8');
-        const fileType = remoteFile.type || 'SERVER_JS';
 
-        // Wrap local content to match remote format for comparison
-        // CRITICAL: Must preserve moduleOptions (loadNow, hoistedFunctions) from remote
-        // so the wrapped hash matches. Otherwise files with loadNow:true show as stale.
-        let contentForHashing = localContent;
-        if (shouldWrapContent(fileType, filename)) {
-          const moduleName = getModuleName(filename);
-          // Extract existing moduleOptions from remote wrapped content
-          const { existingOptions } = unwrapModuleContent(remoteFile.source || '');
-          contentForHashing = wrapModuleContent(localContent, moduleName, existingOptions);
-        }
-        const computedLocalHash = computeGitSha1(contentForHashing);
+        // Local file is already wrapped - hash directly
+        const computedLocalHash = computeGitSha1(localContent);
 
         if (computedLocalHash === remoteHash) {
           // Content matches! Auto-populate the hash cache and mark as in_sync
