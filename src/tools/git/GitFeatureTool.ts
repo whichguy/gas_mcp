@@ -526,6 +526,13 @@ export class GitFeatureTool extends BaseFileSystemTool {
       workflow: 'dev (HEAD) → staging (versioned) → prod (stable)'
     } : undefined;
 
+    // Add container URL hint for debugging GAS UI (sidebar/dialog)
+    const containerUrlHint = {
+      message: 'To get the bound spreadsheet URL for debugging sidebar/dialog UI:',
+      command: 'exec({ scriptId: "<scriptId>", js_statement: "SpreadsheetApp.getActiveSpreadsheet().getUrl()" })',
+      useCase: 'Launch Chrome DevTools on the container to debug sidebar/dialog UI'
+    };
+
     return {
       status: 'success',
       operation: 'finish',
@@ -537,7 +544,8 @@ export class GitFeatureTool extends BaseFileSystemTool {
       pushed,
       ...(pushError && { pushError }),
       ...(nextAction && { nextAction }),
-      ...(promotionHint && { promotionHint })
+      ...(promotionHint && { promotionHint }),
+      containerUrlHint
     };
   }
 
