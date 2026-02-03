@@ -81,6 +81,9 @@ import { ConfigTool } from '../tools/config.js';
 // Import Google Sheets SQL tool
 import { SheetSqlTool } from '../tools/sheets/sheetsSql.js';
 
+// Import worktree tool for parallel development
+import { WorktreeTool } from '../tools/worktree/index.js';
+
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
 
@@ -318,6 +321,9 @@ export class MCPGasServer {
 
       // 📊 Sheets
       SheetSqlTool,
+
+      // 🔀 Parallel Development
+      WorktreeTool,
     ];
 
     const tools = new Map<string, any>();

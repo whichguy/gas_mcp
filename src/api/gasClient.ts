@@ -94,6 +94,22 @@ export class GASClient {
     return this.authOps.revokeTokens(accessToken);
   }
 
+  /**
+   * Get the Drive API instance for direct Drive operations
+   * Must call initializeClient first to ensure API is ready
+   */
+  getDriveApi(): any {
+    return this.authOps.getDriveApi();
+  }
+
+  /**
+   * Initialize the API client with an access token
+   * Required before using getDriveApi() for direct operations
+   */
+  async initializeClient(accessToken: string): Promise<void> {
+    await this.authOps.initializeClient(accessToken);
+  }
+
   // ============================================================================
   // Project Operations
   // ============================================================================
