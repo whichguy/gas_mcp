@@ -339,10 +339,13 @@ Typical workflows:
     return this.addOperation.execute(params, accessToken);
   }
 
+  // Maximum orphan recovery attempts before giving up
+  private static readonly MAX_ORPHAN_RECOVERY_ATTEMPTS = 10;
+
   /**
    * Claim operation: Claim an available worktree for exclusive use
    */
-  private async executeClaim(params: WorktreeClaimInput): Promise<WorktreeClaimResult | WorktreeError> {
+  private async executeClaim(params: WorktreeClaimInput, orphanRecoveryAttempts = 0): Promise<WorktreeClaimResult | WorktreeError> {
     if (!params.parentScriptId) {
       return this.createError('PARENT_NOT_FOUND', 'parentScriptId is required for claim operation');
     }
@@ -362,8 +365,17 @@ Typical workflows:
         } catch (error) {
           // GAS project deleted - mark as orphan and try to find another
           await this.stateManager.markOrphanGasDeleted(available.scriptId);
-          // Recursively try to find another
-          return this.executeClaim(params);
+
+          // Check recursion limit to prevent infinite loop
+          if (orphanRecoveryAttempts >= WorktreeTool.MAX_ORPHAN_RECOVERY_ATTEMPTS) {
+            return this.createError(
+              'NO_AVAILABLE_WORKTREES',
+              `All ${orphanRecoveryAttempts} available worktrees are orphaned. Run cleanup operation.`
+            );
+          }
+
+          // Recursively try to find another (with incremented counter)
+          return this.executeClaim(params, orphanRecoveryAttempts + 1);
         }
       }
 
@@ -661,7 +673,11 @@ Typical workflows:
         }
       }
 
-      await this.gasClient.updateProjectContent(worktreeScriptId, updatedFiles, accessToken);
+      try {
+        await this.gasClient.updateProjectContent(worktreeScriptId, updatedFiles, accessToken);
+      } catch (error: any) {
+        return this.createError('SYNC_FAILED', `Failed to push synced files to GAS: ${error.message}`);
+      }
     }
 
     // Update baseHashes if requested
@@ -737,6 +753,9 @@ Typical workflows:
     // Transition to MERGING
     await this.stateManager.startMerge(worktreeScriptId);
 
+    // Track whether we've created a commit (for proper rollback)
+    let commitCreated = false;
+
     try {
       // Get default branch
       const defaultBranch = await this.getDefaultBranch(parentGitPath);
@@ -762,6 +781,7 @@ Typical workflows:
       const featureDesc = entry.branch.replace('llm-feature-', '').replace(/-[a-f0-9]{8}$/, '');
       const commitMessage = `Feature: ${featureDesc}`;
       await this.execGitCommand(['commit', '-m', commitMessage], parentGitPath);
+      commitCreated = true;
 
       // Get commit SHA
       const commitSha = (await this.execGitCommand(['rev-parse', 'HEAD'], parentGitPath)).trim();
@@ -810,7 +830,10 @@ Typical workflows:
       await this.stateManager.rollbackMerge(worktreeScriptId, error.message);
 
       try {
-        await this.execGitCommand(['reset', '--hard', 'HEAD'], parentGitPath);
+        // If commit was created, we need to undo it with HEAD~1
+        // Otherwise just reset staged changes with HEAD
+        const resetTarget = commitCreated ? 'HEAD~1' : 'HEAD';
+        await this.execGitCommand(['reset', '--hard', resetTarget], parentGitPath);
       } catch {
         warnings.push('Failed to reset parent repo after merge failure');
       }
