@@ -199,7 +199,25 @@ export class WorktreeAddOperation {
         baseHashesUpdatedAt: new Date().toISOString()
       };
 
-      await this.lockManager.addWorktreeEntry(entry);
+      try {
+        await this.lockManager.addWorktreeEntry(entry);
+      } catch (error: any) {
+        // Config write failed - cleanup all created resources
+        console.error(`⚠️  [WORKTREE-ADD] Config write failed, cleaning up:`, error);
+        await this.cleanupFailedWorktree(
+          newProject.scriptId,
+          accessToken,
+          worktreePath,
+          fullBranchName,
+          parentGitPath,
+          containerInfo.containerId
+        );
+        return {
+          success: false,
+          error: 'API_ERROR',
+          message: `Failed to save worktree config: ${error.message}`
+        };
+      }
 
       console.error(`✅ [WORKTREE-ADD] Successfully created worktree ${newProject.scriptId}`);
 
@@ -566,13 +584,15 @@ export class WorktreeAddOperation {
     accessToken: string,
     worktreePath?: string,
     branchName?: string,
-    parentGitPath?: string
+    parentGitPath?: string,
+    containerId?: string
   ): Promise<void> {
     console.error(`🧹 [WORKTREE-ADD] Cleaning up failed worktree: ${scriptId}`);
 
+    const driveApi = this.gasClient.getDriveApi();
+
     // Try to trash the GAS project
     try {
-      const driveApi = this.gasClient.getDriveApi();
       await driveApi.files.update({
         fileId: scriptId,
         requestBody: { trashed: true }
@@ -580,6 +600,19 @@ export class WorktreeAddOperation {
       console.error(`🧹 [WORKTREE-ADD] Trashed GAS project`);
     } catch (error) {
       console.error(`⚠️  [WORKTREE-ADD] Failed to trash GAS project:`, error);
+    }
+
+    // Trash container if created (for container-bound projects)
+    if (containerId) {
+      try {
+        await driveApi.files.update({
+          fileId: containerId,
+          requestBody: { trashed: true }
+        });
+        console.error(`🧹 [WORKTREE-ADD] Trashed container`);
+      } catch (error) {
+        console.error(`⚠️  [WORKTREE-ADD] Failed to trash container:`, error);
+      }
     }
 
     // Remove git worktree if created
