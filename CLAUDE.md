@@ -356,6 +356,77 @@ this.existingOptions = existingOptions;  // Store for later
 finalContent = wrapModuleContent(content, moduleName, this.existingOptions);  // Preserve!
 ```
 
+### Worktree System (Parallel Development)
+
+**Purpose:** Enable multiple Claude Code agents to work concurrently on isolated GAS projects while sharing git history.
+
+**Tool:** `mcp__gas__worktree` with 10 operations
+
+**Architecture:**
+```
+Claude Code Agents (A, B, C)
+         │
+         ▼
+    Worktree Tool
+         │
+         ▼
+GAS Projects (Isolated)              Local Git (Shared)
+├── Parent scriptId:P                ~/gas-repos/project-{P}/
+├── Worktree A scriptId:A    ←→      └── worktrees/A/ (feature-A branch)
+├── Worktree B scriptId:B    ←→      └── worktrees/B/ (feature-B branch)
+└── Worktree C scriptId:C    ←→      └── worktrees/C/ (feature-C branch)
+```
+
+**State Machine:** `CREATING → READY → CLAIMED → MERGING → MERGED | FAILED | ORPHAN_*`
+
+**Operations:**
+
+| Operation | Purpose | Key Params |
+|-----------|---------|------------|
+| `add` | Create worktree | `parentScriptId`, `branchName`, `claimImmediately` |
+| `claim` | Get READY or create | `parentScriptId`, `createIfNone`, `agentId` |
+| `release` | Return to READY | `worktreeScriptId`, `force` |
+| `merge` | Squash merge to parent | `worktreeScriptId`, `pushToRemote`, `deleteAfterMerge` |
+| `remove` | Delete worktree | `worktreeScriptId`, `force` |
+| `list` | Filter worktrees | `parentScriptId`, `state[]` |
+| `status` | Divergence info | `worktreeScriptId` |
+| `sync` | Pull parent changes | `worktreeScriptId`, `refreshBaseHashes` |
+| `batch-add` | Create N worktrees | `parentScriptId`, `count`, `branchPrefix` |
+| `cleanup` | Remove orphans | `parentScriptId`, `maxAge`, `dryRun` |
+
+**Typical Workflows:**
+
+```typescript
+// Single agent workflow
+const wt = await worktree({operation: 'add', parentScriptId, branchName: 'feature'});
+// ... develop using write/edit tools with wt.scriptId ...
+await worktree({operation: 'merge', worktreeScriptId: wt.scriptId});
+
+// Pool workflow (multiple agents)
+await worktree({operation: 'batch-add', parentScriptId, count: 3, branchPrefix: 'task'});
+// Each agent:
+const wt = await worktree({operation: 'claim', parentScriptId, agentId: 'agent-A'});
+// ... develop ...
+await worktree({operation: 'merge', worktreeScriptId: wt.scriptId});
+
+// Cleanup stale worktrees
+await worktree({operation: 'cleanup', parentScriptId, dryRun: true}); // preview
+await worktree({operation: 'cleanup', parentScriptId}); // execute
+```
+
+**Conflict Detection:** Uses `baseHashes` (Git SHA-1 at worktree creation) for 3-way merge logic:
+- Parent modified only → safe to sync
+- Worktree modified only → safe to merge
+- Both modified differently → conflict
+
+**Concurrency:** File-based locking with heartbeat (15min timeout, 60s refresh)
+
+**Files:**
+- `src/tools/worktree/WorktreeTool.ts` - Main tool
+- `src/tools/worktree/WorktreeLockManager.ts` - Concurrency control
+- `src/tools/worktree/WorktreeStateManager.ts` - State machine
+- `src/types/worktreeTypes.ts` - Type definitions
+
 ### Git Integration
 
 #### Git Sync (Two-Phase Workflow)
@@ -640,7 +711,7 @@ git_feature({operation: 'finish', scriptId, projectPath: 'libs/auth'})
 
 ## Config + Tools
 
-**Tools (49 total):**
+**Tools (50 total):**
 | Category | Count | Tools |
 |----------|-------|-------|
 | **File (Smart)** | 14 | cat, write, ls, rm, mv, cp, file_status, grep, find, ripgrep, sed, edit, aider, cache_clear |
@@ -652,6 +723,7 @@ git_feature({operation: 'finish', scriptId, projectPath: 'libs/auth'})
 | **Logging** | 1 | log (list + get operations) |
 | **Triggers** | 1 | trigger (list + create + delete operations) |
 | **Git** | 3 | rsync, config, git_feature (start/commit/push/finish/rollback/list/switch) |
+| **Worktree** | 1 | worktree (add/claim/release/merge/remove/list/status/sync/batch-add/cleanup) |
 | **Sheets** | 1 | sheet_sql |
 | **Drive** | 2 | create_script, find_drive_script |
 
