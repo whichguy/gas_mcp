@@ -131,7 +131,7 @@ type RsyncResponse =
  * RsyncTool implementation
  */
 export class RsyncTool extends BaseTool {
-  public name = 'mcp__gas__rsync';
+  public name = 'rsync';
 
   public description = `[GIT] PREFERRED for multi-file changes. Edit files locally at ~/gas-repos/project-{scriptId}/ using Claude Code native tools, then push all at once (2 API calls for N files).
 

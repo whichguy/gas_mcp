@@ -13,7 +13,7 @@ import { join } from 'path';
  * fresh API calls to verify sync status.
  */
 export class CacheClearTool extends BaseFileSystemTool {
-  public name = 'mcp__gas__cache_clear';
+  public name = 'cache_clear';
   public description = '[FILE] Clear cached GAS metadata from local files. Removes extended attributes containing updateTime and fileType, forcing subsequent operations to use API calls for fresh data. Useful for debugging and troubleshooting sync issues.';
 
   public inputSchema = {
