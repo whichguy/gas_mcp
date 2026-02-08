@@ -25,6 +25,7 @@ import { WorktreeStateManager, WorktreeNotFoundError, InvalidStateTransitionErro
 import { WorktreeAddOperation, WorktreeRemoveOperation, WorktreeStatusOperation } from './operations/index.js';
 import { McpGasConfigManager } from '../../config/mcpGasConfig.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
+import { LocalFileManager } from '../../utils/localFileManager.js';
 import {
   generateWorktreeHints,
   generateWorktreeErrorHints,
@@ -965,9 +966,7 @@ Typical workflows:
    * Get parent git path helper
    */
   private getParentGitPath(parentScriptId: string): string {
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
-    const path = require('path');
-    return path.join(homeDir, 'gas-repos', `project-${parentScriptId}`);
+    return LocalFileManager.resolveProjectPath(parentScriptId);
   }
 
   /**

@@ -9,6 +9,7 @@ import { access, stat, constants } from 'fs/promises';
 import * as path from 'path';
 import { fileNameMatches } from '../api/pathParser.js';
 import { expandTilde } from './pathExpansion.js';
+import { LocalFileManager } from './localFileManager.js';
 
 /**
  * Recommendation object for establishing sync
@@ -80,7 +81,7 @@ export async function detectLocalGit(scriptId: string): Promise<string | null> {
     validateScriptId(scriptId);
 
     // Construct sync folder path
-    const syncFolder = expandPath(`~/gas-repos/project-${scriptId}/`);
+    const syncFolder = LocalFileManager.resolveProjectPath(scriptId);
 
     // Check if sync folder exists (async)
     try {

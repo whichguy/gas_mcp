@@ -14,6 +14,7 @@ import { getValidatedContentHash } from './gasMetadataCache.js';
 import { computeGitSha1 } from './hashUtils.js';
 // Note: moduleWrapper imports removed - local files are stored WRAPPED, no re-wrapping needed
 import { FileFilter } from './fileFilter.js';
+import { LocalFileManager } from './localFileManager.js';
 
 /**
  * Sync status for a single file
@@ -122,9 +123,18 @@ export async function checkSyncStatus(
   const includeContent = options.includeContent === true;
   const maxContentFiles = options.maxContentFiles ?? 5;
 
-  // Get local sync folder path
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
-  const syncFolder = path.join(homeDir, 'gas-repos', `project-${scriptId}`);
+  // Get local sync folder path — use session worktree if active (same as WriteTool),
+  // fall back to ~/gas-repos/ (same as CatTool)
+  let syncFolder: string;
+  try {
+    const { SessionWorktreeManager } = await import('./sessionWorktree.js');
+    const worktreeManager = new SessionWorktreeManager();
+    const worktreePath = worktreeManager.getWorktreePath(scriptId);  // in-memory Map, no I/O
+    syncFolder = worktreePath || LocalFileManager.resolveProjectPath(scriptId);
+  } catch {
+    // sessionWorktree not available — fall back
+    syncFolder = LocalFileManager.resolveProjectPath(scriptId);
+  }
 
   // Track content inclusion count
   let contentFilesIncluded = 0;

@@ -21,6 +21,7 @@ import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { writeLocalAndValidateHooksOnly } from '../../utils/hookIntegration.js';
 import { getUncommittedStatus, buildGitHint } from '../../utils/gitStatus.js';
 import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitHints, type GitDetection } from '../../utils/localGitDetection.js';
+import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
 import { log } from '../../utils/logger.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, analyzeManifestContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
@@ -459,13 +460,17 @@ export class WriteTool extends BaseFileSystemTool {
 
     // Remote-first workflow: Push to remote FIRST
     let results: any = {};
+    let existingRemoteSource: string | null = null; // For session worktree conflict detection
+    let fetchedFiles: any[] | undefined; // Reused by detectGitInfoAndBreadcrumb to avoid extra API call
 
     if (!localOnly) {
       try {
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        fetchedFiles = currentFiles;
 
         const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
         const fileType = existingFile?.type || determineFileTypeUtil(filename, content);
+        existingRemoteSource = existingFile?.source || null;
 
         // === HASH-BASED CONFLICT DETECTION ===
         // Check for concurrent modifications before writing
@@ -685,14 +690,34 @@ Or use force:true to overwrite (destructive).`;
 
     // Stage changes to git (NO AUTO-COMMIT - LLM must call git_feature to commit)
     let projectPathForGit: string | null = null;
+    let conflictWarning: string | null = null;
 
     if (!remoteOnly && gitStatus.gitInitialized) {
       try {
         const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
         const fullFilename = filename + fileExtension;
-        projectPathForGit = await LocalFileManager.getProjectDirectory(projectName, workingDir);
-        const path = await import('path');
-        const filePath = path.join(projectPathForGit, fullFilename);
+        const pathMod = await import('path');
+
+        // Use session worktree for isolated git staging
+        const worktreeManager = new SessionWorktreeManager();
+        const gitStagingPath = await worktreeManager.ensureWorktree(
+          scriptId,
+          this.gasClient,
+          accessToken
+        );
+        console.error(`📂 [SESSION-WT] Using session worktree: ${gitStagingPath}`);
+
+        // Check for external modifications (conflict detection)
+        // Pass existing remote source (not new content) to compare against session base hash
+        if (existingRemoteSource !== null) {
+          conflictWarning = worktreeManager.checkConflict(scriptId, filename, existingRemoteSource);
+          if (conflictWarning) {
+            console.error(`⚠️ [CONFLICT] ${conflictWarning}`);
+          }
+        }
+
+        projectPathForGit = gitStagingPath;
+        const filePath = pathMod.join(gitStagingPath, fullFilename);
 
         await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
@@ -709,18 +734,22 @@ Or use force:true to overwrite (destructive).`;
         // Stage the file (NO COMMIT - LLM must call git_feature)
         const { spawn } = await import('child_process');
         await new Promise<void>((resolve, reject) => {
-          const git = spawn('git', ['add', fullFilename], { cwd: projectPathForGit! });
+          const git = spawn('git', ['add', fullFilename], { cwd: gitStagingPath });
           git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git add failed with code ${code}`)));
           git.on('error', reject);
         });
         console.error(`📦 [GIT] Staged ${fullFilename} (NOT committed - call git_feature to commit)`);
+
+        // Update base hash after successful staging
+        worktreeManager.updateBaseHash(scriptId, filename, content);
       } catch (stageError: any) {
         console.error(`⚠️ [GIT] Could not stage file: ${stageError.message}`);
         // Continue anyway - file is written, just not staged
       }
     }
 
-    // Write local file (final step)
+    // Write local file (final step) - always keep ~/gas-repos/ in sync,
+    // even when session worktree handles git staging separately
     if (!remoteOnly) {
       try {
         const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
@@ -765,8 +794,8 @@ Or use force:true to overwrite (destructive).`;
       }
     }
 
-    // Check for git association hints AND detect local git (single API call)
-    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken);
+    // Check for git association hints AND detect local git (reuse fetched files when available)
+    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken, fetchedFiles);
 
     // Analyze content for warnings and hints based on file type
     let contentAnalysis: { warnings: string[]; hints: string[] } | undefined;
@@ -800,10 +829,15 @@ Or use force:true to overwrite (destructive).`;
       hash: results.hash  // Git SHA-1 of written content (WRAPPED) for future conflict detection
     };
 
+    // Add conflict detection warning from session worktree
+    if (conflictWarning) {
+      result.warnings = [conflictWarning];
+    }
+
     // Add content-specific warnings and hints (before other metadata)
     if (contentAnalysis) {
       if (contentAnalysis.warnings.length > 0) {
-        result.warnings = contentAnalysis.warnings;
+        result.warnings = [...(result.warnings || []), ...contentAnalysis.warnings];
       }
       if (contentAnalysis.hints.length > 0) {
         result.hints = contentAnalysis.hints;
@@ -888,15 +922,16 @@ Or use force:true to overwrite (destructive).`;
    */
   private async detectGitInfoAndBreadcrumb(
     scriptId: string,
-    accessToken: string
+    accessToken: string,
+    preloadedFiles?: any[]
   ): Promise<{ gitHints?: GitHints; gitDetection?: GitDetection }> {
     let gitHints: GitHints | undefined = undefined;
     let gitDetection: GitDetection | undefined = undefined;
     let allFiles: any[] = [];
 
     try {
-      // Single API call for both git hints and breadcrumb detection
-      allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      // Reuse caller's file list when available, otherwise fetch
+      allFiles = preloadedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
 
       // Check for git association hints
       const gitConfigFiles = allFiles.filter((f: any) =>
@@ -992,7 +1027,18 @@ Or use force:true to overwrite (destructive).`;
 
     const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
     const fullFilename = filename + fileExtension;
-    const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+    const mainProjectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+
+    // Use session worktree for isolated git operations
+    const accessToken = await this.getAuthToken(params);
+    const worktreeManager = new SessionWorktreeManager();
+    const projectPath = await worktreeManager.ensureWorktree(
+      scriptId,
+      this.gasClient,
+      accessToken
+    );
+    log.info(`[WRITE] Using session worktree: ${projectPath}`);
+
     const filePath = join(projectPath, fullFilename);
 
     // PHASE 0: Check current branch (no auto-creation of feature branches)
@@ -1023,12 +1069,14 @@ Or use force:true to overwrite (destructive).`;
         // No commitHash - we don't auto-commit
       }
     };
+    let fetchedFilesHook: any[] | undefined; // Reused by detectGitInfoAndBreadcrumb
 
     if (!localOnly) {
       try {
         const accessToken = await this.getAuthToken(params);
 
         const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        fetchedFilesHook = currentFiles;
         const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
         const fileType = existingFile?.type || determineFileTypeUtil(filename, finalContent);
 
@@ -1123,6 +1171,15 @@ Or use force:true to overwrite (destructive).`;
         }
         // === END HASH-BASED CONFLICT DETECTION ===
 
+        // Session worktree conflict detection (check if remote changed since session start)
+        let sessionConflictWarning: string | null = null;
+        if (existingFile) {
+          sessionConflictWarning = worktreeManager.checkConflict(scriptId, filename, existingFile.source || '');
+          if (sessionConflictWarning) {
+            console.error(`⚠️ [CONFLICT] ${sessionConflictWarning}`);
+          }
+        }
+
         const newFile = {
           name: filename,
           type: fileType as any,
@@ -1180,6 +1237,9 @@ Or use force:true to overwrite (destructive).`;
           console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
         }
 
+        // Update session worktree base hash after successful write
+        worktreeManager.updateBaseHash(scriptId, filename, finalContent);
+
         results.remoteFile = {
           scriptId,
           filename,
@@ -1191,6 +1251,11 @@ Or use force:true to overwrite (destructive).`;
 
         // Store written hash for response
         results.hash = writtenHash;
+
+        // Store session conflict warning for response
+        if (sessionConflictWarning) {
+          results.sessionConflictWarning = sessionConflictWarning;
+        }
 
       } catch (remoteError: any) {
         // PHASE 3: Remote failed - unstage changes (simple cleanup, no commit to revert)
@@ -1247,9 +1312,9 @@ Or use force:true to overwrite (destructive).`;
       }
     }
 
-    // Check for git association hints AND detect local git (single API call)
-    const accessToken = await this.getAuthToken(params);
-    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken);
+    // Check for git association hints AND detect local git (reuse fetched files when available)
+    // accessToken already obtained above (line ~1017)
+    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken, fetchedFilesHook);
 
     // Build git uncommitted status for hints
     const uncommittedStatus = await getUncommittedStatus(projectPath);
@@ -1274,10 +1339,15 @@ Or use force:true to overwrite (destructive).`;
       hash: results.hash  // Git SHA-1 of written content (WRAPPED) for future conflict detection
     };
 
+    // Add session conflict warning from session worktree
+    if (results.sessionConflictWarning) {
+      result.warnings = [results.sessionConflictWarning];
+    }
+
     // Add content-specific warnings and hints (before other metadata)
     if (contentAnalysis) {
       if (contentAnalysis.warnings.length > 0) {
-        result.warnings = contentAnalysis.warnings;
+        result.warnings = [...(result.warnings || []), ...contentAnalysis.warnings];
       }
       if (contentAnalysis.hints.length > 0) {
         result.hints = contentAnalysis.hints;

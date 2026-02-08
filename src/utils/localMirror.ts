@@ -18,6 +18,7 @@ import * as path from 'path';
 import { unwrapModuleContent } from './moduleWrapper.js';
 import { expandTilde } from './pathExpansion.js';
 import { execGitCommand } from './gitCommands.js';
+import { LocalFileManager } from './localFileManager.js';
 
 const execAsync = promisify(exec);
 
@@ -124,7 +125,7 @@ export async function findGitRepoForFile(
   scriptId: string,
   gasPath: string
 ): Promise<string | null> {
-  const localBase = expandPath(`~/gas-repos/project-${scriptId}`);
+  const localBase = LocalFileManager.resolveProjectPath(scriptId);
   const localPath = gasPathToLocalPath(gasPath);
   const fullPath = path.join(localBase, localPath);
 
@@ -309,7 +310,7 @@ export async function mirrorFileLocally(options: MirrorOptions): Promise<MirrorR
 
   try {
     // Construct local path
-    const localBase = expandPath(`~/gas-repos/project-${scriptId}`);
+    const localBase = LocalFileManager.resolveProjectPath(scriptId);
     const localPath = gasPathToLocalPath(gasPath, fileType);
     const fullPath = path.join(localBase, localPath);
 

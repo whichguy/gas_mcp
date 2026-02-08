@@ -12,6 +12,7 @@ import type { GASClient } from '../api/gasClient.js';
 import { log } from '../utils/logger.js';
 import { expandTilde } from './pathExpansion.js';
 import { validateScriptId } from './localGitDetection.js';
+import { LocalFileManager } from './localFileManager.js';
 
 /**
  * Result of git discovery process
@@ -263,7 +264,7 @@ export async function discoverGit(
     validateScriptId(scriptId);
 
     // Resolve starting path: ~/gas-repos/project-{scriptId}/{projectPath}
-    const baseProjectPath = expandTilde(`~/gas-repos/project-${scriptId}`);
+    const baseProjectPath = LocalFileManager.resolveProjectPath(scriptId);
     const startPath = projectPath ? join(baseProjectPath, projectPath) : baseProjectPath;
 
     log.debug(`[GIT-DISCOVERY] Starting two-phase discovery for ${scriptId} at ${startPath}`);

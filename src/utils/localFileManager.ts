@@ -117,6 +117,15 @@ export class LocalFileManager {
   }
 
   /**
+   * Resolve project path synchronously (no mkdir, no logging).
+   * Use for read-only path lookups. Use getProjectDirectory() when you need to ensure the directory exists.
+   */
+  static resolveProjectPath(scriptId: string): string {
+    const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
+    return path.resolve(homeDir, 'gas-repos', `project-${scriptId}`);
+  }
+
+  /**
    * Get the project-specific directory path (NO src/ subdirectory)
    * Always uses project-{scriptId} prefix for consistency across codebase
    */
