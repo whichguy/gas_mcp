@@ -17,6 +17,7 @@
  */
 
 import { BaseTool } from '../base.js';
+import { GuidanceFragments } from '../../utils/guidanceFragments.js';
 import { SessionAuthManager } from '../../auth/sessionManager.js';
 import { log } from '../../utils/logger.js';
 import { GASClient } from '../../api/gasClient.js';
@@ -132,19 +133,15 @@ type RsyncResponse =
 export class RsyncTool extends BaseTool {
   public name = 'mcp__gas__rsync';
 
-  public description = `[GIT] Unidirectional sync between GAS projects and local git repositories.
+  public description = `[GIT] PREFERRED for multi-file changes. Edit files locally at ~/gas-repos/project-{scriptId}/ using Claude Code native tools, then push all at once (2 API calls for N files).
 
-Two-phase workflow for safe, auditable sync:
+Two-phase workflow:
 1. plan: Compute diff and create plan (5-minute TTL)
 2. execute: Validate and apply plan
 
-Operations:
-- plan: Create sync plan (requires direction: pull or push)
-- execute: Execute a plan (requires planId, optionally confirmDeletions)
-- status: Check plan status
-- cancel: Cancel pending plan
+Operations: plan (requires direction: pull|push), execute (requires planId), status, cancel.
 
-Batch workflow: For multiple file changes, edit files locally at ~/gas-repos/project-{scriptId}/ then plan+execute to push all changes in 2 API calls.`;
+Use write/edit/aider for single-file or small changes (<3 files).`;
 
   public inputSchema = {
     type: 'object',
@@ -200,15 +197,17 @@ Batch workflow: For multiple file changes, edit files locally at ~/gas-repos/pro
     },
     required: ['operation', 'scriptId'],
     llmGuidance: {
-      workflow: 'plan → review diff → execute (with confirmDeletions if deletions)',
-      twoPhase: 'Plan has 5-min TTL. Review output before executing.',
-      bootstrap: 'First sync creates manifest. No deletions allowed on bootstrap.',
-      recovery: 'On failure: git reset --hard {pre-sync-sha}',
+      ...GuidanceFragments.buildRsyncGuidance({
+        workflow: 'plan → review diff → execute (with confirmDeletions if deletions)',
+        twoPhase: 'Plan has 5-min TTL. Review output before executing.',
+        bootstrap: 'First sync creates manifest. No deletions allowed on bootstrap.',
+        recovery: 'On failure: git reset --hard {pre-sync-sha}',
+      }),
       examples: [
-        'rsync({operation: "plan", scriptId: "...", direction: "pull"})',
-        'rsync({operation: "execute", scriptId: "...", planId: "...", confirmDeletions: true})',
-        'rsync({operation: "status", scriptId: "...", planId: "..."})',
-        'rsync({operation: "cancel", scriptId: "...", planId: "..."})'
+        'BATCH: Edit ~/gas-repos/project-{scriptId}/ locally → rsync plan → rsync execute',
+        'Pull: rsync({operation:"plan", scriptId:"...", direction:"pull"})',
+        'Push: rsync({operation:"plan", scriptId:"...", direction:"push"})',
+        'Execute: rsync({operation:"execute", scriptId:"...", planId:"..."})'
       ]
     }
   };

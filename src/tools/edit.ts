@@ -106,7 +106,7 @@ interface EditResult {
  */
 export class EditTool extends BaseTool {
   public name = 'edit';
-  public description = '[FILE] Token-efficient file editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. LLM outputs only changed text (~40 tokens) vs entire file (~4500 tokens), 83% token savings.';
+  public description = '[FILE] Token-efficient file editing (NO git auto-commit). For 3+ files, PREFER local edits + rsync. After edits, call git_feature({operation:"commit"}) to save. 83% token savings vs write.';
 
   public inputSchema = {
     type: 'object',
@@ -168,6 +168,8 @@ export class EditTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
+      // WORKFLOW SELECTION - when to use edit vs batch local
+      workflowSelection: GuidanceFragments.localFirstWorkflow,
       // GIT INTEGRATION - CRITICAL for LLM behavior
       gitIntegration: GuidanceFragments.gitIntegration,
       tokenEfficiency: GuidanceFragments.editTokenEfficiency,

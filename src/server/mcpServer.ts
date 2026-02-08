@@ -360,7 +360,8 @@ export class MCPGasServer {
       this.cachedToolSchemas = Array.from(tools.values()).map(tool => ({
         name: tool.name,
         description: tool.description,
-        inputSchema: tool.inputSchema
+        inputSchema: tool.inputSchema,
+        ...((tool as any).annotations ? { annotations: (tool as any).annotations } : {})
       }));
 
       console.error(`[PERFORMANCE] Cached schemas for ${this.cachedToolSchemas.length} tools`);

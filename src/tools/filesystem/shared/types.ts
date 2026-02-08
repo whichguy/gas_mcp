@@ -71,6 +71,7 @@ export interface FileResult {
 }
 
 export interface BatchWorkflowHint {
+  urgency?: 'HIGH' | 'NORMAL';
   when: string;
   workflow: string[];
   benefit: string;
