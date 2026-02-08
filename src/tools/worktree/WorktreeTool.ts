@@ -113,7 +113,7 @@ function getStateFromResult(result: object): WorktreeState | undefined {
  * MCP tool for managing parallel development worktrees
  */
 export class WorktreeTool extends BaseFileSystemTool {
-  public name = 'mcp__gas__worktree';
+  public name = 'worktree';
   public description = `[WORKTREE] Parallel GAS development with isolated worktrees sharing git history.
 
 Operations:
