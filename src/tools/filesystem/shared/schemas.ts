@@ -15,9 +15,14 @@ export const ACCESS_TOKEN_SCHEMA = SchemaFragments.accessToken;
 
 export const FILE_TYPE_SCHEMA = {
   type: 'string',
-  description: 'Explicit file type for Google Apps Script (optional). If not provided, auto-detected from content.',
+  description: 'File type (optional - auto-detected from filename/content). ⚠️ For .html files, use raw_write() instead of write() to avoid CommonJS wrapping.',
   enum: ['SERVER_JS', 'HTML', 'JSON'],
-  examples: ['SERVER_JS', 'HTML', 'JSON']
+  examples: ['SERVER_JS', 'HTML', 'JSON'],
+  llmHints: {
+    autoDetection: 'Usually omit - auto-detected from filename extension (.html→HTML, .json→JSON)',
+    htmlWarning: 'NEVER use SERVER_JS for .html files - use raw_write() or omit fileType',
+    default: 'SERVER_JS is applied to .gs/.js files and triggers CommonJS wrapping'
+  }
 } as const;
 
 export const MODULE_OPTIONS_SCHEMA = {
@@ -85,7 +90,8 @@ export const CONTENT_SCHEMA = {
     'const utils=require("Utils");exports.process=data=>utils.clean(data)'
   ],
   llmHints: {
-    toolChoice: 'write: new/large changes | edit: exact text (~10 tok) | aider: fuzzy (~10 tok) | 95%+ savings for small edits'
+    toolChoice: 'write: new/large changes | edit: exact text (~10 tok) | aider: fuzzy (~10 tok) | 95%+ savings for small edits',
+    htmlWarning: 'For HTML/CSS files, use raw_write() - write() adds CommonJS wrapper that breaks HTML'
   }
 } as const;
 

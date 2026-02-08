@@ -1,9 +1,9 @@
-import { createHash } from 'crypto';
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getBaseName, isWildcardPattern, matchesPattern, resolveHybridScriptId } from '../../api/pathParser.js';
 import { translateFilesForDisplay } from '../../utils/virtualFileTranslation.js';
 import { ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
 import { SchemaFragments } from '../../utils/schemaFragments.js';
+import { computeGitSha1, computeSha256, computeMd5 } from '../../utils/hashUtils.js';
 
 /**
  * Get comprehensive file status with SHA checksums and metadata
@@ -13,7 +13,7 @@ import { SchemaFragments } from '../../utils/schemaFragments.js';
  */
 export class FileStatusTool extends BaseFileSystemTool {
   public name = 'file_status';
-  public description = 'Get comprehensive file status with SHA checksums and metadata. Supports pattern matching for multiple files, Git-compatible SHA-1, SHA-256, MD5 hashes, and rich file metadata including line counts, encoding, and timestamps.';
+  public description = '[FILE] Get comprehensive file status with SHA checksums and metadata. Supports pattern matching for multiple files, Git-compatible SHA-1, SHA-256, MD5 hashes, and rich file metadata including line counts, encoding, and timestamps.';
 
   public inputSchema = {
     type: 'object',
@@ -171,40 +171,19 @@ export class FileStatusTool extends BaseFileSystemTool {
   }
 
   /**
-   * Compute Git-compatible SHA-1 checksum for file content
-   *
-   * Uses Git's blob format: sha1("blob " + <size> + "\0" + <content>)
-   * This matches the output of `git hash-object <file>`
-   *
-   * @param content - File content as string
-   * @returns Git-compatible SHA-1 hash as hex string
-   */
-  private computeGitSha1(content: string): string {
-    const size = Buffer.byteLength(content, 'utf8');
-    const header = `blob ${size}\0`;
-    return createHash('sha1')
-      .update(header)
-      .update(content, 'utf8')
-      .digest('hex');
-  }
-
-  /**
-   * Compute multiple hash types for file content
-   *
-   * @param content - File content as string
-   * @param types - Array of hash types to compute
-   * @returns Object mapping hash type to hex string
+   * Compute multiple hash types for file content using centralized hashUtils
+   * (includes CRLF normalization and UTF-8 BOM stripping for consistency)
    */
   private computeHashes(content: string, types: string[]): Record<string, string> {
     const hashes: Record<string, string> = {};
 
     for (const type of types) {
       if (type === 'git-sha1') {
-        hashes['git-sha1'] = this.computeGitSha1(content);
-      } else if (type === 'sha256' || type === 'md5') {
-        hashes[type] = createHash(type)
-          .update(content, 'utf8')
-          .digest('hex');
+        hashes['git-sha1'] = computeGitSha1(content);
+      } else if (type === 'sha256') {
+        hashes['sha256'] = computeSha256(content);
+      } else if (type === 'md5') {
+        hashes['md5'] = computeMd5(content);
       }
     }
 

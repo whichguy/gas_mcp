@@ -8,6 +8,10 @@ import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { DeleteOperationStrategy } from '../../core/git/operations/DeleteOperationStrategy.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
+import { generateSyncHints } from '../../utils/syncHints.js';
+import { enrichResponseWithHints } from './shared/responseHints.js';
+import { clearGASMetadata } from '../../utils/gasMetadataCache.js';
+import { join as pathJoin } from 'path';
 
 /**
  * Remove files from Google Apps Script project
@@ -17,7 +21,7 @@ import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
  */
 export class RmTool extends BaseFileSystemTool {
   public name = 'rm';
-  public description = 'Remove files from GAS (NO git auto-commit). After deletion, call git_feature({operation:"commit"}) to save. Like Unix rm but works with GAS flat file structure.';
+  public description = '[FILE] Remove files from GAS (NO git auto-commit). After deletion, call git_feature({operation:"commit"}) to save. Like Unix rm but works with GAS flat file structure.';
 
   public inputSchema = {
     type: 'object',
@@ -121,13 +125,34 @@ export class RmTool extends BaseFileSystemTool {
       accessToken
     });
 
+    // Clear xattr cache for deleted file (prevents false collision on recreate)
+    try {
+      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+      const projectPath = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+      const localFilePath = pathJoin(projectPath, filename + fileExtension);
+      await clearGASMetadata(localFilePath);
+      console.error(`🗑️ [RM] Cleared xattr cache for deleted file`);
+    } catch (cacheError) {
+      console.error(`⚠️ [RM] Cache clear failed: ${cacheError}`);
+    }
+
     // Check if on feature branch to add workflow hint
     const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
+    // Generate sync hints - no files to sync after deletion
+    const syncHints = generateSyncHints({
+      scriptId: parsedPath.scriptId,
+      operation: 'rm',
+      affectedFiles: [],  // No files to sync after delete
+      localCacheUpdated: true,  // Cache cleared (file deleted)
+      remotePushed: gitResult.result.remoteDeleted
+    });
+
     // Return response with git hints for LLM guidance
     // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
-    return {
+    const response: RemoveResult = {
       success: true,
       path,
       localDeleted: true,  // GitOperationManager handles local deletion
@@ -141,6 +166,8 @@ export class RmTool extends BaseFileSystemTool {
         recommendation: gitResult.git.recommendation,
         taskCompletionBlocked: gitResult.git.taskCompletionBlocked
       } : { detected: false },
+      // Add sync hints
+      syncHints,
       // Add workflow completion hint when on feature branch
       ...(onFeatureBranch ? {
         nextAction: {
@@ -149,5 +176,14 @@ export class RmTool extends BaseFileSystemTool {
         }
       } : {})
     };
+
+    // Enrich with centralized hints (batch workflow, sync fallbacks, nextAction defaults)
+    return enrichResponseWithHints(response, {
+      scriptId: parsedPath.scriptId,
+      affectedFiles: [],  // No files to sync after delete
+      operationType: 'rm',
+      localCacheUpdated: true,
+      remotePushed: gitResult.result.remoteDeleted,
+    });
   }
 }

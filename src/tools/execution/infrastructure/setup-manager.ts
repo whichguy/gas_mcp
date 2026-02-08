@@ -14,6 +14,7 @@ import { CodeGenerator } from '../../../utils/codeGeneration.js';
 import { getSuccessHtmlTemplate, getErrorHtmlTemplate, verifyInfrastructureFile } from '../../deployments.js';
 import { ensureManifestEntryPoints } from '../utilities/manifest-config.js';
 import { fileNameMatches } from '../../../api/pathParser.js';
+import { InfrastructureStatus, buildInfrastructureStatus } from '../../../types/infrastructureTypes.js';
 
 /**
  * Sets up execution infrastructure for a Google Apps Script project
@@ -28,13 +29,14 @@ import { fileNameMatches } from '../../../api/pathParser.js';
  * @param scriptId Script project ID
  * @param accessToken OAuth access token
  * @param sessionAuthManager Optional session manager for caching deployment URLs
+ * @returns InfrastructureStatus with verification results for exec response
  */
 export async function setupInfrastructure(
   gasClient: GASClient,
   scriptId: string,
   accessToken: string,
   sessionAuthManager?: SessionAuthManager
-): Promise<void> {
+): Promise<InfrastructureStatus> {
   // HANGING FIX: Add timeout wrapper for all Google API calls
   const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number, operationName: string): Promise<T> => {
     return Promise.race([
@@ -46,6 +48,12 @@ export async function setupInfrastructure(
       })
     ]);
   };
+
+  // Track infrastructure verification status for response
+  let infrastructureVerification: { verified: boolean; expectedSHA?: string; actualSHA?: string; error?: string } = {
+    verified: true // Assume success unless verification fails
+  };
+  let shimWasCreated = false;
 
   // Check if shim and HTML templates exist
   let shimExists = false;
@@ -93,6 +101,7 @@ export async function setupInfrastructure(
         'Update shim file'
       );
       console.error('Execution shim created successfully');
+      shimWasCreated = true;
 
       // BEST-EFFORT SHA VERIFICATION: Verify after creation (warn but don't block execution)
       console.error('🔍 [GAS_RUN] Verifying execution infrastructure integrity (best-effort)...');
@@ -103,6 +112,9 @@ export async function setupInfrastructure(
           sessionAuthManager,
           accessToken
         );
+
+        // Capture verification result for response
+        infrastructureVerification = verification;
 
         if (verification.verified) {
           console.error(`✅ [GAS_RUN] Execution infrastructure verified (SHA: ${verification.actualSHA})`);
@@ -118,6 +130,7 @@ export async function setupInfrastructure(
         // BEST-EFFORT: Log but don't fail
         console.error(`⚠️  [GAS_RUN] Infrastructure verification failed (non-blocking): ${verifyError.message}`);
         console.error(`   ℹ️  Execution will continue - verification is best-effort only`);
+        infrastructureVerification = { verified: false, error: verifyError.message };
       }
     } catch (error: any) {
       if (error.message?.includes('timeout')) {
@@ -136,6 +149,9 @@ export async function setupInfrastructure(
         accessToken
       );
 
+      // Capture verification result for response
+      infrastructureVerification = verification;
+
       if (verification.verified) {
         console.error(`✅ [GAS_RUN] Execution infrastructure verified (SHA: ${verification.actualSHA})`);
       } else {
@@ -150,6 +166,7 @@ export async function setupInfrastructure(
       // BEST-EFFORT: Log but don't fail
       console.error(`⚠️  [GAS_RUN] Infrastructure verification failed (non-blocking): ${verifyError.message}`);
       console.error(`   ℹ️  Execution will continue - verification is best-effort only`);
+      infrastructureVerification = { verified: false, error: verifyError.message };
     }
   }
 
@@ -251,4 +268,7 @@ export async function setupInfrastructure(
   }
 
   console.error('Infrastructure setup completed');
+
+  // Return infrastructure status for inclusion in exec response
+  return buildInfrastructureStatus(infrastructureVerification, shimWasCreated);
 }

@@ -791,6 +791,68 @@ function htmlAuthSuccessResponse(executionResult) {
   }
 
   /**
+   * Compute Git-compatible SHA-1 hashes for files using ScriptApp.getResource()
+   * Matches Node.js computeGitSha1() behavior exactly.
+   *
+   * Uses Git blob format: sha1("blob " + byteLength + "\0" + content)
+   * This enables server-side hash computation without downloading file content.
+   *
+   * IMPORTANT: ScriptApp.getResource() requires full paths WITH extensions:
+   *   - .gs files: 'folder/file.gs'
+   *   - .html files: 'folder/file.html'
+   *   - .json files: 'appsscript.json'
+   *
+   * @param {string[]} filenames - Full paths WITH extensions (e.g., 'folder/file.gs')
+   * @returns {Object} Map of filename → hash (40 hex chars) or null if error
+   *
+   * @example
+   * // Compute hashes for specific files
+   * __mcp_computeFileHashes(['Code.gs', 'Utils.gs', 'appsscript.json'])
+   * // Returns: { 'Code.gs': 'a1b2c3...', 'Utils.gs': 'd4e5f6...', 'appsscript.json': 'g7h8i9...' }
+   */
+  function __mcp_computeFileHashes(filenames) {
+    const results = {};
+
+    for (const filename of filenames) {
+      try {
+        let content = ScriptApp.getResource(filename).getDataAsString();
+
+        // Normalize content to match Node.js computeGitSha1() behavior:
+        // 1. Strip UTF-8 BOM (0xFEFF)
+        if (content.charCodeAt(0) === 0xFEFF) {
+          content = content.slice(1);
+        }
+        // 2. Normalize CRLF to LF (Windows → Unix line endings)
+        content = content.replace(/\r\n/g, '\n');
+
+        // Git blob format: "blob <byte_length>\0<content>"
+        // CRITICAL: Use byte length, not character length
+        // JavaScript string.length returns characters, but Git needs bytes
+        const contentBytes = Utilities.newBlob(content).getBytes();
+        const header = 'blob ' + contentBytes.length + '\0';
+        const blob = header + content;
+
+        // Compute SHA-1 hash
+        const sha1Bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_1, blob);
+
+        // Convert signed bytes to hex string
+        // GAS returns signed bytes (-128 to 127), need to convert to unsigned
+        results[filename] = sha1Bytes
+          .map(function(b) {
+            return ((b < 0 ? b + 256 : b).toString(16)).padStart(2, '0');
+          })
+          .join('');
+      } catch (e) {
+        // File not found or error - return null for this file
+        Logger.log('[__mcp_computeFileHashes] Error for ' + filename + ': ' + e.toString());
+        results[filename] = null;
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Promote deployment between environments
    * @param {string} environment - 'staging' or 'prod'
    * @param {string} description - Version description (required for staging)
@@ -1109,7 +1171,8 @@ function htmlAuthErrorResponse(errorData) {
     getScriptInfo,
     getRecentProcesses,
     getScriptLogs,
-    promoteDeployment
+    promoteDeployment,
+    __mcp_computeFileHashes
   };
 
   // Register with event system
@@ -1125,7 +1188,8 @@ function htmlAuthErrorResponse(errorData) {
     getScriptInfo: getScriptInfo,
     getRecentProcesses: getRecentProcesses,
     getScriptLogs: getScriptLogs,
-    promoteDeployment: promoteDeployment
+    promoteDeployment: promoteDeployment,
+    __mcp_computeFileHashes: __mcp_computeFileHashes
   };
 
   ///////// END USER CODE /////////

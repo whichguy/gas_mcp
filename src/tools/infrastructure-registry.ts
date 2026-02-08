@@ -7,7 +7,7 @@
  * SHA-1 checksums use Git-compatible blob format: sha1("blob " + size + "\0" + content)
  */
 
-import crypto from 'crypto';
+import { computeGitSha1 } from '../utils/hashUtils.js';
 import { fileNameMatches } from '../api/pathParser.js';
 
 /**
@@ -33,16 +33,12 @@ export interface InfrastructureFile {
 /**
  * Compute Git-compatible SHA-1 checksum for content
  *
- * Uses the same format as `git hash-object`:
- * sha1("blob " + <size> + "\0" + <content>)
- *
- * @param content - File content to hash
- * @returns SHA-1 checksum as hex string
+ * Delegates to centralized hashUtils.computeGitSha1() which includes
+ * CRLF→LF normalization and BOM stripping for consistency across
+ * all hash comparison paths (FileStatusTool, syncStatusChecker, etc.)
  */
 export function computeGitSHA(content: string): string {
-  const size = Buffer.byteLength(content, 'utf8');
-  const blob = `blob ${size}\0${content}`;
-  return crypto.createHash('sha1').update(blob, 'utf8').digest('hex');
+  return computeGitSha1(content);
 }
 
 /**

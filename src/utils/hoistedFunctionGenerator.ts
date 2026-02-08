@@ -26,6 +26,10 @@ export interface HoistedFunction {
  * @returns Array of hoisted function metadata
  */
 export function extractHoistedFunctions(content: string, moduleName: string): HoistedFunction[] {
+  if (!content) {
+    return [];
+  }
+
   const functions: HoistedFunction[] = [];
   const lines = content.split('\n');
 

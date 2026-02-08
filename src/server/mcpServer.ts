@@ -84,6 +84,9 @@ import { SheetSqlTool } from '../tools/sheets/sheetsSql.js';
 // Import worktree tool for parallel development
 import { WorktreeTool } from '../tools/worktree/index.js';
 
+// Import unified status dashboard
+import { StatusTool } from '../tools/StatusTool.js';
+
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
 
@@ -324,6 +327,9 @@ export class MCPGasServer {
 
       // 🔀 Parallel Development
       WorktreeTool,
+
+      // 📊 Status Dashboard
+      StatusTool,
     ];
 
     const tools = new Map<string, any>();

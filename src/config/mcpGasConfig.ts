@@ -1,9 +1,10 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import type { WorktreesConfig, WorktreeLock } from '../types/worktreeTypes.js';
 
 /**
  * Unified MCP Gas Server Configuration
- * Consolidates OAuth, projects, current project, and local root settings
+ * Consolidates OAuth, projects, current project, local root settings, and worktrees
  */
 export interface McpGasConfig {
   // OAuth Configuration
@@ -49,6 +50,9 @@ export interface McpGasConfig {
     configVersion: string;
     lastModified: string;
   };
+
+  // Worktree Management (for parallel development)
+  worktrees?: WorktreesConfig;
 }
 
 /**

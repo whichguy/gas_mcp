@@ -10,6 +10,11 @@
  * - File locking prevents concurrent config corruption
  */
 
+import type { WorktreeHints } from '../utils/worktreeHints.js';
+
+// Re-export for consumers
+export type { WorktreeHints };
+
 /**
  * Worktree lifecycle states
  */
@@ -296,6 +301,7 @@ export interface WorktreeInfo {
 export interface WorktreeAddResult {
   success: true;
   worktree: WorktreeInfo;
+  hints?: WorktreeHints;
 }
 
 /**
@@ -306,6 +312,7 @@ export interface WorktreeClaimResult {
   worktree: WorktreeInfo;
   /** True if a new worktree was created */
   created: boolean;
+  hints?: WorktreeHints;
 }
 
 /**
@@ -315,6 +322,7 @@ export interface WorktreeReleaseResult {
   success: true;
   state: 'READY';
   warnings?: string[];
+  hints?: WorktreeHints;
 }
 
 /**
@@ -330,6 +338,7 @@ export interface WorktreeListItem extends WorktreeInfo {
  */
 export interface WorktreeListResult {
   worktrees: WorktreeListItem[];
+  hints?: WorktreeHints;
 }
 
 /**
@@ -362,6 +371,7 @@ export interface WorktreeStatusResult {
   divergence: WorktreeDivergence;
   mergeable: boolean;
   gitStatus: WorktreeGitStatus;
+  hints?: WorktreeHints;
 }
 
 /**
@@ -373,6 +383,7 @@ export interface WorktreeSyncResult {
   skipped: string[];
   baseHashesAge?: number;
   warnings?: string[];
+  hints?: WorktreeHints;
 }
 
 /**
@@ -386,6 +397,7 @@ export interface WorktreeMergePreview {
     conflicts: string[];
     mergeable: boolean;
   };
+  hints?: WorktreeHints;
 }
 
 /**
@@ -398,6 +410,7 @@ export interface WorktreeMergeResult {
   pushedToRemote: boolean;
   worktreeState: 'MERGED' | 'READY';
   warnings?: string[];
+  hints?: WorktreeHints;
 }
 
 /**
@@ -421,6 +434,7 @@ export interface WorktreeRemoveResult {
   projectDeleted: boolean;
   keptForDiagnostics: boolean;
   warnings?: string[];
+  hints?: WorktreeHints;
 }
 
 /**
@@ -447,6 +461,7 @@ export interface WorktreeBatchAddResult {
   created: number;
   failedCount: number;
   message: string;
+  hints?: WorktreeHints;
 }
 
 /**
@@ -484,6 +499,7 @@ export interface WorktreeCleanupResult {
   kept: number;
   errors?: string[];
   summary: CleanupSummary;
+  hints?: WorktreeHints;
 }
 
 // ============================================================================
@@ -525,6 +541,7 @@ export interface WorktreeError {
   error: WorktreeErrorCode;
   message: string;
   details?: Record<string, unknown>;
+  hints?: WorktreeHints;
 }
 
 // ============================================================================

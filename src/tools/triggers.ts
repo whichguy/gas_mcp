@@ -10,7 +10,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
  */
 export class TriggerTool extends BaseTool {
   public name = 'trigger';
-  public description = 'Manage installable triggers for Google Apps Script projects with operations: list, create, delete';
+  public description = '[MONITOR] Manage installable triggers for Google Apps Script projects with operations: list, create, delete';
 
   public inputSchema = {
     type: 'object' as const,

@@ -610,7 +610,7 @@ async function performSynchronizedAuthFlow(
  */
 export class AuthTool extends BaseTool {
   public name = 'auth';
-  public description = 'Authenticate with Google Apps Script API using OAuth 2.0 (desktop flow with PKCE)';
+  public description = '[AUTH] Authenticate with Google Apps Script API using OAuth 2.0 (desktop flow with PKCE). Tool routing: [FILE] cat/write/edit for code | [FILE:RAW] for CommonJS wrappers | [EXEC] for running code | [GIT] for version control | [DEPLOY] for environments | [MONITOR] for project health';
   public inputSchema = {
     type: 'object',
     properties: {

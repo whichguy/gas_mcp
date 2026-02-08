@@ -7,10 +7,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { execGitCommandWithStderr } from './gitCommands.js';
 
 /**
  * Conflict information for a file
@@ -328,10 +325,12 @@ ${gitVersion.content}
   ): Promise<MergeResult> {
     try {
       // Use git merge-file for three-way merge
-      const { stdout, stderr } = await execAsync(
-        `git merge-file -p ${oursFile} ${baseFile} ${theirsFile}`
+      // SECURITY: Use spawn with array args to prevent shell injection
+      const { stdout, stderr } = await execGitCommandWithStderr(
+        ['merge-file', '-p', oursFile, baseFile, theirsFile],
+        process.cwd()
       );
-      
+
       const hasConflicts = stderr.includes('conflicts');
       
       return {

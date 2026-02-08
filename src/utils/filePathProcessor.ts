@@ -39,6 +39,11 @@ export function validateAndParseFilePath(
   validator: (path: string, operation: string) => string,
   operation: string
 ): ValidatedFilePath {
+  // Early validation for required path parameter
+  if (!params.path) {
+    throw new ValidationError('path', params.path, 'non-empty file path');
+  }
+
   // Apply virtual file translation for user-provided path
   const translatedPath = translatePathForOperation(params.path, true);
 

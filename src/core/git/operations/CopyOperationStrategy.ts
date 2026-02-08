@@ -37,6 +37,7 @@ interface CopyResult {
   fromProjectId: string;
   toProjectId: string;
   isCrossProject: boolean;
+  wrappedContent: string;  // For hash computation in tool
 }
 
 /**
@@ -157,7 +158,8 @@ export class CopyOperationStrategy implements FileOperationStrategy<CopyResult> 
       to: this.params.to,
       fromProjectId: this.fromProjectId,
       toProjectId: this.toProjectId,
-      isCrossProject: this.isCrossProject
+      isCrossProject: this.isCrossProject,
+      wrappedContent: finalContent  // For hash computation in tool
     };
   }
 

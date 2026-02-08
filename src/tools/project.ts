@@ -11,7 +11,7 @@ import { ProjectResolver } from '../utils/projectResolver.js';
  */
 export class ReorderTool extends BaseTool {
   public name = 'reorder';
-  public description = 'Change the execution order of files in a Google Apps Script project';
+  public description = '[DEPLOY] Change the execution order of files in a Google Apps Script project';
   
   public inputSchema = {
     type: 'object',
@@ -145,14 +145,14 @@ export class ReorderTool extends BaseTool {
           const fileExtension = LocalFileManager.getFileExtensionFromName(file.name);
           const localPath = join(localRoot, file.name + fileExtension);
           try {
-            // Update hash cache with WRAPPED content hash (primary sync mechanism)
+            // Update mtime FIRST so updateCachedContentHash captures correct mtime
+            if (file.updateTime) {
+              await setFileMtimeToRemote(localPath, file.updateTime, file.type);
+            }
+            // Then update hash cache with WRAPPED content hash (primary sync mechanism)
             if (file.source) {
               const contentHash = computeGitSha1(file.source);
               await updateCachedContentHash(localPath, contentHash);
-            }
-            // Update mtime for user convenience (informational only, not for sync)
-            if (file.updateTime) {
-              await setFileMtimeToRemote(localPath, file.updateTime, file.type);
             }
           } catch (cacheError) {
             // File might not exist locally - that's okay
@@ -182,7 +182,7 @@ export class ReorderTool extends BaseTool {
  */
 export class ProjectListTool extends BaseTool {
   public name = 'project_list';
-  public description = 'List all configured projects';
+  public description = '[DEPLOY] List all configured projects';
 
   public inputSchema = {
     type: 'object',

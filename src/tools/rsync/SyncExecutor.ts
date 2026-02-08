@@ -33,7 +33,7 @@ import {
   getModuleName
 } from '../../utils/moduleWrapper.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
-import { updateCachedContentHash, getCachedContentHash, clearGASMetadata } from '../../utils/gasMetadataCache.js';
+import { updateCachedContentHash, getValidatedContentHash, clearGASMetadata, cacheGASMetadata } from '../../utils/gasMetadataCache.js';
 import {
   FileFilter,
   EXCLUDED_DIRS,
@@ -290,7 +290,7 @@ export class SyncExecutor {
 
         // Compute hash on WRAPPED content (full file as stored in GAS)
         // This ensures wrapper changes (loadNow, hoistedFunctions, etc.) trigger sync
-        const wrappedHash = SyncManifest.computeGitSha1(source);
+        const wrappedHash = computeGitSha1(source);
 
         // Unwrap content for display/comparison readability
         let contentForDisplay = source;
@@ -411,16 +411,17 @@ export class SyncExecutor {
         // Convert path to GAS-style filename
         const filename = this.localPathToGasFilename(entryRelPath);
 
-        // Use cached hash if available (from previous sync)
+        // Use validated cached hash if available (from previous sync)
         // Local files are stored WRAPPED (with CommonJS), so file hash = wrapped hash
+        // getValidatedContentHash() checks mtime to detect external modifications
         let sha1: string;
-        const cachedHash = await getCachedContentHash(filePath);
-        if (cachedHash) {
-          sha1 = cachedHash;
+        const validatedHash = await getValidatedContentHash(filePath);
+        if (validatedHash) {
+          sha1 = validatedHash.hash;
         } else {
-          // No cached hash - compute from file content
+          // File doesn't exist or error - compute from file content
           // File should be WRAPPED content, so direct hash is correct
-          sha1 = SyncManifest.computeGitSha1(content);
+          sha1 = computeGitSha1(content);
         }
 
         files.push({
@@ -472,6 +473,12 @@ export class SyncExecutor {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
+      // Cache GAS metadata (updateTime, fileType) for CatTool fast path
+      const fileType = op.fileType || 'SERVER_JS';
+      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {
+        // Non-fatal: xattr not supported
+      });
+
       // Cache the content hash for sync status comparison
       // Since local = wrapped content, file hash = wrapped hash
       const contentHash = computeGitSha1(contentToWrite);
@@ -479,7 +486,7 @@ export class SyncExecutor {
         // Non-fatal: xattr not supported - sync check will compute from file content
       });
 
-      log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
+      log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${fileType})`);
     }
 
     // Process UPDATE operations
@@ -491,13 +498,19 @@ export class SyncExecutor {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
+      // Cache GAS metadata (updateTime, fileType) for CatTool fast path
+      const fileType = op.fileType || 'SERVER_JS';
+      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {
+        // Non-fatal: xattr not supported
+      });
+
       // Cache the content hash for sync status comparison
       const contentHash = computeGitSha1(contentToWrite);
       await updateCachedContentHash(filePath, contentHash).catch(() => {
         // Non-fatal: xattr not supported - sync check will compute from file content
       });
 
-      log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
+      log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${fileType})`);
     }
 
     // Process DELETE operations - use fileType for extension mapping

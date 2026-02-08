@@ -59,7 +59,7 @@ export interface CreateScriptResult {
 export class FindDriveScriptTool extends BaseTool {
   
   public name = 'find_drive_script';
-  public description = 'Find Drive containers (Sheets, Docs, Forms, Sites) and check Apps Script association status. Returns scriptId for integration with exec and other MCP functions.';
+  public description = '[SEARCH] Find Drive containers (Sheets, Docs, Forms, Sites) and check Apps Script association status. Returns scriptId for integration with exec and other MCP functions.';
   public inputSchema = {
     type: 'object',
     properties: {
@@ -318,7 +318,7 @@ export class FindDriveScriptTool extends BaseTool {
 export class CreateScriptTool extends BaseTool {
   
   public name = 'create_script';
-  public description = 'Create new Apps Script project and bind to a Drive container. Generates container-specific starter code. Returns scriptId for integration with exec and other MCP functions.';
+  public description = '[SEARCH] Create new Apps Script project and bind to a Drive container. Generates container-specific starter code. Returns scriptId for integration with exec and other MCP functions.';
   public inputSchema = {
     type: 'object',
     properties: {

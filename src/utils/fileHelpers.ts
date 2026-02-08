@@ -1,6 +1,6 @@
 import { stat, utimes, readFile } from 'fs/promises';
 import { GASFile } from '../api/gasClient.js';
-import { cacheGASMetadata, getCachedContentHash } from './gasMetadataCache.js';
+import { cacheGASMetadata, getValidatedContentHash } from './gasMetadataCache.js';
 import { fileNameMatches } from '../api/pathParser.js';
 import { computeGitSha1 } from './hashUtils.js';
 
@@ -41,16 +41,19 @@ export async function isFileInSyncByHash(
   remoteWrappedHash: string
 ): Promise<boolean> {
   try {
-    // Fast path: check cached hash from xattr
-    const cachedHash = await getCachedContentHash(localPath);
-    if (cachedHash && cachedHash === remoteWrappedHash) {
+    // Get validated hash (checks mtime to detect external modifications)
+    const validatedHash = await getValidatedContentHash(localPath);
+    if (validatedHash && validatedHash.hash === remoteWrappedHash) {
       return true;
     }
 
-    // Slow path: compute local hash from file content
-    const content = await readFile(localPath, 'utf-8');
-    const localHash = computeGitSha1(content);
-    return localHash === remoteWrappedHash;
+    // If validated hash exists but doesn't match, file is out of sync
+    if (validatedHash) {
+      return false;
+    }
+
+    // File doesn't exist
+    return false;
   } catch (error) {
     // File doesn't exist locally = out of sync
     return false;
@@ -87,65 +90,47 @@ export async function isFileInSyncWithCacheByHash(
   localPath: string,
   remoteWrappedHash: string
 ): Promise<SyncCheckResultByHash> {
-  // Try cached hash first (fast path - no file read needed)
-  const cachedHash = await getCachedContentHash(localPath);
+  // Get validated hash (checks mtime to detect external modifications)
+  // This will recompute if file was modified outside MCP tools
+  const validatedResult = await getValidatedContentHash(localPath);
 
-  if (cachedHash && cachedHash === remoteWrappedHash) {
-    // Fast path: cached hash matches exactly
-    return {
-      inSync: true,
-      diagnosis: {
-        localHash: cachedHash,
-        remoteHash: remoteWrappedHash,
-        cacheExists: true,
-        cachedHash,
-        cacheMatched: true,
-        syncMethod: 'cache-exact',
-        reason: 'Cached hash matches remote hash exactly'
-      }
-    };
-  }
-
-  // Slow path: compute local hash from file content
-  try {
-    const content = await readFile(localPath, 'utf-8');
-    const computedLocalHash = computeGitSha1(content);
-    const inSync = computedLocalHash === remoteWrappedHash;
-
-    return {
-      inSync,
-      diagnosis: {
-        localHash: computedLocalHash,
-        remoteHash: remoteWrappedHash,
-        cacheExists: !!cachedHash,
-        cachedHash: cachedHash || undefined,
-        cacheMatched: false,
-        syncMethod: inSync ? 'computed-match' : 'hash-mismatch',
-        reason: inSync
-          ? 'Computed local hash matches remote hash'
-          : cachedHash
-            ? `Hash mismatch: cached=${cachedHash.slice(0, 8)}..., computed=${computedLocalHash.slice(0, 8)}..., remote=${remoteWrappedHash.slice(0, 8)}...`
-            : `Hash mismatch: local=${computedLocalHash.slice(0, 8)}..., remote=${remoteWrappedHash.slice(0, 8)}...`
-      }
-    };
-  } catch (error: any) {
+  if (!validatedResult) {
     // File doesn't exist locally
-    if (error.code === 'ENOENT') {
-      return {
-        inSync: false,
-        diagnosis: {
-          localHash: null,
-          remoteHash: remoteWrappedHash,
-          cacheExists: !!cachedHash,
-          cachedHash: cachedHash || undefined,
-          cacheMatched: false,
-          syncMethod: 'no-local-file',
-          reason: 'Local file does not exist'
-        }
-      };
-    }
-    throw error;
+    return {
+      inSync: false,
+      diagnosis: {
+        localHash: null,
+        remoteHash: remoteWrappedHash,
+        cacheExists: false,
+        cacheMatched: false,
+        syncMethod: 'no-local-file',
+        reason: 'Local file does not exist'
+      }
+    };
   }
+
+  const { hash: localHash, source } = validatedResult;
+  const inSync = localHash === remoteWrappedHash;
+  const cacheWasValid = source === 'cache';
+
+  return {
+    inSync,
+    diagnosis: {
+      localHash,
+      remoteHash: remoteWrappedHash,
+      cacheExists: true,
+      cachedHash: localHash,
+      cacheMatched: cacheWasValid && inSync,
+      syncMethod: inSync
+        ? (cacheWasValid ? 'cache-exact' : 'computed-match')
+        : 'hash-mismatch',
+      reason: inSync
+        ? (cacheWasValid
+          ? 'Cached hash matches remote hash exactly'
+          : 'Computed local hash matches remote hash (cache was stale)')
+        : `Hash mismatch: local=${localHash.slice(0, 8)}..., remote=${remoteWrappedHash.slice(0, 8)}...`
+    }
+  };
 }
 
 // ============================================================================

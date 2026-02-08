@@ -25,7 +25,7 @@ const ENV_TAGS = {
  */
 export class DeployTool extends BaseTool {
   public name = 'deploy';
-  public description = 'Manage deployments across dev/staging/prod environments with version control and promotion workflow';
+  public description = '[DEPLOY] Manage deployments across dev/staging/prod environments with version control and promotion workflow';
 
   public inputSchema = {
     type: 'object',

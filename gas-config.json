@@ -73,9 +73,9 @@
       "description": "Created: 7/17/2025"
     },
     "module-test": {
-      "scriptId": "1iiBCSC83QrCQkWdDvDKIvxTpcblBijiTBhAnNtq2-u8jEadzpoHxKz0C",
+      "scriptId": "1s-MDMcYHBkMID6PWNqgGJ9-LuDmGnO5hgCWJMjZDvJ4alSVALQXJcd14",
       "name": "module-test",
-      "description": "Created: 10/11/2025"
+      "description": "Created: 1/23/2026"
     },
     "module-validation": {
       "scriptId": "1cm2Zl0iT4zRYmn5COgVCfZYuQuJYkKGWfNiLfmY-bpdD1iGRGBlMmEfb",
@@ -83,9 +83,9 @@
       "description": "Created: 7/17/2025"
     },
     "logger-test": {
-      "scriptId": "1FqVdqKphO3YyHpdaBtbcXjNdk6MrbbTV6DyGKGGf8RVQrPng3J9P-xpP",
+      "scriptId": "1PvsrDfPKyjsZvxvOwtI91uJARsYLyasThnMMJwkQ3nV2xxJ-E6LI_6bN",
       "name": "logger-test",
-      "description": "Created: 1/19/2026"
+      "description": "Created: 1/27/2026"
     },
     "logger-test-fresh": {
       "scriptId": "1zoYXqGqYNpGWF1FHwmPrK8m8_cegWPZkzlZ5T6uUH86ahF-mqlLGxYUW",
@@ -508,29 +508,29 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1Vk9TEKqGoGdmHnsAqOt4bXyracKjs-zUsTcuhRJj4n7nvJkX-s4STZVI",
+      "scriptId": "1ERumeVIA0wZBg9lR5LE0Cp1veYot63g-ZjcISKvKuTTJPLhQfvPiqtaN",
       "name": "consolidated-test-project",
-      "description": "Created: 1/19/2026"
+      "description": "Created: 2/5/2026"
     },
     "exec-test": {
-      "scriptId": "1sezrSspS2S_799hMocHU7X3z7pMRBwLv7vOup2s6xfeWxNiB17Vsk_VU",
+      "scriptId": "1DoxHRcrc1jtC2jVXb3sI_CHgUNJWfdPnpr-UHbJv-hhd8g59ZctsHdJ2",
       "name": "exec-test",
-      "description": "Created: 1/19/2026"
+      "description": "Created: 2/5/2026"
     },
     "gas-services-test": {
-      "scriptId": "19GhSXsvx3ox2Mq56WFFF-UT8M565VwK7y54z6zq0d3kbdfwksWMnlOH2",
+      "scriptId": "1jucCOU-gaCdjTo8xSC0c0w_Hy---aZmjWNjcjvK1XoZdjf_RwO4hi3uS",
       "name": "gas-services-test",
-      "description": "Created: 1/19/2026"
+      "description": "Created: 1/27/2026"
     },
     "complex-js-test": {
-      "scriptId": "1qvl3Qjvs7hs1RjZClCJj7rORvtoQIZTUGgkG_KCFh68Gna7TLzUIDLfI",
+      "scriptId": "1dptgaj_YvcsJwvQiLwXILvYwvAJV5ccdHghTIBH_PRHFztDDzLGiv9qh",
       "name": "complex-js-test",
-      "description": "Created: 1/18/2026"
+      "description": "Created: 1/20/2026"
     },
     "file-ops-test": {
-      "scriptId": "1vNr8LT_OHLbmlUn1ZzVPBQfYdSJZgbc8mIXChZAVSTc2MFm0SGtzAEvJ",
+      "scriptId": "1ADy60DSg-0XSnzMNVbboKXyB8Zn2KgorpoYkOE8p9aAN9hQrxLI9fSdf",
       "name": "file-ops-test",
-      "description": "Created: 1/4/2026"
+      "description": "Created: 1/23/2026"
     },
     "real-gas-e2e-test-176021807938": {
       "scriptId": "1jhIP5JveC9MOJRuCyDnD_nPb2zQZNfq0mXvoH7PARjD9NipyZ9CQI6vx",
@@ -731,6 +731,16 @@
       "scriptId": "1sDtTt3VLS5r27RJsGCJqTQ4VrhicvceY4UZ9zFnNZ6_PbSKuangD7CHY",
       "name": "mcp-git-master-test",
       "description": "Created: 1/12/2026"
+    },
+    "gas-undocumented-validation": {
+      "scriptId": "1Dou5L-HQvNOPrtswZ6JWnieNa0t6ZMGN_cAge0GxvgasTGyLiOylszMd",
+      "name": "gas-undocumented-validation",
+      "description": "Created: 1/23/2026"
+    },
+    "client-token-test": {
+      "scriptId": "1j5PRTilCq5zpiAUY4auwC8_83lfTbl5l8Xr_l9NTlWdb6PEF9wQLzA5E",
+      "name": "client-token-test",
+      "description": "Created: 1/25/2026"
     }
   },
   "localRoot": {
@@ -740,7 +750,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-01-19T22:39:23.761Z"
+    "lastModified": "2026-02-05T15:38:40.118Z"
   },
   "debug": true,
   "currentProject": {

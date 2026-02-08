@@ -37,7 +37,7 @@ import { generateSearchHints, SearchHints } from '../utils/searchHints.js';
  */
 export class GrepTool extends BaseTool {
   public name = 'grep';
-  public description = 'Search file contents in Google Apps Script project. ⚠️ NOTE: For advanced searches, ripgrep is STRONGLY RECOMMENDED over grep - it provides multi-pattern search, smart case, context control, and better performance. Use grep only for simple single-pattern searches. Automatically unwraps CommonJS modules to show clean user code.';
+  public description = '[FILE] Search file contents in Google Apps Script project. For advanced searches, ripgrep is STRONGLY RECOMMENDED over grep - it provides multi-pattern search, smart case, context control, and better performance. Use grep only for simple single-pattern searches. Automatically unwraps CommonJS modules to show clean user code.';
   
   public inputSchema = {
     type: 'object',
@@ -399,7 +399,7 @@ export class GrepTool extends BaseTool {
  */
 export class RawGrepTool extends BaseTool {
   public name = 'raw_grep';
-  public description = 'Search file contents with explicit project ID control and full content including CommonJS wrappers. Like Unix grep but operates on raw Google Apps Script file content. Always makes direct API calls.';
+  public description = '[FILE:RAW] Search file contents with explicit project ID control and full content including CommonJS wrappers. Use instead of grep when you need to see/edit the CommonJS _main() wrapper. Always makes direct API calls.';
   
   public inputSchema = {
     type: 'object',

@@ -353,6 +353,11 @@ export class GitOperationManager {
 
       log.info(`[GIT-MANAGER] Remote write complete`);
 
+      // NOTE: xattr cache updates are handled by individual tools (edit.ts, aider.ts,
+      // CpTool.ts, MvTool.ts) AFTER executeWithGit() returns. The tools have CommonJS
+      // wrapping context needed to hash WRAPPED content correctly. The manager operates
+      // on unwrapped content and cannot produce correct hashes for sync detection.
+
       // SUCCESS
       log.info(`[GIT-MANAGER] Git operation completed successfully`);
 

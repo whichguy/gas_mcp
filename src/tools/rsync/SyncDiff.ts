@@ -12,8 +12,9 @@
  */
 
 import { log } from '../../utils/logger.js';
-import { SyncManifest, SyncManifestData } from './SyncManifest.js';
+import { SyncManifestData } from './SyncManifest.js';
 import { FileFilter, FileFilterOptions } from '../../utils/fileFilter.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
 
 /**
  * File information for diff computation
@@ -210,7 +211,7 @@ export class SyncDiff {
     return gasFiles.map(file => ({
       filename: file.name,
       content: file.source,
-      sha1: SyncManifest.computeGitSha1(file.source),
+      sha1: computeGitSha1(file.source),
       lastModified: file.updateTime,
       size: Buffer.byteLength(file.source, 'utf-8')
     }));
@@ -226,7 +227,7 @@ export class SyncDiff {
     return localFiles.map(file => ({
       filename: file.filename,
       content: file.content,
-      sha1: SyncManifest.computeGitSha1(file.content),
+      sha1: computeGitSha1(file.content),
       lastModified: file.mtime?.toISOString(),
       size: Buffer.byteLength(file.content, 'utf-8')
     }));

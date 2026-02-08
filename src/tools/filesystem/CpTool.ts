@@ -11,6 +11,10 @@ import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { CopyOperationStrategy } from '../../core/git/operations/CopyOperationStrategy.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
+import { generateSyncHints } from '../../utils/syncHints.js';
+import { enrichResponseWithHints } from './shared/responseHints.js';
+import { updateCachedContentHash } from '../../utils/gasMetadataCache.js';
+import path from 'path';
 
 /**
  * Copy files in Google Apps Script project with CommonJS processing
@@ -20,7 +24,7 @@ import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
  */
 export class CpTool extends BaseFileSystemTool {
   public name = 'cp';
-  public description = 'Copy files in GAS (NO git auto-commit). After copy, call git_feature({operation:"commit"}) to save. Unwraps source module, rewraps for destination. Like Unix cp.';
+  public description = '[FILE] Copy files in GAS (NO git auto-commit). After copy, call git_feature({operation:"commit"}) to save. Unwraps source module, rewraps for destination. Like Unix cp.';
 
   public inputSchema = {
     type: 'object',
@@ -157,30 +161,128 @@ export class CpTool extends BaseFileSystemTool {
     const copyResult = gitResult.result;
     const isCrossProject = fromProjectId !== toProjectId;
 
-    // Compute destination file hash for response
-    // Fetch the destination file to compute its hash on WRAPPED content
+    // Compute destination file hash for response and cache
+    // Use wrappedContent from strategy result for consistent hashing
     let destHash: string | undefined;
+    let cacheUpdated = false;
     try {
-      const destFiles = await this.gasClient.getProjectContent(toProjectId, accessToken);
-      const destFile = destFiles.find((f: any) => fileNameMatches(f.name, toFilename));
-      if (destFile) {
-        // Compute hash on WRAPPED content (full file as stored in GAS)
-        // This ensures hash matches `git hash-object <file>` on local synced files
-        destHash = computeGitSha1(destFile.source || '');
-      }
+      // Compute hash on WRAPPED content from strategy result
+      destHash = computeGitSha1(copyResult.wrappedContent || '');
+
+      // Update xattr cache for collision detection on future writes
+      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+      const destProjectPath = await LocalFileManager.getProjectDirectory(toProjectId);
+      const destExt = LocalFileManager.getFileExtensionFromName(toFilename);
+      const destLocalPath = path.join(destProjectPath, toFilename + destExt);
+      await updateCachedContentHash(destLocalPath, destHash);
+      cacheUpdated = true;
+      console.error(`📋 [CP] Cached destination hash: ${destHash.slice(0, 8)}...`);
     } catch (hashError) {
       // Log but don't fail the copy operation if hash computation fails
-      console.error(`⚠️ [HASH] Could not compute destination hash: ${hashError}`);
+      console.error(`⚠️ [CP] Hash cache update failed: ${hashError}`);
     }
 
     // Check if on feature branch to add workflow hint
     const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
     const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
 
+    // Generate sync hints
+    const syncHints = generateSyncHints({
+      scriptId: toProjectId,
+      operation: 'cp',
+      affectedFiles: [toFilename],
+      localCacheUpdated: cacheUpdated,  // True if xattr cache was updated
+      remotePushed: true
+    });
+
+    // For cross-project copies, compare appsscript.json manifests and warn about differences
+    let manifestHints: { differences: string[]; recommendation?: string } | undefined;
+    if (isCrossProject) {
+      try {
+        // Fetch both manifests
+        const sourceFiles = await this.gasClient.getProjectContent(fromProjectId, accessToken);
+        const destFiles = await this.gasClient.getProjectContent(toProjectId, accessToken);
+
+        const sourceManifest = sourceFiles.find((f: any) => f.name === 'appsscript');
+        const destManifest = destFiles.find((f: any) => f.name === 'appsscript');
+
+        if (sourceManifest && destManifest) {
+          const sourceConfig = JSON.parse(sourceManifest.source || '{}');
+          const destConfig = JSON.parse(destManifest.source || '{}');
+
+          const differences: string[] = [];
+
+          // Compare OAuth scopes
+          const sourceScopes = new Set<string>(sourceConfig.oauthScopes || []);
+          const destScopes = new Set<string>(destConfig.oauthScopes || []);
+          const missingScopes = [...sourceScopes].filter(s => !destScopes.has(s));
+          if (missingScopes.length > 0) {
+            differences.push(`Missing OAuth scopes in destination: ${missingScopes.map(s => s.split('/').pop()).join(', ')}`);
+          }
+
+          // Compare advanced services (dependencies)
+          const sourceDeps: any[] = sourceConfig.dependencies?.enabledAdvancedServices || [];
+          const destDeps: any[] = destConfig.dependencies?.enabledAdvancedServices || [];
+          const sourceDepNames = new Set<string>(sourceDeps.map(d => d.serviceId));
+          const destDepNames = new Set<string>(destDeps.map(d => d.serviceId));
+          const missingDeps = [...sourceDepNames].filter(d => !destDepNames.has(d));
+          if (missingDeps.length > 0) {
+            differences.push(`Missing advanced services in destination: ${missingDeps.join(', ')}`);
+          }
+
+          // Compare libraries (CRITICAL - code may reference Library.function())
+          const sourceLibs: any[] = sourceConfig.dependencies?.libraries || [];
+          const destLibs: any[] = destConfig.dependencies?.libraries || [];
+          const destLibIds = new Set<string>(destLibs.map(l => l.libraryId));
+          const missingLibs = sourceLibs
+            .filter(l => !destLibIds.has(l.libraryId))
+            .map(l => l.userSymbol || l.libraryId);
+          if (missingLibs.length > 0) {
+            differences.push(`Missing libraries in destination: ${missingLibs.join(', ')}`);
+          }
+
+          // Compare urlFetchWhitelist (code may fetch URLs not allowed in destination)
+          const sourceWhitelist: string[] = sourceConfig.urlFetchWhitelist || [];
+          const destWhitelist: string[] = destConfig.urlFetchWhitelist || [];
+          if (sourceWhitelist.length > 0 && destWhitelist.length === 0) {
+            differences.push(`Source has URL allowlist (${sourceWhitelist.length} URLs), destination has none`);
+          } else if (sourceWhitelist.length > 0) {
+            const destPrefixes = new Set<string>(destWhitelist);
+            const missingUrls = sourceWhitelist.filter((url: string) => !destPrefixes.has(url));
+            if (missingUrls.length > 0) {
+              differences.push(`Missing URL prefixes in destination allowlist: ${missingUrls.length} URLs`);
+            }
+          }
+
+          // Compare timezone
+          if (sourceConfig.timeZone && destConfig.timeZone && sourceConfig.timeZone !== destConfig.timeZone) {
+            differences.push(`Timezone mismatch: source=${sourceConfig.timeZone}, dest=${destConfig.timeZone}`);
+          }
+
+          // Compare runtime version
+          if (sourceConfig.runtimeVersion !== destConfig.runtimeVersion) {
+            differences.push(`Runtime mismatch: source=${sourceConfig.runtimeVersion || 'V8'}, dest=${destConfig.runtimeVersion || 'V8'}`);
+          }
+
+          if (differences.length > 0) {
+            manifestHints = {
+              differences,
+              recommendation: 'Review destination project appsscript.json to ensure compatibility with copied code'
+            };
+            console.error(`⚠️ [CP] Cross-project manifest differences detected: ${differences.length} issues`);
+          }
+        }
+      } catch (manifestError) {
+        console.error(`⚠️ [CP] Could not compare manifests: ${manifestError}`);
+      }
+    }
+
     // Return response with git hints for LLM guidance
     // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
-    return {
-      ...copyResult,
+    // Exclude wrappedContent from response (internal use only for hash computation)
+    const { wrappedContent: _unused, ...copyResultForResponse } = copyResult;
+    const response: CopyResult = {
+      ...copyResultForResponse,
       commonJsProcessed: true,  // CopyOperationStrategy always processes CommonJS
       size: 0,  // We don't track size in the strategy
       totalFiles: 0,  // We don't track this anymore
@@ -201,6 +303,10 @@ export class CpTool extends BaseFileSystemTool {
         recommendation: gitResult.git.recommendation,
         taskCompletionBlocked: gitResult.git.taskCompletionBlocked
       } : { detected: false },
+      // Add sync hints with recovery commands
+      syncHints,
+      // Add manifest compatibility hints for cross-project copies
+      ...(manifestHints ? { manifestHints } : {}),
       // Add workflow completion hint when on feature branch
       ...(onFeatureBranch ? {
         nextAction: {
@@ -209,5 +315,14 @@ export class CpTool extends BaseFileSystemTool {
         }
       } : {})
     };
+
+    // Enrich with centralized hints (batch workflow, sync fallbacks, nextAction defaults)
+    return enrichResponseWithHints(response, {
+      scriptId: toProjectId,
+      affectedFiles: [toFilename],
+      operationType: 'cp',
+      localCacheUpdated: cacheUpdated,
+      remotePushed: true,
+    });
   }
 }

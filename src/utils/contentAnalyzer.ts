@@ -28,7 +28,9 @@ export interface ModuleOptions {
 /**
  * Determine file type from filename and content
  *
- * @param filename - The filename (without extension)
+ * Priority: manifest check → filename extension → content patterns → default SERVER_JS
+ *
+ * @param filename - The filename (with or without extension)
  * @param content - The file content
  * @returns 'JSON' | 'HTML' | 'SERVER_JS'
  */
@@ -37,14 +39,34 @@ export function determineFileType(filename: string, content: string): string {
     return 'JSON';
   }
 
-  const trimmed = content.trim();
-  if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html>')) {
+  // Check filename extension first (strongest signal)
+  const lowerFilename = filename.toLowerCase();
+  if (lowerFilename.endsWith('.html') || lowerFilename.endsWith('.htm')) {
     return 'HTML';
-  } else if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    return 'JSON';
-  } else {
-    return 'SERVER_JS';
   }
+  if (lowerFilename.endsWith('.json')) {
+    return 'JSON';
+  }
+
+  const trimmed = content.trim();
+  const trimmedLower = trimmed.toLowerCase();
+
+  // Expanded HTML detection patterns
+  if (trimmedLower.startsWith('<!doctype') ||
+      trimmedLower.startsWith('<html') ||
+      trimmedLower.startsWith('<?xml') ||
+      /^<style[\s>]/i.test(trimmed) ||
+      /^<head[\s>]/i.test(trimmed) ||
+      /^<body[\s>]/i.test(trimmed) ||
+      /^\s*<\?!?=/.test(trimmed)) {  // GAS scriptlets
+    return 'HTML';
+  }
+
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return 'JSON';
+  }
+
+  return 'SERVER_JS';
 }
 
 /**
@@ -85,6 +107,18 @@ export function detectContentFileTypeMismatch(
     return null;
   }
 
+  // DEFENSIVE: Filename extension is authoritative - block obvious mistakes
+  const lowerFilename = filename.toLowerCase();
+  if (lowerFilename.endsWith('.html') || lowerFilename.endsWith('.htm')) {
+    return {
+      mismatch: true,
+      detectedType: 'HTML',
+      message: 'File has .html extension but fileType is SERVER_JS. ' +
+               'HTML files cannot have CommonJS wrappers. ' +
+               'Use raw_write() for HTML files or omit fileType for auto-detection.'
+    };
+  }
+
   // Special case: appsscript.json is always JSON (it's the manifest)
   if (isManifestFile(filename)) {
     return {
@@ -107,6 +141,21 @@ export function detectContentFileTypeMismatch(
       message: 'Content appears to be HTML but fileType is SERVER_JS. ' +
                'HTML files cannot have CommonJS wrappers (would break the HTML). ' +
                'Use fileType: "HTML" or omit fileType for auto-detection.'
+    };
+  }
+
+  // Check for additional HTML patterns (CSS, inline scripts, GAS scriptlets)
+  // All patterns anchored with ^ to avoid false positives on .gs files with HTML in strings
+  if (/^<style[\s>]/i.test(content) ||
+      /^<script[\s>]/i.test(content) ||
+      /^<head[\s>]/i.test(content) ||
+      /^<body[\s>]/i.test(content) ||
+      /^\s*<\?!?=/.test(content)) {  // GAS scriptlets
+    return {
+      mismatch: true,
+      detectedType: 'HTML',
+      message: 'Content contains HTML patterns but fileType is SERVER_JS. ' +
+               'Use raw_write() for HTML files or omit fileType for auto-detection.'
     };
   }
 

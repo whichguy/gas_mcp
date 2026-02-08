@@ -79,7 +79,7 @@ interface ReplacementOperation {
  */
 export class SedTool extends BaseTool {
   public name = 'sed';
-  public description = '🔧 RECOMMENDED: sed-style find/replace operations with automatic CommonJS processing. Supports regex patterns with capture groups ($1, $2), multi-pattern operations, and file filtering. Processes clean user code (same content as cat shows).';
+  public description = '[FILE] sed-style find/replace operations with automatic CommonJS processing. Supports regex patterns with capture groups ($1, $2), multi-pattern operations, and file filtering. Processes clean user code (same content as cat shows).';
 
   public inputSchema = {
     type: 'object',
@@ -348,7 +348,7 @@ export class SedTool extends BaseTool {
  */
 export class RawSedTool extends BaseTool {
   public name = 'raw_sed';
-  public description = '🔧 ADVANCED: sed-style find/replace on raw file content including CommonJS wrappers and system code. Operates on complete file content (same as raw_cat shows). Use for system-level modifications.';
+  public description = '[FILE:RAW] sed-style find/replace on raw file content including CommonJS wrappers and system code. Use instead of sed when you need to see/edit the CommonJS _main() wrapper. Operates on complete file content (same as raw_cat shows).';
 
   public inputSchema = {
     type: 'object',

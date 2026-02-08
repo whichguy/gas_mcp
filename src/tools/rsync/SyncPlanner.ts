@@ -22,6 +22,7 @@ import { log } from '../../utils/logger.js';
 import { LockManager } from '../../utils/lockManager.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncManifest, ManifestLoadResult } from './SyncManifest.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
 import { fileNameMatches } from '../../api/pathParser.js';
 import { PlanStore, SyncPlan } from './PlanStore.js';
@@ -38,7 +39,7 @@ import {
   EXCLUDED_FILES,
   EXCLUDED_DIRS,
 } from '../../utils/fileFilter.js';
-import { getCachedContentHash } from '../../utils/gasMetadataCache.js';
+import { getValidatedContentHash } from '../../utils/gasMetadataCache.js';
 
 // Note: GAS file filtering constants have been moved to centralized fileFilter.ts
 // Use FileFilter.isGasCompatible() and FileFilter.isLocalConfig() etc.
@@ -504,17 +505,18 @@ export class SyncPlanner {
         // Convert path to GAS-style filename (remove extension, convert slashes)
         const filename = this.localPathToGasFilename(entryRelPath);
 
-        // Use cached WRAPPED hash if available (from previous sync)
+        // Use validated cached hash if available (from previous sync)
         // Local files are stored WRAPPED (with CommonJS), so file hash = wrapped hash
         // This ensures hash comparison works correctly with GAS remote files
+        // getValidatedContentHash() checks mtime to detect external modifications
         let sha1: string;
-        const cachedHash = await getCachedContentHash(filePath);
-        if (cachedHash) {
-          sha1 = cachedHash;
+        const validatedHash = await getValidatedContentHash(filePath);
+        if (validatedHash) {
+          sha1 = validatedHash.hash;
         } else {
-          // No cached hash - compute from file content
+          // File doesn't exist or error - compute from file content
           // File should be WRAPPED content, so direct hash is correct
-          sha1 = SyncManifest.computeGitSha1(content);
+          sha1 = computeGitSha1(content);
         }
 
         files.push({
@@ -632,7 +634,7 @@ export class SyncPlanner {
 
         // Compute hash on WRAPPED content (full file as stored in GAS)
         // This ensures wrapper changes (loadNow, hoistedFunctions, etc.) trigger sync
-        const wrappedHash = SyncManifest.computeGitSha1(source);
+        const wrappedHash = computeGitSha1(source);
 
         // Unwrap content for display/comparison readability
         let contentForDisplay = source;

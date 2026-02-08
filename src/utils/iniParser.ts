@@ -10,10 +10,14 @@
  * Handles sections like [core], [remote "origin"], etc.
  */
 export function parseINI(content: string): Record<string, any> {
+  if (!content) {
+    return {};
+  }
+
   const result: Record<string, any> = {};
   let currentSection = '';
   let currentSubsection = '';
-  
+
   const lines = content.split('\n');
   
   for (const line of lines) {

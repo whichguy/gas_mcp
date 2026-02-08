@@ -132,7 +132,7 @@ type RsyncResponse =
 export class RsyncTool extends BaseTool {
   public name = 'mcp__gas__rsync';
 
-  public description = `Unidirectional sync between GAS projects and local git repositories.
+  public description = `[GIT] Unidirectional sync between GAS projects and local git repositories.
 
 Two-phase workflow for safe, auditable sync:
 1. plan: Compute diff and create plan (5-minute TTL)
@@ -142,7 +142,9 @@ Operations:
 - plan: Create sync plan (requires direction: pull or push)
 - execute: Execute a plan (requires planId, optionally confirmDeletions)
 - status: Check plan status
-- cancel: Cancel pending plan`;
+- cancel: Cancel pending plan
+
+Batch workflow: For multiple file changes, edit files locally at ~/gas-repos/project-{scriptId}/ then plan+execute to push all changes in 2 API calls.`;
 
   public inputSchema = {
     type: 'object',

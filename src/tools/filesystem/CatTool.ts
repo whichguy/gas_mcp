@@ -11,7 +11,7 @@ import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWil
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
 import { unwrapModuleContent, shouldWrapContent } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
-import { setFileMtimeToRemote, isFileInSyncByHash } from '../../utils/fileHelpers.js';
+import { setFileMtimeToRemote, isFileInSyncWithCacheByHash } from '../../utils/fileHelpers.js';
 import { getCachedGASMetadata, cacheGASMetadata, updateCachedContentHash, getCachedContentHash, clearGASMetadata } from '../../utils/gasMetadataCache.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { join, dirname } from 'path';
@@ -31,7 +31,7 @@ import type { CatParams, FileResult } from './shared/types.js';
  */
 export class CatTool extends BaseFileSystemTool {
   public name = 'cat';
-  public description = 'Read file contents from Google Apps Script project. Automatically unwraps CommonJS modules to show clean user code for editing. Like Unix cat but works with GAS projects and handles module processing.';
+  public description = '[FILE] Read file contents from Google Apps Script project. Automatically unwraps CommonJS modules to show clean user code for editing. Like Unix cat but works with GAS projects and handles module processing.';
 
   public inputSchema = {
     type: 'object',
@@ -104,6 +104,13 @@ export class CatTool extends BaseFileSystemTool {
     const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
     const accessToken = await this.getAuthToken(params);
 
+    // Hoist remoteFiles to avoid duplicate API calls between fast and slow paths
+    // If fast path fetches remote files, slow path can reuse them
+    let remoteFilesFromFastPath: any[] | undefined;
+
+    // Track previous hash for content-change signaling to LLM
+    let previousCachedHash: string | null = null;
+
     // Hash-based sync optimization: Compare cached hash with remote hash
     // Still requires API call for hash, but avoids re-processing if content unchanged
     if (preferLocal) {
@@ -116,11 +123,15 @@ export class CatTool extends BaseFileSystemTool {
       const cachedHash = await getCachedContentHash(localFilePath);
       const cachedMeta = await getCachedGASMetadata(localFilePath);
 
+      // Capture for content-change signaling (available to slow path fallthrough)
+      previousCachedHash = cachedHash;
+
       if (cachedHash && cachedMeta) {
         // We have a cached hash - fetch remote to compare hashes
         // This API call is necessary for reliable sync detection (never trust mtime)
         try {
-          const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+          remoteFilesFromFastPath = await this.gasClient.getProjectContent(scriptId, accessToken);
+          const remoteFiles = remoteFilesFromFastPath;
           const remoteFile = remoteFiles.find((f: any) => fileNameMatches(f.name, filename));
 
           if (remoteFile) {
@@ -201,6 +212,12 @@ export class CatTool extends BaseFileSystemTool {
                     result.content = finalContent;
                     result.commonJsInfo = commonJsInfo;
                     result.hash = cachedHash;  // Use verified cached hash
+                    result.contentChange = {
+                      changed: false,
+                      previousHash: cachedHash,
+                      currentHash: cachedHash,
+                      source: 'fast_path_cache'
+                    };
 
                     // Add git breadcrumb hint for .git/* files
                     const gitHint = getGitBreadcrumbHint(filename);
@@ -238,11 +255,15 @@ export class CatTool extends BaseFileSystemTool {
     }
 
     // Slow path: Need API call for sync verification
+    // Reuse remoteFiles from fast path if available (avoids duplicate API call)
     let syncStatus: any = null;
-    let remoteFiles: any[] = [];
+    let remoteFiles: any[] = remoteFilesFromFastPath || [];
 
     try {
-      remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      // Only fetch if not already fetched in fast path
+      if (!remoteFilesFromFastPath) {
+        remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      }
       syncStatus = await LocalFileManager.verifySyncStatus(projectName, remoteFiles, workingDir);
 
       const autoSyncDecision = shouldAutoSync(syncStatus, remoteFiles.length);
@@ -320,8 +341,14 @@ export class CatTool extends BaseFileSystemTool {
     const remoteContent = remoteFile.source || remoteFile.content || '';
     const remoteHash = computeGitSha1(remoteContent);
 
-    // Check sync using hash comparison
-    const inSync = await isFileInSyncByHash(localFilePath, remoteHash);
+    // Check sync using hash comparison (with diagnostics for content-change signaling)
+    const syncCheck = await isFileInSyncWithCacheByHash(localFilePath, remoteHash);
+    const inSync = syncCheck.inSync;
+
+    // Always prefer the mtime-validated hash from sync check over raw xattr cache
+    if (syncCheck.diagnosis.localHash) {
+      previousCachedHash = syncCheck.diagnosis.localHash;
+    }
 
     if (!inSync) {
       await mkdir(dirname(localFilePath), { recursive: true });
@@ -442,12 +469,17 @@ export class CatTool extends BaseFileSystemTool {
     const contentHash = computeGitSha1(rawContent);
     result.hash = contentHash;
 
-    // Cache the hash in xattr for future reads
-    const fileExtensionForCache = LocalFileManager.getFileExtensionFromName(filename);
-    const fullFilenameForCache = filename + fileExtensionForCache;
-    const projectPathForCache = await LocalFileManager.getProjectDirectory(projectName, workingDir);
-    const localFilePathForCache = join(projectPathForCache, fullFilenameForCache);
-    await updateCachedContentHash(localFilePathForCache, contentHash);
+    // Content-change signaling: tell the LLM if file differs from last cached read
+    const contentChanged = previousCachedHash !== null && previousCachedHash !== contentHash;
+    result.contentChange = {
+      changed: contentChanged,
+      previousHash: previousCachedHash,
+      currentHash: contentHash,
+      source: previousCachedHash === null ? 'first_read' : 'slow_path_sync'
+    };
+
+    // Cache the hash in xattr for future reads (reuse localFilePath from line 338)
+    await updateCachedContentHash(localFilePath, contentHash);
 
     // Add git breadcrumb hint for .git/* files
     const gitHint = getGitBreadcrumbHint(filename);

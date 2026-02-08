@@ -17,6 +17,7 @@ import { promisify } from 'util';
 import * as path from 'path';
 import { unwrapModuleContent } from './moduleWrapper.js';
 import { expandTilde } from './pathExpansion.js';
+import { execGitCommand } from './gitCommands.js';
 
 const execAsync = promisify(exec);
 
@@ -262,12 +263,14 @@ async function autoCommitFile({
     }
 
     // Stage our file
+    // SECURITY: Use spawn with array args to prevent shell injection
     const relativePath = path.relative(repoPath, filePath);
-    await execAsync(`git add "${relativePath}"`, { cwd: repoPath });
+    await execGitCommand(['add', relativePath], repoPath);
 
     // Commit
+    // SECURITY: spawn handles special chars ($, `, emojis, spaces) safely
     const commitMessage = changeReason || `Update ${path.basename(filePath)}`;
-    await execAsync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`, { cwd: repoPath });
+    await execGitCommand(['commit', '-m', commitMessage], repoPath);
 
     // Get commit hash
     const hashResult = await execAsync('git rev-parse HEAD', { cwd: repoPath });
