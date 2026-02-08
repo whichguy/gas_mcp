@@ -23,6 +23,7 @@ import type {
   WorktreeError,
   WorktreeEntry
 } from '../../../types/worktreeTypes.js';
+import { LocalFileManager } from '../../../utils/localFileManager.js';
 
 /**
  * Execute git command safely using spawn with array arguments
@@ -70,8 +71,7 @@ async function directoryExists(dirPath: string): Promise<boolean> {
  * Get parent git repo path from worktree path
  */
 function getParentGitPath(parentScriptId: string): string {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
-  return path.join(homeDir, 'gas-repos', `project-${parentScriptId}`);
+  return LocalFileManager.resolveProjectPath(parentScriptId);
 }
 
 /**

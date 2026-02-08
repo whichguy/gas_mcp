@@ -32,6 +32,7 @@ import {
   sanitizeBranchName
 } from '../../../types/worktreeTypes.js';
 import { computeGitSha1 } from '../../../utils/hashUtils.js';
+import { LocalFileManager } from '../../../utils/localFileManager.js';
 
 /**
  * Execute git command safely using spawn with array arguments
@@ -79,8 +80,7 @@ async function directoryExists(dirPath: string): Promise<boolean> {
  * Get local git repo path for a script
  */
 function getLocalGitPath(scriptId: string): string {
-  const homeDir = process.env.HOME || process.env.USERPROFILE || '~';
-  return path.join(homeDir, 'gas-repos', `project-${scriptId}`);
+  return LocalFileManager.resolveProjectPath(scriptId);
 }
 
 /**

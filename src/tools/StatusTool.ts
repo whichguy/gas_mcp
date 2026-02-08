@@ -17,6 +17,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { LockManager } from '../utils/lockManager.js';
 import { execGitCommand } from '../utils/gitCommands.js';
 import { getCachedGASMetadata } from '../utils/gasMetadataCache.js';
+import { LocalFileManager } from '../utils/localFileManager.js';
 
 const ENV_TAGS = {
   dev: '[DEV]',
@@ -166,8 +167,7 @@ export class StatusTool extends BaseTool {
   }
 
   private async getGitSection(scriptId: string): Promise<any> {
-    const homeDir = os.homedir();
-    const repoPath = path.join(homeDir, 'gas-repos', `project-${scriptId}`);
+    const repoPath = LocalFileManager.resolveProjectPath(scriptId);
 
     if (!existsSync(repoPath)) {
       return { detected: false };
@@ -256,8 +256,7 @@ export class StatusTool extends BaseTool {
   }
 
   private async getCacheSection(scriptId: string): Promise<any> {
-    const homeDir = os.homedir();
-    const syncFolder = path.join(homeDir, 'gas-repos', `project-${scriptId}`);
+    const syncFolder = LocalFileManager.resolveProjectPath(scriptId);
 
     if (!existsSync(syncFolder)) {
       return { entries: 0, syncFolderExists: false };
@@ -294,8 +293,7 @@ export class StatusTool extends BaseTool {
   }
 
   private async getSyncSection(scriptId: string, accessToken?: string): Promise<any> {
-    const homeDir = os.homedir();
-    const syncFolder = path.join(homeDir, 'gas-repos', `project-${scriptId}`);
+    const syncFolder = LocalFileManager.resolveProjectPath(scriptId);
 
     if (!existsSync(syncFolder)) {
       return { status: 'no_local_repo', message: 'No local sync folder found' };
