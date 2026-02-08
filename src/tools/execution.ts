@@ -16,11 +16,14 @@ import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './deployments.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { buildFunctionCall } from '../utils/parameterSerializer.js';
 import { checkSyncStatus, type DriftDetails, type FileSyncStatus } from '../utils/syncStatusChecker.js';
-import { DiffGenerator } from '../utils/diffGenerator.js';
+import { DiffGenerator, generateFolderDiff } from '../utils/diffGenerator.js';
 import type { DriftFileInfo } from '../errors/mcpErrors.js';
+import type { CollisionInfo, StaleFile } from '../types/collisionTypes.js';
+import { buildMultiFileCollision, NO_COLLISIONS } from '../types/collisionTypes.js';
 import { fileNameMatches } from '../api/pathParser.js';
 import { validateCommonJSOrdering, formatCommonJSOrderingIssues } from '../utils/validation.js';
-import { generateExecHints, ExecHints } from '../utils/execHints.js';
+import { generateExecHints, generateInfrastructureHints, mergeExecHints, ExecHints } from '../utils/execHints.js';
+import type { InfrastructureStatus } from '../types/infrastructureTypes.js';
 import open from 'open';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -318,7 +321,7 @@ import { performDomainAuth } from './execution/auth/domain-auth.js';
  */
 export class ExecApiTool extends BaseTool {
   public name = 'exec_api';
-  public description = 'Execute a function in a Google Apps Script project. Supports direct function calls or CommonJS module functions via moduleName parameter. Transforms calls into JavaScript and delegates to exec for execution.';
+  public description = '[EXEC] Execute a function in a Google Apps Script project. Supports direct function calls or CommonJS module functions via moduleName parameter. Transforms calls into JavaScript and delegates to exec for execution.';
 
   public inputSchema = {
     type: 'object',
@@ -466,7 +469,7 @@ export class ExecApiTool extends BaseTool {
  */
 export class ExecTool extends BaseTool {
   public name = 'exec';
-  public description = 'ADVANCED: Execute JavaScript with explicit script ID. Use exec for normal workflow.';
+  public description = '[EXEC] ADVANCED: Execute JavaScript with explicit script ID. Use exec for normal workflow.';
   
   public inputSchema = {
     type: 'object',
@@ -674,108 +677,132 @@ export class ExecTool extends BaseTool {
 
     // PRE-FLIGHT SYNC CHECK: Detect drift between local and remote before execution
     // This prevents executing stale code when local files have diverged from remote
-    if (!skipSyncCheck) {
-      try {
-        // Get auth token for sync check (best-effort, may be null)
-        const syncCheckToken = params.accessToken || await this.tryGetAuthToken();
+    // When skipSyncCheck=true, we still check but return collision info instead of throwing
+    let collisionInfo: CollisionInfo | undefined;
 
-        if (syncCheckToken) {
-          console.error(`[SYNC CHECK] Checking for local/remote drift...`);
+    try {
+      // Get auth token for sync check (best-effort, may be null)
+      const syncCheckToken = params.accessToken || await this.tryGetAuthToken();
 
-          // Fetch remote files for comparison
-          const remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
+      if (syncCheckToken) {
+        console.error(`[SYNC CHECK] Checking for local/remote drift...`);
 
-          // Check sync status (excludes system files by default)
-          // Include content for up to 5 files to generate diffs for LLM assistance
-          const { summary, drift } = await checkSyncStatus(scriptId, remoteFiles, {
-            excludeSystemFiles: true,  // Skip common-js/*, __mcp_exec*
-            includeContent: true,      // Include content for diff generation
-            maxContentFiles: 5         // Limit to prevent large responses
+        // Fetch remote files for comparison
+        const remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
+
+        // Check sync status (excludes system files by default)
+        // Include content for up to 5 files to generate diffs for LLM assistance
+        const { summary, drift } = await checkSyncStatus(scriptId, remoteFiles, {
+          excludeSystemFiles: true,  // Skip common-js/*, __mcp_exec*
+          includeContent: true,      // Include content for diff generation
+          maxContentFiles: 5         // Limit to prevent large responses
+        });
+
+        // If drift detected, either throw error or build collision info
+        if (summary.stale > 0 || summary.remoteOnly > 0) {
+          console.error(`[SYNC CHECK] Drift detected: ${summary.stale} stale, ${summary.remoteOnly} remote-only files`);
+
+          // Generate diffs for files with content
+          const diffGenerator = new DiffGenerator();
+          const MAX_DIFF_LINES = 200;      // Increased from 50 - LLM needs more context
+          const MAX_PREVIEW_CHARS = 2000;  // Increased from 500 - show more of new files
+
+          const staleWithDiffs: DriftFileInfo[] = drift.staleLocal.map((f: FileSyncStatus) => {
+            const info: DriftFileInfo = {
+              filename: f.filename,
+              localHash: f.localHash,
+              remoteHash: f.remoteHash || '',
+              sizeDiff: f.sizeDiff
+            };
+
+            // Generate diff if we have both local and remote content
+            if (f.localContent && f.remoteContent) {
+              const fullDiff = diffGenerator.generateDiff(f.localContent, f.remoteContent, f.filename);
+              const diffLines = fullDiff.split('\n');
+
+              if (diffLines.length > MAX_DIFF_LINES) {
+                info.diff = diffLines.slice(0, MAX_DIFF_LINES).join('\n') +
+                  `\n... (${diffLines.length - MAX_DIFF_LINES} more lines truncated)`;
+              } else {
+                info.diff = fullDiff;
+              }
+            }
+
+            return info;
           });
 
-          // If drift detected, throw SyncDriftError with diffs
-          if (summary.stale > 0 || summary.remoteOnly > 0) {
-            console.error(`[SYNC CHECK] Drift detected: ${summary.stale} stale, ${summary.remoteOnly} remote-only files`);
+          const missingWithPreview: DriftFileInfo[] = drift.missingLocal.map((f: FileSyncStatus) => {
+            const info: DriftFileInfo = {
+              filename: f.filename,
+              remoteHash: f.remoteHash || ''
+            };
 
-            // Generate diffs for files with content
-            const diffGenerator = new DiffGenerator();
-            const MAX_DIFF_LINES = 200;      // Increased from 50 - LLM needs more context
-            const MAX_PREVIEW_CHARS = 2000;  // Increased from 500 - show more of new files
-
-            const staleWithDiffs: DriftFileInfo[] = drift.staleLocal.map((f: FileSyncStatus) => {
-              const info: DriftFileInfo = {
-                filename: f.filename,
-                localHash: f.localHash,
-                remoteHash: f.remoteHash || '',
-                sizeDiff: f.sizeDiff
-              };
-
-              // Generate diff if we have both local and remote content
-              if (f.localContent && f.remoteContent) {
-                const fullDiff = diffGenerator.generateDiff(f.localContent, f.remoteContent, f.filename);
-                const diffLines = fullDiff.split('\n');
-
-                if (diffLines.length > MAX_DIFF_LINES) {
-                  info.diff = diffLines.slice(0, MAX_DIFF_LINES).join('\n') +
-                    `\n... (${diffLines.length - MAX_DIFF_LINES} more lines truncated)`;
-                } else {
-                  info.diff = fullDiff;
-                }
+            // Include preview of remote content for new files
+            if (f.remoteContent) {
+              if (f.remoteContent.length > MAX_PREVIEW_CHARS) {
+                info.remotePreview = f.remoteContent.substring(0, MAX_PREVIEW_CHARS) +
+                  `\n... (${f.remoteContent.length - MAX_PREVIEW_CHARS} more chars truncated)`;
+              } else {
+                info.remotePreview = f.remoteContent;
               }
+            }
 
-              return info;
-            });
+            return info;
+          });
 
-            const missingWithPreview: DriftFileInfo[] = drift.missingLocal.map((f: FileSyncStatus) => {
-              const info: DriftFileInfo = {
-                filename: f.filename,
-                remoteHash: f.remoteHash || ''
-              };
-
-              // Include preview of remote content for new files
-              if (f.remoteContent) {
-                if (f.remoteContent.length > MAX_PREVIEW_CHARS) {
-                  info.remotePreview = f.remoteContent.substring(0, MAX_PREVIEW_CHARS) +
-                    `\n... (${f.remoteContent.length - MAX_PREVIEW_CHARS} more chars truncated)`;
-                } else {
-                  info.remotePreview = f.remoteContent;
-                }
-              }
-
-              return info;
-            });
-
+          if (!skipSyncCheck) {
+            // Default behavior: throw SyncDriftError to block execution
             throw new SyncDriftError(scriptId, {
               staleLocal: staleWithDiffs,
               missingLocal: missingWithPreview
             });
-          }
-
-          console.error(`[SYNC CHECK] ✓ ${summary.inSync} files in sync`);
-
-          // Validate CommonJS file ordering (critical for module system to work)
-          const orderingResult = validateCommonJSOrdering(remoteFiles);
-          if (!orderingResult.valid) {
-            console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
-            // Log but don't block - the module system may still work in some cases
-            // Severe ordering issues will manifest as runtime errors
-          } else if (orderingResult.issues.length > 0) {
-            // Warnings only - log but don't block
-            console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
           } else {
-            console.error(`[COMMONJS CHECK] ✓ Critical files in correct order`);
+            // skipSyncCheck=true: Build collision info for response (warning, not error)
+            // Convert to StaleFile format for CollisionInfo
+            const staleFiles: StaleFile[] = [
+              ...drift.staleLocal.map((f: FileSyncStatus) => ({
+                file: f.filename,
+                expectedHash: f.localHash || '',
+                actualHash: f.remoteHash || null,
+                action: 'modified' as const,
+              })),
+              ...drift.missingLocal.map((f: FileSyncStatus) => ({
+                file: f.filename,
+                expectedHash: '',
+                actualHash: f.remoteHash || null,
+                action: 'created_externally' as const,
+              })),
+            ];
+
+            collisionInfo = buildMultiFileCollision(staleFiles);
+            console.error(`[SYNC CHECK] Drift warning: ${staleFiles.length} stale files (execution proceeding due to skipSyncCheck=true)`);
           }
         } else {
-          console.error(`[SYNC CHECK] Skipped (no auth token available)`);
+          console.error(`[SYNC CHECK] ✓ ${summary.inSync} files in sync`);
         }
-      } catch (error) {
-        // If the error is SyncDriftError, re-throw it
-        if (error instanceof SyncDriftError) {
-          throw error;
+
+        // Validate CommonJS file ordering (critical for module system to work)
+        const orderingResult = validateCommonJSOrdering(remoteFiles);
+        if (!orderingResult.valid) {
+          console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
+          // Log but don't block - the module system may still work in some cases
+          // Severe ordering issues will manifest as runtime errors
+        } else if (orderingResult.issues.length > 0) {
+          // Warnings only - log but don't block
+          console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
+        } else {
+          console.error(`[COMMONJS CHECK] ✓ Critical files in correct order`);
         }
-        // For other errors (network, API), log but don't block execution
-        console.error(`[SYNC CHECK] Warning: Could not verify sync status: ${(error as Error).message}`);
+      } else {
+        console.error(`[SYNC CHECK] Skipped (no auth token available)`);
       }
+    } catch (error) {
+      // If the error is SyncDriftError, re-throw it
+      if (error instanceof SyncDriftError) {
+        throw error;
+      }
+      // For other errors (network, API), log but don't block execution
+      console.error(`[SYNC CHECK] Warning: Could not verify sync status: ${(error as Error).message}`);
     }
 
     // Try operation first with provided access token (if any) or session auth
@@ -799,7 +826,7 @@ export class ExecTool extends BaseTool {
       }
 
       // PERFORMANCE OPTIMIZATION: Optimistic execution with cached infrastructure
-      return await this.executeOptimistic(
+      const result = await this.executeOptimistic(
         scriptId,
         js_statement,
         accessToken || '',
@@ -811,6 +838,16 @@ export class ExecTool extends BaseTool {
         environment,
         envDeployment
       );
+
+      // Include collision info if drift was detected but skipped
+      if (collisionInfo && collisionInfo.hasCollisions) {
+        return {
+          ...result,
+          collision: collisionInfo,
+        };
+      }
+
+      return result;
     } catch (error: any) {
       // Check for authentication errors (401/403)
       const statusCode = error.statusCode || error.response?.status || error.data?.statusCode;
@@ -891,10 +928,10 @@ export class ExecTool extends BaseTool {
 
         // Set up infrastructure and retry
         console.error(`[INFRASTRUCTURE SETUP] Setting up deployment infrastructure...`);
-        await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager);
+        const infrastructureStatus = await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager);
 
         // NEW: Retry logic for deployment delays with test function validation
-        return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, logFilter, logTail, environment);
+        return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, logFilter, logTail, environment, infrastructureStatus);
       }
 
       // Return structured error response with logger output if available (Path 2 - general catch)
@@ -925,7 +962,8 @@ export class ExecTool extends BaseTool {
     responseTimeout: number = 780,
     logFilter?: string,
     logTail?: number,
-    environment: 'dev' | 'staging' | 'prod' = 'dev'
+    environment: 'dev' | 'staging' | 'prod' = 'dev',
+    infrastructureStatus?: InfrastructureStatus
   ): Promise<any> {
     const maxRetryDuration = 60000; // 60 seconds total
     const retryInterval = 2000; // 2 seconds between retries
@@ -936,10 +974,42 @@ export class ExecTool extends BaseTool {
     console.error(`   Max retry duration: ${maxRetryDuration}ms`);
     console.error(`   Retry interval: ${retryInterval}ms`);
 
+    // Helper to add infrastructure status to response
+    const addInfrastructureStatus = (result: any): any => {
+      if (!infrastructureStatus) return result;
+
+      // Add infrastructure status to response
+      const enhanced = {
+        ...result,
+        infrastructure: {
+          inSync: infrastructureStatus.inSync,
+          file: infrastructureStatus.execShim.file,
+          verified: infrastructureStatus.execShim.verified,
+          ...(infrastructureStatus.execShim.expectedSHA && { expectedSHA: infrastructureStatus.execShim.expectedSHA }),
+          ...(infrastructureStatus.execShim.actualSHA && { actualSHA: infrastructureStatus.execShim.actualSHA }),
+          ...(infrastructureStatus.execShim.wasCreated && { wasCreated: infrastructureStatus.execShim.wasCreated }),
+          ...(infrastructureStatus.execShim.error && { error: infrastructureStatus.execShim.error })
+        }
+      };
+
+      // Add infrastructure hints if out of sync
+      if (!infrastructureStatus.inSync) {
+        const infraHints = generateInfrastructureHints(infrastructureStatus, scriptId);
+        if (Object.keys(infraHints).length > 0) {
+          enhanced.hints = result.hints
+            ? mergeExecHints(result.hints, infraHints)
+            : infraHints;
+        }
+      }
+
+      return enhanced;
+    };
+
     while (Date.now() - startTime < maxRetryDuration) {
       try {
         // First try the actual function
-        return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
+        const result = await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
+        return addInfrastructureStatus(result);
       } catch (error: any) {
         const statusCode = error.statusCode || error.response?.status;
         
@@ -958,7 +1028,8 @@ export class ExecTool extends BaseTool {
             
             // Deployment is ready, try the actual function one more time
             try {
-              return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
+              const result = await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
+              return addInfrastructureStatus(result);
             } catch (actualError: any) {
               console.error(`[DEPLOYMENT RETRY] Actual function still failed after test succeeded`);
               console.error(`   Error: ${actualError.message}`);
@@ -967,12 +1038,13 @@ export class ExecTool extends BaseTool {
           } catch (testError: any) {
             const testStatusCode = testError.statusCode || testError.response?.status;
             console.error(`[DEPLOYMENT TEST] Test function result: HTTP ${testStatusCode} - ${testError.message}`);
-            
+
             // If we got HTTP 200, consider it successful and retry original function
             if (testStatusCode === 200) {
               console.error(`[DEPLOYMENT TEST] HTTP 200 received, deployment is ready - retrying original function`);
               try {
-                return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
+                const result = await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, true, logFilter, logTail, environment, null);
+                return addInfrastructureStatus(result);
               } catch (actualError: any) {
                 console.error(`[DEPLOYMENT RETRY] Original function failed even after HTTP 200 test: ${actualError.message}`);
                 throw actualError;

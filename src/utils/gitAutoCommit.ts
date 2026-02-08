@@ -10,6 +10,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { log } from './logger.js';
+import { execGitCommand } from './gitCommands.js';
 
 const execAsync = promisify(exec);
 
@@ -136,9 +137,8 @@ export async function ensureFeatureBranch(projectPath: string): Promise<FeatureB
 
     log.info(`[GIT-AUTO-COMMIT] Creating new feature branch: ${newBranchName}`);
 
-    await execAsync(`git checkout -b ${newBranchName}`, {
-      cwd: projectPath
-    });
+    // SECURITY: Use spawn with array args to prevent shell injection
+    await execGitCommand(['checkout', '-b', newBranchName], projectPath);
 
     log.info(`[GIT-AUTO-COMMIT] ✓ Feature branch created: ${newBranchName}`);
 

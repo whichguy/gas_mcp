@@ -49,7 +49,7 @@ interface AiderResult {
  */
 export class RawAiderTool extends BaseTool {
   public name = 'raw_aider';
-  public description = 'Token-efficient file editing using fuzzy string matching on raw file content (includes CommonJS wrappers). Use for editing system files or module infrastructure. Provides 95%+ token savings vs raw_write.';
+  public description = '[FILE:RAW] Token-efficient file editing using fuzzy string matching on raw file content (includes CommonJS wrappers). Use instead of aider when you need to see/edit the CommonJS _main() wrapper. Provides 95%+ token savings vs raw_write.';
 
   public inputSchema = {
     type: 'object',

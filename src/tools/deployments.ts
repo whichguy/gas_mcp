@@ -12,6 +12,7 @@ import { loadTemplate, loadJsonTemplate } from '../utils/templateLoader.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
 import { computeGitSha1 } from '../utils/hashUtils.js';
+import { generateSyncHints } from '../utils/syncHints.js';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -239,7 +240,7 @@ async function ensureManifestEntryPoints(
  */
 export class DeployCreateTool extends BaseTool {
   public name = 'deploy_create';
-  public description = 'Create a deployment of an Apps Script project (supports both API Executable and Web App deployments)';
+  public description = '[DEPLOY] Create a deployment of an Apps Script project (supports both API Executable and Web App deployments)';
   
   public inputSchema = {
     type: 'object',
@@ -408,7 +409,7 @@ export class DeployCreateTool extends BaseTool {
  */
 export class VersionCreateTool extends BaseTool {
   public name = 'version_create';
-  public description = 'Create a version of an Apps Script project (prerequisite for deployment)';
+  public description = '[DEPLOY] Create a version of an Apps Script project (prerequisite for deployment)';
   
   public inputSchema = {
     type: 'object',
@@ -476,7 +477,7 @@ export class VersionCreateTool extends BaseTool {
  */
 export class DeployListTool extends BaseTool {
   public name = 'deploy_list';
-  public description = 'List the deployments of an Apps Script project with comprehensive analysis, health assessment, and actionable recommendations. Note: For complete entry point details including web app URLs, use deploy_get_details for individual deployments.';
+  public description = '[DEPLOY] List the deployments of an Apps Script project with comprehensive analysis, health assessment, and actionable recommendations. Note: For complete entry point details including web app URLs, use deploy_get_details for individual deployments.';
   
   public inputSchema = {
     type: 'object',
@@ -930,7 +931,7 @@ export class DeployListTool extends BaseTool {
  */
 export class ProjectCreateTool extends BaseTool {
   public name = 'project_create';
-  public description = 'Creates a new Google Apps Script project. This is typically the FIRST step when building new automation or when you need a fresh project for code execution.';
+  public description = '[DEPLOY] Creates a new Google Apps Script project. This is typically the FIRST step when building new automation or when you need a fresh project for code execution.';
   
   public inputSchema = {
     type: 'object',
@@ -1125,6 +1126,15 @@ export class ProjectCreateTool extends BaseTool {
         result.infraErrors.push(`ConfigManager: ${infrastructureResults.configManager?.error || 'Installation failed'}`);
       }
 
+      // Add sync hints - new project has no local cache
+      result.syncHints = generateSyncHints({
+        scriptId: project.scriptId,
+        operation: 'project_create',
+        affectedFiles: ['appsscript.json', 'common-js/require', '__mcp_exec/exec', 'gas-properties/ConfigManager'],
+        localCacheUpdated: false,  // New project, no local git repo yet
+        remotePushed: true
+      });
+
       return result;
     } catch (error: any) {
       throw new GASApiError(`Project creation failed: ${error.message}`);
@@ -1210,7 +1220,7 @@ export class ProjectCreateTool extends BaseTool {
  */
 export class ProjectInitTool extends BaseTool {
   public name = 'project_init';
-  public description = 'Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with project_create or are missing required infrastructure files. Automatically enforces critical file ordering: require.gs at position 0, __mcp_exec.gs at position 1.';
+  public description = '[DEPLOY] Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with project_create or are missing required infrastructure files. Automatically enforces critical file ordering: require.gs at position 0, __mcp_exec.gs at position 1.';
 
   public inputSchema = {
     type: 'object',
@@ -2003,14 +2013,14 @@ export class ProjectInitTool extends BaseTool {
               const fileExtension = LocalFileManager.getFileExtensionFromName(file.name);
               const localPath = join(localRoot, file.name + fileExtension);
               try {
-                // Update hash cache with WRAPPED content hash (primary sync mechanism)
+                // Update mtime FIRST so updateCachedContentHash captures correct mtime
+                if (file.updateTime) {
+                  await setFileMtimeToRemote(localPath, file.updateTime, file.type);
+                }
+                // Then update hash cache with WRAPPED content hash (primary sync mechanism)
                 if (file.source) {
                   const contentHash = computeGitSha1(file.source);
                   await updateCachedContentHash(localPath, contentHash);
-                }
-                // Update mtime for user convenience (informational only, not for sync)
-                if (file.updateTime) {
-                  await setFileMtimeToRemote(localPath, file.updateTime, file.type);
                 }
               } catch (cacheError) {
                 // File might not exist locally - that's okay
@@ -2038,7 +2048,7 @@ export class ProjectInitTool extends BaseTool {
  */
 export class DeployGetDetailsTool extends BaseTool {
   public name = 'deploy_get_details';
-  public description = 'Gets detailed information about a specific Google Apps Script deployment, including complete entry point configuration and web app URLs that may not be returned by deploy_list.';
+  public description = '[DEPLOY] Gets detailed information about a specific Google Apps Script deployment, including complete entry point configuration and web app URLs that may not be returned by deploy_list.';
   
   public inputSchema = {
     type: 'object',
@@ -2263,7 +2273,7 @@ export class DeployGetDetailsTool extends BaseTool {
  */
 export class DeployDeleteTool extends BaseTool {
   public name = 'deploy_delete';
-  public description = 'Delete a deployment of an Apps Script project';
+  public description = '[DEPLOY] Delete a deployment of an Apps Script project';
   
   public inputSchema = {
     type: 'object',
@@ -2304,7 +2314,7 @@ export class DeployDeleteTool extends BaseTool {
  */
 export class DeployUpdateTool extends BaseTool {
   public name = 'deploy_update';
-  public description = 'Update a deployment of an Apps Script project';
+  public description = '[DEPLOY] Update a deployment of an Apps Script project';
   
   public inputSchema = {
     type: 'object',

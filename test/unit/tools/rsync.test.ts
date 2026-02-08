@@ -20,6 +20,7 @@ import * as os from 'os';
 import { SyncManifest, SyncManifestData } from '../../../src/tools/rsync/SyncManifest.js';
 import { SyncDiff, DiffFileInfo, SyncDiffResult } from '../../../src/tools/rsync/SyncDiff.js';
 import { PlanStore, SyncPlan } from '../../../src/tools/rsync/PlanStore.js';
+import { computeGitSha1 } from '../../../src/utils/hashUtils.js';
 
 // Helper to create a valid operations object for PlanStore
 function createOperations(ops: Partial<SyncDiffResult> = {}): SyncDiffResult {
@@ -54,31 +55,31 @@ describe('rsync modules', () => {
   // SyncManifest Tests
   // ============================================================
   describe('SyncManifest', () => {
-    describe('computeGitSha1', () => {
+    describe('computeGitSha1 (from hashUtils)', () => {
       it('should compute Git-compatible SHA-1 hash', () => {
         // Git SHA-1 format: sha1("blob " + size + "\0" + content)
         const content = 'Hello, World!';
-        const sha1 = SyncManifest.computeGitSha1(content);
+        const sha1 = computeGitSha1(content);
 
         // Verify it's a valid SHA-1 hex string (40 chars)
         expect(sha1).to.match(/^[a-f0-9]{40}$/);
 
         // Same content should produce same hash
-        const sha1Again = SyncManifest.computeGitSha1(content);
+        const sha1Again = computeGitSha1(content);
         expect(sha1Again).to.equal(sha1);
 
         // Different content should produce different hash
-        const sha1Different = SyncManifest.computeGitSha1('Different content');
+        const sha1Different = computeGitSha1('Different content');
         expect(sha1Different).to.not.equal(sha1);
       });
 
       it('should handle empty content', () => {
-        const sha1 = SyncManifest.computeGitSha1('');
+        const sha1 = computeGitSha1('');
         expect(sha1).to.match(/^[a-f0-9]{40}$/);
       });
 
       it('should handle unicode content', () => {
-        const sha1 = SyncManifest.computeGitSha1('こんにちは世界 🌍');
+        const sha1 = computeGitSha1('こんにちは世界 🌍');
         expect(sha1).to.match(/^[a-f0-9]{40}$/);
       });
     });

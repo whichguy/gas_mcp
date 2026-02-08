@@ -24,6 +24,8 @@ import { analyzeContent, determineFileType } from '../utils/contentAnalyzer.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
+import { generateSyncHints } from '../utils/syncHints.js';
+import { enrichResponseWithHints } from './filesystem/shared/responseHints.js';
 import path from 'path';
 
 interface EditOperation {
@@ -87,9 +89,13 @@ interface EditResult {
   };
   git?: GitHints;
   nextAction?: NextActionHint;
+  /** Sync hints with recovery commands when local/remote drift */
+  syncHints?: import('../utils/syncHints.js').SyncHints;
   warnings?: string[];
   hints?: string[];
   gitBreadcrumbHint?: GitBreadcrumbEditHint;
+  /** Additional response hints for LLM guidance */
+  responseHints?: import('./filesystem/shared/types.js').ResponseHints;
 }
 
 /**
@@ -100,7 +106,7 @@ interface EditResult {
  */
 export class EditTool extends BaseTool {
   public name = 'edit';
-  public description = 'Token-efficient file editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. LLM outputs only changed text (~40 tokens) vs entire file (~4500 tokens), 83% token savings.';
+  public description = '[FILE] Token-efficient file editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. LLM outputs only changed text (~40 tokens) vs entire file (~4500 tokens), 83% token savings.';
 
   public inputSchema = {
     type: 'object',
@@ -465,7 +471,14 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
-    return result;
+    // Enrich with centralized hints (sync hints, batch workflow, nextAction defaults)
+    return enrichResponseWithHints(result, {
+      scriptId,
+      affectedFiles: [filename],
+      operationType: 'write',  // edit is a write variant
+      localCacheUpdated: true,  // xattr cache updated above
+      remotePushed: true,
+    });
   }
 
   /**

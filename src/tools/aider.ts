@@ -26,6 +26,8 @@ import { analyzeContent } from '../utils/contentAnalyzer.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
+import { generateSyncHints } from '../utils/syncHints.js';
+import { enrichResponseWithHints } from './filesystem/shared/responseHints.js';
 import path from 'path';
 
 interface AiderOperation {
@@ -89,9 +91,13 @@ interface AiderResult {
   }>;
   git?: GitHints;
   nextAction?: NextActionHint;
+  /** Sync hints with recovery commands when local/remote drift */
+  syncHints?: import('../utils/syncHints.js').SyncHints;
   warnings?: string[];
   hints?: string[];
   gitBreadcrumbHint?: GitBreadcrumbEditHint;
+  /** Additional response hints for LLM guidance */
+  responseHints?: import('./filesystem/shared/types.js').ResponseHints;
 }
 
 /**
@@ -102,7 +108,7 @@ interface AiderResult {
  */
 export class AiderTool extends BaseTool {
   public name = 'aider';
-  public description = 'Token-efficient fuzzy editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. Finds and replaces similar text, handling formatting variations. 95%+ token savings vs write.';
+  public description = '[FILE] Token-efficient fuzzy editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. Finds and replaces similar text, handling formatting variations. 95%+ token savings vs write.';
 
   public inputSchema = {
     type: 'object',
@@ -475,7 +481,14 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
-    return result;
+    // Enrich with centralized hints (sync hints, batch workflow, nextAction defaults)
+    return enrichResponseWithHints(result, {
+      scriptId,
+      affectedFiles: [filename],
+      operationType: 'write',  // aider is a write variant
+      localCacheUpdated: true,  // xattr cache updated above
+      remotePushed: true,
+    });
   }
 
 }

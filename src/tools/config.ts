@@ -24,7 +24,7 @@ const execFileAsync = promisify(execFile);
  */
 export class ConfigTool extends BaseTool {
   public name = 'config';
-  public description = 'Generic configuration tool for managing MCP Gas settings including sync folder locations, project settings, and other configuration options.';
+  public description = '[GIT] Generic configuration tool for managing MCP Gas settings including sync folder locations, project settings, and other configuration options.';
 
   public inputSchema = {
     type: 'object',

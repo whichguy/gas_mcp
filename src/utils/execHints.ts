@@ -5,6 +5,8 @@
  * to provide LLM-friendly guidance for next steps and troubleshooting.
  */
 
+import type { InfrastructureStatus } from '../types/infrastructureTypes.js';
+
 export interface ExecHints {
   context?: string;
   suggestions?: string[];
@@ -305,4 +307,55 @@ export function mergeExecHints(...hintObjects: ExecHints[]): ExecHints {
   }
 
   return merged;
+}
+
+/**
+ * Generate hints for infrastructure sync issues
+ *
+ * When infrastructure files (like __mcp_exec) are out of sync with MCP server templates,
+ * provides actionable guidance on how to update them.
+ *
+ * @param infraStatus - Infrastructure verification status from setup
+ * @param scriptId - Script project ID (for command suggestions)
+ * @returns ExecHints with remediation guidance
+ */
+export function generateInfrastructureHints(
+  infraStatus: InfrastructureStatus | undefined,
+  scriptId: string
+): ExecHints {
+  if (!infraStatus || infraStatus.inSync) {
+    return {}; // No hints needed
+  }
+
+  const hints: ExecHints = {};
+  const shim = infraStatus.execShim;
+
+  hints.context = 'Local cache out of sync with remote GAS file';
+
+  if (shim.error) {
+    hints.warning = `Infrastructure verification failed: ${shim.error}`;
+  } else {
+    hints.warning = `SHA mismatch: expected ${shim.expectedSHA?.slice(0, 12) || 'unknown'}..., got ${shim.actualSHA?.slice(0, 12) || 'unknown'}...`;
+  }
+
+  hints.suggestions = [
+    'Local cache hash differs from remote GAS file - cache may be stale',
+    'Use cat or rsync to pull remote content and update local cache',
+    'This ensures local files match what is actually deployed in GAS'
+  ];
+
+  hints.nextSteps = [
+    `Sync local cache: cat({scriptId:"${scriptId}", path:"${shim.file}"}) to pull remote and update local hash`,
+    `Or full sync: rsync({scriptId:"${scriptId}", direction:"pull"}) to pull all remote files to local`,
+    `Or force reinstall: project_init({scriptId:"${scriptId}", force:true}) to reinstall from MCP template`
+  ];
+
+  hints.debugging = [
+    `File: ${shim.file}`,
+    `Expected SHA: ${shim.expectedSHA || 'unknown'}`,
+    `Actual SHA: ${shim.actualSHA || 'unknown'}`,
+    `Verify with: file_status({scriptId:"${scriptId}", path:"${shim.file}", hashTypes:["git-sha1"]})`
+  ];
+
+  return hints;
 }

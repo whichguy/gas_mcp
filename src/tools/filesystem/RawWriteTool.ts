@@ -18,7 +18,7 @@ import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, CONTENT_SCHEMA, ACCESS_TOKEN_SCHEMA, FIL
  */
 export class RawWriteTool extends BaseFileSystemTool {
   public name = 'raw_write';
-  public description = 'Write raw file contents with explicit project paths. DANGER: Completely overwrites files without CommonJS processing or merging. Use write for safe CommonJS-wrapped development.';
+  public description = '[FILE:RAW] Write raw file contents with explicit project paths. DANGER: Completely overwrites files without CommonJS processing or merging. Use instead of write when you need to see/edit the CommonJS _main() wrapper.';
 
   public inputSchema = {
     type: 'object',

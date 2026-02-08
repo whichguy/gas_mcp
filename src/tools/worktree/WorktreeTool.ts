@@ -26,6 +26,12 @@ import { WorktreeAddOperation, WorktreeRemoveOperation, WorktreeStatusOperation 
 import { McpGasConfigManager } from '../../config/mcpGasConfig.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import {
+  generateWorktreeHints,
+  generateWorktreeErrorHints,
+  type WorktreeOperation,
+  type WorktreeHints
+} from '../../utils/worktreeHints.js';
+import {
   normalizeFileName,
   type WorktreeInput,
   type WorktreeAddInput,
@@ -50,8 +56,56 @@ import {
   type WorktreeBatchAddResult,
   type WorktreeCleanupResult,
   type WorktreeError,
-  type WorktreeErrorCode
+  type WorktreeErrorCode,
+  type WorktreeState,
+  type WorktreeInfo
 } from '../../types/worktreeTypes.js';
+
+// ============================================================================
+// Type Guards and Helper Types
+// ============================================================================
+
+/** Result that contains a worktree property */
+interface ResultWithWorktree {
+  worktree: WorktreeInfo;
+}
+
+/** Result that indicates an error */
+interface ResultWithError {
+  success: false;
+  error: WorktreeErrorCode;
+  message: string;
+}
+
+/** Type guard: checks if result has a worktree property */
+function hasWorktree(result: object): result is ResultWithWorktree {
+  return 'worktree' in result && result.worktree !== null && typeof result.worktree === 'object';
+}
+
+/** Type guard: checks if result is an error */
+function isErrorResult(result: object): result is ResultWithError {
+  if (!('success' in result) || !('error' in result)) {
+    return false;
+  }
+  const r = result as Record<string, unknown>;
+  return r.success === false && typeof r.error === 'string';
+}
+
+/** Extract scriptId from result if worktree exists */
+function getScriptIdFromResult(result: object): string | undefined {
+  if (hasWorktree(result)) {
+    return result.worktree.scriptId;
+  }
+  return undefined;
+}
+
+/** Extract state from result if worktree exists */
+function getStateFromResult(result: object): WorktreeState | undefined {
+  if (hasWorktree(result)) {
+    return result.worktree.state;
+  }
+  return undefined;
+}
 
 /**
  * WorktreeTool class
@@ -60,7 +114,7 @@ import {
  */
 export class WorktreeTool extends BaseFileSystemTool {
   public name = 'mcp__gas__worktree';
-  public description = `Parallel GAS development with isolated worktrees sharing git history.
+  public description = `[WORKTREE] Parallel GAS development with isolated worktrees sharing git history.
 
 Operations:
 add     → Create worktree: scriptId + git branch (claimImmediately=true default)
@@ -274,36 +328,49 @@ Typical workflows:
     try {
       await this.ensureInitialized();
 
-      switch (params.operation) {
+      let result: any;
+      const operation = params.operation;
+
+      switch (operation) {
         case 'add':
-          return await this.executeAdd(params as WorktreeAddInput);
+          result = await this.executeAdd(params as WorktreeAddInput);
+          break;
 
         case 'claim':
-          return await this.executeClaim(params as WorktreeClaimInput);
+          result = await this.executeClaim(params as WorktreeClaimInput);
+          break;
 
         case 'release':
-          return await this.executeRelease(params as WorktreeReleaseInput);
+          result = await this.executeRelease(params as WorktreeReleaseInput);
+          break;
 
         case 'list':
-          return await this.executeList(params as WorktreeListInput);
+          result = await this.executeList(params as WorktreeListInput);
+          break;
 
         case 'status':
-          return await this.executeStatus(params as WorktreeStatusInput);
+          result = await this.executeStatus(params as WorktreeStatusInput);
+          break;
 
         case 'sync':
-          return await this.executeSync(params as WorktreeSyncInput);
+          result = await this.executeSync(params as WorktreeSyncInput);
+          break;
 
         case 'merge':
-          return await this.executeMerge(params as WorktreeMergeInput);
+          result = await this.executeMerge(params as WorktreeMergeInput);
+          break;
 
         case 'remove':
-          return await this.executeRemove(params as WorktreeRemoveInput);
+          result = await this.executeRemove(params as WorktreeRemoveInput);
+          break;
 
         case 'batch-add':
-          return await this.executeBatchAdd(params as WorktreeBatchAddInput);
+          result = await this.executeBatchAdd(params as WorktreeBatchAddInput);
+          break;
 
         case 'cleanup':
-          return await this.executeCleanup(params as WorktreeCleanupInput);
+          result = await this.executeCleanup(params as WorktreeCleanupInput);
+          break;
 
         default:
           return this.createError(
@@ -311,9 +378,44 @@ Typical workflows:
             `Unknown operation: ${(params as any).operation}`
           );
       }
+
+      // Add dynamic hints to result
+      return this.addHintsToResult(operation, result, params);
     } catch (error: any) {
-      return this.handleError(error);
+      // Add hints to caught errors too
+      const errorResult = this.handleError(error);
+      return this.addHintsToResult(params.operation, errorResult, params);
     }
+  }
+
+  /**
+   * Add context-aware hints to operation result
+   */
+  private addHintsToResult<T extends object>(
+    operation: WorktreeOperation,
+    result: T,
+    params: WorktreeInput
+  ): T & { hints?: WorktreeHints } {
+    // Build context for hints using type guards
+    const context: { parentScriptId?: string; worktreeScriptId?: string; state?: WorktreeState } = {
+      parentScriptId: 'parentScriptId' in params ? params.parentScriptId : undefined,
+      worktreeScriptId: ('worktreeScriptId' in params ? params.worktreeScriptId : undefined)
+        || getScriptIdFromResult(result),
+      state: getStateFromResult(result)
+    };
+
+    // Mutate result to add hints (result objects are mutable)
+    const resultWithHints = result as T & { hints?: WorktreeHints };
+
+    // For errors, generate error-specific hints
+    if (isErrorResult(result)) {
+      resultWithHints.hints = generateWorktreeErrorHints(operation, result.error);
+      return resultWithHints;
+    }
+
+    // For success, generate operation-specific hints
+    resultWithHints.hints = generateWorktreeHints(operation, result, context);
+    return resultWithHints;
   }
 
   // ============================================================================

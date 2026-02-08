@@ -88,7 +88,7 @@ interface CloudLogsResponse {
  */
 export class CloudLogsTool extends BaseTool {
   public name = 'cloud_logs';
-  public description = 'Fetch historical Logger.log() output from Apps Script executions via Cloud Logging API. Auto-discovers GCP project ID. Returns paginated results with dynamic LLM hints.';
+  public description = '[MONITOR] Fetch historical Logger.log() output from Apps Script executions via Cloud Logging API. Auto-discovers GCP project ID. Returns paginated results with dynamic LLM hints.';
 
   public inputSchema = {
     type: 'object',

@@ -13,8 +13,8 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { log } from '../../utils/logger.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
 
 /**
  * File entry in the sync manifest
@@ -210,28 +210,13 @@ export class SyncManifest {
 
     for (const file of files) {
       manifest.files[file.filename] = {
-        sha1: SyncManifest.computeGitSha1(file.content),
+        sha1: computeGitSha1(file.content),
         lastModified: file.lastModified,
         syncedAt: now
       };
     }
 
     return manifest;
-  }
-
-  /**
-   * Compute Git-compatible SHA-1 hash for content
-   *
-   * Git blob format: sha1("blob " + size + "\0" + content)
-   *
-   * @param content - File content
-   * @returns Git-compatible SHA-1 hex string
-   */
-  static computeGitSha1(content: string): string {
-    const blob = Buffer.from(content, 'utf-8');
-    const header = `blob ${blob.length}\0`;
-    const data = Buffer.concat([Buffer.from(header), blob]);
-    return crypto.createHash('sha1').update(data).digest('hex');
   }
 
   /**
@@ -262,7 +247,7 @@ export class SyncManifest {
 
     for (const file of files) {
       this.data.files[file.filename] = {
-        sha1: SyncManifest.computeGitSha1(file.content),
+        sha1: computeGitSha1(file.content),
         lastModified: file.lastModified,
         syncedAt: now
       };
@@ -299,7 +284,7 @@ export class SyncManifest {
       return undefined;  // Not tracked
     }
 
-    const currentSha1 = SyncManifest.computeGitSha1(content);
+    const currentSha1 = computeGitSha1(content);
     return currentSha1 !== tracked.sha1;
   }
 

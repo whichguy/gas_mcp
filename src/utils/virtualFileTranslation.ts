@@ -63,6 +63,9 @@ export const REVERSE_VIRTUAL_MAP: Record<string, string> = Object.entries(VIRTUA
  * @returns true if it's a virtual dotfile
  */
 export function isVirtualDotfile(filename: string): boolean {
+  if (!filename) {
+    return false;
+  }
   // Remove path if present
   const baseName = filename.split('/').pop() || filename;
   // Check if it's in our virtual file mapping (not just any dotfile)
@@ -75,6 +78,9 @@ export function isVirtualDotfile(filename: string): boolean {
  * @returns true if it's a translated virtual file
  */
 export function isTranslatedVirtualFile(filename: string): boolean {
+  if (!filename) {
+    return false;
+  }
   // Remove path and get base name
   const baseName = filename.split('/').pop() || filename;
   // Check if it's a dotfile with .gs extension
@@ -162,10 +168,14 @@ export function translateFilesForDisplay(files: any[], applyTranslation: boolean
  * @returns The actual GAS path to use
  */
 export function translatePathForOperation(userPath: string, applyTranslation: boolean = true): string {
+  if (!userPath) {
+    return userPath;  // Return early if undefined/null/empty
+  }
+
   if (!applyTranslation) {
     return userPath;
   }
-  
+
   // Check if it's a virtual dotfile path
   const fileName = userPath.split('/').pop() || userPath;
   if (isVirtualDotfile(fileName)) {

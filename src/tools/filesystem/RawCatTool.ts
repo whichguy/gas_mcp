@@ -15,7 +15,7 @@ import { mkdir, writeFile } from 'fs/promises';
  */
 export class RawCatTool extends BaseFileSystemTool {
   public name = 'raw_cat';
-  public description = 'Read raw file contents with full CommonJS wrappers and system code. Shows complete file including _main() function and module infrastructure. Use cat for clean user code.';
+  public description = '[FILE:RAW] Read raw file contents with full CommonJS wrappers and system code. Shows complete file including _main() function and module infrastructure. Use instead of cat when you need to see/edit the CommonJS _main() wrapper.';
 
   public inputSchema = {
     type: 'object',

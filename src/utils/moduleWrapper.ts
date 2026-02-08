@@ -717,6 +717,9 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
  * @returns The module name with preserved path structure (e.g., "utils/helpers")
  */
 export function getModuleName(filePath: string): string {
+    if (!filePath) {
+        return '';
+    }
     const parts = filePath.split('/');
     
     // If path includes a project ID (first part is typically 44+ chars), skip it

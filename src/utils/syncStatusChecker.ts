@@ -10,7 +10,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { getCachedContentHash, updateCachedContentHash } from './gasMetadataCache.js';
+import { getValidatedContentHash } from './gasMetadataCache.js';
 import { computeGitSha1 } from './hashUtils.js';
 // Note: moduleWrapper imports removed - local files are stored WRAPPED, no re-wrapping needed
 import { FileFilter } from './fileFilter.js';
@@ -164,8 +164,10 @@ export async function checkSyncStatus(
     try {
       await fs.access(localFilePath);
       localFileExists = true;
-      // Try to get cached hash from xattr
-      localHash = await getCachedContentHash(localFilePath);
+      // Get validated hash (checks mtime to detect external modifications)
+      // This will recompute if file was modified outside MCP tools
+      const validatedResult = await getValidatedContentHash(localFilePath);
+      localHash = validatedResult?.hash || null;
     } catch {
       // Local file doesn't exist
     }
@@ -187,61 +189,21 @@ export async function checkSyncStatus(
         contentFilesIncluded++;
       }
       drift.missingLocal.push(fileStatus);
-    } else if (!localHash) {
-      // Local file exists but no cached hash
-      // Compare actual content to determine sync status (auto-populate hash if matching)
-      //
-      // Local files are stored WRAPPED (full CommonJS content), same as remote.
-      // Hash the local content directly - no re-wrapping needed.
-      try {
-        const localContent = await fs.readFile(localFilePath, 'utf-8');
-
-        // Local file is already wrapped - hash directly
-        const computedLocalHash = computeGitSha1(localContent);
-
-        if (computedLocalHash === remoteHash) {
-          // Content matches! Auto-populate the hash cache and mark as in_sync
-          syncStatus = 'in_sync';
-          summary.inSync++;
-          localHash = computedLocalHash;
-
-          // Write hash to xattr for future checks (best-effort, non-blocking)
-          // Store the WRAPPED hash since that's what we compare against
-          updateCachedContentHash(localFilePath, computedLocalHash).catch(() => {
-            // Ignore xattr write failures - non-critical
-          });
-        } else {
-          // Content differs - genuinely stale
-          syncStatus = 'local_stale';
-          summary.stale++;
-          localHash = computedLocalHash;
-          const fileStatus: FileSyncStatus = {
-            filename,
-            syncStatus,
-            localHash,
-            remoteHash
-          };
-          if (includeContent && contentFilesIncluded < maxContentFiles) {
-            fileStatus.remoteContent = remoteFile.source || '';
-            fileStatus.localContent = localContent;
-            contentFilesIncluded++;
-          }
-          drift.staleLocal.push(fileStatus);
-        }
-      } catch {
-        // Failed to read local file - treat as stale for safety
-        syncStatus = 'local_stale';
-        summary.stale++;
-        drift.staleLocal.push({
-          filename,
-          syncStatus,
-          remoteHash
-        });
-      }
     } else if (localHash === remoteHash) {
       syncStatus = 'in_sync';
       summary.inSync++;
+    } else if (!localHash) {
+      // Local file exists but hash couldn't be computed (rare - file read error)
+      // Treat as stale for safety
+      syncStatus = 'local_stale';
+      summary.stale++;
+      drift.staleLocal.push({
+        filename,
+        syncStatus,
+        remoteHash
+      });
     } else {
+      // Local hash differs from remote - genuinely stale
       syncStatus = 'local_stale';
       summary.stale++;
       const fileStatus: FileSyncStatus = {

@@ -8,7 +8,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
  */
 export class VersionGetTool extends BaseTool {
   public name = 'version_get';
-  public description = 'Get details of a specific version of a script project. Examine specific code versions and their metadata.';
+  public description = '[DEPLOY] Get details of a specific version of a script project. Examine specific code versions and their metadata.';
   
   public inputSchema = {
     type: 'object',
@@ -60,7 +60,7 @@ export class VersionGetTool extends BaseTool {
  */
 export class VersionListTool extends BaseTool {
   public name = 'version_list';
-  public description = 'List all versions of a script project. See version history and select versions for deployment or comparison.';
+  public description = '[DEPLOY] List all versions of a script project. See version history and select versions for deployment or comparison.';
   
   public inputSchema = {
     type: 'object',

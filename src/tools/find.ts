@@ -42,7 +42,7 @@ interface FindOptions {
  */
 export class FindTool extends BaseTool {
   public name = 'find';
-  public description = '🔍 RECOMMENDED: Find files in GAS projects using shell-like find syntax with virtual file names';
+  public description = '[FILE] Find files in GAS projects using shell-like find syntax with virtual file names';
   
   public inputSchema = {
     type: 'object',
@@ -319,7 +319,7 @@ export class FindTool extends BaseTool {
  */
 export class RawFindTool extends BaseTool {
   public name = 'raw_find';
-  public description = '🔧 ADVANCED: Find files in GAS projects showing actual GAS file names';
+  public description = '[FILE:RAW] Find files in GAS projects showing actual GAS file names. Use instead of find when you need to see/edit the CommonJS _main() wrapper.';
   
   public inputSchema = {
     type: 'object',

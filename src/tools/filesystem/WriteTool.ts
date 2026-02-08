@@ -24,6 +24,9 @@ import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitHin
 import { log } from '../../utils/logger.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, analyzeManifestContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
+import { generateFileDiff, getDiffStats } from '../../utils/diffGenerator.js';
+import { generateSyncHints } from '../../utils/syncHints.js';
+import { enrichResponseWithHints } from './shared/responseHints.js';
 import { join, dirname } from 'path';
 import { mkdir, stat, readFile } from 'fs/promises';
 import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
@@ -39,7 +42,7 @@ import type { WriteParams, WriteResult } from './shared/types.js';
  */
 export class WriteTool extends BaseFileSystemTool {
   public name = 'write';
-  public description = 'Write file to GAS (NO git auto-commit). After writes, call git_feature({operation:"commit"}) to save changes. Automatically wraps user code with CommonJS module system. Writes locally and syncs to remote GAS.';
+  public description = '[FILE] Write file to GAS (NO git auto-commit). After writes, call git_feature({operation:"commit"}) to save changes. Automatically wraps user code with CommonJS module system. Writes locally and syncs to remote GAS.';
 
   public inputSchema = {
     type: 'object',
@@ -478,6 +481,7 @@ export class WriteTool extends BaseFileSystemTool {
           // Determine expected hash (priority: param > xattr cache)
           let expectedHash: string | undefined = params.expectedHash;
           let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+          let localFilePath: string | undefined;
 
           if (!expectedHash) {
             // Try to get cached hash from xattr
@@ -486,7 +490,7 @@ export class WriteTool extends BaseFileSystemTool {
               const localRoot = await LocalFileManager.getProjectDirectory(projectName, workingDir);
               if (localRoot) {
                 const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-                const localFilePath = join(localRoot, filename + fileExtension);
+                localFilePath = join(localRoot, filename + fileExtension);
                 expectedHash = await getCachedContentHash(localFilePath) || undefined;
                 if (expectedHash) {
                   hashSource = 'xattr';
@@ -499,19 +503,55 @@ export class WriteTool extends BaseFileSystemTool {
 
           // Validate hash if we have one
           if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
-            // Unwrap for diff display only (hash is computed on wrapped content)
-            const { unwrappedContent: remoteUnwrappedForDiff } = unwrapModuleContent(existingFile.source || '');
+            // UNWRAP for diff display (hash comparison uses WRAPPED, diff uses UNWRAPPED)
+            // This ensures the diff shows what the LLM actually sees in cat output
+            const remoteWrappedContent = existingFile.source || '';
+            const { unwrappedContent: remoteUnwrapped } = unwrapModuleContent(remoteWrappedContent);
 
-            // Use 'info' format consistently - we don't have expected content, only expected hash
-            // Using 'unified' with empty baseline produces misleading diffs showing all as additions
-            const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
-            const diffContent = `File was modified externally since your last read.
+            // Try to read local file to get expected content for unified diff
+            let expectedUnwrapped = '';
+            let diffFormat: 'unified' | 'info' = 'info';
+            let diffContent = '';
+            let diffStats: { linesAdded: number; linesRemoved: number } | undefined;
+
+            // First, get local file path if we don't have it yet
+            if (!localFilePath) {
+              try {
+                const { LocalFileManager } = await import('../../utils/localFileManager.js');
+                const localRoot = await LocalFileManager.getProjectDirectory(projectName, workingDir);
+                const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+                localFilePath = join(localRoot, filename + fileExtension);
+              } catch {
+                // Unable to determine local path
+              }
+            }
+
+            if (localFilePath) {
+              try {
+                const localWrapped = await readFile(localFilePath, 'utf-8');
+                const { unwrappedContent } = unwrapModuleContent(localWrapped);
+                expectedUnwrapped = unwrappedContent;
+
+                // Generate unified diff showing actual content changes
+                diffContent = generateFileDiff(filename, expectedUnwrapped, remoteUnwrapped);
+                diffStats = getDiffStats(expectedUnwrapped, remoteUnwrapped);
+                diffFormat = 'unified';
+              } catch {
+                // Local file not available - fall back to info format
+              }
+            }
+
+            // Fall back to info format if unified diff not available
+            if (diffFormat === 'info') {
+              const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
+              diffContent = `File was modified externally since your last read.
   Expected hash: ${expectedHash.slice(0, 8)}... (from ${hashSourceLabel})
   Current hash:  ${currentRemoteHash.slice(0, 8)}...
-  Size:          ${remoteUnwrappedForDiff.length} bytes (unwrapped)
+  Size:          ${remoteUnwrapped.length} bytes (unwrapped)
 
 To resolve: Use cat() to fetch current content, then re-apply your changes.
 Or use force:true to overwrite (destructive).`;
+            }
 
             const conflict: ConflictDetails = {
               scriptId,
@@ -521,12 +561,14 @@ Or use force:true to overwrite (destructive).`;
               currentHash: currentRemoteHash,
               hashSource,
               changeDetails: {
-                sizeChange: `${remoteUnwrappedForDiff.length} bytes (unwrapped)`
+                sizeChange: `${remoteUnwrapped.length} bytes (unwrapped)`
               },
               diff: {
-                format: 'info',
+                format: diffFormat,
                 content: diffContent,
-                truncated: false
+                linesAdded: diffStats?.linesAdded,
+                linesRemoved: diffStats?.linesRemoved,
+                truncated: diffContent.length > 10000
               }
             };
 
@@ -814,7 +856,24 @@ Or use force:true to overwrite (destructive).`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
-    return result;
+    // Add sync hints with dynamic recovery commands
+    const localCacheUpdated = !remoteOnly && results.localFile?.updated === true;
+    result.syncHints = generateSyncHints({
+      scriptId,
+      operation: 'write',
+      affectedFiles: [filename],
+      localCacheUpdated,
+      remotePushed: true
+    });
+
+    // Enrich with centralized hints (batch workflow, nextAction defaults)
+    return enrichResponseWithHints(result, {
+      scriptId,
+      affectedFiles: [filename],
+      operationType: 'write',
+      localCacheUpdated,
+      remotePushed: true,
+    });
   }
 
   /**
@@ -1001,19 +1060,42 @@ Or use force:true to overwrite (destructive).`;
 
           // Validate hash if we have one
           if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
-            // Unwrap for diff display only (hash is computed on wrapped content)
-            const { unwrappedContent: remoteUnwrappedForDiff } = unwrapModuleContent(existingFile.source || '');
+            // UNWRAP for diff display (hash comparison uses WRAPPED, diff uses UNWRAPPED)
+            // This ensures the diff shows what the LLM actually sees in cat output
+            const remoteWrappedContent = existingFile.source || '';
+            const { unwrappedContent: remoteUnwrapped } = unwrapModuleContent(remoteWrappedContent);
 
-            // Use 'info' format consistently - we don't have expected content, only expected hash
-            // Using 'unified' with empty baseline produces misleading diffs showing all as additions
-            const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
-            const diffContent = `File was modified externally since your last read.
+            // Try to read local file to get expected content for unified diff
+            let expectedUnwrapped = '';
+            let diffFormat: 'unified' | 'info' = 'info';
+            let diffContent = '';
+            let diffStats: { linesAdded: number; linesRemoved: number } | undefined;
+
+            try {
+              // filePath is already available in this context
+              const localWrapped = await readFile(filePath, 'utf-8');
+              const { unwrappedContent } = unwrapModuleContent(localWrapped);
+              expectedUnwrapped = unwrappedContent;
+
+              // Generate unified diff showing actual content changes
+              diffContent = generateFileDiff(filename, expectedUnwrapped, remoteUnwrapped);
+              diffStats = getDiffStats(expectedUnwrapped, remoteUnwrapped);
+              diffFormat = 'unified';
+            } catch {
+              // Local file not available - fall back to info format
+            }
+
+            // Fall back to info format if unified diff not available
+            if (diffFormat === 'info') {
+              const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
+              diffContent = `File was modified externally since your last read.
   Expected hash: ${expectedHash.slice(0, 8)}... (from ${hashSourceLabel})
   Current hash:  ${currentRemoteHash.slice(0, 8)}...
-  Size:          ${remoteUnwrappedForDiff.length} bytes (unwrapped)
+  Size:          ${remoteUnwrapped.length} bytes (unwrapped)
 
 To resolve: Use cat() to fetch current content, then re-apply your changes.
 Or use force:true to overwrite (destructive).`;
+            }
 
             const conflict: ConflictDetails = {
               scriptId,
@@ -1023,12 +1105,14 @@ Or use force:true to overwrite (destructive).`;
               currentHash: currentRemoteHash,
               hashSource,
               changeDetails: {
-                sizeChange: `${remoteUnwrappedForDiff.length} bytes (unwrapped)`
+                sizeChange: `${remoteUnwrapped.length} bytes (unwrapped)`
               },
               diff: {
-                format: 'info',
+                format: diffFormat,
                 content: diffContent,
-                truncated: false
+                linesAdded: diffStats?.linesAdded,
+                linesRemoved: diffStats?.linesRemoved,
+                truncated: diffContent.length > 10000
               }
             };
 
@@ -1229,7 +1313,24 @@ Or use force:true to overwrite (destructive).`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
-    return result;
+    // Add sync hints with dynamic recovery commands
+    // In hook-validated path, local cache is always updated (xattr updated above)
+    result.syncHints = generateSyncHints({
+      scriptId,
+      operation: 'write',
+      affectedFiles: [filename],
+      localCacheUpdated: true,
+      remotePushed: true
+    });
+
+    // Enrich with centralized hints (batch workflow, nextAction defaults)
+    return enrichResponseWithHints(result, {
+      scriptId,
+      affectedFiles: [filename],
+      operationType: 'write',
+      localCacheUpdated: true,
+      remotePushed: true,
+    });
   }
 
   /**

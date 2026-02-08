@@ -50,7 +50,7 @@ npm run test:all-verify          # Run all verification tests
 
 ## Architecture Overview
 
-**MCP server:** AI ↔ GAS → 49 tools for create/manage/execute GAS projects
+**MCP server:** AI ↔ GAS → 50 tools for create/manage/execute GAS projects
 
 **Flow:** Client ↔ stdio ↔ mcpServer → tools → gasClient → GAS API
 

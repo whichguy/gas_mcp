@@ -295,6 +295,9 @@ export class FileFilter {
    * (node_modules, .git, .idea, .vscode)
    */
   isInDevDir(filename: string): boolean {
+    if (!filename) {
+      return false;
+    }
     const parts = filename.split('/');
     return parts.some(part => EXCLUDED_DIRS.includes(part as any));
   }
@@ -314,6 +317,11 @@ export class FileFilter {
   shouldWrapContent(fileType: string, filename: string): boolean {
     // Only wrap SERVER_JS files
     if (fileType !== 'SERVER_JS') {
+      return false;
+    }
+
+    // Guard against undefined/null filename
+    if (!filename) {
       return false;
     }
 

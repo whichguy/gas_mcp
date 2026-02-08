@@ -9,7 +9,7 @@ import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
  */
 export class RawCpTool extends BaseFileSystemTool {
   public name = 'raw_cp';
-  public description = 'Copy files exactly without CommonJS processing. Preserves all wrappers and system code. Use cp for development with module handling.';
+  public description = '[FILE:RAW] Copy files exactly without CommonJS processing. Preserves all wrappers and system code. Use instead of cp when you need to see/edit the CommonJS _main() wrapper.';
 
   public inputSchema = {
     type: 'object',
