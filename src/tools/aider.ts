@@ -108,7 +108,7 @@ interface AiderResult {
  */
 export class AiderTool extends BaseTool {
   public name = 'aider';
-  public description = '[FILE] Token-efficient fuzzy editing (NO git auto-commit). After edits, call git_feature({operation:"commit"}) to save. Finds and replaces similar text, handling formatting variations. 95%+ token savings vs write.';
+  public description = '[FILE] Token-efficient fuzzy editing (NO git auto-commit). For 3+ files, PREFER local edits + rsync. After edits, call git_feature({operation:"commit"}) to save. 95%+ token savings vs write.';
 
   public inputSchema = {
     type: 'object',
@@ -168,6 +168,8 @@ export class AiderTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
+      // WORKFLOW SELECTION - when to use aider vs batch local
+      workflowSelection: GuidanceFragments.localFirstWorkflow,
       // GIT INTEGRATION - CRITICAL for LLM behavior
       gitIntegration: GuidanceFragments.gitIntegration,
       errorRecovery: GuidanceFragments.errorRecovery,

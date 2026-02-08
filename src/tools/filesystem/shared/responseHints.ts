@@ -64,12 +64,17 @@ export function enrichResponseWithHints<T>(result: T, context: HintContext): T {
     const existing = r.responseHints as ResponseHints | undefined;
 
     if (!existing?.batchWorkflow) {
+      // Detect multi-file pattern: uncommitted count or multiple affected files
+      const uncommittedCount = git?.uncommittedChanges?.count ?? 0;
+      const isMultiFile = uncommittedCount >= 2 || context.affectedFiles.length >= 2;
+
       r.responseHints = {
         ...(existing || {}),
         batchWorkflow: {
+          urgency: isMultiFile ? 'HIGH' as const : 'NORMAL' as const,
           when: 'Modifying 3+ files',
           workflow: [
-            `Edit files locally at ${syncFolder}/`,
+            `Edit files locally at ${syncFolder}/ using Claude Code native Read/Write/Edit tools`,
             `rsync({operation:"plan", scriptId:"${context.scriptId}", direction:"push"}) to preview`,
             `rsync({operation:"execute", planId:"<from plan>", scriptId:"${context.scriptId}"}) to push all at once`,
           ],

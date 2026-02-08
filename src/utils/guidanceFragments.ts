@@ -50,6 +50,11 @@ export class GuidanceFragments {
       find: 'Search by name/type/size patterns',
       ls: 'List all files in project (with optional directory filter)',
       recommendation: 'find for targeted search, ls for overview'
+    },
+    multiFileWorkflow: {
+      batchLocal: 'PREFERRED for 3+ files: Edit at ~/gas-repos/project-{scriptId}/ then rsync({direction:"push"})',
+      sequential: 'For 1-2 files: write/edit/aider per file',
+      setup: 'Requires local git mirror (auto-created on first write with git detected)'
     }
   };
 
@@ -141,6 +146,20 @@ export class GuidanceFragments {
     eventHandlerPattern: 'If code has module.exports.__events__, MUST use loadNow:true',
     troubleshooting: 'Log "[WARN] No X handlers found" means missing loadNow:true',
     hoistedFunctions: '[{name,params,jsdoc}] for Sheets custom function autocomplete'
+  };
+
+  /**
+   * Local-first batch workflow guidance - encourage local edits + rsync over individual writes
+   */
+  static readonly localFirstWorkflow = {
+    PREFERRED: 'For multi-file changes (3+ files): edit locally at ~/gas-repos/project-{scriptId}/ then rsync push',
+    singleFile: 'For 1-2 file changes: use write/edit/aider directly (simpler)',
+    workflow: [
+      '1. Edit files locally using Claude Code Read/Write/Edit tools at ~/gas-repos/project-{scriptId}/',
+      '2. rsync({operation:"plan", scriptId, direction:"push"}) to preview all changes',
+      '3. rsync({operation:"execute", planId, scriptId}) to push all at once'
+    ],
+    benefit: '2 API calls for N files vs 2N for sequential writes + use native Claude Code tooling'
   };
 
   /**
@@ -312,6 +331,17 @@ export class GuidanceFragments {
     return {
       workflow: GuidanceFragments.deploymentWorkflow,
       responseHints: 'This tool returns context-aware hints in response.hints field',
+      errorRecovery: GuidanceFragments.errorRecovery,
+      ...toolSpecificHints
+    };
+  }
+
+  /**
+   * Build standard llmGuidance for rsync tool
+   */
+  static buildRsyncGuidance(toolSpecificHints: Record<string, any> = {}): Record<string, any> {
+    return {
+      localFirstWorkflow: GuidanceFragments.localFirstWorkflow,
       errorRecovery: GuidanceFragments.errorRecovery,
       ...toolSpecificHints
     };

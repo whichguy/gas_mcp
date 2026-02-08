@@ -42,7 +42,7 @@ import type { WriteParams, WriteResult } from './shared/types.js';
  */
 export class WriteTool extends BaseFileSystemTool {
   public name = 'write';
-  public description = '[FILE] Write file to GAS (NO git auto-commit). After writes, call git_feature({operation:"commit"}) to save changes. Automatically wraps user code with CommonJS module system. Writes locally and syncs to remote GAS.';
+  public description = '[FILE] Write file to GAS (NO git auto-commit). For 3+ files, PREFER local edits + rsync. After writes, call git_feature({operation:"commit"}) to save. Auto-wraps CommonJS.';
 
   public inputSchema = {
     type: 'object',
@@ -119,6 +119,8 @@ export class WriteTool extends BaseFileSystemTool {
     required: ['scriptId', 'path'],  // content OR fromLocal must be provided
     additionalProperties: false,
     llmGuidance: {
+      // WORKFLOW SELECTION - when to use write vs batch local
+      workflowSelection: GuidanceFragments.localFirstWorkflow,
       // LOCAL FILE TRANSFER - Prefer fromLocal over inline content
       localFileSupport: {
         fromLocal: 'Read content from local file: write({scriptId, path:"app.js", fromLocal:"~/src/app.js"})',
