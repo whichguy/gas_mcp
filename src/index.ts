@@ -4,6 +4,7 @@ import { MCPGasServer } from './server/mcpServer.js';
 import { SessionAuthManager } from './auth/sessionManager.js';
 import { McpGasConfigManager } from './config/mcpGasConfig.js';
 import { LockManager } from './utils/lockManager.js';
+import { SessionIdentity } from './utils/sessionIdentity.js';
 import { checkAllReposForUncommitted } from './utils/gitStatus.js';
 import path from 'path';
 import os from 'os';
@@ -59,6 +60,26 @@ async function main() {
   const lockManager = LockManager.getInstance();
   await lockManager.cleanupStaleLocks();
 
+  // Initialize session identity for worktree isolation
+  const session = SessionIdentity.initialize();
+  await session.startHeartbeat();
+  console.error(`🆔 Session ID: ${session.id}`);
+
+  // Cleanup stale session worktrees from dead processes
+  try {
+    const cleanupResults = await SessionIdentity.cleanupStaleSessions();
+    const preserved = cleanupResults.filter(r => r.action === 'preserved-with-warning');
+    const cleaned = cleanupResults.filter(r => r.action === 'cleaned');
+    if (cleaned.length > 0) {
+      console.error(`🧹 Cleaned up ${cleaned.length} stale session(s)`);
+    }
+    if (preserved.length > 0) {
+      console.error(`⚠️  ${preserved.length} stale session(s) preserved with unmerged work`);
+    }
+  } catch (cleanupError) {
+    console.error('⚠️  Could not cleanup stale sessions:', cleanupError);
+  }
+
   // Check for uncommitted changes from previous sessions
   try {
     const uncommittedProjects = await checkAllReposForUncommitted();
@@ -95,6 +116,9 @@ async function main() {
 
     // Release all held locks before shutdown
     await lockManager.releaseAllLocks();
+
+    // Stop session heartbeat and clean up metadata
+    await session.shutdown();
 
     // MEMORY LEAK FIX: Remove all registered event listeners
     for (const [eventName, handler] of signalHandlers) {

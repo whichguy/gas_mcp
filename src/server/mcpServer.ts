@@ -69,7 +69,7 @@ import { CloudLogsTool } from '../tools/cloudLogs.js';
 // Consolidated trigger tool with list, create, delete operations
 import { TriggerTool } from '../tools/triggers.js';
 
-// Import rsync tool (two-phase sync: plan → execute)
+// Import rsync tool (stateless sync: pull/push with dryrun)
 import { RsyncTool } from '../tools/rsync/index.js';
 
 // Import git feature workflow tool

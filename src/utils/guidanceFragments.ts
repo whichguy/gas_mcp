@@ -52,7 +52,7 @@ export class GuidanceFragments {
       recommendation: 'find for targeted search, ls for overview'
     },
     multiFileWorkflow: {
-      batchLocal: 'PREFERRED for 3+ files: Edit at ~/gas-repos/project-{scriptId}/ then rsync({direction:"push"})',
+      batchLocal: 'PREFERRED for 3+ files: Edit at ~/gas-repos/project-{scriptId}/ then rsync({operation:"push"})',
       sequential: 'For 1-2 files: write/edit/aider per file',
       setup: 'Requires local git mirror (auto-created on first write with git detected)'
     }
@@ -64,7 +64,7 @@ export class GuidanceFragments {
   static readonly errorResolutions = {
     syncConflict: {
       cause: 'Local and remote files have diverged',
-      check: 'rsync({operation:"plan", scriptId, direction:"pull"})',
+      check: 'rsync({operation:"pull", scriptId, dryrun:true})',
       solutions: [
         'rsync to merge changes',
         'force:true to overwrite remote (loses remote changes)'
@@ -156,8 +156,8 @@ export class GuidanceFragments {
     singleFile: 'For 1-2 file changes: use write/edit/aider directly (simpler)',
     workflow: [
       '1. Edit files locally using Claude Code Read/Write/Edit tools at ~/gas-repos/project-{scriptId}/',
-      '2. rsync({operation:"plan", scriptId, direction:"push"}) to preview all changes',
-      '3. rsync({operation:"execute", planId, scriptId}) to push all at once'
+      '2. rsync({operation:"push", scriptId, dryrun:true}) to preview all changes',
+      '3. rsync({operation:"push", scriptId}) to push all at once'
     ],
     benefit: '2 API calls for N files vs 2N for sequential writes + use native Claude Code tooling'
   };

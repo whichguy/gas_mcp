@@ -429,11 +429,30 @@ await worktree({operation: 'cleanup', parentScriptId}); // execute
 
 ### Git Integration
 
-#### Git Sync (Two-Phase Workflow)
+#### Git Sync (Stateless Pull/Push)
 
-**Pattern:** plan→execute (two-phase, never blind push) | Requires .git/config breadcrumb
+**Pattern:** Single-call stateless sync with optional dryrun preview | Requires .git/config breadcrumb
 **Tools:** rsync + config (sync_folder management)
 **See:** docs/GIT_SYNC_WORKFLOWS.md for complete workflow
+
+**Operations:**
+- `pull`: GAS → Local (add `dryrun: true` to preview)
+- `push`: Local → GAS (add `dryrun: true` to preview)
+
+**Workflow:**
+```typescript
+// Preview changes
+rsync({operation: 'pull', scriptId, dryrun: true})
+// Apply changes
+rsync({operation: 'pull', scriptId})
+// Push with deletions
+rsync({operation: 'push', scriptId, confirmDeletions: true})
+```
+
+**Key features:**
+- No planId, no TTL, no drift detection — diff computed and applied in single call
+- Dryrun is lock-free (read-only); write lock only held during apply phase
+- Deletions require `confirmDeletions: true`; bootstrap blocks all deletions
 
 #### Git Auto-Initialization (Automatic .git setup)
 
@@ -678,7 +697,7 @@ Each `.git/config` breadcrumb maps to an independent local git repository:
 **Per-Repo Workflow:**
 ```typescript
 // Sync just the auth library
-rsync({operation: 'plan', scriptId, projectPath: 'libs/auth', direction: 'pull'})
+rsync({operation: 'pull', scriptId, projectPath: 'libs/auth', dryrun: true})
 
 // Start feature on auth library
 git_feature({operation: 'start', scriptId, featureName: 'oauth2', projectPath: 'libs/auth'})

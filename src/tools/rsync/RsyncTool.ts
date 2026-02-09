@@ -1,18 +1,15 @@
 /**
- * RsyncTool - Unidirectional sync between GAS projects and local git repositories
+ * RsyncTool - Stateless unidirectional sync between GAS projects and local git repositories
  *
- * Two-phase workflow:
- * 1. plan: Compute diff, create plan with 5-minute TTL
- * 2. execute: Validate plan, apply changes, update manifest
- *
- * Additional operations:
- * - status: Get current plan status
- * - cancel: Cancel a pending plan
+ * Single-call workflow:
+ * - pull: GAS → Local (dryrun to preview)
+ * - push: Local → GAS (dryrun to preview)
  *
  * Key features:
- * - Atomic single-call design (no per-file rate limiting)
+ * - Stateless: No plan storage, no TTL, no drift detection
+ * - Hash-based diff computed at runtime (SyncDiff)
+ * - Deletion safety with confirmDeletions flag
  * - Bootstrap detection with manifest creation
- * - Deletion safety with confirmation tokens
  * - Git-based recovery (reset to pre-sync commit)
  */
 
@@ -21,45 +18,31 @@ import { GuidanceFragments } from '../../utils/guidanceFragments.js';
 import { SessionAuthManager } from '../../auth/sessionManager.js';
 import { log } from '../../utils/logger.js';
 import { GASClient } from '../../api/gasClient.js';
-import { SyncPlanner, SyncPlanError, PlanResult } from './SyncPlanner.js';
-import { SyncExecutor, SyncExecuteError, SyncResult } from './SyncExecutor.js';
-import { PlanStore, PlanValidation } from './PlanStore.js';
-import { SyncDiff } from './SyncDiff.js';
+import { SyncPlanner, SyncPlanError, DiffResult } from './SyncPlanner.js';
+import { SyncExecutor, SyncExecuteError } from './SyncExecutor.js';
+import { getCurrentBranchName } from '../../utils/gitStatus.js';
 
 /**
  * Input schema for rsync tool
  */
 interface RsyncInput {
-  operation: 'plan' | 'execute' | 'status' | 'cancel';
+  operation: 'pull' | 'push';
   scriptId: string;
-
-  // For 'plan' operation
-  direction?: 'pull' | 'push';
+  dryrun?: boolean;
+  confirmDeletions?: boolean;
   force?: boolean;
   excludePatterns?: string[];
   projectPath?: string;
-
-  // For 'execute' operation
-  planId?: string;
-  confirmDeletions?: boolean;
-
-  // Auth
   accessToken?: string;
 }
 
 /**
- * Response types for different operations
+ * Response types
  */
-interface RsyncPlanResponse {
+interface RsyncDryrunResponse {
   success: true;
-  operation: 'plan';
-  plan: {
-    planId: string;
-    expiresAt: string;
-    direction: 'pull' | 'push';
-    scriptId: string;
-    isBootstrap: boolean;
-  };
+  operation: 'pull' | 'push';
+  dryrun: true;
   summary: {
     direction: 'pull' | 'push';
     additions: number;
@@ -68,13 +51,30 @@ interface RsyncPlanResponse {
     isBootstrap: boolean;
     totalOperations: number;
   };
+  files: {
+    add: Array<{ filename: string; size?: number }>;
+    update: Array<{ filename: string; sourceHash: string; destHash: string }>;
+    delete: Array<{ filename: string }>;
+  };
   warnings: string[];
   nextStep: string;
+  workflowContext?: string;
+}
+
+interface RsyncGitHint {
+  branch: string;
+  isFeatureBranch: boolean;
+  workflowHint: {
+    action: 'push' | 'finish';
+    command: string;
+    reason: string;
+  };
 }
 
 interface RsyncExecuteResponse {
   success: true;
-  operation: 'execute';
+  operation: 'pull' | 'push';
+  dryrun: false;
   result: {
     direction: 'pull' | 'push';
     filesAdded: number;
@@ -86,27 +86,19 @@ interface RsyncExecuteResponse {
     method: string;
     command: string;
   };
+  git?: RsyncGitHint;
 }
 
-interface RsyncStatusResponse {
+interface RsyncNoChangesResponse {
   success: true;
-  operation: 'status';
-  plan: {
-    planId: string;
-    valid: boolean;
-    expiresAt?: string;
-    remainingTtlMs?: number;
-    direction?: 'pull' | 'push';
-    summary?: string;
-  } | null;
-  activePlans: number;
-}
-
-interface RsyncCancelResponse {
-  success: true;
-  operation: 'cancel';
-  cancelled: boolean;
-  planId: string;
+  operation: 'pull' | 'push';
+  dryrun: false;
+  result: {
+    direction: 'pull' | 'push';
+    filesAdded: 0;
+    filesUpdated: 0;
+    filesDeleted: 0;
+  };
   message: string;
 }
 
@@ -121,10 +113,9 @@ interface RsyncErrorResponse {
 }
 
 type RsyncResponse =
-  | RsyncPlanResponse
+  | RsyncDryrunResponse
   | RsyncExecuteResponse
-  | RsyncStatusResponse
-  | RsyncCancelResponse
+  | RsyncNoChangesResponse
   | RsyncErrorResponse;
 
 /**
@@ -135,12 +126,11 @@ export class RsyncTool extends BaseTool {
 
   public description = `[GIT] PREFERRED for multi-file changes. Edit files locally at ~/gas-repos/project-{scriptId}/ using Claude Code native tools, then push all at once (2 API calls for N files).
 
-Two-phase workflow:
-1. plan: Compute diff and create plan (5-minute TTL)
-2. execute: Validate and apply plan
+Single-call stateless workflow:
+- pull: GAS → Local (add dryrun: true to preview)
+- push: Local → GAS (add dryrun: true to preview)
 
-Operations: plan (requires direction: pull|push), execute (requires planId), status, cancel.
-
+Use dryrun: true to preview changes before applying.
 Use write/edit/aider for single-file or small changes (<3 files).`;
 
   public inputSchema = {
@@ -149,8 +139,8 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
     properties: {
       operation: {
         type: 'string',
-        enum: ['plan', 'execute', 'status', 'cancel'],
-        description: 'Sync operation: plan (create diff), execute (apply plan), status (check plan), cancel (abort plan)'
+        enum: ['pull', 'push'],
+        description: 'Sync direction: pull (GAS→local) or push (local→GAS)'
       },
       scriptId: {
         type: 'string',
@@ -160,15 +150,20 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
         maxLength: 60,
         examples: ['1abc2def3ghi4jkl5mno6pqr7stu8vwx9yz0123456789']
       },
-      direction: {
-        type: 'string',
-        enum: ['pull', 'push'],
-        description: 'Sync direction: pull (GAS→local) or push (local→GAS). Required for plan operation.'
+      dryrun: {
+        type: 'boolean',
+        default: false,
+        description: 'Preview only — compute and return diff without applying changes'
+      },
+      confirmDeletions: {
+        type: 'boolean',
+        default: false,
+        description: 'Confirm file deletions. Required if sync would delete files.'
       },
       force: {
         type: 'boolean',
         default: false,
-        description: 'Skip uncommitted changes check (plan operation). Deletions still require confirmation.'
+        description: 'Skip uncommitted changes check. Deletions still require confirmation.'
       },
       excludePatterns: {
         type: 'array',
@@ -180,15 +175,6 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
         default: '',
         description: 'Path to nested git project within GAS (for polyrepo support)'
       },
-      planId: {
-        type: 'string',
-        description: 'Plan UUID from plan operation. Required for execute/status/cancel.'
-      },
-      confirmDeletions: {
-        type: 'boolean',
-        default: false,
-        description: 'Confirm file deletions (execute operation). Required if plan has deletions.'
-      },
       accessToken: {
         type: 'string',
         description: 'Access token for stateless operation (optional)',
@@ -198,16 +184,19 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
     required: ['operation', 'scriptId'],
     llmGuidance: {
       ...GuidanceFragments.buildRsyncGuidance({
-        workflow: 'plan → review diff → execute (with confirmDeletions if deletions)',
-        twoPhase: 'Plan has 5-min TTL. Review output before executing.',
+        workflow: 'pull/push with optional dryrun: true to preview',
+        stateless: 'Single call — no planId needed. Use dryrun: true to preview.',
         bootstrap: 'First sync creates manifest. No deletions allowed on bootstrap.',
         recovery: 'On failure: git reset --hard {pre-sync-sha}',
       }),
+      postSync: 'After rsync, use git_feature to commit/push/finish. Check response git.workflowHint for next action.',
       examples: [
-        'BATCH: Edit ~/gas-repos/project-{scriptId}/ locally → rsync plan → rsync execute',
-        'Pull: rsync({operation:"plan", scriptId:"...", direction:"pull"})',
-        'Push: rsync({operation:"plan", scriptId:"...", direction:"push"})',
-        'Execute: rsync({operation:"execute", scriptId:"...", planId:"..."})'
+        'BATCH: Edit ~/gas-repos/project-{scriptId}/ locally → rsync push',
+        'Preview pull: rsync({operation:"pull", scriptId:"...", dryrun:true})',
+        'Apply pull: rsync({operation:"pull", scriptId:"..."})',
+        'Preview push: rsync({operation:"push", scriptId:"...", dryrun:true})',
+        'Apply push: rsync({operation:"push", scriptId:"..."})',
+        'Push with deletes: rsync({operation:"push", scriptId:"...", confirmDeletions:true})'
       ]
     }
   };
@@ -215,14 +204,12 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
   private gasClient: GASClient;
   private planner: SyncPlanner;
   private executor: SyncExecutor;
-  private planStore: PlanStore;
 
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);
     this.gasClient = new GASClient();
     this.planner = new SyncPlanner(this.gasClient);
     this.executor = new SyncExecutor(this.gasClient);
-    this.planStore = PlanStore.getInstance();
   }
 
   /**
@@ -231,223 +218,208 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
   async execute(params: RsyncInput): Promise<RsyncResponse> {
     const { operation, scriptId } = params;
 
-    log.info(`[RSYNC] ${operation} operation for ${scriptId}`);
+    log.info(`[RSYNC] ${operation} operation for ${scriptId}${params.dryrun ? ' (dryrun)' : ''}`);
 
     // Validate scriptId
     this.validate.scriptId(scriptId, 'rsync operation');
+
+    // Validate operation
+    if (operation !== 'pull' && operation !== 'push') {
+      return this.errorResponse(operation, 'INVALID_OPERATION', `Unknown operation: ${operation}. Use 'pull' or 'push'.`);
+    }
 
     // Get auth token
     const accessToken = await this.getAuthToken(params);
 
     try {
-      switch (operation) {
-        case 'plan':
-          return await this.handlePlan(params, accessToken);
+      // Step 1: Compute diff (read-only)
+      const diffResult = await this.planner.computeDiff({
+        scriptId,
+        direction: operation,
+        accessToken,
+        force: params.force,
+        excludePatterns: params.excludePatterns,
+        projectPath: params.projectPath,
+      });
 
-        case 'execute':
-          return await this.handleExecute(params, accessToken);
-
-        case 'status':
-          return await this.handleStatus(params);
-
-        case 'cancel':
-          return await this.handleCancel(params);
-
-        default:
-          return this.errorResponse(operation, 'INVALID_OPERATION', `Unknown operation: ${operation}`);
+      // Step 2: Dryrun — return diff without applying
+      if (params.dryrun) {
+        return this.buildDryrunResponse(operation, scriptId, diffResult);
       }
+
+      // Step 3: No changes — return early
+      if (!diffResult.operations.hasChanges) {
+        return {
+          success: true,
+          operation,
+          dryrun: false,
+          result: {
+            direction: operation,
+            filesAdded: 0,
+            filesUpdated: 0,
+            filesDeleted: 0,
+          },
+          message: 'Already in sync. No changes detected.',
+        } as RsyncNoChangesResponse;
+      }
+
+      // Step 4: Check deletion safety
+      if (diffResult.operations.delete.length > 0 && !params.confirmDeletions) {
+        return this.errorResponse(operation, 'DELETION_REQUIRES_CONFIRMATION',
+          `Sync will delete ${diffResult.operations.delete.length} file(s). Pass confirmDeletions: true to proceed.`,
+          {
+            deletionCount: diffResult.operations.delete.length,
+            files: diffResult.operations.delete.map(f => f.filename),
+            nextStep: `rsync({operation: '${operation}', scriptId: '${scriptId}', confirmDeletions: true})`
+          }
+        );
+      }
+
+      // Step 5: Apply changes
+      const result = await this.executor.apply({
+        direction: operation,
+        scriptId,
+        operations: diffResult.operations,
+        localPath: diffResult.localPath,
+        isBootstrap: diffResult.isBootstrap,
+        accessToken,
+        confirmDeletions: params.confirmDeletions,
+      });
+
+      // Step 6: Build git workflow hint
+      const gitHint = await this.buildPostSyncGitHint(scriptId, diffResult.localPath, operation);
+
+      const response: RsyncExecuteResponse = {
+        success: true,
+        operation,
+        dryrun: false,
+        result: {
+          direction: result.direction,
+          filesAdded: result.filesAdded,
+          filesUpdated: result.filesUpdated,
+          filesDeleted: result.filesDeleted,
+          commitSha: result.commitSha,
+        },
+        recoveryInfo: result.recoveryInfo,
+      };
+
+      if (gitHint) {
+        response.git = gitHint;
+      }
+
+      return response;
+
     } catch (error) {
       return this.handleError(operation, error);
     }
   }
 
   /**
-   * Handle plan operation
+   * Build dryrun response from diff result
    */
-  private async handlePlan(params: RsyncInput, accessToken: string): Promise<RsyncResponse> {
-    const { scriptId, direction, force, excludePatterns, projectPath } = params;
+  private buildDryrunResponse(
+    operation: 'pull' | 'push',
+    scriptId: string,
+    diffResult: DiffResult
+  ): RsyncDryrunResponse {
+    const ops = diffResult.operations;
 
-    // Validate direction
-    if (!direction) {
-      return this.errorResponse('plan', 'MISSING_DIRECTION', 'direction is required for plan operation');
-    }
-
-    if (direction !== 'pull' && direction !== 'push') {
-      return this.errorResponse('plan', 'INVALID_DIRECTION', 'direction must be "pull" or "push"');
-    }
-
-    try {
-      const result: PlanResult = await this.planner.createPlan({
-        scriptId,
-        direction,
-        projectPath,
-        accessToken,
-        force,
-        excludePatterns
-      });
-
-      const response: RsyncPlanResponse = {
-        success: true,
-        operation: 'plan',
-        plan: {
-          planId: result.plan.planId,
-          expiresAt: result.plan.expiresAt,
-          direction: result.plan.direction,
-          scriptId: result.plan.scriptId,
-          isBootstrap: result.plan.isBootstrap
-        },
-        summary: result.summary,
-        warnings: result.warnings,
-        nextStep: result.nextStep
-      };
-
-      // Add file details if there are changes
-      if (result.plan.operations.hasChanges) {
-        this.logOperationDetails(result);
+    // Log operation details
+    if (ops.hasChanges) {
+      if (ops.add.length > 0) {
+        log.info(`[RSYNC] Files to add: ${ops.add.map(f => f.filename).join(', ')}`);
       }
-
-      return response;
-
-    } catch (error) {
-      if (error instanceof SyncPlanError) {
-        return this.errorResponse('plan', error.code, error.message, error.details);
+      if (ops.update.length > 0) {
+        log.info(`[RSYNC] Files to update: ${ops.update.map(f => f.filename).join(', ')}`);
       }
-      throw error;
-    }
-  }
-
-  /**
-   * Handle execute operation
-   */
-  private async handleExecute(params: RsyncInput, accessToken: string): Promise<RsyncResponse> {
-    const { scriptId, planId, confirmDeletions } = params;
-
-    // Validate planId
-    if (!planId) {
-      return this.errorResponse('execute', 'MISSING_PLAN_ID', 'planId is required for execute operation');
-    }
-
-    try {
-      const result: SyncResult = await this.executor.execute({
-        planId,
-        scriptId,
-        accessToken,
-        confirmDeletions
-      });
-
-      const response: RsyncExecuteResponse = {
-        success: true,
-        operation: 'execute',
-        result: {
-          direction: result.direction,
-          filesAdded: result.filesAdded,
-          filesUpdated: result.filesUpdated,
-          filesDeleted: result.filesDeleted,
-          commitSha: result.commitSha
-        },
-        recoveryInfo: result.recoveryInfo
-      };
-
-      return response;
-
-    } catch (error) {
-      if (error instanceof SyncExecuteError) {
-        return this.errorResponse('execute', error.code, error.message, error.details);
+      if (ops.delete.length > 0) {
+        log.info(`[RSYNC] Files to delete: ${ops.delete.map(f => f.filename).join(', ')}`);
       }
-      throw error;
-    }
-  }
-
-  /**
-   * Handle status operation
-   */
-  private async handleStatus(params: RsyncInput): Promise<RsyncResponse> {
-    const { planId } = params;
-
-    if (!planId) {
-      // Return general status (number of active plans)
-      const activePlans = this.planStore.getCount();
-      const planIds = this.planStore.listPlanIds();
-
-      return {
-        success: true,
-        operation: 'status',
-        plan: null,
-        activePlans,
-        ...(planIds.length > 0 && { planIds })
-      } as RsyncStatusResponse;
     }
 
-    // Get specific plan status
-    const validation: PlanValidation = this.planStore.get(planId);
-
-    if (!validation.valid) {
-      return {
-        success: true,
-        operation: 'status',
-        plan: {
-          planId,
-          valid: false
-        },
-        activePlans: this.planStore.getCount()
-      };
+    // Build next step instruction
+    let nextStep: string;
+    if (!ops.hasChanges) {
+      nextStep = 'No changes to sync. Files are already in sync.';
+    } else {
+      nextStep = `rsync({operation: '${operation}', scriptId: '${scriptId}'`;
+      if (ops.delete.length > 0 && !diffResult.isBootstrap) {
+        nextStep += `, confirmDeletions: true`;
+      }
+      nextStep += `})`;
     }
 
-    const plan = validation.plan!;
-    const remainingTtlMs = this.planStore.getRemainingTtl(planId);
+    // Build workflow context hint (lightweight — no git calls for dryrun)
+    const workflowContext = operation === 'pull'
+      ? `After pull: use git_feature({operation:'push', scriptId:'${scriptId}'}) to backup to remote`
+      : `After push: changes will be live in GAS`;
 
     return {
       success: true,
-      operation: 'status',
-      plan: {
-        planId,
-        valid: true,
-        expiresAt: plan.expiresAt,
-        remainingTtlMs,
-        direction: plan.direction,
-        summary: PlanStore.formatPlanSummary(plan)
+      operation,
+      dryrun: true,
+      summary: {
+        direction: operation,
+        additions: ops.add.length,
+        updates: ops.update.length,
+        deletions: ops.delete.length,
+        isBootstrap: diffResult.isBootstrap,
+        totalOperations: ops.totalOperations,
       },
-      activePlans: this.planStore.getCount()
+      files: {
+        add: ops.add.map(f => ({ filename: f.filename, size: f.size })),
+        update: ops.update.map(f => ({
+          filename: f.filename,
+          sourceHash: f.sourceHash || '',
+          destHash: f.destHash || '',
+        })),
+        delete: ops.delete.map(f => ({ filename: f.filename })),
+      },
+      warnings: diffResult.warnings,
+      nextStep,
+      workflowContext,
     };
   }
 
   /**
-   * Handle cancel operation
+   * Build git workflow hint after successful sync
    */
-  private async handleCancel(params: RsyncInput): Promise<RsyncResponse> {
-    const { planId } = params;
+  private async buildPostSyncGitHint(
+    scriptId: string,
+    localPath: string,
+    direction: 'pull' | 'push'
+  ): Promise<RsyncGitHint | null> {
+    try {
+      const branch = await getCurrentBranchName(localPath);
+      if (branch === 'unknown') return null;
 
-    if (!planId) {
-      return this.errorResponse('cancel', 'MISSING_PLAN_ID', 'planId is required for cancel operation');
-    }
+      const isFeatureBranch = branch.startsWith('llm-feature-');
 
-    const deleted = this.planStore.delete(planId);
+      let action: 'push' | 'finish';
+      let command: string;
+      let reason: string;
 
-    return {
-      success: true,
-      operation: 'cancel',
-      cancelled: deleted,
-      planId,
-      message: deleted
-        ? 'Plan cancelled successfully'
-        : 'Plan not found (may have expired or already been executed)'
-    };
-  }
+      if (isFeatureBranch && direction === 'push') {
+        action = 'finish';
+        command = `git_feature({operation:'finish', scriptId:'${scriptId}', pushToRemote:true})`;
+        reason = `On feature branch '${branch}'. When feature work is complete, finish and merge to main.`;
+      } else if (isFeatureBranch && direction === 'pull') {
+        action = 'push';
+        command = `git_feature({operation:'push', scriptId:'${scriptId}'})`;
+        reason = `Pulled latest to feature branch '${branch}'. Push to remote for backup.`;
+      } else {
+        // On main/master
+        action = 'push';
+        command = `git_feature({operation:'push', scriptId:'${scriptId}'})`;
+        reason = direction === 'pull'
+          ? 'Pulled latest changes. Push to remote to keep backup in sync.'
+          : 'Pushed to GAS. Push git history to remote for backup.';
+      }
 
-  /**
-   * Log operation details for debugging
-   */
-  private logOperationDetails(result: PlanResult): void {
-    const ops = result.plan.operations;
-
-    if (ops.add.length > 0) {
-      log.info(`[RSYNC] Files to add: ${ops.add.map(f => f.filename).join(', ')}`);
-    }
-    if (ops.update.length > 0) {
-      log.info(`[RSYNC] Files to update: ${ops.update.map(f => f.filename).join(', ')}`);
-    }
-    if (ops.delete.length > 0) {
-      log.info(`[RSYNC] Files to delete: ${ops.delete.map(f => f.filename).join(', ')}`);
+      return { branch, isFeatureBranch, workflowHint: { action, command, reason } };
+    } catch (error) {
+      log.warn(`[RSYNC] Failed to build git hint:`, error instanceof Error ? error.message : String(error));
+      return null;
     }
   }
 

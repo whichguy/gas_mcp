@@ -1,29 +1,25 @@
 /**
- * SyncExecutor - Executes sync plans created by SyncPlanner
+ * SyncExecutor - Applies sync operations (pull or push)
  *
- * Applies the sync operations defined in a plan:
- * - Validates plan exists and hasn't expired
- * - Verifies deletion confirmation if required
- * - Detects drift since plan creation
- * - Executes operations (PULL or PUSH)
- * - Updates manifest after successful sync
+ * Receives a computed diff and applies the changes:
+ * - Pull: Write files to local, git add/commit
+ * - Push: Wrap with CommonJS, update GAS via API
+ * - Update manifest after successful sync
  *
  * Key responsibilities:
- * - Plan validation (expiry, existence)
  * - Deletion confirmation enforcement
- * - Drift detection before execution
  * - Atomic execution with rollback support
  * - Manifest update after sync
+ *
+ * Stateless: Receives diff directly from caller. No PlanStore, no drift detection.
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import ignore, { Ignore } from 'ignore';
 import { log } from '../../utils/logger.js';
 import { SyncManifest } from './SyncManifest.js';
-import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
-import { PlanStore, SyncPlan } from './PlanStore.js';
+import { SyncDiffResult } from './SyncDiff.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
 import { isManifestFile } from '../../utils/fileHelpers.js';
 import {
@@ -33,25 +29,14 @@ import {
   getModuleName
 } from '../../utils/moduleWrapper.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
-import { updateCachedContentHash, getValidatedContentHash, clearGASMetadata, cacheGASMetadata } from '../../utils/gasMetadataCache.js';
-import {
-  FileFilter,
-  EXCLUDED_DIRS,
-} from '../../utils/fileFilter.js';
-
-// Note: GAS file filtering constants have been moved to centralized fileFilter.ts
-// Use FileFilter methods for consistent filtering behavior
+import { updateCachedContentHash, clearGASMetadata, cacheGASMetadata } from '../../utils/gasMetadataCache.js';
 
 /**
  * Error codes for execution phase
  */
 export type SyncExecuteErrorCode =
-  | 'PLAN_NOT_FOUND'
-  | 'PLAN_EXPIRED'
   | 'DELETION_REQUIRES_CONFIRMATION'
   | 'BOOTSTRAP_NO_DELETE'
-  | 'STATE_DRIFT'
-  | 'LOCK_TIMEOUT'
   | 'EXECUTION_ERROR'
   | 'GIT_ERROR'
   | 'API_ERROR';
@@ -71,13 +56,16 @@ export class SyncExecuteError extends Error {
 }
 
 /**
- * Options for executing a sync plan
+ * Options for applying sync operations
  */
-export interface ExecuteOptions {
-  planId: string;
+export interface ApplyOptions {
+  direction: 'pull' | 'push';
   scriptId: string;
-  confirmDeletions?: boolean;
+  operations: SyncDiffResult;
+  localPath: string;
+  isBootstrap: boolean;
   accessToken: string;
+  confirmDeletions?: boolean;
 }
 
 /**
@@ -97,73 +85,44 @@ export interface SyncResult {
 }
 
 /**
- * SyncExecutor class for executing sync plans
+ * SyncExecutor class for applying sync operations
  */
 export class SyncExecutor {
   private gasClient: GASClient;
-  private planStore: PlanStore;
 
   constructor(gasClient?: GASClient) {
     this.gasClient = gasClient || new GASClient();
-    this.planStore = PlanStore.getInstance();
   }
 
   /**
-   * Execute a sync plan
+   * Apply sync operations
    *
-   * @param options - Execution options
+   * @param options - Apply options with diff and context
    * @returns SyncResult with execution details
    * @throws SyncExecuteError on failure
    */
-  async execute(options: ExecuteOptions): Promise<SyncResult> {
-    const { planId, confirmDeletions = false, accessToken } = options;
+  async apply(options: ApplyOptions): Promise<SyncResult> {
+    const { direction, scriptId, operations, localPath, isBootstrap, accessToken, confirmDeletions = false } = options;
 
-    log.info(`[EXECUTOR] Executing plan ${planId}`);
+    log.info(`[EXECUTOR] Applying ${direction} sync: +${operations.add.length} ~${operations.update.length} -${operations.delete.length}`);
 
-    // Step 1: Load and validate plan
-    const validation = this.planStore.get(planId);
-
-    if (!validation.valid) {
-      if (validation.reason === 'PLAN_NOT_FOUND') {
-        throw new SyncExecuteError(
-          'PLAN_NOT_FOUND',
-          `Plan ${planId} not found. It may have expired or been cancelled.`,
-          { planId }
-        );
-      }
-      if (validation.reason === 'PLAN_EXPIRED') {
-        throw new SyncExecuteError(
-          'PLAN_EXPIRED',
-          'Plan expired after 5 minutes. Re-run rsync plan to create a fresh plan.',
-          { planId }
-        );
-      }
-      throw new SyncExecuteError(
-        'PLAN_NOT_FOUND',
-        `Plan validation failed: ${validation.reason}`,
-        { planId, reason: validation.reason }
-      );
-    }
-
-    const plan = validation.plan!;
-
-    // Step 2: Validate deletion confirmation
-    if (plan.operations.delete.length > 0) {
-      if (plan.isBootstrap) {
+    // Validate deletion confirmation
+    if (operations.delete.length > 0) {
+      if (isBootstrap) {
         throw new SyncExecuteError(
           'BOOTSTRAP_NO_DELETE',
           'First sync cannot delete files. Complete the bootstrap sync first, then manually delete if needed.',
-          { deletionCount: plan.operations.delete.length }
+          { deletionCount: operations.delete.length }
         );
       }
 
       if (!confirmDeletions) {
         throw new SyncExecuteError(
           'DELETION_REQUIRES_CONFIRMATION',
-          `Plan will delete ${plan.operations.delete.length} file(s). Pass confirmDeletions: true to proceed.`,
+          `Sync will delete ${operations.delete.length} file(s). Pass confirmDeletions: true to proceed.`,
           {
-            deletionCount: plan.operations.delete.length,
-            files: plan.operations.delete.map(f => f.filename)
+            deletionCount: operations.delete.length,
+            files: operations.delete.map(f => f.filename)
           }
         );
       }
@@ -172,49 +131,42 @@ export class SyncExecutor {
     let preCommitSha: string | undefined;
 
     try {
-      // Step 3: Verify no drift since plan was created
-      // Note: No explicit lock here - gasClient.updateProjectContent() handles write locking
-      await this.verifyNoDrift(plan, accessToken);
-
-      // Step 4: Create git checkpoint (for PULL operations)
-      if (plan.direction === 'pull') {
-        preCommitSha = await this.getGitCommit(plan.localPath);
+      // Create git checkpoint (for PULL operations)
+      if (direction === 'pull') {
+        preCommitSha = await this.getGitCommit(localPath);
       }
 
-      // Step 5: Execute based on direction
-      if (plan.direction === 'pull') {
-        await this.executePull(plan);
+      // Execute based on direction
+      if (direction === 'pull') {
+        await this.executePull(operations, localPath);
       } else {
-        await this.executePush(plan, accessToken);
+        await this.executePush(operations, scriptId, accessToken);
       }
 
-      // Step 6: Update manifest
-      const newManifest = await this.updateManifest(plan, accessToken);
+      // Update manifest
+      await this.updateManifest(scriptId, direction, localPath, accessToken);
 
-      // Step 7: Get new commit SHA (for PULL)
-      const newCommitSha = plan.direction === 'pull'
-        ? await this.getGitCommit(plan.localPath)
+      // Get new commit SHA (for PULL)
+      const newCommitSha = direction === 'pull'
+        ? await this.getGitCommit(localPath)
         : undefined;
 
-      // Step 8: Delete the plan
-      this.planStore.delete(planId);
-
-      // Step 9: Build and return result
+      // Build and return result
       const result: SyncResult = {
         success: true,
-        direction: plan.direction,
-        filesAdded: plan.operations.add.length,
-        filesUpdated: plan.operations.update.length,
-        filesDeleted: plan.operations.delete.length,
+        direction,
+        filesAdded: operations.add.length,
+        filesUpdated: operations.update.length,
+        filesDeleted: operations.delete.length,
         commitSha: newCommitSha,
-        recoveryInfo: plan.direction === 'pull'
+        recoveryInfo: direction === 'pull'
           ? {
               method: 'git reset',
-              command: `git -C ${plan.localPath} reset --hard ${preCommitSha || 'HEAD~1'}`
+              command: `git -C ${localPath} reset --hard ${preCommitSha || 'HEAD~1'}`
             }
           : {
               method: 'git reset + push',
-              command: `git -C ${plan.localPath} reset --hard HEAD~1 && rsync({operation: 'plan', scriptId: '${plan.scriptId}', direction: 'push'})`
+              command: `git -C ${localPath} reset --hard HEAD~1 && rsync({operation: 'push', scriptId: '${scriptId}'})`
             }
       };
 
@@ -238,292 +190,63 @@ export class SyncExecutor {
   }
 
   /**
-   * Verify no state drift since plan was created
-   *
-   * Uses unwrapped content for comparison to match planning phase behavior.
-   */
-  private async verifyNoDrift(plan: SyncPlan, accessToken: string): Promise<void> {
-    log.debug(`[EXECUTOR] Verifying no drift since plan creation`);
-
-    // Re-fetch current state from both sides
-    const currentGasFiles = await this.gasClient.getProjectContent(plan.scriptId, accessToken);
-    const currentLocalFiles = await this.scanLocalFiles(plan.localPath);
-
-    // Convert GAS files to DiffFileInfo with UNWRAPPED content for comparison
-    const gasDiffFiles = this.convertGasFilesToDiff(currentGasFiles);
-
-    // Detect drift using unwrapped content
-    const sourceFiles = plan.direction === 'pull' ? gasDiffFiles : currentLocalFiles;
-    const destFiles = plan.direction === 'pull' ? currentLocalFiles : gasDiffFiles;
-
-    const driftResult = SyncDiff.detectDrift(plan.operations, sourceFiles, destFiles);
-
-    if (driftResult.hasDrift) {
-      throw new SyncExecuteError(
-        'STATE_DRIFT',
-        `Files changed since plan was created. Re-run rsync plan to get a fresh diff.`,
-        {
-          driftDetails: driftResult.driftDetails,
-          driftCount: driftResult.driftDetails.length
-        }
-      );
-    }
-
-    log.debug(`[EXECUTOR] No drift detected, safe to proceed`);
-  }
-
-  /**
-   * Convert GAS files to DiffFileInfo format
-   *
-   * IMPORTANT: Uses WRAPPED content hashes for sync detection.
-   * This ensures that ANY change to the file (including CommonJS wrapper
-   * options like loadNow, hoistedFunctions, etc.) triggers a sync.
-   *
-   * Matches the behavior in SyncPlanner.convertGasFilesToDiff()
-   */
-  private convertGasFilesToDiff(gasFiles: GASFile[]): DiffFileInfo[] {
-    return gasFiles
-      .filter(f => f.source !== undefined)
-      .map(f => {
-        const source = f.source as string;
-        const fileType = f.type || 'SERVER_JS';
-
-        // Compute hash on WRAPPED content (full file as stored in GAS)
-        // This ensures wrapper changes (loadNow, hoistedFunctions, etc.) trigger sync
-        const wrappedHash = computeGitSha1(source);
-
-        // Unwrap content for display/comparison readability
-        let contentForDisplay = source;
-        if (shouldWrapContent(fileType, f.name)) {
-          const { unwrappedContent } = unwrapModuleContent(source);
-          contentForDisplay = unwrappedContent;
-        }
-
-        return {
-          filename: f.name,
-          content: contentForDisplay,  // Unwrapped for display
-          sha1: wrappedHash,           // WRAPPED hash for sync detection
-          lastModified: f.updateTime,
-          size: source.length,         // Full file size
-          originalContent: source  // Keep wrapped for operations
-        };
-      });
-  }
-
-  /**
-   * Load ignore patterns from .gitignore and .claspignore
-   * Both files use the same syntax (gitignore format)
-   */
-  private async loadIgnorePatterns(repoRoot: string): Promise<Ignore | null> {
-    const ig = ignore();
-    let hasPatterns = false;
-
-    // Load .gitignore
-    try {
-      const content = await fs.readFile(path.join(repoRoot, '.gitignore'), 'utf-8');
-      ig.add(content);
-      hasPatterns = true;
-    } catch {
-      // No .gitignore - continue
-    }
-
-    // Load .claspignore (clasp CLI compatibility)
-    try {
-      const content = await fs.readFile(path.join(repoRoot, '.claspignore'), 'utf-8');
-      ig.add(content);
-      hasPatterns = true;
-    } catch {
-      // No .claspignore - continue
-    }
-
-    return hasPatterns ? ig : null;
-  }
-
-  /**
-   * Scan local files for drift detection
-   *
-   * Only includes GAS-compatible files, respects .gitignore.
-   */
-  private async scanLocalFiles(localPath: string): Promise<DiffFileInfo[]> {
-    const files: DiffFileInfo[] = [];
-
-    try {
-      await fs.access(localPath);
-    } catch {
-      // Directory doesn't exist - return empty
-      return [];
-    }
-
-    const ig = await this.loadIgnorePatterns(localPath);
-    // Create filter once for all file checks (performance optimization)
-    const filter = new FileFilter();
-    await this.scanDirectory(localPath, '', files, ig, filter);
-    return files;
-  }
-
-  /**
-   * Recursively scan a directory for GAS-compatible files
-   */
-  private async scanDirectory(
-    baseDir: string,
-    relativePath: string,
-    files: DiffFileInfo[],
-    ig: Ignore | null,
-    filter: FileFilter
-  ): Promise<void> {
-    const dirPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const entryRelPath = relativePath
-        ? `${relativePath}/${entry.name}`
-        : entry.name;
-
-      if (entry.isDirectory()) {
-        // Skip excluded directories (using centralized constants)
-        if ((EXCLUDED_DIRS as readonly string[]).includes(entry.name)) {
-          continue;
-        }
-        // Skip directories matching .gitignore
-        if (ig?.ignores(entryRelPath + '/')) {
-          continue;
-        }
-        await this.scanDirectory(baseDir, entryRelPath, files, ig, filter);
-
-      } else if (entry.isFile()) {
-        // Skip non-GAS files (extension whitelist)
-        if (!filter.isGasCompatible(entry.name)) {
-          continue;
-        }
-        // Skip local config files (.clasp.json, .claspignore, etc.)
-        if (filter.isLocalConfig(entry.name)) {
-          continue;
-        }
-        // Skip files matching .gitignore
-        if (ig?.ignores(entryRelPath)) {
-          continue;
-        }
-
-        const filePath = path.join(dirPath, entry.name);
-        const content = await fs.readFile(filePath, 'utf-8');
-        const stat = await fs.stat(filePath);
-
-        // Convert path to GAS-style filename
-        const filename = this.localPathToGasFilename(entryRelPath);
-
-        // Use validated cached hash if available (from previous sync)
-        // Local files are stored WRAPPED (with CommonJS), so file hash = wrapped hash
-        // getValidatedContentHash() checks mtime to detect external modifications
-        let sha1: string;
-        const validatedHash = await getValidatedContentHash(filePath);
-        if (validatedHash) {
-          sha1 = validatedHash.hash;
-        } else {
-          // File doesn't exist or error - compute from file content
-          // File should be WRAPPED content, so direct hash is correct
-          sha1 = computeGitSha1(content);
-        }
-
-        files.push({
-          filename,
-          content,
-          sha1,
-          lastModified: stat.mtime.toISOString(),
-          size: stat.size
-        });
-      }
-    }
-  }
-
-  /**
-   * Convert local path to GAS filename
-   *
-   * GAS now stores files WITH extensions in the name, so preserve them.
-   * Only convert backslashes to forward slashes for path consistency.
-   */
-  private localPathToGasFilename(localPath: string): string {
-    // GAS stores files WITH extensions, so preserve the extension
-    // Only convert Windows backslashes to forward slashes
-    return localPath.replace(/\\/g, '/');
-  }
-
-  /**
    * Execute PULL operation (GAS → Local)
    *
    * IMPORTANT: When pulling from GAS, SERVER_JS files contain CommonJS wrappers
-   * (_main function, __defineModule__ call). We must UNWRAP these before writing
-   * to local so developers see clean code.
+   * (_main function, __defineModule__ call). We store WRAPPED content locally
+   * so file hashes match remote hashes for accurate sync detection.
    *
    * CRITICAL: After writing, we cache the WRAPPED content hash in xattr so that
    * sync status checks (which compare local hash vs remote WRAPPED hash) work correctly.
    */
-  private async executePull(plan: SyncPlan): Promise<void> {
-    log.info(`[EXECUTOR] Executing PULL: ${plan.operations.totalOperations} operations`);
+  private async executePull(operations: SyncDiffResult, localPath: string): Promise<void> {
+    log.info(`[EXECUTOR] Executing PULL: ${operations.totalOperations} operations`);
 
     // Write files directly to repo root (not src/ subdirectory)
-    const targetDir = plan.localPath;
+    const targetDir = localPath;
 
     // Process ADD operations
-    for (const op of plan.operations.add) {
-      // Store WRAPPED content locally (full file as stored in GAS)
-      // This ensures file hash = remote hash for accurate sync detection
+    for (const op of operations.add) {
       const contentToWrite = op.content || '';
-      // Use fileType (not content) for extension mapping - matches syncStatusChecker behavior
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
       // Cache GAS metadata (updateTime, fileType) for CatTool fast path
       const fileType = op.fileType || 'SERVER_JS';
-      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {
-        // Non-fatal: xattr not supported
-      });
+      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {});
 
       // Cache the content hash for sync status comparison
-      // Since local = wrapped content, file hash = wrapped hash
       const contentHash = computeGitSha1(contentToWrite);
-      await updateCachedContentHash(filePath, contentHash).catch(() => {
-        // Non-fatal: xattr not supported - sync check will compute from file content
-      });
+      await updateCachedContentHash(filePath, contentHash).catch(() => {});
 
       log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${fileType})`);
     }
 
     // Process UPDATE operations
-    for (const op of plan.operations.update) {
-      // Store WRAPPED content locally (full file as stored in GAS)
+    for (const op of operations.update) {
       const contentToWrite = op.content || '';
-      // Use fileType (not content) for extension mapping - matches syncStatusChecker behavior
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
-      // Cache GAS metadata (updateTime, fileType) for CatTool fast path
       const fileType = op.fileType || 'SERVER_JS';
-      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {
-        // Non-fatal: xattr not supported
-      });
+      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {});
 
-      // Cache the content hash for sync status comparison
       const contentHash = computeGitSha1(contentToWrite);
-      await updateCachedContentHash(filePath, contentHash).catch(() => {
-        // Non-fatal: xattr not supported - sync check will compute from file content
-      });
+      await updateCachedContentHash(filePath, contentHash).catch(() => {});
 
       log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${fileType})`);
     }
 
-    // Process DELETE operations - use fileType for extension mapping
-    for (const op of plan.operations.delete) {
+    // Process DELETE operations
+    for (const op of operations.delete) {
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       try {
         await fs.unlink(filePath);
         log.debug(`[EXECUTOR] Deleted: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
 
-        // Clear xattr cache to prevent stale hash detection if file is recreated
-        await clearGASMetadata(filePath).catch(() => {
-          // Non-fatal: xattr may not be supported or file already gone
-        });
+        await clearGASMetadata(filePath).catch(() => {});
       } catch (error: any) {
         if (error.code !== 'ENOENT') {
           throw error;
@@ -534,30 +257,9 @@ export class SyncExecutor {
 
     // Git add and commit
     await this.gitAddAndCommit(
-      plan.localPath,
+      localPath,
       `rsync pull from GAS at ${new Date().toISOString()}`
     );
-  }
-
-  /**
-   * Unwrap CommonJS wrapper from GAS content for local storage
-   *
-   * When pulling from GAS, SERVER_JS files have _main() wrappers.
-   * We remove these so local files contain clean user code.
-   * HTML and JSON files are passed through unchanged.
-   */
-  private unwrapForLocal(filename: string, content: string): string {
-    const fileType = this.inferFileType(filename);
-
-    // Only unwrap SERVER_JS files that should have CommonJS wrappers
-    if (!shouldWrapContent(fileType, filename)) {
-      return content;
-    }
-
-    // Unwrap the CommonJS wrapper
-    const { unwrappedContent } = unwrapModuleContent(content);
-    log.debug(`[EXECUTOR] Unwrapped CommonJS for: ${filename}`);
-    return unwrappedContent;
   }
 
   /**
@@ -567,17 +269,17 @@ export class SyncExecutor {
    * We must WRAP these with CommonJS (_main function, __defineModule__ call)
    * before pushing to GAS.
    */
-  private async executePush(plan: SyncPlan, accessToken: string): Promise<void> {
-    log.info(`[EXECUTOR] Executing PUSH: ${plan.operations.totalOperations} operations`);
+  private async executePush(operations: SyncDiffResult, scriptId: string, accessToken: string): Promise<void> {
+    log.info(`[EXECUTOR] Executing PUSH: ${operations.totalOperations} operations`);
 
     // Get current GAS files
-    const currentGasFiles = await this.gasClient.getProjectContent(plan.scriptId, accessToken);
+    const currentGasFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
     // Build complete file list by applying operations (with CommonJS wrapping)
-    const newFiles = this.buildCompleteFileList(currentGasFiles, plan.operations);
+    const newFiles = this.buildCompleteFileList(currentGasFiles, operations);
 
     // Single atomic API call to update all files
-    await this.gasClient.updateProjectContent(plan.scriptId, newFiles, accessToken);
+    await this.gasClient.updateProjectContent(scriptId, newFiles, accessToken);
 
     log.debug(`[EXECUTOR] Pushed ${newFiles.length} files to GAS`);
   }
@@ -591,7 +293,7 @@ export class SyncExecutor {
    */
   private buildCompleteFileList(
     currentFiles: GASFile[],
-    operations: SyncPlan['operations']
+    operations: SyncDiffResult
   ): GASFile[] {
     // Build a map of current files for quick lookup (for preserving moduleOptions)
     const currentFileMap = new Map<string, GASFile>();
@@ -795,25 +497,23 @@ export class SyncExecutor {
    * Update manifest after successful sync
    */
   private async updateManifest(
-    plan: SyncPlan,
+    scriptId: string,
+    direction: 'pull' | 'push',
+    localPath: string,
     accessToken: string
-  ): Promise<SyncManifest> {
-    const manifest = new SyncManifest(plan.localPath);
+  ): Promise<void> {
+    const manifest = new SyncManifest(localPath);
 
     // Get final state of synced files
     let files: Array<{ filename: string; content: string; lastModified: string }>;
 
-    if (plan.direction === 'pull') {
+    if (direction === 'pull') {
       // Read files from local after pull
-      const localFiles = await this.scanLocalFiles(plan.localPath);
-      files = localFiles.map(f => ({
-        filename: f.filename,
-        content: f.content,
-        lastModified: f.lastModified || new Date().toISOString()
-      }));
+      const localFiles = await this.scanLocalFilesForManifest(localPath);
+      files = localFiles;
     } else {
       // Get files from GAS after push (filter out files without source)
-      const gasFiles = await this.gasClient.getProjectContent(plan.scriptId, accessToken);
+      const gasFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
       files = gasFiles
         .filter(f => f.source !== undefined)
         .map(f => ({
@@ -824,12 +524,12 @@ export class SyncExecutor {
     }
 
     // Get current git commit
-    const commitSha = await this.getGitCommit(plan.localPath);
+    const commitSha = await this.getGitCommit(localPath);
 
     // Create updated manifest
     const manifestData = SyncManifest.createFromFiles(
-      plan.scriptId,
-      plan.direction,
+      scriptId,
+      direction,
       files,
       commitSha
     );
@@ -838,7 +538,46 @@ export class SyncExecutor {
     await manifest.save(manifestData);
 
     log.info(`[EXECUTOR] Updated manifest with ${files.length} files`);
+  }
 
-    return manifest;
+  /**
+   * Scan local files for manifest update (simplified - no ignore patterns needed)
+   */
+  private async scanLocalFilesForManifest(
+    localPath: string
+  ): Promise<Array<{ filename: string; content: string; lastModified: string }>> {
+    const files: Array<{ filename: string; content: string; lastModified: string }> = [];
+
+    const scan = async (dir: string, relPath: string): Promise<void> => {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const entryRelPath = relPath ? `${relPath}/${entry.name}` : entry.name;
+
+        if (entry.isDirectory()) {
+          // Skip .git and node_modules
+          if (entry.name === '.git' || entry.name === 'node_modules') continue;
+          await scan(path.join(dir, entry.name), entryRelPath);
+        } else if (entry.isFile()) {
+          // Only include GAS-compatible files
+          const ext = path.extname(entry.name).toLowerCase();
+          if (!['.gs', '.js', '.html', '.json'].includes(ext)) continue;
+          if (entry.name === '.clasp.json' || entry.name === '.claspignore') continue;
+
+          const filePath = path.join(dir, entry.name);
+          const content = await fs.readFile(filePath, 'utf-8');
+          const stat = await fs.stat(filePath);
+
+          files.push({
+            filename: entryRelPath.replace(/\\/g, '/'),
+            content,
+            lastModified: stat.mtime.toISOString()
+          });
+        }
+      }
+    };
+
+    await scan(localPath, '');
+    return files;
   }
 }

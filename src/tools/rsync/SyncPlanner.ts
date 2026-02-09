@@ -1,55 +1,47 @@
 /**
- * SyncPlanner - Creates sync plans for rsync operations
+ * SyncPlanner - Computes sync diffs for rsync operations
  *
- * Orchestrates the planning phase of sync operations:
- * - Validates preconditions (breadcrumb, git status, lock)
+ * Orchestrates the diff computation phase:
+ * - Validates preconditions (breadcrumb, git status)
  * - Fetches current state from both GAS and local
  * - Computes diff using SyncDiff
- * - Creates and stores plan in PlanStore
+ * - Returns diff result directly (no storage)
  *
  * Key responsibilities:
  * - Breadcrumb verification (required for sync)
  * - Git working directory status check
  * - Bootstrap detection via SyncManifest
  * - Diff computation with SyncDiff
- * - Plan creation and storage
+ *
+ * Read-only: Does not modify GAS or local files.
  */
 
 import { promises as fs } from 'fs';
 import path from 'path';
 import ignore, { Ignore } from 'ignore';
 import { log } from '../../utils/logger.js';
-import { LockManager } from '../../utils/lockManager.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncManifest, ManifestLoadResult } from './SyncManifest.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
-import { SyncDiff, DiffFileInfo } from './SyncDiff.js';
+import { SyncDiff, DiffFileInfo, SyncDiffResult } from './SyncDiff.js';
 import { fileNameMatches } from '../../api/pathParser.js';
-import { PlanStore, SyncPlan } from './PlanStore.js';
 import { getUncommittedStatus, getCurrentBranchName } from '../../utils/gitStatus.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
 import {
   shouldWrapContent,
   unwrapModuleContent,
-  wrapModuleContent,
-  getModuleName
 } from '../../utils/moduleWrapper.js';
 import {
   FileFilter,
-  EXCLUDED_FILES,
   EXCLUDED_DIRS,
 } from '../../utils/fileFilter.js';
 import { getValidatedContentHash } from '../../utils/gasMetadataCache.js';
-
-// Note: GAS file filtering constants have been moved to centralized fileFilter.ts
-// Use FileFilter.isGasCompatible() and FileFilter.isLocalConfig() etc.
 
 /**
  * Error codes for planning phase
  */
 export type SyncPlanErrorCode =
   | 'BREADCRUMB_MISSING'
-  | 'LOCK_TIMEOUT'
   | 'UNCOMMITTED_CHANGES'
   | 'GIT_NOT_FOUND'
   | 'API_ERROR'
@@ -70,9 +62,9 @@ export class SyncPlanError extends Error {
 }
 
 /**
- * Options for creating a sync plan
+ * Options for computing a sync diff
  */
-export interface PlanOptions {
+export interface DiffOptions {
   scriptId: string;
   direction: 'pull' | 'push';
   projectPath?: string;          // For polyrepo support
@@ -82,127 +74,83 @@ export interface PlanOptions {
 }
 
 /**
- * Result of the planning operation
+ * Result of the diff computation
  */
-export interface PlanResult {
-  success: true;
-  plan: SyncPlan;
-  summary: {
-    direction: 'pull' | 'push';
-    additions: number;
-    updates: number;
-    deletions: number;
-    isBootstrap: boolean;
-    totalOperations: number;
-  };
+export interface DiffResult {
+  operations: SyncDiffResult;
+  localPath: string;
+  isBootstrap: boolean;
   warnings: string[];
-  nextStep: string;
+  sourceFileCount: number;
+  destFileCount: number;
 }
 
 /**
- * SyncPlanner class for creating sync plans
+ * SyncPlanner class for computing sync diffs
  */
 export class SyncPlanner {
-  private lockManager: LockManager;
   private gasClient: GASClient;
-  private planStore: PlanStore;
   private pathResolver: GitPathResolver;
 
   constructor(gasClient?: GASClient) {
-    this.lockManager = LockManager.getInstance();
     this.gasClient = gasClient || new GASClient();
-    this.planStore = PlanStore.getInstance();
     this.pathResolver = new GitPathResolver();
   }
 
   /**
-   * Create a sync plan
+   * Compute sync diff between GAS and local
    *
-   * @param options - Planning options
-   * @returns PlanResult with created plan and summary
+   * Read-only: Only reads from GAS API and local filesystem.
+   *
+   * @param options - Diff computation options
+   * @returns DiffResult with computed operations
    * @throws SyncPlanError on failure
    */
-  async createPlan(options: PlanOptions): Promise<PlanResult> {
+  async computeDiff(options: DiffOptions): Promise<DiffResult> {
     const { scriptId, direction, projectPath, accessToken, force = false, excludePatterns } = options;
 
-    log.info(`[PLANNER] Creating ${direction} plan for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
+    log.info(`[PLANNER] Computing ${direction} diff for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
 
     const warnings: string[] = [];
-    let localPath: string;
-    let manifestResult: ManifestLoadResult;
-    let gasFiles: GASFile[];
-    let localFiles: DiffFileInfo[];
 
     try {
       // Step 1: Check breadcrumb and resolve local path
-      localPath = await this.resolveLocalPath(scriptId, projectPath, accessToken);
+      const localPath = await this.resolveLocalPath(scriptId, projectPath, accessToken);
 
-      // Step 2: Acquire lock
-      await this.acquireLock(scriptId);
-
-      try {
-        // Step 3: Check git status (unless force)
-        if (!force) {
-          await this.checkGitStatus(localPath, warnings);
-        } else {
-          warnings.push('Forced mode: skipped uncommitted changes check');
-        }
-
-        // Step 4: Load manifest (bootstrap detection)
-        manifestResult = await this.loadManifest(localPath);
-
-        // Step 5: Fetch current state from both sides
-        gasFiles = await this.fetchGasFiles(scriptId, accessToken, excludePatterns);
-        localFiles = await this.scanLocalFiles(localPath, excludePatterns);
-
-        // Step 6: Compute diff
-        const diffResult = this.computeDiff(
-          direction,
-          gasFiles,
-          localFiles,
-          manifestResult
-        );
-
-        // Step 7: Create and store plan
-        const plan = this.planStore.create({
-          direction,
-          scriptId,
-          operations: diffResult,
-          isBootstrap: manifestResult.isBootstrap,
-          localPath,
-          sourceFileCount: direction === 'pull' ? gasFiles.length : localFiles.length,
-          destFileCount: direction === 'pull' ? localFiles.length : gasFiles.length
-        });
-
-        // Build result
-        const result: PlanResult = {
-          success: true,
-          plan,
-          summary: {
-            direction,
-            additions: diffResult.add.length,
-            updates: diffResult.update.length,
-            deletions: diffResult.delete.length,
-            isBootstrap: manifestResult.isBootstrap,
-            totalOperations: diffResult.totalOperations
-          },
-          warnings,
-          nextStep: this.buildNextStepInstruction(plan)
-        };
-
-        log.info(`[PLANNER] Plan created: ${PlanStore.formatPlanSummary(plan)}`);
-
-        return result;
-
-      } finally {
-        // Always release lock - wrap in try-catch to prevent masking original errors
-        try {
-          await this.releaseLock(scriptId);
-        } catch (releaseError) {
-          log.error(`[PLANNER] Failed to release lock:`, releaseError);
-          // Continue - don't mask the original error
-        }
+      // Step 2: Check git status (unless force)
+      if (!force) {
+        await this.checkGitStatus(localPath, warnings);
+      } else {
+        warnings.push('Forced mode: skipped uncommitted changes check');
       }
+
+      // Step 3: Load manifest (bootstrap detection)
+      const manifestResult = await this.loadManifest(localPath);
+
+      // Step 4: Fetch current state from both sides
+      const gasFiles = await this.fetchGasFiles(scriptId, accessToken, excludePatterns);
+      const localFiles = await this.scanLocalFiles(localPath, excludePatterns);
+
+      // Step 5: Compute diff
+      const diffResult = this.computeDiffInternal(
+        direction,
+        gasFiles,
+        localFiles,
+        manifestResult
+      );
+
+      const result: DiffResult = {
+        operations: diffResult,
+        localPath,
+        isBootstrap: manifestResult.isBootstrap,
+        warnings,
+        sourceFileCount: direction === 'pull' ? gasFiles.length : localFiles.length,
+        destFileCount: direction === 'pull' ? localFiles.length : gasFiles.length,
+      };
+
+      log.info(`[PLANNER] Diff computed: +${diffResult.add.length} ~${diffResult.update.length} -${diffResult.delete.length}`);
+
+      return result;
 
     } catch (error) {
       // Re-throw SyncPlanError as-is
@@ -214,7 +162,7 @@ export class SyncPlanner {
       log.error(`[PLANNER] Unexpected error:`, error);
       throw new SyncPlanError(
         'API_ERROR',
-        `Failed to create sync plan: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to compute sync diff: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -274,31 +222,6 @@ export class SyncPlanner {
 
     log.debug(`[PLANNER] Resolved local path: ${localPath}`);
     return localPath;
-  }
-
-  /**
-   * Acquire lock for sync operation
-   */
-  private async acquireLock(scriptId: string): Promise<void> {
-    try {
-      await this.lockManager.acquireLock(scriptId, 'rsync-plan', 30000);
-    } catch (error: any) {
-      if (error.name === 'LockTimeoutError') {
-        throw new SyncPlanError(
-          'LOCK_TIMEOUT',
-          'Another sync operation is in progress. Wait for it to complete or check for stuck processes.',
-          { scriptId, lockInfo: error.lockInfo }
-        );
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Release lock
-   */
-  private async releaseLock(scriptId: string): Promise<void> {
-    await this.lockManager.releaseLock(scriptId);
   }
 
   /**
@@ -594,12 +517,12 @@ export class SyncPlanner {
    * Note: HASH comparison uses WRAPPED content - see lines 507-518, 633-635.
    * This ensures wrapper changes (loadNow, hoistedFunctions) trigger sync.
    */
-  private computeDiff(
+  private computeDiffInternal(
     direction: 'pull' | 'push',
     gasFiles: GASFile[],
     localFiles: DiffFileInfo[],
     manifestResult: ManifestLoadResult
-  ): ReturnType<typeof SyncDiff.compute> {
+  ): SyncDiffResult {
     // Convert GAS files to DiffFileInfo with UNWRAPPED content for comparison
     // but keep original wrapped content for the operations
     const gasDiffFiles = this.convertGasFilesToDiff(gasFiles);
@@ -654,24 +577,5 @@ export class SyncPlanner {
           fileType: fileType  // Pass through GAS file type for extension mapping
         };
       });
-  }
-
-  /**
-   * Build next step instruction for user
-   */
-  private buildNextStepInstruction(plan: SyncPlan): string {
-    if (!plan.operations.hasChanges) {
-      return 'No changes to sync. Files are already in sync.';
-    }
-
-    let instruction = `rsync({operation: 'execute', planId: '${plan.planId}'`;
-
-    if (plan.operations.delete.length > 0 && !plan.isBootstrap) {
-      instruction += `, confirmDeletions: true`;
-    }
-
-    instruction += `})`;
-
-    return instruction;
   }
 }

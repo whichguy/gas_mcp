@@ -19,6 +19,7 @@
 import { log } from '../../utils/logger.js';
 import { ensureFeatureBranch } from '../../utils/gitAutoCommit.js';
 import { clearGASMetadata } from '../../utils/gasMetadataCache.js';
+import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
 // Note: writeLocalAndValidateWithHooks no longer used - GitOperationManager stages only, doesn't commit
 // import { writeLocalAndValidateWithHooks } from '../../utils/hookIntegration.js';
 import type { GASClient } from '../../api/gasClient.js';
@@ -132,7 +133,7 @@ export class GitOperationManager {
     log.info(`[GIT-MANAGER] Starting git operation: ${operation.getType()}`);
 
     // PHASE 0: Setup & Path Resolution
-    const localPath = await this.pathResolver.resolve(
+    let localPath = await this.pathResolver.resolve(
       options.scriptId,
       options.projectPath,
       options.accessToken
@@ -170,9 +171,30 @@ export class GitOperationManager {
       throw new Error('Failed to initialize git repository');
     }
 
-    log.info(`[GIT-MANAGER] Ensuring feature branch...`);
-    const branchResult = await ensureFeatureBranch(localPath);
-    log.info(`[GIT-MANAGER] Branch: ${branchResult.branch} (created: ${branchResult.created})`);
+    // Session worktree: redirect local path to isolated worktree
+    // Session worktrees have their own branch (session/{id}) - do NOT call ensureFeatureBranch
+    // which would switch away from the session branch to llm-feature-auto-*
+    let branchResult: { branch: string; created: boolean };
+
+    if (options.accessToken) {
+      const worktreeManager = new SessionWorktreeManager();
+      localPath = await worktreeManager.ensureWorktree(
+        options.scriptId,
+        this.gasClient,
+        options.accessToken
+      );
+      log.info(`[GIT-MANAGER] Using session worktree: ${localPath}`);
+
+      // Get current branch name from the worktree (should be session/{id})
+      const { getCurrentBranchName } = await import('../../utils/gitStatus.js');
+      const currentBranch = await getCurrentBranchName(localPath);
+      branchResult = { branch: currentBranch || `session/${worktreeManager['sessionId']}`, created: false };
+      log.info(`[GIT-MANAGER] Session worktree branch: ${branchResult.branch}`);
+    } else {
+      log.info(`[GIT-MANAGER] Ensuring feature branch...`);
+      branchResult = await ensureFeatureBranch(localPath);
+      log.info(`[GIT-MANAGER] Branch: ${branchResult.branch} (created: ${branchResult.created})`);
+    }
 
     // PHASE 2: Pre-Operation Sync (skipped - no bidirectional mode)
     // Note: Bidirectional sync removed. Users should call rsync before write operations.
