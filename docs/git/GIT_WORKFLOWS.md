@@ -4,7 +4,7 @@ Complete guide for Git integration with Google Apps Script through the MCP GAS s
 
 ## Overview
 
-The Git Sync system provides safe, two-phase synchronization between Google Apps Script projects and local Git repositories. It uses `rsync` for unidirectional sync with plan→execute workflow, and `git_feature` for feature branch management.
+The Git Sync system provides stateless synchronization between Google Apps Script projects and local Git repositories. It uses `rsync` for unidirectional sync with pull/push operations (with optional dryrun preview), and `git_feature` for feature branch management.
 
 ---
 
@@ -48,13 +48,14 @@ Local filesystem directories where:
 - LLMs run standard git commands
 - Default location: `~/gas-repos/project-{scriptId}/`
 
-### 3. Two-Phase Sync Pattern (rsync)
+### 3. Stateless Sync (rsync)
 
-**Critical:** Every rsync operation follows a two-phase pattern:
-1. **PLAN**: Compute diff and create sync plan (5-minute TTL)
-2. **EXECUTE**: Validate and apply plan (with optional deletion confirmation)
+**Key design:** Every rsync operation is stateless — diff is computed and applied in a single call. Use `dryrun: true` to preview changes before applying.
 
-This ensures safety by allowing review before changes are applied.
+- **No planId, no TTL, no drift detection**
+- **Dryrun is lock-free** (read-only preview)
+- **Write lock only held during apply phase**
+- Deletions require `confirmDeletions: true`
 
 ---
 
@@ -62,62 +63,73 @@ This ensures safety by allowing review before changes are applied.
 
 ### Core Git Sync Tools (3 tools)
 
-1. **rsync** - Two-phase unidirectional sync (plan→execute)
+1. **rsync** - Stateless unidirectional sync (pull/push with dryrun)
 2. **git_feature** - Feature branch management (start/commit/push/finish/rollback/list/switch)
 3. **config** - Configure sync folder location
 
-### rsync (Two-Phase Sync)
+### rsync (Stateless Sync)
 
-Perform safe unidirectional synchronization with plan→execute workflow.
+Perform safe unidirectional synchronization with single-call workflow.
 
 **Operations:**
-- `plan` - Create sync plan (requires direction: pull or push)
-- `execute` - Execute a plan (requires planId, optionally confirmDeletions)
-- `status` - Check plan status
-- `cancel` - Cancel pending plan
+- `pull` - Sync from GAS to local (add `dryrun: true` to preview)
+- `push` - Sync from local to GAS (add `dryrun: true` to preview)
 
 ```typescript
-// 1. Create sync plan (pull from GAS to local)
+// 1. Preview what will be synced (dryrun — no side effects)
 rsync({
-  operation: "plan",
+  operation: "pull",
   scriptId: "1abc...",
-  direction: "pull"  // or "push"
+  dryrun: true
 })
 
 // Response shows what will be synced
 {
-  planId: "uuid-123...",
-  direction: "pull",
-  additions: ["utils.js", "config.js"],
-  modifications: ["main.js"],
-  deletions: [],
-  ttl: "5 minutes",
-  expiresAt: "2024-01-20T10:35:00Z"
+  success: true,
+  operation: "pull",
+  dryrun: true,
+  summary: {
+    direction: "pull",
+    additions: 2,
+    updates: 1,
+    deletions: 0,
+    isBootstrap: false,
+    totalOperations: 3
+  },
+  files: {
+    add: [{ filename: "utils.js" }, { filename: "config.js" }],
+    update: [{ filename: "main.js", sourceHash: "abc...", destHash: "def..." }],
+    delete: []
+  },
+  nextStep: "rsync({operation: 'pull', scriptId: '1abc...'})"
 }
 
-// 2. Execute the plan
+// 2. Apply changes
 rsync({
-  operation: "execute",
-  scriptId: "1abc...",
-  planId: "uuid-123...",
-  confirmDeletions: true  // Required if plan has deletions
+  operation: "pull",
+  scriptId: "1abc..."
 })
 
 // Response confirms sync
 {
   success: true,
-  filesAdded: 2,
-  filesModified: 1,
-  filesDeleted: 0
+  operation: "pull",
+  dryrun: false,
+  result: {
+    direction: "pull",
+    filesAdded: 2,
+    filesUpdated: 1,
+    filesDeleted: 0
+  },
+  recoveryInfo: { method: "git reset", command: "git reset --hard abc123" }
 }
 ```
 
 **Advanced Options:**
 ```typescript
 rsync({
-  operation: "plan",
+  operation: "pull",
   scriptId: "1abc...",
-  direction: "pull",
   projectPath: "libs/shared",  // For poly-repo support
   excludePatterns: ["test/*", "backup/"],
   force: true  // Skip uncommitted changes check
@@ -210,8 +222,7 @@ write({
 // git remote add origin https://github.com/owner/repo.git
 
 // 4. Pull from GAS
-rsync({ operation: "plan", scriptId: "1abc...", direction: "pull" })
-rsync({ operation: "execute", scriptId: "1abc...", planId: "..." })
+rsync({ operation: "pull", scriptId: "1abc..." })
 
 // 5. Commit and push
 // git add -A
@@ -223,15 +234,13 @@ rsync({ operation: "execute", scriptId: "1abc...", planId: "..." })
 
 ```typescript
 // Morning: Pull latest changes from GAS
-rsync({ operation: "plan", scriptId: "1abc...", direction: "pull" })
-rsync({ operation: "execute", scriptId: "1abc...", planId: "..." })
+rsync({ operation: "pull", scriptId: "1abc..." })
 
 // Work in GAS Editor...
 // Edit code in script.google.com
 
 // Evening: Pull changes and commit
-rsync({ operation: "plan", scriptId: "1abc...", direction: "pull" })
-rsync({ operation: "execute", scriptId: "1abc...", planId: "..." })
+rsync({ operation: "pull", scriptId: "1abc..." })
 
 // Commit via git_feature
 git_feature({ operation: "commit", scriptId: "1abc...", message: "feat: Added new functionality" })
@@ -272,21 +281,22 @@ git_feature({
 ### Workflow 4: Handle Sync with Deletions
 
 ```typescript
-// 1. Create sync plan
-rsync({ operation: "plan", scriptId: "1abc...", direction: "pull" })
+// 1. Preview changes (dryrun)
+rsync({ operation: "pull", scriptId: "1abc...", dryrun: true })
 
 // Response shows deletions
 {
-  planId: "uuid-123...",
-  deletions: ["old-file.js", "deprecated.js"],
-  warning: "Plan includes file deletions. Use confirmDeletions: true to proceed."
+  summary: { deletions: 2, ... },
+  files: {
+    delete: [{ filename: "old-file.js" }, { filename: "deprecated.js" }]
+  },
+  nextStep: "rsync({operation: 'pull', scriptId: '1abc...', confirmDeletions: true})"
 }
 
-// 2. Execute with deletion confirmation
+// 2. Apply with deletion confirmation
 rsync({
-  operation: "execute",
+  operation: "pull",
   scriptId: "1abc...",
-  planId: "uuid-123...",
   confirmDeletions: true  // Required when deletions present
 })
 ```
@@ -315,12 +325,12 @@ The sync system automatically handles special file transformations:
 
 ## Best Practices
 
-### 1. Always Use Two-Phase Sync
+### 1. Use Dryrun to Preview Changes
 ```typescript
-// Plan first, then execute after review
-rsync({ operation: "plan", scriptId: "...", direction: "pull" })
-// Review plan output
-rsync({ operation: "execute", scriptId: "...", planId: "..." })
+// Preview first, then apply
+rsync({ operation: "pull", scriptId: "...", dryrun: true })
+// Review diff output
+rsync({ operation: "pull", scriptId: "..." })
 ```
 
 ### 2. Commit Frequently with git_feature
@@ -350,26 +360,20 @@ git_feature({ operation: "push", scriptId: "..." })
 | Issue | Solution |
 |-------|----------|
 | "No git association found" | Create `.git/config` breadcrumb in GAS |
-| "Plan expired" | Plans have 5-minute TTL, create new plan |
 | "Uncommitted changes" | Use `force: true` or commit changes first |
-| "Deletions require confirmation" | Add `confirmDeletions: true` to execute |
+| "Deletions require confirmation" | Add `confirmDeletions: true` |
+| "Lock timeout" | Another sync in progress — wait or check for stuck processes |
 
 ### Error Recovery
-
-**Plan Expired:**
-```typescript
-// Create new plan
-rsync({ operation: "plan", scriptId: "...", direction: "pull" })
-```
 
 **Uncommitted Changes:**
 ```typescript
 // Option 1: Force (skip check)
-rsync({ operation: "plan", scriptId: "...", direction: "pull", force: true })
+rsync({ operation: "pull", scriptId: "...", force: true })
 
 // Option 2: Commit first
 git_feature({ operation: "commit", scriptId: "...", message: "WIP" })
-rsync({ operation: "plan", scriptId: "...", direction: "pull" })
+rsync({ operation: "pull", scriptId: "..." })
 ```
 
 ---
@@ -380,13 +384,12 @@ GAS projects can contain multiple git-enabled subprojects:
 
 ```typescript
 // Root project sync
-rsync({ operation: "plan", scriptId: "...", direction: "pull" })
+rsync({ operation: "pull", scriptId: "..." })
 
 // Subproject sync
 rsync({
-  operation: "plan",
+  operation: "pull",
   scriptId: "...",
-  direction: "pull",
   projectPath: "libs/shared"  // Sync only this subproject
 })
 
@@ -405,12 +408,12 @@ git_feature({
 
 The Git Sync system provides:
 
-- ✅ Safe, two-phase synchronization (plan→execute)
-- ✅ Feature branch management via git_feature
-- ✅ Deletion safety with confirmation
-- ✅ Self-documenting projects via `.git/config`
-- ✅ File transformation handling
-- ✅ Multi-project (poly-repo) support
-- ✅ Clear error messages and recovery paths
+- Stateless synchronization (single-call pull/push with dryrun preview)
+- Feature branch management via git_feature
+- Deletion safety with confirmation
+- Self-documenting projects via `.git/config`
+- File transformation handling
+- Multi-project (poly-repo) support
+- Clear error messages and recovery paths
 
 This approach maximizes safety while enabling powerful Git integration workflows for Google Apps Script development.

@@ -66,7 +66,7 @@ export const SPECIAL_SYSTEM_FILES = [
  */
 export const FILTER_PRESETS = {
   /**
-   * Sync operations (rsync plan/execute)
+   * Sync operations (rsync pull/push)
    * - Exclude system files (common-js/*, __mcp_exec*)
    * - Exclude git breadcrumbs (.git/*)
    * - Exclude local config files (.clasp.json, etc.)

@@ -699,8 +699,10 @@ export class ExecTool extends BaseTool {
         });
 
         // If drift detected, either throw error or build collision info
-        if (summary.stale > 0 || summary.remoteOnly > 0) {
-          console.error(`[SYNC CHECK] Drift detected: ${summary.stale} stale, ${summary.remoteOnly} remote-only files`);
+        // Only local_stale counts as blocking drift — remote_only files were never locally
+        // modified and can't be "stale" (they just haven't been pulled yet)
+        if (summary.stale > 0) {
+          console.error(`[SYNC CHECK] Drift detected: ${summary.stale} stale files${summary.remoteOnly > 0 ? `, ${summary.remoteOnly} remote-only (not blocking)` : ''}`);
 
           // Generate diffs for files with content
           const diffGenerator = new DiffGenerator();
@@ -778,7 +780,7 @@ export class ExecTool extends BaseTool {
             console.error(`[SYNC CHECK] Drift warning: ${staleFiles.length} stale files (execution proceeding due to skipSyncCheck=true)`);
           }
         } else {
-          console.error(`[SYNC CHECK] ✓ ${summary.inSync} files in sync`);
+          console.error(`[SYNC CHECK] ✓ ${summary.inSync} files in sync${summary.remoteOnly > 0 ? ` (${summary.remoteOnly} remote-only, not blocking)` : ''}`);
         }
 
         // Validate CommonJS file ordering (critical for module system to work)

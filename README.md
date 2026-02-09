@@ -323,7 +323,7 @@ NODE_ENV = "production"
 <td>
 
 **🔀 Git Integration**
-- `rsync` - Two-phase sync (plan→execute)
+- `rsync` - Stateless sync (pull/push with dryrun)
 - `git_feature` - Feature branch management
 - `config` - Manage sync folder
 
@@ -376,9 +376,9 @@ mcp__gas__write({
   content: JSON.stringify({ repository: "https://github.com/...", localPath: "~/my-project" })
 })
 
-// Two-phase sync: plan then execute
-mcp__gas__rsync({ operation: "plan", scriptId: "...", direction: "pull" })
-mcp__gas__rsync({ operation: "execute", scriptId: "...", planId: "..." })
+// Stateless sync: preview then apply
+mcp__gas__rsync({ operation: "pull", scriptId: "...", dryrun: true })
+mcp__gas__rsync({ operation: "pull", scriptId: "..." })
 
 // Standard git workflow works in sync folder
 cd ~/gas-repos/project-xxx
@@ -552,9 +552,9 @@ mcp__gas__write({
   })
 })
 
-// Two-phase sync: plan then execute
-mcp__gas__rsync({ operation: "plan", scriptId: "...", direction: "pull" })
-mcp__gas__rsync({ operation: "execute", scriptId: "...", planId: "..." })
+// Stateless sync: preview then apply
+mcp__gas__rsync({ operation: "pull", scriptId: "...", dryrun: true })
+mcp__gas__rsync({ operation: "pull", scriptId: "..." })
 
 // Manage sync folder configuration
 mcp__gas__config({

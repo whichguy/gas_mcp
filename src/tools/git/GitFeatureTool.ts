@@ -16,6 +16,7 @@ import { LocalFileManager } from '../../utils/localFileManager.js';
 import { getCurrentBranch, isFeatureBranch, hasUncommittedChanges, getAllBranches } from '../../utils/gitAutoCommit.js';
 import { log } from '../../utils/logger.js';
 import { ensureGitInitialized } from '../../utils/gitInit.js';
+import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { join } from 'path';
@@ -166,22 +167,37 @@ export class GitFeatureTool extends BaseFileSystemTool {
 
     log.info(`[GIT_FEATURE] Operation: ${operation}, Git root: ${gitRoot}`);
 
-    // Route to operation handler
+    // Use session worktree if available (all operations should be session-aware)
+    let effectiveGitRoot = gitRoot;
+    const worktreeManager = new SessionWorktreeManager();
+    const worktreePath = worktreeManager.getWorktreePath(scriptId);
+    if (worktreePath) {
+      const { access } = await import('fs/promises');
+      try {
+        await access(join(worktreePath, '.git'));
+        effectiveGitRoot = worktreePath;
+        log.info(`[GIT_FEATURE] Using session worktree: ${effectiveGitRoot}`);
+      } catch {
+        log.debug(`[GIT_FEATURE] Session worktree not on disk, using main repo`);
+      }
+    }
+
+    // Route to operation handler (all use effectiveGitRoot for session isolation)
     switch (operation) {
       case 'start':
-        return this.executeStart(gitRoot, params.featureName);
+        return this.executeStart(effectiveGitRoot, params.featureName);
       case 'finish':
-        return this.executeFinish(gitRoot, params.branch, params.deleteAfterMerge ?? true, params.pushToRemote ?? false, params.remote);
+        return this.executeFinish(effectiveGitRoot, params.branch, params.deleteAfterMerge ?? true, params.pushToRemote ?? false, params.remote);
       case 'rollback':
-        return this.executeRollback(gitRoot, params.branch);
+        return this.executeRollback(effectiveGitRoot, params.branch);
       case 'list':
-        return this.executeList(gitRoot);
+        return this.executeList(effectiveGitRoot);
       case 'switch':
-        return this.executeSwitch(gitRoot, params.branch);
+        return this.executeSwitch(effectiveGitRoot, params.branch);
       case 'commit':
-        return this.executeCommit(gitRoot, params.message);
+        return this.executeCommit(effectiveGitRoot, params.message);
       case 'push':
-        return this.executePush(gitRoot, params.branch, params.remote);
+        return this.executePush(effectiveGitRoot, params.branch, params.remote);
       default:
         throw new ValidationError('operation', operation, 'valid operation (start/finish/rollback/list/switch/commit/push)');
     }

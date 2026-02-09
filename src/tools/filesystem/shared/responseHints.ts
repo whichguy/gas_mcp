@@ -75,8 +75,8 @@ export function enrichResponseWithHints<T>(result: T, context: HintContext): T {
           when: 'Modifying 3+ files',
           workflow: [
             `Edit files locally at ${syncFolder}/ using Claude Code native Read/Write/Edit tools`,
-            `rsync({operation:"plan", scriptId:"${context.scriptId}", direction:"push"}) to preview`,
-            `rsync({operation:"execute", planId:"<from plan>", scriptId:"${context.scriptId}"}) to push all at once`,
+            `rsync({operation:"push", scriptId:"${context.scriptId}", dryrun:true}) to preview`,
+            `rsync({operation:"push", scriptId:"${context.scriptId}"}) to push all at once`,
           ],
           benefit: '2 API calls for N files vs 2N for sequential writes',
         },
