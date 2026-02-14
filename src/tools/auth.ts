@@ -258,17 +258,7 @@ export async function auth({
             return {
               status: 'not_authenticated',
               message: 'Not currently authenticated',
-              authenticated: false,
-              instructions: 'Use auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
-              nextSteps: [
-                'Run: auth({"mode": "start"})',
-                'Complete OAuth flow in browser',
-                'Retry your original request'
-              ],
-              example: {
-                command: 'auth',
-                parameters: { mode: 'start' }
-              }
+              authenticated: false
             } as any;
           }
         } catch (statusError: any) {
@@ -277,17 +267,7 @@ export async function auth({
           return {
             status: 'not_authenticated',
             message: 'Not currently authenticated (status check failed)',
-            authenticated: false,
-            instructions: 'Use auth with mode="start" to begin authentication, then complete the OAuth flow in your browser',
-            nextSteps: [
-              'Run: auth({"mode": "start"})',
-              'Complete OAuth flow in browser',
-              'Retry your original request'
-            ],
-            example: {
-              command: 'auth',
-              parameters: { mode: 'start' }
-            }
+            authenticated: false
           } as any;
         }
 

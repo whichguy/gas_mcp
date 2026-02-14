@@ -8,7 +8,7 @@ import { computeGitSha1 } from './hashUtils.js';
 const XATTR_UPDATE_TIME = 'user.gas.updateTime';
 const XATTR_FILE_TYPE = 'user.gas.fileType';
 const XATTR_CONTENT_HASH = 'user.gas.contentHash';
-const XATTR_HASH_MTIME = 'user.gas.hashMtime';  // mtime when hash was computed
+const XATTR_HASH_MTIME = 'user.gas.hashMtime';  // Legacy: kept for cleanup only
 
 /**
  * GAS metadata structure
@@ -109,9 +109,8 @@ export async function hasCachedMetadata(localPath: string): Promise<boolean> {
  * Get just the cached content hash from file extended attributes
  * Returns null if not found
  *
- * NOTE: This returns the raw cached hash WITHOUT mtime validation.
- * For most use cases, prefer getValidatedContentHash() which validates
- * that the file hasn't been modified since the hash was computed.
+ * Equivalent to getValidatedContentHash() but returns only the hash string.
+ * Prefer getValidatedContentHash() which also computes and caches if missing.
  */
 export async function getCachedContentHash(localPath: string): Promise<string | null> {
   try {
@@ -136,16 +135,14 @@ export interface ValidatedHashResult {
 }
 
 /**
- * Get cached hash with mtime-based validation.
- * Recomputes if cache is stale (mtime changed) or missing.
+ * Get cached content hash, trusted directly from xattr.
  *
- * This function detects when files are modified outside MCP tools (e.g., via editor,
- * git checkout) by comparing the current file mtime against the mtime stored when
- * the hash was cached.
+ * The xattr hash is authoritative — MCP tools update it after every write.
+ * No mtime validation: mtime-based invalidation was unreliable because
+ * git checkout, macOS Spotlight, and backup tools change mtimes, triggering
+ * recomputation from disk that exposes wrapped/unwrapped content mismatches.
  *
- * MCP tools set file mtime to remote updateTime (not current time), so:
- * - After MCP write: file.mtime = remote updateTime, xattr.hashMtime = same → cache valid
- * - After user edit: file.mtime = NOW, xattr.hashMtime = old → cache invalid → recompute
+ * If no cached hash exists, computes from file content and caches it.
  *
  * @param localPath - Path to the local file
  * @returns { hash, source } or null if file doesn't exist
@@ -154,13 +151,10 @@ export async function getValidatedContentHash(
   localPath: string
 ): Promise<ValidatedHashResult | null> {
   try {
-    const stat = await fs.stat(localPath);
-    const currentMtime = stat.mtimeMs;
+    await fs.stat(localPath); // Check existence
 
-    // Try to get cached values
+    // Try to get cached hash (authoritative — no mtime validation)
     let cachedHash: string | null = null;
-    let cachedMtime: number | null = null;
-
     try {
       const hashBuffer = await getAttribute(localPath, XATTR_CONTENT_HASH);
       const hashStr = hashBuffer.toString('utf-8');
@@ -169,28 +163,19 @@ export async function getValidatedContentHash(
       }
     } catch { /* missing */ }
 
-    try {
-      const mtimeBuffer = await getAttribute(localPath, XATTR_HASH_MTIME);
-      cachedMtime = parseFloat(mtimeBuffer.toString('utf-8'));
-      if (isNaN(cachedMtime)) cachedMtime = null;
-    } catch { /* missing */ }
-
-    // CASE 4: Cache valid - mtime matches (within 1ms tolerance for float comparison)
-    if (cachedHash && cachedMtime !== null && Math.abs(cachedMtime - currentMtime) < 1) {
+    if (cachedHash) {
       return { hash: cachedHash, source: 'cache' };
     }
 
-    // CASES 1,2,3: Need to recompute (hash missing, mtime missing, or mtime differs)
+    // No cached hash — compute from file content
     const content = await fs.readFile(localPath, 'utf-8');
     const computedHash = computeGitSha1(content);
-
-    // Update cache with new hash + current mtime
     await updateCachedContentHash(localPath, computedHash);
 
     return { hash: computedHash, source: 'computed' };
 
   } catch (error: any) {
-    if (error.code === 'ENOENT') return null;  // File doesn't exist
+    if (error.code === 'ENOENT') return null;
     throw error;
   }
 }
@@ -201,20 +186,14 @@ export async function getValidatedContentHash(
  *
  * CRITICAL: contentHash must be computed on WRAPPED content (full file as stored in GAS)
  *
- * IMPORTANT: Call this AFTER file write and AFTER setFileMtimeToRemote() completes,
- * so the stored mtime reflects the final file state.
+ * No mtime tracking — the xattr hash is authoritative.
  */
 export async function updateCachedContentHash(
   localPath: string,
   contentHash: string
 ): Promise<void> {
   try {
-    // Read current file mtime (should be remote updateTime after MCP write)
-    const stat = await fs.stat(localPath);
-    const mtime = stat.mtimeMs;
-
     await setAttribute(localPath, XATTR_CONTENT_HASH, Buffer.from(contentHash, 'utf-8'));
-    await setAttribute(localPath, XATTR_HASH_MTIME, Buffer.from(mtime.toString(), 'utf-8'));
   } catch (error: any) {
     // Non-fatal: xattr not supported on filesystem
     console.debug(`Failed to update content hash for ${localPath}: ${error.message}`);

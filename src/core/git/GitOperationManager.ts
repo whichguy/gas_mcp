@@ -18,8 +18,10 @@
 
 import { log } from '../../utils/logger.js';
 import { ensureFeatureBranch } from '../../utils/gitAutoCommit.js';
-import { clearGASMetadata } from '../../utils/gasMetadataCache.js';
+import { clearGASMetadata, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
+import { buildCompactGitHint, type CompactGitHint } from '../../utils/gitStatus.js';
 // Note: writeLocalAndValidateWithHooks no longer used - GitOperationManager stages only, doesn't commit
 // import { writeLocalAndValidateWithHooks } from '../../utils/hookIntegration.js';
 import type { GASClient } from '../../api/gasClient.js';
@@ -40,32 +42,10 @@ export interface GitOperationOptions {
 }
 
 /**
- * Git hint structure for LLM guidance
- */
-export interface GitHint {
-  detected: true;
-  repoPath: string;
-  branch: string;
-  uncommittedChanges: {
-    count: number;
-    files: string[];
-    hasMore: boolean;
-    thisFile: boolean;
-  };
-  recommendation: {
-    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
-    action: 'commit';
-    command: string;
-    reason: string;
-  };
-  taskCompletionBlocked: boolean;
-}
-
-/**
  * Result of git operation execution
  *
- * IMPORTANT: Write operations do NOT auto-commit. The git.uncommittedChanges
- * field provides hints for LLMs to use git_feature({operation:'commit'}).
+ * IMPORTANT: Write operations do NOT auto-commit. The git.hint
+ * field provides compact signals for LLMs to use git_feature({operation:'commit'}).
  */
 export interface GitOperationResult<T> {
   success: boolean;
@@ -79,20 +59,8 @@ export interface GitOperationResult<T> {
     localPath: string;
     syncMode: 'simple' | 'bidirectional' | 'local-only';
     filesAffected: string[];
-    // Git hints for LLM - signal that commit is needed
-    uncommittedChanges: {
-      count: number;
-      files: string[];
-      hasMore: boolean;
-      thisFile: boolean;
-    };
-    recommendation: {
-      urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
-      action: 'commit';
-      command: string;
-      reason: string;
-    };
-    taskCompletionBlocked: boolean;
+    /** Compact git hint for LLM context-refresh (~40 tokens vs ~200 verbose) */
+    hint: CompactGitHint;
   };
 }
 
@@ -375,23 +343,31 @@ export class GitOperationManager {
 
       log.info(`[GIT-MANAGER] Remote write complete`);
 
-      // NOTE: xattr cache updates are handled by individual tools (edit.ts, aider.ts,
-      // CpTool.ts, MvTool.ts) AFTER executeWithGit() returns. The tools have CommonJS
-      // wrapping context needed to hash WRAPPED content correctly. The manager operates
-      // on unwrapped content and cannot produce correct hashes for sync detection.
+      // Overwrite local files with WRAPPED content from strategy.
+      // Strategies return wrappedContent (the content written to GAS remote).
+      // Local files must match remote to prevent false sync drift detection.
+      const wrappedContent = (operationResult as any)?.wrappedContent as Map<string, string> | undefined;
+      if (wrappedContent && syncMode !== 'local-only') {
+        const { writeFile: writeFileAsync } = await import('fs/promises');
+        const { join } = await import('path');
+        const { LocalFileManager } = await import('../../utils/localFileManager.js');
+
+        for (const [filename, content] of wrappedContent) {
+          const ext = LocalFileManager.getFileExtensionFromName(filename);
+          const filePath = join(localPath, filename + ext);
+          await writeFileAsync(filePath, content, 'utf-8');
+          const hash = computeGitSha1(content);
+          await updateCachedContentHash(filePath, hash);
+          log.debug(`[GIT-MANAGER] Overwrote local with wrapped content: ${filename + ext} (hash: ${hash.slice(0, 8)}...)`);
+        }
+      }
 
       // SUCCESS
       log.info(`[GIT-MANAGER] Git operation completed successfully`);
 
-      // Get uncommitted status for git hints
-      const { getUncommittedStatus, buildGitHint } = await import('../../utils/gitStatus.js');
+      // Get uncommitted status for compact git hints
+      const { getUncommittedStatus } = await import('../../utils/gitStatus.js');
       const uncommitted = await getUncommittedStatus(localPath);
-      const primaryFile = affectedFiles[0] || '';
-
-      // Build urgency based on uncommitted count
-      const urgency: 'CRITICAL' | 'HIGH' | 'NORMAL' =
-        uncommitted.count >= 5 ? 'CRITICAL' :
-        uncommitted.count >= 3 ? 'HIGH' : 'NORMAL';
 
       return {
         success: true,
@@ -405,24 +381,7 @@ export class GitOperationManager {
           localPath,
           syncMode,
           filesAffected: affectedFiles,
-          // Git hints for LLM - signal that commit is needed
-          uncommittedChanges: {
-            count: uncommitted.count,
-            files: uncommitted.files,
-            hasMore: uncommitted.hasMore,
-            thisFile: uncommitted.files.some(f =>
-              f.includes(primaryFile) || primaryFile.includes(f.replace(/\.(gs|html|json)$/, ''))
-            )
-          },
-          recommendation: {
-            urgency,
-            action: 'commit',
-            command: `git_feature({operation:'commit', scriptId:'${options.scriptId}', message:'...'})`,
-            reason: urgency === 'CRITICAL'
-              ? `${uncommitted.count} files uncommitted - significant work at risk`
-              : `${uncommitted.count} file(s) staged but not committed to git history`
-          },
-          taskCompletionBlocked: uncommitted.count > 0
+          hint: buildCompactGitHint(branchResult.branch, uncommitted)
         }
       };
 

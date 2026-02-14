@@ -115,8 +115,8 @@ export class GuidanceFragments {
   static readonly gitIntegration = {
     CRITICAL: 'This tool does NOT auto-commit to git',
     behavior: 'File writes push to GAS but do NOT commit locally',
-    workflowSignal: 'Response includes git.taskCompletionBlocked=true when uncommitted',
-    taskCompletionRule: 'Task is NOT complete while git.uncommittedChanges.count > 0',
+    workflowSignal: 'Response includes git.blocked=true when uncommitted',
+    taskCompletionRule: 'Task is NOT complete while git.uncommitted > 0',
     requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
   };
 

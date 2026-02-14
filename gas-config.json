@@ -83,9 +83,9 @@
       "description": "Created: 7/17/2025"
     },
     "logger-test": {
-      "scriptId": "1UvS2EGSWaUPPLGlEUsAb3qWLHdRg5fi82YwfVMUuum7htbJZotdivgII",
+      "scriptId": "1Br4dg_k0Ej8MgL9ZJk3WEAJHsLvDJdov8JaQAIx6wJHc0jJ7Lcv-ZHZf",
       "name": "logger-test",
-      "description": "Created: 2/7/2026"
+      "description": "Created: 2/14/2026"
     },
     "logger-test-fresh": {
       "scriptId": "1zoYXqGqYNpGWF1FHwmPrK8m8_cegWPZkzlZ5T6uUH86ahF-mqlLGxYUW",
@@ -508,24 +508,24 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1_WFjMr1KYNdZbJ2BNVkP3lVB7T_u6nax8Fwytom7F6RGBjFVx2EEK_SK",
+      "scriptId": "1SE2hvMGhDU3EO-6otrJD7ROJKStBjJVnAMKwmDQKu5iWgGaP3mxvJ4di",
       "name": "consolidated-test-project",
-      "description": "Created: 2/7/2026"
+      "description": "Created: 2/14/2026"
     },
     "exec-test": {
-      "scriptId": "1Plep65BGjT2aT6L8Pl5gluFxGfx0IcdzM0Fjs-pX3q9dNOA4gUn0yjAa",
+      "scriptId": "1pzhL1NwKGpzkVusZPPQ5igNqeWW2QnLua6Lnki__muBzT8MaAAu3WezY",
       "name": "exec-test",
-      "description": "Created: 2/7/2026"
+      "description": "Created: 2/14/2026"
     },
     "gas-services-test": {
-      "scriptId": "1G7hkCv2wVE1YcKmFuUG89CUUWifIgT7Jp9mVaXrFO5Nzz5nNoNGcwLXv",
+      "scriptId": "1GWWxAmnhPOPEj6ObgNYhLlGpeSIF7gYDVujktWo4Y-BIJbKIeW5JwEOH",
       "name": "gas-services-test",
-      "description": "Created: 2/7/2026"
+      "description": "Created: 2/14/2026"
     },
     "complex-js-test": {
-      "scriptId": "1dptgaj_YvcsJwvQiLwXILvYwvAJV5ccdHghTIBH_PRHFztDDzLGiv9qh",
+      "scriptId": "14hSp3iMkK_6J1q45Cfl4Whx1twW7CquJLjBa90QSviJdAY17O_yWz121",
       "name": "complex-js-test",
-      "description": "Created: 1/20/2026"
+      "description": "Created: 2/14/2026"
     },
     "file-ops-test": {
       "scriptId": "1ADy60DSg-0XSnzMNVbboKXyB8Zn2KgorpoYkOE8p9aAN9hQrxLI9fSdf",
@@ -750,7 +750,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-02-08T01:50:48.229Z"
+    "lastModified": "2026-02-14T20:44:24.954Z"
   },
   "debug": true,
   "currentProject": {

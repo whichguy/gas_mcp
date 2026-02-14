@@ -25,10 +25,7 @@ import { AiderOperationStrategy } from '../core/git/operations/AiderOperationStr
 import { analyzeContent } from '../utils/contentAnalyzer.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
-import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
-import { generateSyncHints } from '../utils/syncHints.js';
-import { enrichResponseWithHints } from './filesystem/shared/responseHints.js';
-import path from 'path';
+import type { CompactGitHint } from '../utils/gitStatus.js';
 
 interface AiderOperation {
   searchText: string;
@@ -50,32 +47,6 @@ interface AiderParams {
   force?: boolean;
 }
 
-interface GitHints {
-  detected: boolean;
-  branch?: string;
-  staged?: boolean;
-  uncommittedChanges?: {
-    count: number;
-    files: string[];
-    hasMore?: boolean;
-    thisFile?: boolean;
-  };
-  recommendation?: {
-    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
-    action: 'commit';
-    command: string;
-    reason: string;
-  };
-  taskCompletionBlocked?: boolean;
-}
-
-interface NextActionHint {
-  hint: string;
-  required: boolean;
-  /** Rsync command to sync local git with GAS. Always included when git.detected is true. */
-  rsync?: string;
-}
-
 interface AiderResult {
   success: boolean;
   editsApplied: number;
@@ -89,15 +60,10 @@ interface AiderResult {
     similarity: number;
     applied: boolean;
   }>;
-  git?: GitHints;
-  nextAction?: NextActionHint;
-  /** Sync hints with recovery commands when local/remote drift */
-  syncHints?: import('../utils/syncHints.js').SyncHints;
+  git?: CompactGitHint;
   warnings?: string[];
   hints?: string[];
   gitBreadcrumbHint?: GitBreadcrumbEditHint;
-  /** Additional response hints for LLM guidance */
-  responseHints?: import('./filesystem/shared/types.js').ResponseHints;
 }
 
 /**
@@ -416,62 +382,19 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
       accessToken
     });
 
-    // Check if on feature branch to add workflow hint
-    const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
-    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
+    // Get hash from strategy's wrapped content (GitOperationManager handles local overwrite + xattr)
+    const wrappedMap = gitResult.result.wrappedContent;
+    const wrappedStr = wrappedMap?.get(filename);
+    const editedHash = wrappedStr ? computeGitSha1(wrappedStr) : readHash;
 
-    // Compute hash of the modified content on WRAPPED content (full file as stored in GAS)
-    // Re-wrap the modified content to get the correct hash that matches git hash-object
-    let editedWrapped = modifiedContent;
-    if (fileContent.type === 'SERVER_JS' && shouldWrapContent(fileContent.type, filename)) {
-      // Convert null to undefined for type compatibility
-      const options = existingOptions ? {
-        loadNow: existingOptions.loadNow ?? undefined,
-        hoistedFunctions: existingOptions.hoistedFunctions
-      } : undefined;
-      editedWrapped = wrapModuleContent(modifiedContent, filename.replace(/\.\w+$/, ''), options);
-    }
-    const editedHash = computeGitSha1(editedWrapped);
-
-    // Update xattr cache with hash of wrapped content to prevent
-    // false "stale" errors on subsequent exec calls
-    try {
-      const { LocalFileManager } = await import('../utils/localFileManager.js');
-      const projectPath = await LocalFileManager.getProjectDirectory(scriptId);
-      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-      const localFileName = filename + fileExtension;
-      const localFilePath = path.join(projectPath, localFileName);
-      await updateCachedContentHash(localFilePath, editedHash);
-      console.error(`🔒 [AIDER] Updated xattr cache: ${editedHash.slice(0, 8)}...`);
-    } catch (cacheError) {
-      // Non-fatal: sync drift checker will fall back to content comparison
-      console.error(`⚠️ [AIDER] Hash cache update failed: ${cacheError}`);
-    }
-
-    // Return response with git hints for LLM guidance
-    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
+    // Return response with compact git hints for LLM guidance
     const result: AiderResult = {
       success: true,
       editsApplied,
       filePath: params.path,
       hash: editedHash,  // Git SHA-1 of WRAPPED content. Use for expectedHash on subsequent edits.
-      // Pass through git hints from GitOperationManager
-      git: gitResult.git ? {
-        detected: gitResult.git.detected,
-        branch: gitResult.git.branch,
-        staged: gitResult.git.staged,
-        uncommittedChanges: gitResult.git.uncommittedChanges,
-        recommendation: gitResult.git.recommendation,
-        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
-      } : { detected: false },
-      // Add workflow completion hint with rsync suggestion
-      nextAction: {
-        hint: onFeatureBranch
-          ? `File edited. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`
-          : `File edited. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
-        required: gitResult.git?.taskCompletionBlocked || false,
-        rsync: gitResult.git?.detected ? `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })` : undefined
-      },
+      // Compact git hint from GitOperationManager
+      git: gitResult.git?.hint,
       // Include content analysis warnings and hints
       ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
       ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
@@ -483,14 +406,7 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
-    // Enrich with centralized hints (sync hints, batch workflow, nextAction defaults)
-    return enrichResponseWithHints(result, {
-      scriptId,
-      affectedFiles: [filename],
-      operationType: 'write',  // aider is a write variant
-      localCacheUpdated: true,  // xattr cache updated above
-      remotePushed: true,
-    });
+    return result;
   }
 
 }

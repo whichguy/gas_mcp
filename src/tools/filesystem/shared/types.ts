@@ -2,40 +2,7 @@
  * Shared type definitions for filesystem tools
  */
 
-import type { SyncHints } from '../../../utils/syncHints.js';
-
-/**
- * Git hints returned from write operations for LLM guidance.
- * Used to signal that explicit commit is needed.
- */
-export interface GitHints {
-  detected: boolean;
-  branch?: string;
-  staged?: boolean;
-  uncommittedChanges?: {
-    count: number;
-    files: string[];
-    hasMore?: boolean;
-    thisFile?: boolean;
-  };
-  recommendation?: {
-    urgency: 'CRITICAL' | 'HIGH' | 'NORMAL';
-    action: 'commit';
-    command: string;
-    reason: string;
-  };
-  taskCompletionBlocked?: boolean;
-}
-
-/**
- * Next action hint for workflow completion
- */
-export interface NextActionHint {
-  hint: string;
-  required: boolean;
-  /** Rsync command to sync local git with GAS. Always included when git.detected is true. */
-  rsync?: string;
-}
+import type { CompactGitHint } from '../../../utils/gitStatus.js';
 
 /**
  * Content change detection info for cat responses.
@@ -70,17 +37,6 @@ export interface FileResult {
   contentChange?: ContentChangeInfo;
 }
 
-export interface BatchWorkflowHint {
-  urgency?: 'HIGH' | 'NORMAL';
-  when: string;
-  workflow: string[];
-  benefit: string;
-}
-
-export interface ResponseHints {
-  batchWorkflow?: BatchWorkflowHint;
-}
-
 export interface WriteResult {
   success: boolean;
   path: string;
@@ -97,12 +53,7 @@ export interface WriteResult {
     filesModified: string[];
     commitHash?: string;
   };
-  git?: GitHints;
-  nextAction?: NextActionHint;
-  /** Sync hints with recovery commands when local/remote drift */
-  syncHints?: SyncHints;
-  /** Additional response hints for LLM guidance */
-  responseHints?: ResponseHints;
+  git?: CompactGitHint;
 }
 
 export interface ListResult {
@@ -122,12 +73,7 @@ export interface RemoveResult {
   path: string;
   localDeleted: boolean;
   remoteDeleted: boolean;
-  git?: GitHints;
-  nextAction?: NextActionHint;
-  /** Sync hints with recovery commands when local/remote drift */
-  syncHints?: SyncHints;
-  /** Additional response hints for LLM guidance */
-  responseHints?: ResponseHints;
+  git?: CompactGitHint;
 }
 
 export interface MoveResult {
@@ -141,12 +87,7 @@ export interface MoveResult {
   sourceFilesRemaining?: number;
   destFilesTotal?: number;
   message: string;
-  git?: GitHints;
-  nextAction?: NextActionHint;
-  /** Sync hints with recovery commands when local/remote drift */
-  syncHints?: SyncHints;
-  /** Additional response hints for LLM guidance */
-  responseHints?: ResponseHints;
+  git?: CompactGitHint;
 }
 
 export interface CopyResult {
@@ -164,17 +105,12 @@ export interface CopyResult {
   hash?: string;
   /** Explanation of hash computation for LLM guidance. */
   hashNote?: string;
-  git?: GitHints;
-  nextAction?: NextActionHint;
-  /** Sync hints with recovery commands when local/remote drift */
-  syncHints?: SyncHints;
+  git?: CompactGitHint;
   /** Cross-project manifest compatibility warnings */
   manifestHints?: {
     differences: string[];
     recommendation?: string;
   };
-  /** Additional response hints for LLM guidance */
-  responseHints?: ResponseHints;
 }
 
 export interface FileParams {

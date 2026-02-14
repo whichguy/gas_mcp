@@ -8,11 +8,6 @@ import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { MoveOperationStrategy } from '../../core/git/operations/MoveOperationStrategy.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
-import { generateSyncHints } from '../../utils/syncHints.js';
-import { enrichResponseWithHints } from './shared/responseHints.js';
-import { clearGASMetadata, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
-import { computeGitSha1 } from '../../utils/hashUtils.js';
-import path from 'path';
 
 /**
  * Move or rename files in Google Apps Script project
@@ -151,79 +146,19 @@ export class MvTool extends BaseFileSystemTool {
     const moveResult = gitResult.result;
     const isCrossProject = fromProjectId !== toProjectId;
 
-    // Update xattr cache for moved file (clear source, cache destination)
-    let cacheUpdated = false;
-    try {
-      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+    // GitOperationManager handles local file overwrite + xattr cache for destination.
+    // Source file deletion + cache clear also handled by GitOperationManager (empty content = delete).
 
-      // Clear source cache (file no longer exists at source location)
-      const sourceProjectPath = await LocalFileManager.getProjectDirectory(fromProjectId);
-      const sourceExt = LocalFileManager.getFileExtensionFromName(fromFilename);
-      const sourceLocalPath = path.join(sourceProjectPath, fromFilename + sourceExt);
-      await clearGASMetadata(sourceLocalPath);
-
-      // Cache destination hash for collision detection
-      const destProjectPath = await LocalFileManager.getProjectDirectory(toProjectId);
-      const destExt = LocalFileManager.getFileExtensionFromName(toFilename);
-      const destLocalPath = path.join(destProjectPath, toFilename + destExt);
-      const destHash = computeGitSha1(moveResult.wrappedContent || '');
-      await updateCachedContentHash(destLocalPath, destHash);
-
-      cacheUpdated = true;
-      console.error(`🔀 [MV] Updated xattr cache (cleared source, cached dest: ${destHash.slice(0, 8)}...)`);
-    } catch (cacheError) {
-      console.error(`⚠️ [MV] Cache update failed: ${cacheError}`);
-    }
-
-    // Check if on feature branch to add workflow hint
-    const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
-    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
-
-    // Generate sync hints
-    const syncHints = generateSyncHints({
-      scriptId: toProjectId,
-      operation: 'mv',
-      affectedFiles: [toFilename],
-      localCacheUpdated: cacheUpdated,  // True if xattr cache was updated
-      remotePushed: true
-    });
-
-    // Return response with git hints for LLM guidance
-    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
+    // Return response with compact git hints for LLM guidance
     // Exclude wrappedContent from response (internal use only for hash computation)
     const { wrappedContent: _unused, ...moveResultForResponse } = moveResult;
-    const response: MoveResult = {
+    return {
       ...moveResultForResponse,
       message: isCrossProject
         ? `Moved ${fromFilename} from project ${fromProjectId.substring(0, 8)}... to ${toFilename} in project ${toProjectId.substring(0, 8)}...`
         : `Moved ${fromFilename} to ${toFilename} within project ${fromProjectId.substring(0, 8)}...`,
-      // Pass through git hints from GitOperationManager
-      git: gitResult.git ? {
-        detected: gitResult.git.detected,
-        branch: gitResult.git.branch,
-        staged: gitResult.git.staged,
-        uncommittedChanges: gitResult.git.uncommittedChanges,
-        recommendation: gitResult.git.recommendation,
-        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
-      } : { detected: false },
-      // Add sync hints with recovery commands
-      syncHints,
-      // Add workflow completion hint when on feature branch
-      ...(onFeatureBranch ? {
-        nextAction: {
-          hint: `File moved. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: gitResult.git?.taskCompletionBlocked || false
-        }
-      } : {})
-    };
-
-    // Enrich with centralized hints (batch workflow, sync fallbacks, nextAction defaults)
-    return enrichResponseWithHints(response, {
-      scriptId: toProjectId,
-      affectedFiles: [toFilename],
-      operationType: 'mv',
-      localCacheUpdated: cacheUpdated,
-      remotePushed: true,
-    });
+      // Compact git hint from GitOperationManager
+      git: gitResult.git?.hint,
+    } as MoveResult;
   }
 }

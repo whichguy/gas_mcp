@@ -1,8 +1,8 @@
 /**
- * @fileoverview Tests for GAS Metadata Cache with mtime-based validation
+ * @fileoverview Tests for GAS Metadata Cache
  *
- * Tests the hash cache invalidation mechanism that detects when files
- * are modified outside MCP tools (e.g., via editor, git checkout).
+ * Tests the xattr-based hash cache. The xattr hash is authoritative —
+ * no mtime validation. MCP tools update the hash after every write.
  */
 
 import { expect } from 'chai';
@@ -54,7 +54,7 @@ describe('gasMetadataCache', () => {
       expect(result!.hash).to.equal(computeGitSha1(content));
     });
 
-    it('should return cached hash when mtime matches', async () => {
+    it('should return cached hash when xattr exists', async () => {
       const content = 'const x = 1;';
       const expectedHash = computeGitSha1(content);
 
@@ -62,7 +62,7 @@ describe('gasMetadataCache', () => {
       await fs.writeFile(testFile, content, 'utf-8');
       await updateCachedContentHash(testFile, expectedHash);
 
-      // Get hash - should use cache
+      // Get hash - should use cache (xattr is authoritative)
       const result = await getValidatedContentHash(testFile);
 
       expect(result).to.not.be.null;
@@ -70,29 +70,27 @@ describe('gasMetadataCache', () => {
       expect(result!.hash).to.equal(expectedHash);
     });
 
-    it('should recompute hash when file is modified externally', async () => {
+    it('should trust cached hash even when file is modified externally', async () => {
       const originalContent = 'const x = 1;';
-      const modifiedContent = 'const x = 2;';
+      const originalHash = computeGitSha1(originalContent);
 
       // Write file and cache hash
       await fs.writeFile(testFile, originalContent, 'utf-8');
-      await updateCachedContentHash(testFile, computeGitSha1(originalContent));
+      await updateCachedContentHash(testFile, originalHash);
 
-      // Wait a bit to ensure mtime will be different
+      // Modify file externally (simulates editor edit, git checkout, etc.)
       await new Promise(resolve => setTimeout(resolve, 10));
+      await fs.writeFile(testFile, 'const x = 2;', 'utf-8');
 
-      // Modify file externally (simulates editor edit)
-      await fs.writeFile(testFile, modifiedContent, 'utf-8');
-
-      // Get hash - should detect mtime change and recompute
+      // xattr hash is authoritative — returns cached hash regardless of file changes
       const result = await getValidatedContentHash(testFile);
 
       expect(result).to.not.be.null;
-      expect(result!.source).to.equal('computed');
-      expect(result!.hash).to.equal(computeGitSha1(modifiedContent));
+      expect(result!.source).to.equal('cache');
+      expect(result!.hash).to.equal(originalHash);
     });
 
-    it('should recompute hash when cached hash is missing but mtime is present', async () => {
+    it('should compute hash when no cached hash exists', async () => {
       const content = 'const x = 1;';
       await fs.writeFile(testFile, content, 'utf-8');
 
@@ -105,15 +103,15 @@ describe('gasMetadataCache', () => {
       expect(result!.hash).to.equal(computeGitSha1(content));
     });
 
-    it('should update cache after computing hash', async () => {
+    it('should cache hash after first computation', async () => {
       const content = 'const x = 1;';
       await fs.writeFile(testFile, content, 'utf-8');
 
-      // First call - computes
+      // First call - computes and caches
       const result1 = await getValidatedContentHash(testFile);
       expect(result1!.source).to.equal('computed');
 
-      // Second call - should use cache (mtime unchanged)
+      // Second call - should use cached hash
       const result2 = await getValidatedContentHash(testFile);
       expect(result2!.source).to.equal('cache');
       expect(result2!.hash).to.equal(result1!.hash);
@@ -121,7 +119,7 @@ describe('gasMetadataCache', () => {
   });
 
   describe('updateCachedContentHash', () => {
-    it('should store hash and mtime', async () => {
+    it('should store hash in xattr', async () => {
       const content = 'const x = 1;';
       const hash = computeGitSha1(content);
 
@@ -147,7 +145,7 @@ describe('gasMetadataCache', () => {
   });
 
   describe('clearGASMetadata', () => {
-    it('should clear cached hash and mtime', async () => {
+    it('should clear cached hash', async () => {
       const content = 'const x = 1;';
       const hash = computeGitSha1(content);
 
@@ -214,9 +212,8 @@ describe('gasMetadataCache', () => {
       expect(result!.hash).to.equal(hash);
     });
 
-    it('should detect external edit after MCP write', async () => {
+    it('should trust cached hash after external edit (xattr authoritative)', async () => {
       const originalContent = 'const x = 1;';
-      const modifiedContent = 'const x = 2;';
       const originalHash = computeGitSha1(originalContent);
       const remoteTime = new Date('2024-01-15T10:30:00Z');
 
@@ -225,22 +222,18 @@ describe('gasMetadataCache', () => {
       await fs.utimes(testFile, remoteTime, remoteTime);
       await updateCachedContentHash(testFile, originalHash);
 
-      // Wait to ensure mtime will change
-      await new Promise(resolve => setTimeout(resolve, 10));
-
       // Simulate external edit (user edits in VSCode)
-      await fs.writeFile(testFile, modifiedContent, 'utf-8');
-      // Note: fs.writeFile sets mtime to NOW, not remoteTime
+      await new Promise(resolve => setTimeout(resolve, 10));
+      await fs.writeFile(testFile, 'const x = 2;', 'utf-8');
 
-      // Validate - should detect mtime change and recompute
+      // xattr hash is authoritative — not invalidated by mtime changes
       const result = await getValidatedContentHash(testFile);
-      expect(result!.source).to.equal('computed');
-      expect(result!.hash).to.equal(computeGitSha1(modifiedContent));
+      expect(result!.source).to.equal('cache');
+      expect(result!.hash).to.equal(originalHash);
     });
 
-    it('should handle git checkout scenario', async () => {
+    it('should trust cached hash after git checkout (xattr authoritative)', async () => {
       const v1Content = 'const version = 1;';
-      const v2Content = 'const version = 2;';
       const v1Hash = computeGitSha1(v1Content);
 
       // Initial state: v1 content with cached hash
@@ -251,16 +244,14 @@ describe('gasMetadataCache', () => {
       let result = await getValidatedContentHash(testFile);
       expect(result!.source).to.equal('cache');
 
-      // Wait to ensure mtime changes
-      await new Promise(resolve => setTimeout(resolve, 10));
-
       // Simulate git checkout (changes file content and mtime)
-      await fs.writeFile(testFile, v2Content, 'utf-8');
+      await new Promise(resolve => setTimeout(resolve, 10));
+      await fs.writeFile(testFile, 'const version = 2;', 'utf-8');
 
-      // Validate - should detect change and recompute
+      // xattr hash is authoritative — trusted regardless of mtime changes
       result = await getValidatedContentHash(testFile);
-      expect(result!.source).to.equal('computed');
-      expect(result!.hash).to.equal(computeGitSha1(v2Content));
+      expect(result!.source).to.equal('cache');
+      expect(result!.hash).to.equal(v1Hash);
     });
 
     it('should handle backwards compatibility with existing caches', async () => {

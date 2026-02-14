@@ -385,13 +385,6 @@ export class RawWriteTool extends BaseFileSystemTool {
     // Add git detection results if available
     if (gitDetection) {
       result.git = gitDetection;
-
-      // Add workflow completion hint with rsync suggestion
-      result.nextAction = {
-        hint: `File written. Commit when ready: git_feature({ operation: 'commit', scriptId: '${parsedPath.scriptId}', message: '...' })`,
-        required: false,
-        rsync: `local_sync({ scriptId: "${parsedPath.scriptId}", operation: "plan", direction: "pull" })`
-      };
     }
 
     // Add git breadcrumb hint for .git/* files
@@ -580,12 +573,6 @@ export class RawWriteTool extends BaseFileSystemTool {
           commitMessage: params.changeReason || `Update ${filename}`,
           hookModified: hookResult.hookModified,
           breadcrumbsPulled: gitDiscovery.breadcrumbsPulled
-        },
-        // Add workflow completion hint with rsync suggestion
-        nextAction: {
-          hint: `File written. When complete: git_feature({ operation: 'finish', scriptId: '${parsedPath.scriptId}', pushToRemote: true })`,
-          required: false,
-          rsync: `local_sync({ scriptId: "${parsedPath.scriptId}", operation: "plan", direction: "pull" })`
         }
       };
 

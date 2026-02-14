@@ -19,15 +19,13 @@ import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { writeLocalAndValidateHooksOnly } from '../../utils/hookIntegration.js';
-import { getUncommittedStatus, buildGitHint } from '../../utils/gitStatus.js';
-import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitHints, type GitDetection } from '../../utils/localGitDetection.js';
+import { getUncommittedStatus, buildCompactGitHint } from '../../utils/gitStatus.js';
+// Note: localGitDetection imports removed - CompactGitHint replaces verbose git detection in responses
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
 import { log } from '../../utils/logger.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, analyzeManifestContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
 import { generateFileDiff, getDiffStats } from '../../utils/diffGenerator.js';
-import { generateSyncHints } from '../../utils/syncHints.js';
-import { enrichResponseWithHints } from './shared/responseHints.js';
 import { join, dirname } from 'path';
 import { mkdir, stat, readFile } from 'fs/promises';
 import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
@@ -794,9 +792,6 @@ Or use force:true to overwrite (destructive).`;
       }
     }
 
-    // Check for git association hints AND detect local git (reuse fetched files when available)
-    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken, fetchedFiles);
-
     // Analyze content for warnings and hints based on file type
     let contentAnalysis: { warnings: string[]; hints: string[] } | undefined;
     const detectedFileType = determineFileTypeUtil(filename, content);
@@ -852,38 +847,16 @@ Or use force:true to overwrite (destructive).`;
       };
     }
 
-    // Add git hints if available (merge with detection results + uncommitted status)
-    if (gitHints || gitDetection || projectPathForGit) {
-      // Build uncommitted status if we have a git path
-      let uncommittedHints: any = {};
-      if (projectPathForGit) {
-        try {
-          const uncommittedStatus = await getUncommittedStatus(projectPathForGit);
-          const gitHint = await buildGitHint(scriptId, projectPathForGit, uncommittedStatus, filename);
-          uncommittedHints = {
-            branch: gitHint.branch,
-            uncommittedChanges: gitHint.uncommittedChanges,
-            recommendation: gitHint.recommendation,
-            taskCompletionBlocked: gitHint.taskCompletionBlocked
-          };
-        } catch (hintError) {
-          // Continue without hints if we can't get them
-          console.error(`⚠️ [GIT] Could not build uncommitted hints: ${hintError}`);
-        }
+    // Add compact git hints if we have a git path
+    if (projectPathForGit) {
+      try {
+        const uncommittedStatus = await getUncommittedStatus(projectPathForGit);
+        const { getCurrentBranchName } = await import('../../utils/gitStatus.js');
+        const branch = await getCurrentBranchName(projectPathForGit);
+        result.git = buildCompactGitHint(branch, uncommittedStatus);
+      } catch (hintError) {
+        console.error(`⚠️ [GIT] Could not build git hints: ${hintError}`);
       }
-
-      result.git = {
-        ...(gitHints || {}),
-        ...(gitDetection || {}),
-        ...uncommittedHints
-      };
-
-      // Add workflow completion hint with rsync suggestion
-      result.nextAction = {
-        hint: `File written. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
-        required: uncommittedHints.taskCompletionBlocked || false,
-        rsync: `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })`
-      };
     }
 
     // Add git breadcrumb hint for .git/* files
@@ -892,109 +865,7 @@ Or use force:true to overwrite (destructive).`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
-    // Add sync hints with dynamic recovery commands
-    const localCacheUpdated = !remoteOnly && results.localFile?.updated === true;
-    result.syncHints = generateSyncHints({
-      scriptId,
-      operation: 'write',
-      affectedFiles: [filename],
-      localCacheUpdated,
-      remotePushed: true
-    });
-
-    // Enrich with centralized hints (batch workflow, nextAction defaults)
-    return enrichResponseWithHints(result, {
-      scriptId,
-      affectedFiles: [filename],
-      operationType: 'write',
-      localCacheUpdated,
-      remotePushed: true,
-    });
-  }
-
-  /**
-   * Detect git info and breadcrumb in a single API call
-   * Checks for git association hints (.git.gs files) and local git detection
-   *
-   * @param scriptId - GAS project ID
-   * @param accessToken - Auth token for API calls
-   * @returns Object containing gitHints and gitDetection
-   */
-  private async detectGitInfoAndBreadcrumb(
-    scriptId: string,
-    accessToken: string,
-    preloadedFiles?: any[]
-  ): Promise<{ gitHints?: GitHints; gitDetection?: GitDetection }> {
-    let gitHints: GitHints | undefined = undefined;
-    let gitDetection: GitDetection | undefined = undefined;
-    let allFiles: any[] = [];
-
-    try {
-      // Reuse caller's file list when available, otherwise fetch
-      allFiles = preloadedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
-
-      // Check for git association hints
-      const gitConfigFiles = allFiles.filter((f: any) =>
-        f.name === '.git.gs' || f.name.endsWith('/.git.gs')
-      );
-
-      if (gitConfigFiles.length > 0) {
-        // Parse git configuration to provide hints
-        const hints: any[] = [];
-
-        for (const gitFile of gitConfigFiles) {
-          try {
-            const config = JSON.parse(gitFile.source || '{}');
-            const projectPath = gitFile.name === '.git.gs' ? '' : gitFile.name.replace('/.git.gs', '');
-            const localPath = config.local?.path || `~/gas-repos/project-${scriptId}`;
-
-            hints.push(localPath);
-          } catch (parseError) {
-            // Skip invalid git config files
-          }
-        }
-
-        if (hints.length > 0) {
-          gitHints = {
-            associated: true,
-            syncFolder: hints[0]  // Primary sync folder
-          };
-        }
-      }
-    } catch (gitCheckError) {
-      // Git hints are optional - continue without them
-      console.error('[GIT-DETECTION] Could not fetch files for git hints:', gitCheckError);
-    }
-
-    // Detect local git and check for breadcrumb (reuse allFiles)
-    try {
-      const gitPath = await detectLocalGit(scriptId);
-      const breadcrumbExists = allFiles.length > 0 ? checkBreadcrumbExists(allFiles) : null;
-
-      if (gitPath) {
-        gitDetection = {
-          localGitDetected: true,
-          breadcrumbExists: breadcrumbExists ?? undefined  // null becomes undefined for cleaner response
-        };
-
-        // Add recommendation ONLY if we KNOW breadcrumb is missing (not unknown)
-        if (breadcrumbExists === false) {
-          gitDetection.recommendation = buildRecommendation(scriptId, gitPath);
-        }
-      } else {
-        gitDetection = {
-          localGitDetected: false
-        };
-      }
-    } catch (detectionError: any) {
-      // Git detection is optional - log but don't fail write
-      console.error('[GIT-DETECTION] Error during detection:', detectionError?.message ?? String(detectionError));
-      gitDetection = {
-        localGitDetected: false
-      };
-    }
-
-    return { gitHints, gitDetection };
+    return result;
   }
 
   /**
@@ -1312,13 +1183,8 @@ Or use force:true to overwrite (destructive).`;
       }
     }
 
-    // Check for git association hints AND detect local git (reuse fetched files when available)
-    // accessToken already obtained above (line ~1017)
-    const { gitHints, gitDetection } = await this.detectGitInfoAndBreadcrumb(scriptId, accessToken, fetchedFilesHook);
-
-    // Build git uncommitted status for hints
+    // Build git uncommitted status for compact hints
     const uncommittedStatus = await getUncommittedStatus(projectPath);
-    const gitHint = await buildGitHint(scriptId, projectPath, uncommittedStatus, filename);
 
     // Analyze content for warnings and hints based on file type
     let contentAnalysis: { warnings: string[]; hints: string[] } | undefined;
@@ -1360,24 +1226,8 @@ Or use force:true to overwrite (destructive).`;
       exists: true
     };
 
-    // Add comprehensive git hints (merge detection, branch info, and uncommitted status)
-    result.git = {
-      ...(gitHints || {}),
-      ...(gitDetection || {}),
-      // Branch info (no branchCreated - we don't auto-create branches)
-      branch: currentBranch,
-      // Uncommitted status and hints
-      uncommittedChanges: gitHint.uncommittedChanges,
-      recommendation: gitHint.recommendation,
-      taskCompletionBlocked: gitHint.taskCompletionBlocked
-    };
-
-    // Add workflow completion hint with rsync suggestion
-    result.nextAction = {
-      hint: `File written. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
-      required: gitHint.taskCompletionBlocked || false,
-      rsync: `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })`
-    };
+    // Add compact git hints
+    result.git = buildCompactGitHint(currentBranch, uncommittedStatus);
 
     // Add git breadcrumb hint for .git/* files
     const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);
@@ -1385,24 +1235,7 @@ Or use force:true to overwrite (destructive).`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
-    // Add sync hints with dynamic recovery commands
-    // In hook-validated path, local cache is always updated (xattr updated above)
-    result.syncHints = generateSyncHints({
-      scriptId,
-      operation: 'write',
-      affectedFiles: [filename],
-      localCacheUpdated: true,
-      remotePushed: true
-    });
-
-    // Enrich with centralized hints (batch workflow, nextAction defaults)
-    return enrichResponseWithHints(result, {
-      scriptId,
-      affectedFiles: [filename],
-      operationType: 'write',
-      localCacheUpdated: true,
-      remotePushed: true,
-    });
+    return result;
   }
 
   /**
