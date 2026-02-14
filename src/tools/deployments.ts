@@ -12,7 +12,6 @@ import { loadTemplate, loadJsonTemplate } from '../utils/templateLoader.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
 import { computeGitSha1 } from '../utils/hashUtils.js';
-import { generateSyncHints } from '../utils/syncHints.js';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -1125,15 +1124,6 @@ export class ProjectCreateTool extends BaseTool {
         result.infraErrors = result.infraErrors || [];
         result.infraErrors.push(`ConfigManager: ${infrastructureResults.configManager?.error || 'Installation failed'}`);
       }
-
-      // Add sync hints - new project has no local cache
-      result.syncHints = generateSyncHints({
-        scriptId: project.scriptId,
-        operation: 'project_create',
-        affectedFiles: ['appsscript.json', 'common-js/require', '__mcp_exec/exec', 'gas-properties/ConfigManager'],
-        localCacheUpdated: false,  // New project, no local git repo yet
-        remotePushed: true
-      });
 
       return result;
     } catch (error: any) {

@@ -160,30 +160,26 @@ Git repos auto-initialized when `.git` directory is missing. Uses global git con
 **Behavior:**
 1. `write`, `edit`, `aider`, `cp`, `mv`, `rm` push to GAS but do NOT commit locally
 2. Files are staged (`git add`) but require explicit commit
-3. Response includes `git.taskCompletionBlocked: true` when uncommitted changes exist
+3. Response includes `git.blocked: true` when uncommitted changes exist
 4. LLM must call `git_feature({operation:'commit'})` to save changes to git
 
-**Response with Git Hints:**
+**Response with Git Hints (CompactGitHint):**
 ```typescript
 {
   git: {
-    detected: true,
-    branch: 'main',
-    uncommittedChanges: { count: 3, files: ['auth.js', 'utils.js', 'config.js'], thisFile: true },
-    recommendation: {
-      urgency: 'HIGH',  // CRITICAL (5+), HIGH (3-4), NORMAL (1-2)
-      action: 'commit',
-      command: "git_feature({operation:'commit', scriptId:'...', message:'...'})",
-      reason: '3 files uncommitted - consider committing soon'
-    },
-    taskCompletionBlocked: true  // LLM signal: task NOT complete
+    branch: 'llm-feature-user-auth',
+    uncommitted: 3,
+    files: ['auth.js', 'utils.js', 'config.js'],
+    blocked: true,
+    urgency: 'HIGH',          // omitted for NORMAL; CRITICAL (5+), HIGH (3-4)
+    action: 'commit'           // or 'finish' on feature branches
   }
 }
 ```
 
 **Task Completion Rule:**
-- A task is NOT complete while `git.taskCompletionBlocked: true`
-- Check `git.uncommittedChanges.count` — if > 0, commit before reporting task done
+- A task is NOT complete while `git.blocked: true`
+- Check `git.uncommitted` — if > 0, commit before reporting task done
 
 **When to commit:**
 - User says "done", "finished", "complete", "that's all"
@@ -324,7 +320,7 @@ This catches critical CommonJS pattern violations (missing loadNow, wrong __glob
 **Problem**: Write operations not creating commits (this is expected behavior)
 **Solution**: Write tools do NOT auto-commit. You must explicitly commit:
 1. After writes, call `git_feature({operation: 'commit', scriptId, message: '...'})`
-2. Check response for `git.taskCompletionBlocked: true` - this means uncommitted changes exist
+2. Check response for `git.blocked: true` - this means uncommitted changes exist
 3. Verify git repo exists at `~/gas-repos/project-{scriptId}/`
 4. Check server startup logs for uncommitted changes from previous sessions
 

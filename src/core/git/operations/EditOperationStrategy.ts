@@ -42,6 +42,7 @@ interface EditResult {
   success: boolean;
   editsApplied: number;
   filePath: string;
+  wrappedContent?: Map<string, string>;
 }
 
 /**
@@ -210,11 +211,12 @@ export class EditOperationStrategy implements FileOperationStrategy<EditResult> 
       this.fileType
     );
 
-    // Return minimal response for token efficiency
+    // Return result with wrapped content for local file sync
     return {
       success: true,
       editsApplied: this.editsApplied,
-      filePath: this.params.path
+      filePath: this.params.path,
+      wrappedContent: new Map([[this.filename!, finalContent]])
     };
   }
 

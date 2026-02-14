@@ -36,7 +36,7 @@ interface MoveResult {
   fromProjectId: string;
   toProjectId: string;
   isCrossProject: boolean;
-  wrappedContent: string;  // For hash computation in tool
+  wrappedContent: Map<string, string>;
 }
 
 /**
@@ -165,7 +165,7 @@ export class MoveOperationStrategy implements FileOperationStrategy<MoveResult> 
       fromProjectId: this.fromProjectId,
       toProjectId: this.toProjectId,
       isCrossProject: this.isCrossProject,
-      wrappedContent: finalContent  // For hash computation in tool
+      wrappedContent: new Map([[this.toFilename!, finalContent]])
     };
   }
 

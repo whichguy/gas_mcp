@@ -11,10 +11,6 @@ import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { CopyOperationStrategy } from '../../core/git/operations/CopyOperationStrategy.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
-import { generateSyncHints } from '../../utils/syncHints.js';
-import { enrichResponseWithHints } from './shared/responseHints.js';
-import { updateCachedContentHash } from '../../utils/gasMetadataCache.js';
-import path from 'path';
 
 /**
  * Copy files in Google Apps Script project with CommonJS processing
@@ -161,39 +157,15 @@ export class CpTool extends BaseFileSystemTool {
     const copyResult = gitResult.result;
     const isCrossProject = fromProjectId !== toProjectId;
 
-    // Compute destination file hash for response and cache
-    // Use wrappedContent from strategy result for consistent hashing
+    // Compute destination file hash from strategy's wrapped content
+    // (GitOperationManager handles local file overwrite + xattr cache)
     let destHash: string | undefined;
-    let cacheUpdated = false;
     try {
-      // Compute hash on WRAPPED content from strategy result
-      destHash = computeGitSha1(copyResult.wrappedContent || '');
-
-      // Update xattr cache for collision detection on future writes
-      const { LocalFileManager } = await import('../../utils/localFileManager.js');
-      const destProjectPath = await LocalFileManager.getProjectDirectory(toProjectId);
-      const destExt = LocalFileManager.getFileExtensionFromName(toFilename);
-      const destLocalPath = path.join(destProjectPath, toFilename + destExt);
-      await updateCachedContentHash(destLocalPath, destHash);
-      cacheUpdated = true;
-      console.error(`📋 [CP] Cached destination hash: ${destHash.slice(0, 8)}...`);
+      const wrappedStr = copyResult.wrappedContent?.get(toFilename) || '';
+      destHash = computeGitSha1(wrappedStr);
     } catch (hashError) {
-      // Log but don't fail the copy operation if hash computation fails
-      console.error(`⚠️ [CP] Hash cache update failed: ${hashError}`);
+      console.error(`⚠️ [CP] Hash computation failed: ${hashError}`);
     }
-
-    // Check if on feature branch to add workflow hint
-    const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
-    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
-
-    // Generate sync hints
-    const syncHints = generateSyncHints({
-      scriptId: toProjectId,
-      operation: 'cp',
-      affectedFiles: [toFilename],
-      localCacheUpdated: cacheUpdated,  // True if xattr cache was updated
-      remotePushed: true
-    });
 
     // For cross-project copies, compare appsscript.json manifests and warn about differences
     let manifestHints: { differences: string[]; recommendation?: string } | undefined;
@@ -277,11 +249,10 @@ export class CpTool extends BaseFileSystemTool {
       }
     }
 
-    // Return response with git hints for LLM guidance
-    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
+    // Return response with compact git hints for LLM guidance
     // Exclude wrappedContent from response (internal use only for hash computation)
     const { wrappedContent: _unused, ...copyResultForResponse } = copyResult;
-    const response: CopyResult = {
+    return {
       ...copyResultForResponse,
       commonJsProcessed: true,  // CopyOperationStrategy always processes CommonJS
       size: 0,  // We don't track size in the strategy
@@ -294,35 +265,10 @@ export class CpTool extends BaseFileSystemTool {
         hash: destHash,
         hashNote: 'Hash computed on wrapped (full GAS file) content. Pass as expectedHash to future writes to detect concurrent modifications.'
       } : {}),
-      // Pass through git hints from GitOperationManager
-      git: gitResult.git ? {
-        detected: gitResult.git.detected,
-        branch: gitResult.git.branch,
-        staged: gitResult.git.staged,
-        uncommittedChanges: gitResult.git.uncommittedChanges,
-        recommendation: gitResult.git.recommendation,
-        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
-      } : { detected: false },
-      // Add sync hints with recovery commands
-      syncHints,
-      // Add manifest compatibility hints for cross-project copies
+      // Compact git hint from GitOperationManager
+      git: gitResult.git?.hint,
+      // Add manifest compatibility hints for cross-project copies (dynamic, kept)
       ...(manifestHints ? { manifestHints } : {}),
-      // Add workflow completion hint when on feature branch
-      ...(onFeatureBranch ? {
-        nextAction: {
-          hint: `File copied. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: gitResult.git?.taskCompletionBlocked || false
-        }
-      } : {})
-    };
-
-    // Enrich with centralized hints (batch workflow, sync fallbacks, nextAction defaults)
-    return enrichResponseWithHints(response, {
-      scriptId: toProjectId,
-      affectedFiles: [toFilename],
-      operationType: 'cp',
-      localCacheUpdated: cacheUpdated,
-      remotePushed: true,
-    });
+    } as CopyResult;
   }
 }

@@ -8,8 +8,6 @@ import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { DeleteOperationStrategy } from '../../core/git/operations/DeleteOperationStrategy.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
-import { generateSyncHints } from '../../utils/syncHints.js';
-import { enrichResponseWithHints } from './shared/responseHints.js';
 import { clearGASMetadata } from '../../utils/gasMetadataCache.js';
 import { join as pathJoin } from 'path';
 
@@ -137,53 +135,14 @@ export class RmTool extends BaseFileSystemTool {
       console.error(`⚠️ [RM] Cache clear failed: ${cacheError}`);
     }
 
-    // Check if on feature branch to add workflow hint
-    const { isFeatureBranch } = await import('../../utils/gitAutoCommit.js');
-    const onFeatureBranch = gitResult.git?.branch ? isFeatureBranch(gitResult.git.branch) : false;
-
-    // Generate sync hints - no files to sync after deletion
-    const syncHints = generateSyncHints({
-      scriptId: parsedPath.scriptId,
-      operation: 'rm',
-      affectedFiles: [],  // No files to sync after delete
-      localCacheUpdated: true,  // Cache cleared (file deleted)
-      remotePushed: gitResult.result.remoteDeleted
-    });
-
-    // Return response with git hints for LLM guidance
-    // IMPORTANT: Write operations do NOT auto-commit - include git.taskCompletionBlocked signal
-    const response: RemoveResult = {
+    // Return response with compact git hints for LLM guidance
+    return {
       success: true,
       path,
       localDeleted: true,  // GitOperationManager handles local deletion
       remoteDeleted: gitResult.result.remoteDeleted,
-      // Pass through git hints from GitOperationManager
-      git: gitResult.git ? {
-        detected: gitResult.git.detected,
-        branch: gitResult.git.branch,
-        staged: gitResult.git.staged,
-        uncommittedChanges: gitResult.git.uncommittedChanges,
-        recommendation: gitResult.git.recommendation,
-        taskCompletionBlocked: gitResult.git.taskCompletionBlocked
-      } : { detected: false },
-      // Add sync hints
-      syncHints,
-      // Add workflow completion hint when on feature branch
-      ...(onFeatureBranch ? {
-        nextAction: {
-          hint: `File deleted. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-          required: gitResult.git?.taskCompletionBlocked || false
-        }
-      } : {})
+      // Compact git hint from GitOperationManager
+      git: gitResult.git?.hint,
     };
-
-    // Enrich with centralized hints (batch workflow, sync fallbacks, nextAction defaults)
-    return enrichResponseWithHints(response, {
-      scriptId: parsedPath.scriptId,
-      affectedFiles: [],  // No files to sync after delete
-      operationType: 'rm',
-      localCacheUpdated: true,
-      remotePushed: gitResult.result.remoteDeleted,
-    });
   }
 }

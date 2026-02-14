@@ -437,11 +437,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       operation: 'start',
       branch: branchName,
       created: true,
-      previousBranch: currentBranch || 'main',
-      nextAction: {
-        hint: `Feature branch created. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-        required: false
-      }
+      previousBranch: currentBranch || 'main'
     };
   }
 
@@ -542,13 +538,6 @@ export class GitFeatureTool extends BaseFileSystemTool {
       workflow: 'dev (HEAD) → staging (versioned) → prod (stable)'
     } : undefined;
 
-    // Add container URL hint for debugging GAS UI (sidebar/dialog)
-    const containerUrlHint = {
-      message: 'To get the bound spreadsheet URL for debugging sidebar/dialog UI:',
-      command: 'exec({ scriptId: "<scriptId>", js_statement: "SpreadsheetApp.getActiveSpreadsheet().getUrl()" })',
-      useCase: 'Launch Chrome DevTools on the container to debug sidebar/dialog UI'
-    };
-
     return {
       status: 'success',
       operation: 'finish',
@@ -560,8 +549,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       pushed,
       ...(pushError && { pushError }),
       ...(nextAction && { nextAction }),
-      ...(promotionHint && { promotionHint }),
-      containerUrlHint
+      ...(promotionHint && { promotionHint })
     };
   }
 
@@ -741,13 +729,6 @@ export class GitFeatureTool extends BaseFileSystemTool {
 
     log.info(`[GIT_FEATURE] ✓ Committed ${filesChanged} file(s): ${shortSha}`);
 
-    // Add hint for feature branch workflow completion
-    const onFeatureBranch = isFeatureBranch(currentBranch);
-    const nextAction = onFeatureBranch ? {
-      hint: `Changes committed. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-      required: false
-    } : undefined;
-
     return {
       status: 'success',
       operation: 'commit',
@@ -757,8 +738,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       message,
       filesChanged,
       timestamp: timestamp.trim(),
-      isFeatureBranch: onFeatureBranch,
-      ...(nextAction && { nextAction })
+      isFeatureBranch: isFeatureBranch(currentBranch)
     };
   }
 
@@ -832,21 +812,13 @@ export class GitFeatureTool extends BaseFileSystemTool {
 
     log.info(`[GIT_FEATURE] ✓ Pushed ${currentBranch} to ${remote}`);
 
-    // Add workflow hint for feature branches
-    const onFeatureBranch = isFeatureBranch(currentBranch);
-    const nextAction = onFeatureBranch ? {
-      hint: `Branch pushed to remote. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`,
-      required: false
-    } : undefined;
-
     return {
       status: 'success',
       operation: 'push',
       branch: currentBranch,
       remote,
       upstreamSet: true,
-      isFeatureBranch: onFeatureBranch,
-      ...(nextAction && { nextAction })
+      isFeatureBranch: isFeatureBranch(currentBranch)
     };
   }
 }

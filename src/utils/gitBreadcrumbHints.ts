@@ -92,7 +92,7 @@ module.exports = {
           '1. write({path: ".git/config", content: "[sync]\\n  localPath = ~/..."})',
           '2. Auto-wrapped as CommonJS: { raw, parsed, format, gitPath }',
           '3. rsync reads parsed.sync.localPath from require(".git/config")',
-          '4. local_sync({ operation: "plan", direction: "pull" })',
+          '4. rsync({ operation: "pull", scriptId, dryrun: true })',
         ]
       : undefined,
     note: 'Write raw INI format. Auto-wrapped as CommonJS with parsed structure for rsync access.',

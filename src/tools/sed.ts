@@ -31,11 +31,6 @@ interface SedResult {
     success: boolean;
     error?: string;
   }>;
-  nextAction?: {
-    hint: string;
-    required: boolean;
-    rsync?: string;
-  };
   gitBreadcrumbHints?: GitBreadcrumbEditHint[];
 }
 
@@ -262,17 +257,6 @@ export class SedTool extends BaseTool {
           });
         }
       }
-
-      // Add workflow completion hint with rsync suggestion
-      const { isFeatureBranch } = await import('../utils/gitAutoCommit.js');
-      const onFeatureBranch = branchName ? isFeatureBranch(branchName) : false;
-      result.nextAction = {
-        hint: onFeatureBranch
-          ? `Files updated. When complete: git_feature({ operation: 'finish', scriptId, pushToRemote: true })`
-          : `Files updated. Commit when ready: git_feature({ operation: 'commit', scriptId, message: '...' })`,
-        required: false,
-        rsync: branchName ? `local_sync({ scriptId: "${scriptId}", operation: "plan", direction: "pull" })` : undefined
-      };
 
       // Collect git breadcrumb hints for any .git/* files processed
       const gitBreadcrumbHints = result.files

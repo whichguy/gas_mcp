@@ -208,6 +208,46 @@ export async function buildGitHint(
 }
 
 /**
+ * Compact git hint for token-efficient tool responses.
+ * Replaces verbose GitHint (~200+ tokens) with ~40-60 tokens
+ * while preserving all context-refresh value for LLMs.
+ */
+export interface CompactGitHint {
+  branch: string;
+  uncommitted: number;
+  files?: string[];                    // only when count > 0, max 10
+  blocked: boolean;
+  urgency?: 'CRITICAL' | 'HIGH';      // omit for NORMAL
+  action?: 'commit' | 'finish';       // LLM-efficient alias for next-best-action
+}
+
+/**
+ * Build a compact git hint for tool responses.
+ * ~85% token reduction vs verbose GitHint while preserving
+ * all context-refresh value (branch, uncommitted count, files, action).
+ *
+ * @param branch - Current branch name
+ * @param uncommitted - Uncommitted status info
+ * @returns Compact hint structure
+ */
+export function buildCompactGitHint(
+  branch: string,
+  uncommitted: UncommittedInfo
+): CompactGitHint {
+  const urgency = uncommitted.count >= 5 ? 'CRITICAL' as const :
+                  uncommitted.count >= 3 ? 'HIGH' as const : undefined;
+  const onFeatureBranch = branch.startsWith('llm-feature-');
+  return {
+    branch,
+    uncommitted: uncommitted.count,
+    ...(uncommitted.count > 0 ? { files: uncommitted.files } : {}),
+    blocked: uncommitted.count > 0,
+    ...(urgency ? { urgency } : {}),
+    ...(uncommitted.count > 0 ? { action: onFeatureBranch ? 'finish' as const : 'commit' as const } : {})
+  };
+}
+
+/**
  * Check if any GAS repos have uncommitted changes (for startup check)
  *
  * @returns Array of projects with uncommitted changes
