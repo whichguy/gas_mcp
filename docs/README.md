@@ -8,13 +8,12 @@ This directory contains all technical documentation for the MCP Google Apps Scri
 
 ### 🎯 Quick Reference
 **Start here for comprehensive tool documentation**:
-- **[REFERENCE.md](REFERENCE.md)** - Complete reference for all 63 tools: capabilities, limitations, compatibility matrix, and troubleshooting
+- **[REFERENCE.md](REFERENCE.md)** - Complete reference for all 52 tools: capabilities, limitations, compatibility matrix, and troubleshooting
 
 ### 📚 API Documentation (`api/`)
 Complete API reference documentation for all MCP tools and endpoints.
 
 - **[API_REFERENCE.md](api/API_REFERENCE.md)** - Comprehensive API documentation with schemas, examples, and error handling
-- **[LOCAL_SYNC_API.md](api/LOCAL_SYNC_API.md)** - Local file synchronization API documentation
 
 ### 🛠️ Developer Documentation (`developer/`)
 Technical documentation for developers, contributors, and those working on the codebase.
@@ -23,6 +22,9 @@ Technical documentation for developers, contributors, and those working on the c
 - **[LLM_SCHEMA_DESIGN_GUIDE.md](developer/LLM_SCHEMA_DESIGN_GUIDE.md)** - Schema design patterns optimized for LLM consumption
 - **[OAUTH_SINGLETON_ARCHITECTURE.md](developer/OAUTH_SINGLETON_ARCHITECTURE.md)** - Deep dive into OAuth callback server architecture
 - **[STDOUT_STDERR_DOCUMENTATION.md](developer/STDOUT_STDERR_DOCUMENTATION.md)** - MCP protocol communication and diagnostic logging
+- **[WRITE_LOCKING.md](developer/WRITE_LOCKING.md)** - Write operation locking and concurrency control
+- **[GAS_CLIENT_PATTERNS.md](developer/GAS_CLIENT_PATTERNS.md)** - Client-side HTML patterns (createGasServer, exec_api)
+- **[COMMONJS_DEEP_DIVE.md](developer/COMMONJS_DEEP_DIVE.md)** - Module logging control and response enhancement
 
 ### 🔒 Security Documentation (`security/`)
 Security guidelines and best practices for the MCP server.
@@ -58,7 +60,6 @@ Historical session documentation and development records.
 
 ### For API Integration
 - **API Reference**: Start with [api/API_REFERENCE.md](api/API_REFERENCE.md)
-- **Local Sync**: Review [api/LOCAL_SYNC_API.md](api/LOCAL_SYNC_API.md)
 - **Tool Schemas**: Review [developer/SCHEMAS_AND_VALIDATION.md](developer/SCHEMAS_AND_VALIDATION.md)
 
 ### For Developers
