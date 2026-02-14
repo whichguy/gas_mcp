@@ -335,3 +335,73 @@ This balanced approach:
 - Respects developer workflow and productivity
 
 The key is focusing on "accidental LLM mistakes" rather than "all possible security threats" - making it a helpful safety net rather than an overbearing security system.
+
+---
+
+## Command Injection Prevention
+
+When executing git commands or any shell operations with user input, **ALWAYS use spawn with array arguments, NEVER use exec with template literals**:
+
+```typescript
+// VULNERABLE - Never do this:
+await execAsync(`git commit -m "${userMessage}"`, { cwd });
+// Attack: userMessage = 'test"; rm -rf / #' → executes arbitrary commands
+
+// SECURE - Always do this:
+import { spawn } from 'child_process';
+
+function execGitCommand(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const git = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    git.stdout.on('data', (data) => { stdout += data.toString(); });
+    git.stderr.on('data', (data) => { stderr += data.toString(); });
+    git.on('close', (code) => {
+      code === 0 ? resolve(stdout) : reject(new Error(stderr || `Exit code ${code}`));
+    });
+  });
+}
+
+// Safe usage:
+await execGitCommand(['commit', '-m', userMessage], gitRoot);
+```
+
+### Why This Matters
+
+- `exec` spawns a shell that interprets special characters (`"`, `;`, `$`, etc.)
+- `spawn` with array args directly executes the command without shell interpretation
+- Special characters in user input become literal strings, not shell commands
+- 2-3x faster (no shell spawn overhead) + more secure
+
+### When to Apply
+
+- Any git command with user input (commit messages, branch names, file paths)
+- Any shell command that includes user-controlled data
+- Even with input sanitization (defense in depth)
+
+### Testing
+
+Always add security tests for command injection:
+
+```typescript
+it('should prevent command injection in commit message', async () => {
+  const maliciousMessages = [
+    'Test"; rm -rf / #',    // Quote injection
+    'Test`echo pwned`',     // Backtick execution
+    'Test$(echo pwned)',    // Command substitution
+    'Test & echo pwned',    // Command chaining
+    'Test | echo pwned',    // Pipe injection
+  ];
+  for (const msg of maliciousMessages) {
+    await git_feature({operation: 'commit', scriptId, message: msg});
+    // Should succeed with exact message, no command execution
+  }
+});
+```
+
+### References
+
+- Pattern implemented in `src/tools/git/GitFeatureTool.ts` (execGitCommand)
+- Security test: `test/integration/mcp-gas-validation/git-feature-workflow.test.ts`
+- Similar patterns throughout codebase (lockManager, gitInit, etc.)
