@@ -14,7 +14,7 @@ export class ElicitationHelper {
    */
   async confirmDestructiveAction(description: string): Promise<boolean> {
     try {
-      const result = await (this.server as any).elicitInput({
+      const result = await this.server.elicitInput({
         message: description,
         requestedSchema: {
           type: 'object',
@@ -37,7 +37,7 @@ export class ElicitationHelper {
    */
   async selectFromOptions(message: string, options: string[]): Promise<string | null> {
     try {
-      const result = await (this.server as any).elicitInput({
+      const result = await this.server.elicitInput({
         message,
         requestedSchema: {
           type: 'object',
