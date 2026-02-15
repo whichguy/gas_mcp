@@ -120,8 +120,10 @@ export class SyncPlanner {
       // Step 1: Check breadcrumb and resolve local path
       const localPath = await this.resolveLocalPath(scriptId, projectPath, accessToken);
 
-      // Step 2: Check git status (unless force)
-      if (!force) {
+      // Step 2: Check git status
+      // Pull always checks — force mode only skips this check for push,
+      // since pull overwrites local files and would silently destroy uncommitted work.
+      if (!force || direction === 'pull') {
         await this.checkGitStatus(localPath, warnings);
       } else {
         warnings.push('Forced mode: skipped uncommitted changes check');
