@@ -114,7 +114,21 @@ export class SessionWorktreeManager {
 
     // 2. Create git worktree with session branch
     const branchName = `session/${this.sessionId}`;
-    await execGitSpawn(['worktree', 'add', worktreePath, '-b', branchName], mainRepoPath);
+    try {
+      await execGitSpawn(['worktree', 'add', worktreePath, '-b', branchName], mainRepoPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('EEXIST') || msg.includes('already exists') || msg.includes('already checked out')) {
+        log.warn(`[SESSION-WT] Stale worktree detected, cleaning up and retrying: ${msg}`);
+        try { await fs.rm(worktreePath, { recursive: true, force: true }); } catch {}
+        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch {}
+        try { await execGitSpawn(['worktree', 'prune'], mainRepoPath); } catch {}
+        // Retry once
+        await execGitSpawn(['worktree', 'add', worktreePath, '-b', branchName], mainRepoPath);
+      } else {
+        throw err;
+      }
+    }
     log.info(`[SESSION-WT] Created worktree at ${worktreePath} (branch: ${branchName})`);
 
     // Steps 3-5 wrapped in try/catch: if anything fails after worktree creation,
@@ -357,6 +371,13 @@ export class SessionWorktreeManager {
 
     const { ensureGitInitialized } = await import('./gitInit.js');
     await ensureGitInitialized(mainRepoPath);
+
+    // Prune stale worktree references from previous sessions
+    try {
+      await execGitSpawn(['worktree', 'prune'], mainRepoPath);
+    } catch {
+      // Non-fatal: prune may fail if no stale refs
+    }
 
     // Check if repo has commits
     try {
