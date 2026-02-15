@@ -508,7 +508,7 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1SE2hvMGhDU3EO-6otrJD7ROJKStBjJVnAMKwmDQKu5iWgGaP3mxvJ4di",
+      "scriptId": "1vBDYRvnmwR9pX8--ZTC7gFlVlpcORTbwwrh1TpgGvek__iYqYLRL2z40",
       "name": "consolidated-test-project",
       "description": "Created: 2/14/2026"
     },
@@ -741,6 +741,11 @@
       "scriptId": "1j5PRTilCq5zpiAUY4auwC8_83lfTbl5l8Xr_l9NTlWdb6PEF9wQLzA5E",
       "name": "client-token-test",
       "description": "Created: 1/25/2026"
+    },
+    "drive-reorganizer": {
+      "scriptId": "1IDfFwvi9gKC3G4gDwErIws2NymyzJW2URM6mC1-U0RUGBJ4XOgci8noJ",
+      "name": "drive-reorganizer",
+      "description": "Created: 2/14/2026"
     }
   },
   "localRoot": {
@@ -750,7 +755,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-02-14T20:44:24.954Z"
+    "lastModified": "2026-02-14T23:09:17.060Z"
   },
   "debug": true,
   "currentProject": {
