@@ -203,10 +203,22 @@ export class WriteTool extends BaseFileSystemTool {
       }
     }
 
+    // Prefetch project content ONCE for all downstream consumers
+    // (CommonJS check, module options, sync status, conflict detection)
+    let prefetchedFiles: any[] | undefined;
+    if (!localOnly) {
+      try {
+        const accessToken = await this.getAuthToken(params);
+        prefetchedFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      } catch (prefetchError: any) {
+        log.warn(`[WRITE] Prefetch failed, downstream operations will fetch individually: ${(prefetchError as Error).message}`);
+      }
+    }
+
     if (!localOnly && shouldWrapContent(fileType, filename)) {
       try {
         const accessToken = await this.getAuthToken(params);
-        const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        const existingFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
         const hasCommonJS = existingFiles.some((f: any) => fileNameMatches(f.name, 'common-js/require'));
 
         if (!hasCommonJS) {
@@ -253,7 +265,7 @@ export class WriteTool extends BaseFileSystemTool {
         // preserve existing hoistedFunctions from the current wrapper
         try {
           const accessToken = await this.getAuthToken(params);
-          const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+          const existingFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
           const existingFile = existingFiles.find((f: any) => fileNameMatches(f.name, filename));
 
           let existingHoistedFunctions = undefined;
@@ -278,7 +290,7 @@ export class WriteTool extends BaseFileSystemTool {
         // Inherit from existing file
         try {
           const accessToken = await this.getAuthToken(params);
-          const existingFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+          const existingFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
           const existingFile = existingFiles.find((f: any) => fileNameMatches(f.name, filename));
 
           if (existingFile && existingFile.source) {
@@ -392,7 +404,8 @@ export class WriteTool extends BaseFileSystemTool {
         localOnly,
         remoteOnly,
         commonJsProcessing,
-        params.changeReason  // Pass custom commit message
+        params.changeReason,  // Pass custom commit message
+        prefetchedFiles
       );
     }
 
@@ -408,7 +421,7 @@ export class WriteTool extends BaseFileSystemTool {
     // Skip local sync operations when remoteOnly is true (e.g., .git/ breadcrumb files)
     if (!localOnly && !remoteOnly) {
       try {
-        remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        remoteFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
         syncStatus = await LocalFileManager.verifySyncStatus(projectName, remoteFiles, workingDir);
 
         const autoSyncDecision = shouldAutoSync(syncStatus, remoteFiles.length);
@@ -463,7 +476,7 @@ export class WriteTool extends BaseFileSystemTool {
 
     if (!localOnly) {
       try {
-        const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        const currentFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
         fetchedFiles = currentFiles;
 
         const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
@@ -886,7 +899,8 @@ Or use force:true to overwrite (destructive).`;
     localOnly: boolean,
     remoteOnly: boolean,
     commonJsProcessing: any,
-    changeReason?: string
+    changeReason?: string,
+    prefetchedFiles?: any[]
   ): Promise<any> {
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
 
@@ -946,7 +960,7 @@ Or use force:true to overwrite (destructive).`;
       try {
         const accessToken = await this.getAuthToken(params);
 
-        const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+        const currentFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
         fetchedFilesHook = currentFiles;
         const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
         const fileType = existingFile?.type || determineFileTypeUtil(filename, finalContent);

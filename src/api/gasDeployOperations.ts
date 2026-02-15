@@ -43,45 +43,38 @@ export class GASDeployOperations {
       });
 
       const basicDeployments = response.data.deployments || [];
-      console.error(`🔍 Found ${basicDeployments.length} deployments, enriching with detailed information...`);
+      console.error(`🔍 Found ${basicDeployments.length} deployments, enriching in parallel...`);
 
-      // Enrich each deployment with detailed information
-      const enrichedDeployments: GASDeployment[] = [];
+      // Enrich all deployments in parallel (was sequential N+1 pattern)
+      const enrichedDeployments = await Promise.all(
+        basicDeployments.map(async (basicDeployment: any) => {
+          try {
+            return await this.getDeployment(
+              scriptId,
+              basicDeployment.deploymentId,
+              accessToken
+            );
+          } catch (enrichError: any) {
+            console.error(`⚠️  Failed to enrich deployment ${basicDeployment.deploymentId}: ${enrichError.message}`);
+            // Fallback to basic deployment info if detailed fetch fails
+            return {
+              deploymentId: basicDeployment.deploymentId,
+              versionNumber: basicDeployment.versionNumber,
+              description: basicDeployment.description,
+              manifestFileName: basicDeployment.manifestFileName,
+              updateTime: basicDeployment.updateTime,
+              deploymentConfig: basicDeployment.deploymentConfig,
+              entryPoints: basicDeployment.entryPoints
+            } as GASDeployment;
+          }
+        })
+      );
 
-      for (const basicDeployment of basicDeployments) {
-        try {
-          console.error(`🔍 Enriching deployment ${basicDeployment.deploymentId}...`);
-
-          // Get detailed deployment info including entry points
-          const detailedDeployment = await this.getDeployment(
-            scriptId,
-            basicDeployment.deploymentId,
-            accessToken
-          );
-
-          enrichedDeployments.push(detailedDeployment);
-
-        } catch (enrichError: any) {
-          console.error(`⚠️  Failed to enrich deployment ${basicDeployment.deploymentId}: ${enrichError.message}`);
-
-          // Fallback to basic deployment info if detailed fetch fails
-          enrichedDeployments.push({
-            deploymentId: basicDeployment.deploymentId,
-            versionNumber: basicDeployment.versionNumber,
-            description: basicDeployment.description,
-            manifestFileName: basicDeployment.manifestFileName,
-            updateTime: basicDeployment.updateTime,
-            deploymentConfig: basicDeployment.deploymentConfig,
-            entryPoints: basicDeployment.entryPoints  // Will likely be undefined/empty
-          });
-        }
-      }
-
-      console.error(`✅ Enriched ${enrichedDeployments.length} deployments with detailed information`);
+      console.error(`✅ Enriched ${enrichedDeployments.length} deployments`);
 
       // Log summary of web app URLs found
       const webAppCount = enrichedDeployments.filter(d =>
-        d.entryPoints?.some(ep => ep.entryPointType === 'WEB_APP' && (ep as any).webApp?.url)
+        d.entryPoints?.some((ep: any) => ep.entryPointType === 'WEB_APP' && ep.webApp?.url)
       ).length;
       console.error(`🌐 Found ${webAppCount} deployments with web app URLs`);
 

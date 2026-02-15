@@ -66,6 +66,8 @@ export interface ApplyOptions {
   isBootstrap: boolean;
   accessToken: string;
   confirmDeletions?: boolean;
+  /** Pre-fetched GAS files from diff computation to avoid redundant API calls */
+  prefetchedGasFiles?: GASFile[];
 }
 
 /**
@@ -102,7 +104,7 @@ export class SyncExecutor {
    * @throws SyncExecuteError on failure
    */
   async apply(options: ApplyOptions): Promise<SyncResult> {
-    const { direction, scriptId, operations, localPath, isBootstrap, accessToken, confirmDeletions = false } = options;
+    const { direction, scriptId, operations, localPath, isBootstrap, accessToken, confirmDeletions = false, prefetchedGasFiles } = options;
 
     log.info(`[EXECUTOR] Applying ${direction} sync: +${operations.add.length} ~${operations.update.length} -${operations.delete.length}`);
 
@@ -137,14 +139,15 @@ export class SyncExecutor {
       }
 
       // Execute based on direction
+      let postPushFiles: GASFile[] | undefined;
       if (direction === 'pull') {
         await this.executePull(operations, localPath);
       } else {
-        await this.executePush(operations, scriptId, accessToken);
+        postPushFiles = await this.executePush(operations, scriptId, accessToken, prefetchedGasFiles);
       }
 
-      // Update manifest
-      await this.updateManifest(scriptId, direction, localPath, accessToken);
+      // Update manifest (reuse post-push files to avoid redundant fetch)
+      await this.updateManifest(scriptId, direction, localPath, accessToken, postPushFiles);
 
       // Get new commit SHA (for PULL)
       const newCommitSha = direction === 'pull'
@@ -269,19 +272,20 @@ export class SyncExecutor {
    * We must WRAP these with CommonJS (_main function, __defineModule__ call)
    * before pushing to GAS.
    */
-  private async executePush(operations: SyncDiffResult, scriptId: string, accessToken: string): Promise<void> {
+  private async executePush(operations: SyncDiffResult, scriptId: string, accessToken: string, prefetchedGasFiles?: GASFile[]): Promise<GASFile[]> {
     log.info(`[EXECUTOR] Executing PUSH: ${operations.totalOperations} operations`);
 
-    // Get current GAS files
-    const currentGasFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+    // Use pre-fetched files from diff computation or fetch fresh
+    const currentGasFiles = prefetchedGasFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
 
     // Build complete file list by applying operations (with CommonJS wrapping)
     const newFiles = this.buildCompleteFileList(currentGasFiles, operations);
 
-    // Single atomic API call to update all files
-    await this.gasClient.updateProjectContent(scriptId, newFiles, accessToken);
+    // Single atomic API call to update all files - returns post-push state
+    const updatedFiles = await this.gasClient.updateProjectContent(scriptId, newFiles, accessToken);
 
     log.debug(`[EXECUTOR] Pushed ${newFiles.length} files to GAS`);
+    return updatedFiles;
   }
 
   /**
@@ -500,7 +504,8 @@ export class SyncExecutor {
     scriptId: string,
     direction: 'pull' | 'push',
     localPath: string,
-    accessToken: string
+    accessToken: string,
+    postPushFiles?: GASFile[]
   ): Promise<void> {
     const manifest = new SyncManifest(localPath);
 
@@ -512,8 +517,8 @@ export class SyncExecutor {
       const localFiles = await this.scanLocalFilesForManifest(localPath);
       files = localFiles;
     } else {
-      // Get files from GAS after push (filter out files without source)
-      const gasFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      // Use post-push files from executePush() result, or fetch if not available
+      const gasFiles = postPushFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
       files = gasFiles
         .filter(f => f.source !== undefined)
         .map(f => ({
