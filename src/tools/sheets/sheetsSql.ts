@@ -232,7 +232,7 @@ function generateMutationHints(operation: 'UPDATE' | 'DELETE', affectedRows: num
  */
 export class SheetSqlTool extends BaseTool {
   public name = 'sheet_sql';
-  public description = '[SHEETS] Execute SQL-style operations (SELECT, INSERT, UPDATE, DELETE) on Google Sheets using A1 notation and Google REST APIs';
+  public description = '[SHEETS:SQL] Query Google Sheets data using SQL-like syntax — SELECT, WHERE, ORDER BY, JOIN across sheets. WHEN: reading or analyzing spreadsheet data with filtering and sorting. Example: sheet_sql({spreadsheetId: "...", query: "SELECT A, B WHERE C > 100"})';
 
   public inputSchema = {
     type: 'object',

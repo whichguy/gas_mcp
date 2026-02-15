@@ -6,8 +6,11 @@ import { randomUUID } from 'crypto';
 // Import session manager instead of singleton
 import { SessionAuthManager } from '../auth/sessionManager.js';
 
-// Import local file manager for root initialization  
+// Import local file manager for root initialization
 import { LocalFileManager } from '../utils/localFileManager.js';
+
+// Import elicitation helper for structured user input
+import { ElicitationHelper } from '../utils/elicitation.js';
 
 // Import all tools
 import { AuthTool } from '../tools/auth.js';
@@ -167,6 +170,9 @@ export class MCPGasServer {
   /** Core MCP server instance from the SDK */
   private server: Server;
 
+  /** Elicitation helper for structured user input (MCP 2025-11-25) */
+  private elicitation: ElicitationHelper;
+
   /** PERFORMANCE FIX: Cached tool schemas to avoid creating 40+ tool instances per ListTools request */
   private cachedToolSchemas?: any[];
 
@@ -178,14 +184,10 @@ export class MCPGasServer {
    */
   constructor() {
     this.server = new Server(
-      {
-        name: 'gas-server',
-        version: '1.0.0',
-        capabilities: {
-          tools: {}
-        }
-      }
+      { name: 'gas-server', version: '1.0.0' },
+      { capabilities: { tools: {}, elicitation: {} } as any }
     );
+    this.elicitation = new ElicitationHelper(this.server);
 
     this.setupHandlers();
     this.initializeConfig();
@@ -361,7 +363,8 @@ export class MCPGasServer {
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
-        ...((tool as any).annotations ? { annotations: (tool as any).annotations } : {})
+        ...((tool as any).annotations ? { annotations: (tool as any).annotations } : {}),
+        ...((tool as any).outputSchema ? { outputSchema: (tool as any).outputSchema } : {})
       }));
 
       console.error(`[PERFORMANCE] Cached schemas for ${this.cachedToolSchemas.length} tools`);
@@ -430,7 +433,7 @@ export class MCPGasServer {
           };
         } else {
           // Tool returned plain object, wrap it in MCP format
-          return {
+          const response: any = {
             content: [
               {
                 type: 'text',
@@ -438,6 +441,11 @@ export class MCPGasServer {
               }
             ]
           };
+          // Add structuredContent if tool defines outputSchema
+          if (tool.outputSchema) {
+            response.structuredContent = responseWithSession;
+          }
+          return response;
         }
       } catch (error: any) {
         console.error(`Tool ${name} failed:`, error);

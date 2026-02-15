@@ -49,7 +49,7 @@ interface AiderResult {
  */
 export class RawAiderTool extends BaseTool {
   public name = 'raw_aider';
-  public description = '[FILE:RAW] Token-efficient file editing using fuzzy string matching on raw file content (includes CommonJS wrappers). Use instead of aider when you need to see/edit the CommonJS _main() wrapper. Provides 95%+ token savings vs raw_write.';
+  public description = '[FILE:RAW:AIDER] Fuzzy-match editing on raw content including CommonJS wrappers. WHEN: raw_edit fails due to whitespace differences in wrapper code. AVOID: use aider for normal user code; try raw_edit first. Example: raw_aider({scriptId, path: "Utils.gs", old_string: "...", new_string: "..."})';
 
   public inputSchema = {
     type: 'object',

@@ -41,7 +41,7 @@ import type { WriteParams, WriteResult } from './shared/types.js';
  */
 export class WriteTool extends BaseFileSystemTool {
   public name = 'write';
-  public description = '[FILE] Write file to GAS (NO git auto-commit). For 3+ files, PREFER local edits + rsync. After writes, call git_feature({operation:"commit"}) to save. Auto-wraps CommonJS.';
+  public description = '[FILE:WRITE] Create or fully replace a file with automatic CommonJS wrapping. WHEN: creating new files or replacing entire file content. AVOID: use edit for partial changes (83% fewer tokens); use aider for fuzzy-match edits. Example: write({scriptId, path: "Utils.gs", content: "function add(a,b){return a+b}"})';
 
   public inputSchema = {
     type: 'object',

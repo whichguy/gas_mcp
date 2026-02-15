@@ -19,6 +19,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { GuidanceFragments } from '../utils/guidanceFragments.js';
 import { sortRipgrepResults } from '../utils/ripgrepUtils.js';
 import { generateSearchHints, generateRipgrepHints, mergeHints, SearchHints } from '../utils/searchHints.js';
+import { generateSearchHints as generateResponseSearchHints } from '../utils/responseHints.js';
 
 // Enhanced error types for ripgrep operations
 export class RipgrepError extends Error {
@@ -823,7 +824,7 @@ export class RipgrepSearchEngine extends GrepSearchEngine {
  */
 export class RipgrepTool extends BaseTool {
   public name = 'ripgrep';
-  public description = '[FILE] High-performance search with ripgrep-inspired features including multiple patterns, smart case, context control, and replacement suggestions. Searches clean user code with filename prefix filtering (GAS has no real directories - uses filename prefixes like "utils/helper").';
+  public description = '[SEARCH:ADVANCED] High-performance search with ripgrep-inspired features — multi-pattern, context lines, regex, file type filtering, and match limiting. PREFERRED search tool for complex queries. WHEN: searching with regex, needing context around matches, or filtering by file type. AVOID: use grep for simple single-pattern search. Example: ripgrep({scriptId, patterns: ["import", "require"], contextLines: 2})';
   
   public inputSchema = {
     type: 'object',
@@ -1112,6 +1113,12 @@ export class RipgrepTool extends BaseTool {
       (results as any).hints = hints;
     }
 
+    // Generate response-level hints for LLM guidance
+    const responseHints = generateResponseSearchHints(results.totalMatches, results.truncated);
+    if (Object.keys(responseHints).length > 0) {
+      (results as any).responseHints = responseHints;
+    }
+
     return results;
   }
 
@@ -1217,7 +1224,7 @@ export class RipgrepTool extends BaseTool {
  */
 export class RawRipgrepTool extends BaseTool {
   public name = 'raw_ripgrep';
-  public description = '[FILE:RAW] High-performance search with ripgrep-inspired features on raw file content including CommonJS wrappers. Use instead of ripgrep when you need to see/edit the CommonJS _main() wrapper. Multiple patterns, advanced regex, and performance stats.';
+  public description = '[SEARCH:RAW:ADVANCED] High-performance search on raw content including CommonJS wrappers — multi-pattern, context, regex. WHEN: searching for module system patterns, _main() wrappers, or loadNow settings. AVOID: use ripgrep for normal code search. Example: raw_ripgrep({scriptId, patterns: ["loadNow", "__events__"]})';
   
   public inputSchema = {
     type: 'object',

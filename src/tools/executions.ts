@@ -13,7 +13,7 @@ import { ValidationError } from '../errors/mcpErrors.js';
  */
 export class ExecutionsTool extends BaseTool {
   public name = 'executions';
-  public description = '[MONITOR] Browse execution history and metadata. Operations: list (recent executions), get (process details). LIMITATION: Detailed logs require exec() which captures Logger.log() directly. This tool provides execution metadata only.';
+  public description = '[LOGS:EXECUTIONS] View Apps Script execution history — list recent executions or get detailed execution info. WHEN: checking execution status, timing, or error details. Example: executions({scriptId, operation: "list"})';
 
   public inputSchema = {
     type: 'object',

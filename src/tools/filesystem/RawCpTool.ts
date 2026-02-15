@@ -9,7 +9,7 @@ import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
  */
 export class RawCpTool extends BaseFileSystemTool {
   public name = 'raw_cp';
-  public description = '[FILE:RAW] Copy files exactly without CommonJS processing. Preserves all wrappers and system code. Use instead of cp when you need to see/edit the CommonJS _main() wrapper.';
+  public description = '[FILE:RAW:COPY] Remote-to-remote file copy with merge strategies — copies between projects or within a project preserving exact content. WHEN: cross-project file copying or copying with merge strategy. AVOID: use cp for simple in-project copies. Example: raw_cp({scriptId, from: "Utils.gs", to: "Utils.gs", targetScriptId: "..."})';
 
   public inputSchema = {
     type: 'object',

@@ -13,7 +13,18 @@ import { computeGitSha1, computeSha256, computeMd5 } from '../../utils/hashUtils
  */
 export class FileStatusTool extends BaseFileSystemTool {
   public name = 'file_status';
-  public description = '[FILE] Get comprehensive file status with SHA checksums and metadata. Supports pattern matching for multiple files, Git-compatible SHA-1, SHA-256, MD5 hashes, and rich file metadata including line counts, encoding, and timestamps.';
+  public description = '[FILE:STATUS] Get comprehensive file metadata — checksums (git-sha1, SHA-256, MD5), size, type, modification status, and sync state. WHEN: verifying file integrity, checking sync status, or comparing versions. AVOID: use cat to read content; use ls for simple file listing. Example: file_status({scriptId, path: "Utils.gs", hashTypes: ["git-sha1"]})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      path: { type: 'string' },
+      type: { type: 'string', enum: ['server_js', 'html', 'json'] },
+      size: { type: 'number' },
+      checksums: { type: 'object', description: 'Hash values keyed by algorithm' },
+      syncStatus: { type: 'string', description: 'Local vs remote sync state' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',

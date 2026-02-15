@@ -20,7 +20,7 @@ import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
  */
 export class CpTool extends BaseFileSystemTool {
   public name = 'cp';
-  public description = '[FILE] Copy files in GAS (NO git auto-commit). After copy, call git_feature({operation:"commit"}) to save. Unwraps source module, rewraps for destination. Like Unix cp.';
+  public description = '[FILE:COPY] Copy a file within a GAS project. WHEN: duplicating files or creating variants. AVOID: use mv to move without keeping original; use raw_cp for cross-project copies. Example: cp({scriptId, from: "Utils.gs", to: "UtilsBackup.gs"})';
 
   public inputSchema = {
     type: 'object',

@@ -14,11 +14,8 @@ export class MCPTestClient {
 
   constructor() {
     this.client = new Client(
-      {
-        name: 'gas-test-client',
-        version: '1.0.0',
-        capabilities: {}
-      }
+      { name: 'gas-test-client', version: '1.0.0' },
+      { capabilities: {} }
     );
   }
 

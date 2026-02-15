@@ -74,7 +74,7 @@ interface AiderResult {
  */
 export class AiderTool extends BaseTool {
   public name = 'aider';
-  public description = '[FILE] Token-efficient fuzzy editing (NO git auto-commit). For 3+ files, PREFER local edits + rsync. After edits, call git_feature({operation:"commit"}) to save. 95%+ token savings vs write.';
+  public description = '[FILE:AIDER] AI-assisted file editing with fuzzy string matching — tolerates whitespace and minor differences in old_string. WHEN: edit fails due to whitespace/formatting mismatches, or when exact string match is difficult. AVOID: use edit first (faster, deterministic); use write for full replacement. Example: aider({scriptId, path: "Utils.gs", old_string: "function add(a, b)", new_string: "function add(a, b, c)"})';
 
   public inputSchema = {
     type: 'object',

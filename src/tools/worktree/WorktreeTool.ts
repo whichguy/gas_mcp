@@ -115,26 +115,7 @@ function getStateFromResult(result: object): WorktreeState | undefined {
  */
 export class WorktreeTool extends BaseFileSystemTool {
   public name = 'worktree';
-  public description = `[WORKTREE] Parallel GAS development with isolated worktrees sharing git history.
-
-Operations:
-add     → Create worktree: scriptId + git branch (claimImmediately=true default)
-claim   → Get READY worktree or create new (createIfNone=true default)
-release → Return CLAIMED→READY (checks uncommitted unless force)
-merge   → Squash merge to parent + push to GAS (pushToRemote=true default)
-remove  → Delete: git worktree + branch + trash GAS project
-list    → Filter by parentScriptId, state[]
-status  → Divergence info: filesOnlyIn*, filesModifiedIn*, conflicts
-sync    → Pull parent changes using baseHashes for conflict detection
-batch-add → Create N worktrees (1-10) with concurrency limit 3
-cleanup → Remove orphans: stale claims (>24h), deleted GAS/local, FAILED
-
-States: CREATING→READY→CLAIMED→MERGING→MERGED | FAILED | ORPHAN_*
-
-Typical workflows:
-1. Single agent: add(parent,branch)→develop→merge(wt)
-2. Pool: batch-add(parent,3,prefix)→claim(parent,agent)→develop→merge→claim next
-3. Cleanup: cleanup(parent,dryRun:true)→review→cleanup(parent)`;
+  public description = '[GIT:WORKTREE] Manage git worktrees for parallel development — add, claim, release, merge, remove, list, status, sync. WHEN: enabling multiple agents to work on the same project concurrently. Example: worktree({scriptId, operation: "add", featureName: "feature-a"})';
 
   public inputSchema = {
     type: 'object',

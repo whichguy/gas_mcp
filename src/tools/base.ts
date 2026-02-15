@@ -114,6 +114,9 @@ export abstract class BaseTool implements Tool {
   /** JSON schema defining input parameters and validation rules */
   public abstract inputSchema: any;
 
+  /** Optional JSON schema defining structured output format (MCP 2025-11-25) */
+  public outputSchema?: { type: 'object'; properties?: Record<string, object>; required?: string[]; [key: string]: unknown };
+
   /** 
    * Whether this tool requires authentication to function
    * 
@@ -525,9 +528,10 @@ export abstract class BaseTool implements Tool {
    */
   protected validate = {
     scriptId: (scriptId: string, operation: string): string => {
-      const context = this.createErrorContext(operation, { scriptId });
-      MCPValidator.validateScriptId(scriptId, context);
-      return scriptId;
+      const coerced = MCPValidator.coerceScriptId(scriptId);
+      const context = this.createErrorContext(operation, { scriptId: coerced });
+      MCPValidator.validateScriptId(coerced, context);
+      return coerced;
     },
 
     functionName: (functionName: string, operation: string): string => {

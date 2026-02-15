@@ -6,6 +6,7 @@ import { SchemaFragments } from '../../utils/schemaFragments.js';
 import { toResourcePath } from '../../utils/fileListCache.js';
 import { executeServerCode } from '../../utils/serverSideExec.js';
 import { log } from '../../utils/logger.js';
+import { generateLsHints } from '../../utils/responseHints.js';
 import type { ListParams, ListResult } from './shared/types.js';
 
 /**
@@ -16,7 +17,16 @@ import type { ListParams, ListResult } from './shared/types.js';
  */
 export class LsTool extends BaseFileSystemTool {
   public name = 'ls';
-  public description = '[FILE] List files and directories in Google Apps Script project. Shows file types and timestamps with wildcard pattern support. Like Unix ls but works with GAS flat file structure using filename prefixes.';
+  public description = '[FILE:LIST] List project files or configured projects. WHEN: browsing project contents or discovering available projects. AVOID: use find for pattern-based file search; use file_status for detailed file info. Example: ls({scriptId}) or ls({}) for project list';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      items: { type: 'array', description: 'List of files or projects' },
+      total: { type: 'number', description: 'Total item count' },
+      path: { type: 'string', description: 'Listed path' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -119,19 +129,22 @@ export class LsTool extends BaseFileSystemTool {
   private async listProjects(detailed: boolean, accessToken?: string): Promise<any> {
     const projects = await this.gasClient.listProjects(50, accessToken);
 
+    const items = projects.map((project: any) => ({
+      name: project.scriptId,
+      type: 'project',
+      title: project.title,
+      ...(detailed && {
+        createTime: project.createTime,
+        updateTime: project.updateTime,
+        parentId: project.parentId
+      })
+    }));
+    const hints = generateLsHints(items.length, false);
     return {
       type: 'projects',
       path: '',
-      items: projects.map((project: any) => ({
-        name: project.scriptId,
-        type: 'project',
-        title: project.title,
-        ...(detailed && {
-          createTime: project.createTime,
-          updateTime: project.updateTime,
-          parentId: project.parentId
-        })
-      }))
+      items,
+      hints
     };
   }
 
@@ -196,6 +209,7 @@ export class LsTool extends BaseFileSystemTool {
       };
     });
 
+    const hints = generateLsHints(items.length, true);
     return {
       type: 'files',
       path: directory ? `${scriptId}/${directory}` : scriptId,
@@ -207,7 +221,8 @@ export class LsTool extends BaseFileSystemTool {
       matchedFiles: filteredFiles.length,
       items,
       totalFiles: metadata.length,
-      ...(hashWarning && { warning: hashWarning })
+      ...(hashWarning && { warning: hashWarning }),
+      hints
     };
   }
 

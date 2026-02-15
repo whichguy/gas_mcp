@@ -202,6 +202,17 @@ export class MCPValidator {
   }
 
   /**
+   * Coerce a Google Apps Script URL or raw ID into a bare script ID.
+   * Accepts: "https://script.google.com/home/projects/ABC123/edit" → "ABC123"
+   * Accepts: "ABC123" → "ABC123" (passthrough)
+   */
+  static coerceScriptId(input: string): string {
+    if (!input || typeof input !== 'string') return input;
+    const urlMatch = input.match(/\/projects\/([a-zA-Z0-9_-]+)/);
+    return urlMatch ? urlMatch[1] : input;
+  }
+
+  /**
    * Validate Google Apps Script ID format
    * **Consolidates scriptId validation** from multiple tools
    */

@@ -38,15 +38,16 @@ export class AuthenticationError extends MCPGasError {
  * Input validation error
  */
 export class ValidationError extends MCPGasError {
-  constructor(field: string, value: any, expected: string) {
+  constructor(field: string, value: any, expected: string, hints?: { recovery?: string; example?: string }) {
     // Create more user-friendly error message
     const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
     const message = `Invalid ${field}: expected ${expected}, got "${displayValue}"`;
-    
+
     super(message, -32001, {
       field,
       value,
-      expected
+      expected,
+      ...(hints && { hints })
     });
   }
 }

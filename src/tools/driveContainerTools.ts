@@ -59,7 +59,7 @@ export interface CreateScriptResult {
 export class FindDriveScriptTool extends BaseTool {
   
   public name = 'find_drive_script';
-  public description = '[SEARCH] Find Drive containers (Sheets, Docs, Forms, Sites) and check Apps Script association status. Returns scriptId for integration with exec and other MCP functions.';
+  public description = '[DRIVE:FIND] Search for Apps Script projects bound to Google Drive files (Sheets, Docs, Slides). WHEN: finding container-bound scripts by document name or ID. Example: find_drive_script({query: "Budget Tracker"})';
   public inputSchema = {
     type: 'object',
     properties: {
@@ -318,7 +318,7 @@ export class FindDriveScriptTool extends BaseTool {
 export class CreateScriptTool extends BaseTool {
   
   public name = 'create_script';
-  public description = '[SEARCH] Create new Apps Script project and bind to a Drive container. Generates container-specific starter code. Returns scriptId for integration with exec and other MCP functions.';
+  public description = '[DRIVE:CREATE] Create a new container-bound Apps Script project attached to a Google Drive file. WHEN: creating scripts bound to specific Sheets, Docs, or Slides. Example: create_script({title: "My Script", parentId: "spreadsheet-id"})';
   public inputSchema = {
     type: 'object',
     properties: {

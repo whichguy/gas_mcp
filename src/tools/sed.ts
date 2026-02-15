@@ -74,7 +74,7 @@ interface ReplacementOperation {
  */
 export class SedTool extends BaseTool {
   public name = 'sed';
-  public description = '[FILE] sed-style find/replace with auto CommonJS processing. For 3+ files, PREFER local edits + rsync. Supports regex patterns with capture groups ($1, $2), multi-pattern ops, file filtering.';
+  public description = '[FILE:SED] sed-style find/replace with regex support and capture groups ($1, $2) on clean user code. WHEN: bulk text replacements across a file using regex patterns. AVOID: use edit for simple string replacement; use ripgrep to preview matches first. Example: sed({scriptId, path: "Utils.gs", pattern: "s/oldFunc/newFunc/g"})';
 
   public inputSchema = {
     type: 'object',
@@ -332,7 +332,7 @@ export class SedTool extends BaseTool {
  */
 export class RawSedTool extends BaseTool {
   public name = 'raw_sed';
-  public description = '[FILE:RAW] sed-style find/replace on raw file content including CommonJS wrappers and system code. Use instead of sed when you need to see/edit the CommonJS _main() wrapper. Operates on complete file content (same as raw_cat shows).';
+  public description = '[FILE:RAW:SED] sed-style find/replace on raw content including CommonJS wrappers. WHEN: modifying _main() wrapper code or module infrastructure with regex patterns. AVOID: use sed for normal user code. Example: raw_sed({scriptId, path: "Utils.gs", pattern: "s/loadNow: false/loadNow: true/g"})';
 
   public inputSchema = {
     type: 'object',

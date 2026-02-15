@@ -930,7 +930,7 @@ export class DeployListTool extends BaseTool {
  */
 export class ProjectCreateTool extends BaseTool {
   public name = 'project_create';
-  public description = '[DEPLOY] Creates a new Google Apps Script project. This is typically the FIRST step when building new automation or when you need a fresh project for code execution.';
+  public description = '[PROJECT:CREATE] Create a new GAS project with full infrastructure — sets up dev/staging/prod deployments, git repo, and CommonJS module system. WHEN: starting a new GAS project from scratch. Example: project_create({title: "My App"})';
   
   public inputSchema = {
     type: 'object',
@@ -1210,7 +1210,7 @@ export class ProjectCreateTool extends BaseTool {
  */
 export class ProjectInitTool extends BaseTool {
   public name = 'project_init';
-  public description = '[DEPLOY] Initialize/update existing Google Apps Script projects with CommonJS module system and execution infrastructure. Use this to retrofit projects that were not created with project_create or are missing required infrastructure files. Automatically enforces critical file ordering: require.gs at position 0, __mcp_exec.gs at position 1.';
+  public description = '[PROJECT:INIT] Initialize an existing GAS project with CommonJS infrastructure — installs require.gs, ConfigManager, and __mcp_exec. WHEN: adding module system to an existing project or fixing file ordering. Example: project_init({scriptId})';
 
   public inputSchema = {
     type: 'object',

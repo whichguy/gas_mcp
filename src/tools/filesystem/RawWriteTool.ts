@@ -9,6 +9,7 @@ import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMe
 import { join, dirname } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, CONTENT_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA } from './shared/schemas.js';
+import { validateCommonJsIntegrity } from '../../utils/moduleWrapper.js';
 
 /**
  * Write raw file contents with explicit project paths
@@ -18,7 +19,7 @@ import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, CONTENT_SCHEMA, ACCESS_TOKEN_SCHEMA, FIL
  */
 export class RawWriteTool extends BaseFileSystemTool {
   public name = 'raw_write';
-  public description = '[FILE:RAW] Write raw file contents with explicit project paths. DANGER: Completely overwrites files without CommonJS processing or merging. Use instead of write when you need to see/edit the CommonJS _main() wrapper.';
+  public description = '[FILE:RAW:WRITE] Write file content exactly as provided — no CommonJS wrapping applied. WHEN: writing CommonJS infrastructure files, updating system wrappers, or files that need exact content. AVOID: use write for normal user code (auto-wraps). Example: raw_write({scriptId, path: "require.gs", content: "...", type: "server_js"})';
 
   public inputSchema = {
     type: 'object',
@@ -157,6 +158,11 @@ export class RawWriteTool extends BaseFileSystemTool {
       // Warning only - allow operation to proceed
     }
 
+    // Content integrity validation (non-blocking warnings)
+    const contentWarnings = validateCommonJsIntegrity(
+      filename, content, gasFileType, 'raw-write'
+    );
+
     // After validation passes, check authentication
     const accessToken = await this.getAuthToken(params);
 
@@ -176,7 +182,8 @@ export class RawWriteTool extends BaseFileSystemTool {
         position,
         accessToken,
         projectPath,
-        gitDiscovery
+        gitDiscovery,
+        contentWarnings
       );
     }
 
@@ -382,6 +389,11 @@ export class RawWriteTool extends BaseFileSystemTool {
       totalFiles: updatedFiles.length
     };
 
+    // Add content integrity warnings if any
+    if (contentWarnings.length > 0) {
+      result.warnings = contentWarnings;
+    }
+
     // Add git detection results if available
     if (gitDetection) {
       result.git = gitDetection;
@@ -415,7 +427,8 @@ export class RawWriteTool extends BaseFileSystemTool {
     position: number | undefined,
     accessToken: string,
     projectPath: string,
-    gitDiscovery: any
+    gitDiscovery: any,
+    contentWarnings: string[]
   ): Promise<any> {
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
     const { writeLocalAndValidateWithHooks, revertGitCommit } = await import('../../utils/hookIntegration.js');
@@ -575,6 +588,11 @@ export class RawWriteTool extends BaseFileSystemTool {
           breadcrumbsPulled: gitDiscovery.breadcrumbsPulled
         }
       };
+
+      // Add content integrity warnings if any
+      if (contentWarnings.length > 0) {
+        result.warnings = contentWarnings;
+      }
 
       // Add git breadcrumb hint for .git/* files
       const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);

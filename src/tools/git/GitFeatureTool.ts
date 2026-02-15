@@ -28,7 +28,7 @@ const execAsync = promisify(exec);
  */
 export class GitFeatureTool extends BaseFileSystemTool {
   public name = 'git_feature';
-  public description = '[GIT] PROACTIVE: Start BEFORE major features, commit AFTER changes, finish WHEN complete. Git feature branches: start (create branch), commit (save changes), push (backup/share), finish (squash merge to main), rollback (abandon), list (show branches), switch (change branch). Write tools do NOT auto-commit - use this tool explicitly.';
+  public description = '[GIT] Feature branch workflow — start, commit, push, finish, rollback, list, and switch branches in the local git mirror. WHEN: managing git history for GAS projects. Example: git_feature({scriptId, operation: "start", featureName: "user-auth"})';
 
   public inputSchema = {
     type: 'object',
