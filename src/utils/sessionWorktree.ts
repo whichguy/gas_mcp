@@ -118,11 +118,13 @@ export class SessionWorktreeManager {
       await execGitSpawn(['worktree', 'add', worktreePath, '-b', branchName], mainRepoPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('EEXIST') || msg.includes('already exists') || msg.includes('already checked out')) {
+      if (msg.includes('EEXIST') || msg.includes('already exists') || msg.includes('already used by worktree')) {
         log.warn(`[SESSION-WT] Stale worktree detected, cleaning up and retrying: ${msg}`);
-        try { await fs.rm(worktreePath, { recursive: true, force: true }); } catch {}
-        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch {}
-        try { await execGitSpawn(['worktree', 'prune'], mainRepoPath); } catch {}
+        try { await fs.rm(worktreePath, { recursive: true, force: true }); } catch (e) { log.debug(`[SESSION-WT] cleanup rm: ${e}`); }
+        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch (e) { log.debug(`[SESSION-WT] cleanup branch -D: ${e}`); }
+        try { await execGitSpawn(['worktree', 'prune'], mainRepoPath); } catch (e) { log.debug(`[SESSION-WT] cleanup prune: ${e}`); }
+        // Retry branch delete after prune (prune may have freed the branch reference)
+        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch (e) { log.debug(`[SESSION-WT] cleanup branch -D retry: ${e}`); }
         // Retry once
         await execGitSpawn(['worktree', 'add', worktreePath, '-b', branchName], mainRepoPath);
       } else {

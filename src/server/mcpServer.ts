@@ -185,7 +185,7 @@ export class MCPGasServer {
   constructor() {
     this.server = new Server(
       { name: 'gas-server', version: '1.0.0' },
-      { capabilities: { tools: {}, elicitation: {} } as any }
+      { capabilities: { tools: {} } }
     );
     this.elicitation = new ElicitationHelper(this.server);
 
@@ -427,10 +427,15 @@ export class MCPGasServer {
         // Others return plain objects that need wrapping
         if (result && Array.isArray(result.content)) {
           // Tool already returned proper MCP format, just add sessionId
-          return {
+          const mcpResponse: any = {
             ...result,
             sessionId: sessionId
           };
+          // Add structuredContent if tool defines outputSchema
+          if (tool.outputSchema) {
+            mcpResponse.structuredContent = responseWithSession;
+          }
+          return mcpResponse;
         } else {
           // Tool returned plain object, wrap it in MCP format
           const response: any = {
