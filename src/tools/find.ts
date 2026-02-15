@@ -42,7 +42,7 @@ interface FindOptions {
  */
 export class FindTool extends BaseTool {
   public name = 'find';
-  public description = '[FILE] Find files in GAS projects using shell-like find syntax with virtual file names';
+  public description = '[SEARCH:FILES] Find files by name pattern with shell-like glob matching — uses virtual (clean) filenames. WHEN: locating files by name pattern (e.g., "*Test*", "lib/*"). AVOID: use grep/ripgrep to search file contents; use ls for simple listing. Example: find({scriptId, pattern: "*Utils*"})';
   
   public inputSchema = {
     type: 'object',
@@ -319,7 +319,7 @@ export class FindTool extends BaseTool {
  */
 export class RawFindTool extends BaseTool {
   public name = 'raw_find';
-  public description = '[FILE:RAW] Find files in GAS projects showing actual GAS file names. Use instead of find when you need to see/edit the CommonJS _main() wrapper.';
+  public description = '[SEARCH:FILES:RAW] Find files using actual GAS filenames including .gs extension. WHEN: finding files by their exact GAS-internal names. AVOID: use find for virtual name matching. Example: raw_find({scriptId, pattern: "*.gs"})';
   
   public inputSchema = {
     type: 'object',

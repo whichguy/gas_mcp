@@ -24,7 +24,7 @@ const execFileAsync = promisify(execFile);
  */
 export class ConfigTool extends BaseTool {
   public name = 'config';
-  public description = '[GIT] Generic configuration tool for managing MCP Gas settings including sync folder locations, project settings, and other configuration options.';
+  public description = '[CONFIG] Read and write project configuration values via ConfigManager — hierarchical 5-level scope (userDoc/doc/user/domain/script). WHEN: managing project settings, API keys, or feature flags. Example: config({scriptId, operation: "get", key: "API_KEY"})';
 
   public inputSchema = {
     type: 'object',

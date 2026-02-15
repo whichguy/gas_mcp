@@ -270,7 +270,7 @@ export class DepsTool extends BaseTool {
   private gasClient: GASClient;
 
   public name = 'deps';
-  public description = '[FILE] Analyzes CommonJS module dependencies and relationships in Google Apps Script projects. Shows imports, exports, circular dependencies, and dependency graphs.';
+  public description = '[ANALYSIS:DEPS] Generate dependency graph for CommonJS modules — shows require() relationships, circular dependencies, and load order. WHEN: understanding module structure or debugging load order issues. Example: deps({scriptId})';
 
   constructor(authManager?: any) {
     super(authManager);

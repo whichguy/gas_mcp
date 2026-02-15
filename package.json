@@ -62,7 +62,7 @@
   "author": "MCP Gas Server",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.4.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/diff": "^7.0.2",
     "@types/turndown": "^5.0.5",
     "diff": "^8.0.3",

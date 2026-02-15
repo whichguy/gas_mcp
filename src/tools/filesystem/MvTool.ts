@@ -17,7 +17,7 @@ import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
  */
 export class MvTool extends BaseFileSystemTool {
   public name = 'mv';
-  public description = '[FILE] Move/rename files in GAS (NO git auto-commit). After move, call git_feature({operation:"commit"}) to save. Supports cross-project moves and CommonJS module name updates. Like Unix mv.';
+  public description = '[FILE:MOVE] Move or rename a file within a GAS project. WHEN: renaming files or reorganizing project structure. AVOID: use cp to keep the original; use rm+write for cross-project moves. Example: mv({scriptId, from: "Old.gs", to: "New.gs"})';
 
   public inputSchema = {
     type: 'object',

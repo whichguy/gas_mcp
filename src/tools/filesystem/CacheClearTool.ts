@@ -14,7 +14,7 @@ import { join } from 'path';
  */
 export class CacheClearTool extends BaseFileSystemTool {
   public name = 'cache_clear';
-  public description = '[FILE] Clear cached GAS metadata from local files. Removes extended attributes containing updateTime and fileType, forcing subsequent operations to use API calls for fresh data. Useful for debugging and troubleshooting sync issues.';
+  public description = '[FILE:CACHE] Clear local metadata cache for a project. WHEN: cache appears stale or after manual remote changes. AVOID: usually unnecessary — cache auto-invalidates on writes. Example: cache_clear({scriptId})';
 
   public inputSchema = {
     type: 'object',

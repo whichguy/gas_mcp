@@ -21,6 +21,7 @@ import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, PREFER_LOCAL_SCHEMA } from './shared/schemas.js';
 import { getGitBreadcrumbHint } from '../../utils/gitBreadcrumbHints.js';
+import { generateReadHints } from '../../utils/responseHints.js';
 import type { CatParams, FileResult } from './shared/types.js';
 
 /**
@@ -31,7 +32,18 @@ import type { CatParams, FileResult } from './shared/types.js';
  */
 export class CatTool extends BaseFileSystemTool {
   public name = 'cat';
-  public description = '[FILE] Read file contents from Google Apps Script project. Automatically unwraps CommonJS modules to show clean user code for editing. Like Unix cat but works with GAS projects and handles module processing.';
+  public description = '[FILE:READ] Read file content with automatic CommonJS unwrapping — returns clean user code. WHEN: reading any file to view or prepare for editing. AVOID: use raw_cat to see full CommonJS _main() wrappers; use edit for modifications. Example: cat({scriptId, path: "Utils.gs"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      content: { type: 'string', description: 'File content (unwrapped from CommonJS)' },
+      path: { type: 'string', description: 'Resolved file path' },
+      type: { type: 'string', enum: ['server_js', 'html', 'json'], description: 'GAS file type' },
+      moduleOptions: { type: 'object', description: 'CommonJS module options (loadNow, hoistedFunctions, etc.)' },
+      size: { type: 'number', description: 'Content size in bytes' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -232,6 +244,10 @@ export class CatTool extends BaseFileSystemTool {
                       await writeFile(localPath, result.content, 'utf-8');
                       result.savedTo = localPath;
                     }
+
+                    // Add response hints
+                    const fastPathHints = generateReadHints(filename, result.moduleOptions);
+                    result.hints = fastPathHints;
 
                     // Optimized path success - return with hash-verified local content
                     console.error(`✅ [SYNC] Using cached local content (hash: ${cachedHash.slice(0, 8)}...)`);
@@ -494,6 +510,10 @@ export class CatTool extends BaseFileSystemTool {
       await writeFile(localPath, result.content, 'utf-8');
       result.savedTo = localPath;
     }
+
+    // Add response hints
+    const hints = generateReadHints(filename, result.moduleOptions);
+    result.hints = hints;
 
     return result;
   }

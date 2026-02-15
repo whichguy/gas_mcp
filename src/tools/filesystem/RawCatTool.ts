@@ -15,7 +15,7 @@ import { mkdir, writeFile } from 'fs/promises';
  */
 export class RawCatTool extends BaseFileSystemTool {
   public name = 'raw_cat';
-  public description = '[FILE:RAW] Read raw file contents with full CommonJS wrappers and system code. Shows complete file including _main() function and module infrastructure. Use instead of cat when you need to see/edit the CommonJS _main() wrapper.';
+  public description = '[FILE:RAW:READ] Read file with full CommonJS wrappers visible — shows _main() function and module infrastructure. WHEN: debugging module system issues, inspecting loadNow/hoistedFunctions, or viewing exact GAS source. AVOID: use cat for clean user code. Example: raw_cat({scriptId, path: "Utils.gs"})';
 
   public inputSchema = {
     type: 'object',

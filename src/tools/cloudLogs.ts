@@ -88,7 +88,7 @@ interface CloudLogsResponse {
  */
 export class CloudLogsTool extends BaseTool {
   public name = 'cloud_logs';
-  public description = '[MONITOR] Fetch historical Logger.log() output from Apps Script executions via Cloud Logging API. Auto-discovers GCP project ID. Returns paginated results with dynamic LLM hints.';
+  public description = '[LOGS:CLOUD] Browse Cloud Logging entries for a GAS project — list recent logs or get detailed log entries. WHEN: debugging server-side errors, viewing execution logs, or monitoring. Example: cloud_logs({scriptId, operation: "list"})';
 
   public inputSchema = {
     type: 'object',

@@ -19,7 +19,7 @@ import { join as pathJoin } from 'path';
  */
 export class RmTool extends BaseFileSystemTool {
   public name = 'rm';
-  public description = '[FILE] Remove files from GAS (NO git auto-commit). After deletion, call git_feature({operation:"commit"}) to save. Like Unix rm but works with GAS flat file structure.';
+  public description = '[FILE:DELETE] Remove a file from a GAS project. WHEN: deleting files no longer needed. AVOID: use mv to rename instead of delete+create. Example: rm({scriptId, path: "OldUtils.gs"})';
 
   public inputSchema = {
     type: 'object',

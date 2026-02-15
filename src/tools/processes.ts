@@ -8,7 +8,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
  */
 export class ProcessListTool extends BaseTool {
   public name = 'process_list';
-  public description = '[MONITOR] List information about processes made by or on behalf of a user, such as process type and current status. Monitor script execution history and performance.';
+  public description = '[PROCESS] List active Apps Script processes — shows running executions with status and duration. WHEN: checking for stuck or long-running executions. Example: process_list({scriptId})';
   
   public inputSchema = {
     type: 'object',

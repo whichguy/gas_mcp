@@ -27,6 +27,7 @@ import {
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { GuidanceFragments } from '../utils/guidanceFragments.js';
 import { generateSearchHints, SearchHints } from '../utils/searchHints.js';
+import { generateSearchHints as generateResponseSearchHints } from '../utils/responseHints.js';
 
 /**
  * grep - Search clean user code (unwrapped from CommonJS)
@@ -37,7 +38,7 @@ import { generateSearchHints, SearchHints } from '../utils/searchHints.js';
  */
 export class GrepTool extends BaseTool {
   public name = 'grep';
-  public description = '[FILE] Search file contents in Google Apps Script project. For advanced searches, ripgrep is STRONGLY RECOMMENDED over grep - it provides multi-pattern search, smart case, context control, and better performance. Use grep only for simple single-pattern searches. Automatically unwraps CommonJS modules to show clean user code.';
+  public description = '[SEARCH] Simple single-pattern content search across project files — returns matching lines with context. WHEN: searching for a specific string or simple pattern. AVOID: use ripgrep for multi-pattern, advanced regex, or context control. Example: grep({scriptId, pattern: "processData"})';
   
   public inputSchema = {
     type: 'object',
@@ -251,6 +252,12 @@ export class GrepTool extends BaseTool {
       (results as any).hints = hints;
     }
 
+    // Generate response-level hints for LLM guidance
+    const responseHints = generateResponseSearchHints(results.totalMatches, results.truncated);
+    if (Object.keys(responseHints).length > 0) {
+      (results as any).responseHints = responseHints;
+    }
+
     return results;
   }
 
@@ -399,7 +406,7 @@ export class GrepTool extends BaseTool {
  */
 export class RawGrepTool extends BaseTool {
   public name = 'raw_grep';
-  public description = '[FILE:RAW] Search file contents with explicit project ID control and full content including CommonJS wrappers. Use instead of grep when you need to see/edit the CommonJS _main() wrapper. Always makes direct API calls.';
+  public description = '[SEARCH:RAW] Search full file content including CommonJS wrappers — searches _main(), module.exports, etc. WHEN: searching for module system patterns or wrapper code. AVOID: use grep for normal code search. Example: raw_grep({scriptId, pattern: "loadNow"})';
   
   public inputSchema = {
     type: 'object',

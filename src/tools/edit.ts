@@ -72,7 +72,7 @@ interface EditResult {
  */
 export class EditTool extends BaseTool {
   public name = 'edit';
-  public description = '[FILE] Token-efficient file editing (NO git auto-commit). For 3+ files, PREFER local edits + rsync. After edits, call git_feature({operation:"commit"}) to save. 83% token savings vs write.';
+  public description = '[FILE:EDIT] Token-efficient partial file update via exact string matching — 83% fewer tokens than write for small changes. WHEN: modifying specific sections of a file (functions, imports, config). AVOID: use write for full file replacement; use aider for fuzzy matching when exact string is hard to specify. Example: edit({scriptId, path: "Utils.gs", old_string: "return a+b", new_string: "return a + b"})';
 
   public inputSchema = {
     type: 'object',

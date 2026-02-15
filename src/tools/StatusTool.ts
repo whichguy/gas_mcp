@@ -31,7 +31,7 @@ const ALL_SECTIONS: Section[] = ['auth', 'project', 'git', 'deploy', 'locks', 'c
 
 export class StatusTool extends BaseTool {
   public name = 'status';
-  public description = '[STATUS] Unified project health dashboard. Returns auth, git, deployment, lock, cache, and sync status in one call.';
+  public description = '[STATUS] Project health dashboard — shows sync state, lock status, git branch, uncommitted changes, and deployment info. WHEN: diagnosing issues or checking overall project state. Example: status({scriptId})';
 
   public inputSchema = {
     type: 'object',

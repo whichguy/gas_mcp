@@ -25,7 +25,7 @@ const ENV_TAGS = {
  */
 export class DeployTool extends BaseTool {
   public name = 'deploy';
-  public description = '[DEPLOY] Manage deployments across dev/staging/prod environments with version control and promotion workflow';
+  public description = '[DEPLOY] Consolidated deployment workflow — promote, rollback, status, and reset across dev/staging/prod environments. WHEN: deploying code, checking deployment status, or rolling back. Example: deploy({scriptId, operation: "promote", environment: "staging"})';
 
   public inputSchema = {
     type: 'object',

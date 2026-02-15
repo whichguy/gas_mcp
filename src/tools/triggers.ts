@@ -10,7 +10,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
  */
 export class TriggerTool extends BaseTool {
   public name = 'trigger';
-  public description = '[MONITOR] Manage installable triggers for Google Apps Script projects with operations: list, create, delete';
+  public description = '[TRIGGER] Manage Apps Script triggers — list, create, and delete time-based or event-driven triggers. WHEN: scheduling functions or setting up event handlers (onEdit, onOpen, etc.). Example: trigger({scriptId, operation: "list"})';
 
   public inputSchema = {
     type: 'object' as const,

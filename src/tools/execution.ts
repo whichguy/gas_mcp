@@ -23,6 +23,7 @@ import { buildMultiFileCollision, NO_COLLISIONS } from '../types/collisionTypes.
 import { fileNameMatches } from '../api/pathParser.js';
 import { validateCommonJSOrdering, formatCommonJSOrderingIssues } from '../utils/validation.js';
 import { generateExecHints, generateInfrastructureHints, mergeExecHints, ExecHints } from '../utils/execHints.js';
+import { generateExecHints as generateExecResponseHints } from '../utils/responseHints.js';
 import type { InfrastructureStatus } from '../types/infrastructureTypes.js';
 import open from 'open';
 import * as fs from 'fs';
@@ -321,7 +322,7 @@ import { performDomainAuth } from './execution/auth/domain-auth.js';
  */
 export class ExecApiTool extends BaseTool {
   public name = 'exec_api';
-  public description = '[EXEC] Execute a function in a Google Apps Script project. Supports direct function calls or CommonJS module functions via moduleName parameter. Transforms calls into JavaScript and delegates to exec for execution.';
+  public description = '[EXEC:API] Call a named function with parameters via Apps Script API — structured alternative to exec. WHEN: calling exported functions with typed arguments. AVOID: use exec for ad-hoc JS statements or require() calls. Example: exec_api({scriptId, functionName: "processData", parameters: [1, 2]})';
 
   public inputSchema = {
     type: 'object',
@@ -469,8 +470,18 @@ export class ExecApiTool extends BaseTool {
  */
 export class ExecTool extends BaseTool {
   public name = 'exec';
-  public description = '[EXEC] ADVANCED: Execute JavaScript with explicit script ID. Use exec for normal workflow.';
-  
+  public description = '[EXEC] Execute any JavaScript statement in a GAS project — supports Math, Date, all GAS services (SpreadsheetApp, DriveApp, etc.), and require() for CommonJS modules. WHEN: running ad-hoc code, testing expressions, or calling module functions. AVOID: use exec_api for structured function calls with typed params. Example: exec({scriptId, js_statement: "require(\'Utils\').process([1,2,3])"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether execution succeeded' },
+      result: { description: 'Execution return value' },
+      logger_output: { type: 'string', description: 'Captured Logger.log() output' },
+      execution_type: { type: 'string', description: 'How the code was executed' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {

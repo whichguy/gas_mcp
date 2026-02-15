@@ -44,7 +44,7 @@ interface RawEditResult {
  */
 export class RawEditTool extends BaseTool {
   public name = 'raw_edit';
-  public description = '[FILE:RAW] Token-efficient file editing using exact string matching on raw file content (includes CommonJS wrappers). Use instead of edit when you need to see/edit the CommonJS _main() wrapper. Provides 83% token savings vs raw_write.';
+  public description = '[FILE:RAW:EDIT] Token-efficient editing on raw content including CommonJS wrappers. WHEN: modifying _main() wrapper code, module infrastructure, or system-level content. AVOID: use edit for normal user code. Example: raw_edit({scriptId, path: "Utils.gs", old_string: "loadNow: false", new_string: "loadNow: true"})';
 
   public inputSchema = {
     type: 'object',

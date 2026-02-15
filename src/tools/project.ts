@@ -11,7 +11,7 @@ import { ProjectResolver } from '../utils/projectResolver.js';
  */
 export class ReorderTool extends BaseTool {
   public name = 'reorder';
-  public description = '[DEPLOY] Change the execution order of files in a Google Apps Script project';
+  public description = '[PROJECT:REORDER] Change file execution order in a GAS project — critical for CommonJS (require.gs must be position 0). WHEN: fixing module loading order or organizing project files. Example: reorder({scriptId, fileOrder: ["require.gs", "ConfigManager.gs", "Main.gs"]})';
   
   public inputSchema = {
     type: 'object',
@@ -182,7 +182,7 @@ export class ReorderTool extends BaseTool {
  */
 export class ProjectListTool extends BaseTool {
   public name = 'project_list';
-  public description = '[DEPLOY] List all configured projects';
+  public description = '[PROJECT:LIST] List all configured GAS projects from gas-config.json with their script IDs and names. WHEN: discovering available projects or finding a script ID. Example: project_list({})';
 
   public inputSchema = {
     type: 'object',
