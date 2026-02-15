@@ -30,6 +30,7 @@ import { GASClient, GASFile } from '../../api/gasClient.js';
 import {
   shouldWrapContent,
   unwrapModuleContent,
+  validateCommonJsIntegrity,
 } from '../../utils/moduleWrapper.js';
 import {
   FileFilter,
@@ -129,7 +130,42 @@ export class SyncPlanner {
 
       // Step 4: Fetch current state from both sides
       const gasFiles = await this.fetchGasFiles(scriptId, accessToken, excludePatterns);
-      const localFiles = await this.scanLocalFiles(localPath, excludePatterns);
+      const { files: localFiles, skippedFiles } = await this.scanLocalFiles(localPath, excludePatterns);
+
+      // Step 4b: Content integrity warnings
+
+      // Warning A: Files without GAS-compatible extensions (push only)
+      if (direction === 'push' && skippedFiles.length > 0) {
+        const displayCount = Math.min(skippedFiles.length, 5);
+        const fileList = skippedFiles.slice(0, displayCount).join(', ');
+        const moreText = skippedFiles.length > displayCount
+          ? ` and ${skippedFiles.length - displayCount} more`
+          : '';
+        warnings.push(
+          `Skipped ${skippedFiles.length} file(s) without GAS-compatible extensions ` +
+          `(.gs, .js, .html): ${fileList}${moreText}. ` +
+          `Rename with a valid extension to include in sync.`
+        );
+      }
+
+      // Warning B/C: CommonJS wrapper validation
+      if (direction === 'push') {
+        for (const file of localFiles) {
+          const fileType = this.inferFileType(file.filename);
+          const fileWarnings = validateCommonJsIntegrity(
+            file.filename, file.content, fileType, 'rsync-push'
+          );
+          warnings.push(...fileWarnings);
+        }
+      } else {
+        for (const gasFile of gasFiles) {
+          const fileType = gasFile.type || 'SERVER_JS';
+          const fileWarnings = validateCommonJsIntegrity(
+            gasFile.name, gasFile.source || '', fileType, 'rsync-pull'
+          );
+          warnings.push(...fileWarnings);
+        }
+      }
 
       // Step 5: Compute diff
       const diffResult = this.computeDiffInternal(
@@ -328,8 +364,9 @@ export class SyncPlanner {
   private async scanLocalFiles(
     localPath: string,
     excludePatterns?: string[]
-  ): Promise<DiffFileInfo[]> {
+  ): Promise<{ files: DiffFileInfo[]; skippedFiles: string[] }> {
     const files: DiffFileInfo[] = [];
+    const skippedFiles: string[] = [];
 
     try {
       // Check if local path exists
@@ -338,7 +375,7 @@ export class SyncPlanner {
       } catch {
         // Directory doesn't exist - return empty (bootstrap case)
         log.debug(`[PLANNER] Local path does not exist: ${localPath} - bootstrap sync`);
-        return [];
+        return { files: [], skippedFiles: [] };
       }
 
       // Load .gitignore and .claspignore if they exist
@@ -348,13 +385,13 @@ export class SyncPlanner {
       const filter = new FileFilter();
 
       // Recursively scan from repo root (only GAS-compatible files)
-      await this.scanDirectory(localPath, '', files, ig, filter);
+      await this.scanDirectory(localPath, '', files, ig, filter, skippedFiles);
 
       // Filter out user-provided exclude patterns
       const filtered = this.filterDiffFiles(files, excludePatterns);
 
-      log.debug(`[PLANNER] Scanned ${filtered.length} local GAS files (${files.length} before user excludes)`);
-      return filtered;
+      log.debug(`[PLANNER] Scanned ${filtered.length} local GAS files (${files.length} before user excludes, ${skippedFiles.length} skipped)`);
+      return { files: filtered, skippedFiles };
 
     } catch (error) {
       throw new SyncPlanError(
@@ -379,7 +416,8 @@ export class SyncPlanner {
     relativePath: string,
     files: DiffFileInfo[],
     ig: Ignore | null,
-    filter: FileFilter
+    filter: FileFilter,
+    skippedFiles: string[]
   ): Promise<void> {
     const dirPath = relativePath ? path.join(baseDir, relativePath) : baseDir;
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -402,11 +440,12 @@ export class SyncPlanner {
           continue;
         }
 
-        await this.scanDirectory(baseDir, entryRelPath, files, ig, filter);
+        await this.scanDirectory(baseDir, entryRelPath, files, ig, filter, skippedFiles);
 
       } else if (entry.isFile()) {
         // Skip non-GAS files (extension whitelist)
         if (!filter.isGasCompatible(entry.name)) {
+          skippedFiles.push(entryRelPath);
           continue;
         }
 
@@ -548,6 +587,15 @@ export class SyncPlanner {
    * The unwrapped content is still stored for display purposes,
    * but the sha1 hash is computed on the FULL WRAPPED content.
    */
+  /**
+   * Infer GAS file type from filename extension
+   */
+  private inferFileType(filename: string): string {
+    if (filename.endsWith('.html')) return 'HTML';
+    if (filename === 'appsscript.json' || filename.endsWith('.json')) return 'JSON';
+    return 'SERVER_JS';
+  }
+
   private convertGasFilesToDiff(gasFiles: GASFile[]): DiffFileInfo[] {
     return gasFiles
       .filter(f => f.source !== undefined)

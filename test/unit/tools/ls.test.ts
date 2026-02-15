@@ -31,8 +31,8 @@ describe('LsTool', () => {
     });
 
     it('should have description', () => {
-      expect(lsTool.description).to.include('List files');
-      expect(lsTool.description).to.include('Google Apps Script');
+      expect(lsTool.description).to.include('List project files');
+      expect(lsTool.description).to.include('[FILE:LIST]');
     });
 
     it('should have correct input schema with checksums parameter', () => {
