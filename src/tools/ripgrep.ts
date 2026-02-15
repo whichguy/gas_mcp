@@ -825,7 +825,27 @@ export class RipgrepSearchEngine extends GrepSearchEngine {
 export class RipgrepTool extends BaseTool {
   public name = 'ripgrep';
   public description = '[SEARCH:ADVANCED] High-performance search with ripgrep-inspired features — multi-pattern, context lines, regex, file type filtering, and match limiting. PREFERRED search tool for complex queries. WHEN: searching with regex, needing context around matches, or filtering by file type. AVOID: use grep for simple single-pattern search. Example: ripgrep({scriptId, patterns: ["import", "require"], contextLines: 2})';
-  
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      searchPatterns: { type: 'array', description: 'Pattern(s) searched (string array)' },
+      searchMode: { type: 'string', description: 'Search mode used: regex, literal, or mixed' },
+      smartCaseUsed: { type: 'boolean', description: 'Whether smart case detection was active' },
+      multilineEnabled: { type: 'boolean', description: 'Whether multiline matching was enabled' },
+      totalMatches: { type: 'number', description: 'Total matches found' },
+      totalFiles: { type: 'number', description: 'Files with matches' },
+      filesSearched: { type: 'number', description: 'Total files searched' },
+      matches: { type: 'array', description: 'Array of file results with line matches' },
+      contentType: { type: 'string', description: 'Content type: user-code (unwrapped) or raw-content' },
+      commonjsProcessed: { type: 'boolean', description: 'Whether CommonJS wrappers were unwrapped' },
+      truncated: { type: 'boolean', description: 'Whether results were truncated' },
+      skippedFiles: { type: 'array', description: 'Files that could not be searched (errors)' },
+      stats: { type: 'object', description: 'Search performance statistics (when showStats: true)' },
+      formattedOutput: { type: 'string', description: 'Pre-formatted text output of results' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -981,13 +1001,17 @@ export class RipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
-      unixLike: 'rg (fast grep) | multi-pattern | smart-case | GAS',
       toolSelection: GuidanceFragments.toolSelectionGuide.searchContent,
-      whenToUse: 'PREFERRED for all searches: multi-pattern, context, smart case, stats. Searches clean user code (CommonJS unwrapped).',
-      features: 'smartCase: auto case detection | multiline: cross-line patterns | replace: non-destructive suggestions | sort: result ordering',
-      examples: ['Multi: patterns:["TODO","FIXME"]', 'Context: context:2,path:"api/*"', 'Advanced: sort:"path"'],
-      antiPatterns: ['ripgrep to read full file -> use cat instead', 'complex replace logic -> use sed for actual replacement', 'search without context -> add context:2 for understanding']
+      features: 'smartCase | multiline | replace (non-destructive) | sort | multi-pattern',
+      antiPatterns: ['ripgrep to read full file -> use cat', 'complex replace -> use sed', 'search without context -> add context:2']
     }
+  };
+
+  public annotations = {
+    title: 'Ripgrep Search',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;
@@ -1225,7 +1249,19 @@ export class RipgrepTool extends BaseTool {
 export class RawRipgrepTool extends BaseTool {
   public name = 'raw_ripgrep';
   public description = '[SEARCH:RAW:ADVANCED] High-performance search on raw content including CommonJS wrappers — multi-pattern, context, regex. WHEN: searching for module system patterns, _main() wrappers, or loadNow settings. AVOID: use ripgrep for normal code search. Example: raw_ripgrep({scriptId, patterns: ["loadNow", "__events__"]})';
-  
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      matches: { type: 'array', description: 'Array of match results with file, line, content, and context' },
+      matchCount: { type: 'number', description: 'Total matches across all files' },
+      filesSearched: { type: 'number', description: 'Number of files searched' },
+      filesMatched: { type: 'number', description: 'Number of files containing matches' },
+      stats: { type: 'object', description: 'Search statistics (patterns matched, timing)' },
+      truncated: { type: 'boolean', description: 'Whether results hit maxCount limit' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -1379,10 +1415,15 @@ export class RawRipgrepTool extends BaseTool {
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
-      whenToUse: 'System analysis and debugging CommonJS infrastructure. Searches raw content including _main() wrappers and __defineModule__ calls.',
-      vsRipgrep: 'raw_ripgrep: complete file with wrappers | ripgrep: clean user code only',
-      examples: ['System: patterns:["_main","__defineModule__"]', 'Debug: pattern:"module",context:3']
+      vsRipgrep: 'raw_ripgrep: complete file with wrappers | ripgrep: clean user code only'
     }
+  };
+
+  public annotations = {
+    title: 'Ripgrep Search (Raw)',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

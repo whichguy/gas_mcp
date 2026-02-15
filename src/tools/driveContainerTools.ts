@@ -59,7 +59,18 @@ export interface CreateScriptResult {
 export class FindDriveScriptTool extends BaseTool {
   
   public name = 'find_drive_script';
-  public description = '[DRIVE:FIND] Search for Apps Script projects bound to Google Drive files (Sheets, Docs, Slides). WHEN: finding container-bound scripts by document name or ID. Example: find_drive_script({query: "Budget Tracker"})';
+  public description = '[DRIVE:FIND] Search for Apps Script projects bound to Google Drive files (Sheets, Docs, Slides). WHEN: finding container-bound scripts by document name or ID. AVOID: use project_list for already-configured projects; find_drive_script for discovering unknown bound scripts. Example: find_drive_script({query: "Budget Tracker"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether search succeeded' },
+      matches: { type: 'array', description: 'Matching containers (fileId, fileName, containerType, hasScript, scriptId)' },
+      totalFound: { type: 'number', description: 'Total matches found' },
+      error: { type: 'string', description: 'Error message if failed' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -72,26 +83,18 @@ export class FindDriveScriptTool extends BaseTool {
     required: ['fileName'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Find scriptId for existing container-bound scripts | Check if Sheets/Docs/Forms have associated scripts',
-      workflow: 'find_drive_script → get scriptId from hasScript:true result → use with exec/cat/write tools',
-      containerTypes: {
-        spreadsheet: 'Google Sheets - most common, supports onEdit/onChange/onFormSubmit triggers',
-        document: 'Google Docs - onOpen trigger only',
-        form: 'Google Forms - onFormSubmit trigger',
-        site: 'Google Sites - limited API access'
-      },
-      responseFields: {
-        hasScript: 'true if container has bound Apps Script project',
-        scriptId: 'Use this ID with exec/cat/write tools (only present when hasScript:true)',
-        scriptUrl: 'Direct link to script editor',
-        containerUrl: 'Link to open the container (Sheet/Doc/Form/Site)'
-      },
-      nextSteps: {
-        hasScript: 'Use scriptId with cat/exec/write tools',
-        noScript: 'Use create_script tool to bind new script to container'
-      }
+      workflow: 'find_drive_script→get scriptId from hasScript:true→use with exec/cat/write. noScript→create_script to bind.',
+      containers: 'spreadsheet (most common, onEdit/onChange/onFormSubmit) | document (onOpen only) | form (onFormSubmit) | site (limited)'
     }
   } as const;
+
+  public annotations = {
+    title: 'Find Drive Script',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
+  };
 
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);
@@ -318,7 +321,21 @@ export class FindDriveScriptTool extends BaseTool {
 export class CreateScriptTool extends BaseTool {
   
   public name = 'create_script';
-  public description = '[DRIVE:CREATE] Create a new container-bound Apps Script project attached to a Google Drive file. WHEN: creating scripts bound to specific Sheets, Docs, or Slides. Example: create_script({title: "My Script", parentId: "spreadsheet-id"})';
+  public description = '[DRIVE:CREATE] Create a new container-bound Apps Script project attached to a Google Drive file. WHEN: creating scripts bound to specific Sheets, Docs, or Slides. AVOID: use project_create for standalone projects; create_script only for container-bound scripts. Example: create_script({title: "My Script", parentId: "spreadsheet-id"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether the script was created successfully' },
+      scriptId: { type: 'string', description: 'ID of the newly created script project' },
+      scriptName: { type: 'string', description: 'Name of the created script' },
+      containerId: { type: 'string', description: 'ID of the parent container (Sheet/Doc/Form)' },
+      scriptUrl: { type: 'string', description: 'URL to open the script in the editor' },
+      templateUsed: { type: 'string', description: 'Template type used for starter code' },
+      error: { type: 'string', description: 'Error message if creation failed' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -341,27 +358,18 @@ export class CreateScriptTool extends BaseTool {
     required: ['containerName'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Create new automation for Sheets/Docs/Forms/Sites | Bind script to container without existing script',
-      workflow: 'find_drive_script (check hasScript:false) → create_script → use returned scriptId with write/exec tools',
-      whatItCreates: {
-        project: 'New Apps Script project bound to the container',
-        starterCode: 'Container-specific template code with common patterns',
-        menu: 'Custom menu for spreadsheet/document containers'
-      },
-      starterCodeIncludes: {
-        spreadsheet: 'onOpen menu, processData, generateReport, CUSTOM_PROCESS formula, clearCache',
-        document: 'onOpen menu, formatDocument, insertTemplate, generateTableOfContents',
-        form: 'onFormSubmit handler, processFormResponse, sendConfirmationEmail, updateSummarySheet',
-        site: 'updateSiteContent, analytics tracking, report generation, scheduled automation'
-      },
-      afterCreation: [
-        'Use cat({scriptId}) to view generated code',
-        'Use write({scriptId, path, content}) to customize code',
-        'Use trigger({scriptId}) to set up automation triggers',
-        'Use exec({scriptId, js_statement}) to test functions'
-      ]
+      workflow: 'find_drive_script(hasScript:false)→create_script→use scriptId with write/exec. Creates bound project with container-specific starter code.',
+      afterCreation: 'cat→view code | write→customize | trigger→set up automation | exec→test'
     }
   } as const;
+
+  public annotations = {
+    title: 'Create Script',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
+  };
 
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);

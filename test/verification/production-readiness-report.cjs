@@ -89,7 +89,7 @@ testNice('Process monitoring', checkFile('src/tools/processes.ts'));
 console.log('\n🛠️ NICE-TO-HAVE: Utility Systems');
 testNice('Config tools', checkFile('src/tools/config.ts'));
 testNice('Project context tools', checkFile('src/tools/projectContext.ts'));
-testNice('Version management', checkFile('src/tools/versions.ts'));
+testNice('Consolidated deployment tool', checkFile('src/tools/deployment.ts'));
 testNice('Proxy setup tools', checkFile('src/tools/proxySetup.ts'));
 
 console.log('\n🔧 NICE-TO-HAVE: Build and Config');

@@ -74,7 +74,23 @@ interface AiderResult {
  */
 export class AiderTool extends BaseTool {
   public name = 'aider';
-  public description = '[FILE:AIDER] AI-assisted file editing with fuzzy string matching — tolerates whitespace and minor differences in old_string. WHEN: edit fails due to whitespace/formatting mismatches, or when exact string match is difficult. AVOID: use edit first (faster, deterministic); use write for full replacement. Example: aider({scriptId, path: "Utils.gs", old_string: "function add(a, b)", new_string: "function add(a, b, c)"})';
+  public description = '[FILE:AIDER] AI-assisted file editing with fuzzy string matching — tolerates whitespace and minor differences in old_string. WHEN: edit fails due to whitespace/formatting mismatches, or when exact string match is difficult. AVOID: use edit first (faster, deterministic); use write for full replacement. Example: aider({scriptId, path: "Utils.gs", old_string: "function add(a, b)", new_string: "function add(a, b, c)"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether the operation succeeded' },
+      editsApplied: { type: 'number', description: 'Number of edits applied' },
+      diff: { type: 'string', description: 'Unified diff of changes (dry-run only)' },
+      filePath: { type: 'string', description: 'File path that was edited' },
+      hash: { type: 'string', description: 'Git SHA-1 hash of wrapped content after edit' },
+      matches: { type: 'array', description: 'Match details per edit (searchText, similarity, applied)' },
+      git: { type: 'object', description: 'Compact git hint (branch, uncommitted count, action)' },
+      warnings: { type: 'array', description: 'Content analysis warnings' },
+      hints: { type: 'array', description: 'Content analysis hints' },
+      gitBreadcrumbHint: { type: 'object', description: 'Git breadcrumb hint for .git/* files' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -134,24 +150,12 @@ export class AiderTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
-      // WORKFLOW SELECTION - when to use aider vs batch local
       workflowSelection: GuidanceFragments.localFirstWorkflow,
-      // GIT INTEGRATION - CRITICAL for LLM behavior
       gitIntegration: GuidanceFragments.gitIntegration,
       errorRecovery: GuidanceFragments.errorRecovery,
       errorResolutions: GuidanceFragments.errorResolutions,
-
-      whenToUse: 'Fuzzy matching for formatting variations, whitespace differences, or uncertain exact text. Use edit for exact text, sed for regex patterns.',
-      toolChoice: 'edit: exact known text | aider: formatting variations | sed: regex patterns | write: new files',
-      threshold: '0.8 default, 0.9 strict (minor diffs), 0.7 permissive (moderate diffs)',
-      workflow: 'dryRun first to verify matches, then apply. Returns ~10 tokens (95%+ savings vs write).',
-      examples: ['Whitespace: edits:[{searchText:"function   test()",replaceText:"function testNew()"}]', 'Lower threshold: similarityThreshold:0.7', 'Multi-edit: edits:[{...},{...}]'],
-      antiPatterns: [
-        'aider for exact known text -> use edit (faster)',
-        'searchText >1000 chars -> use grep to locate, then edit',
-        'threshold too low (0.5) -> false positives likely',
-        'assuming auto-commit happened -> MUST call git_feature commit'
-      ]
+      threshold: '0.8 default; 0.9 strict (minor diffs); 0.7 permissive (moderate diffs). dryRun first to verify.',
+      antiPatterns: 'exact text known->use edit | searchText>1000->grep then edit | threshold<0.5->false positives | no auto-commit->git_feature commit'
     },
 
     llmHints: {
@@ -159,6 +163,14 @@ export class AiderTool extends BaseTool {
       avoid: 'exact text known (use edit), regex needed (use sed), new files (use write)',
       troubleshoot: 'no match→lower threshold or add context | wrong match→raise threshold or add context'
     }
+  };
+
+  public annotations = {
+    title: 'Fuzzy Edit (Smart)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

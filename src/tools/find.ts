@@ -43,7 +43,18 @@ interface FindOptions {
 export class FindTool extends BaseTool {
   public name = 'find';
   public description = '[SEARCH:FILES] Find files by name pattern with shell-like glob matching — uses virtual (clean) filenames. WHEN: locating files by name pattern (e.g., "*Test*", "lib/*"). AVOID: use grep/ripgrep to search file contents; use ls for simple listing. Example: find({scriptId, pattern: "*Utils*"})';
-  
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      scriptId: { type: 'string', description: 'GAS project ID' },
+      matchCount: { type: 'number', description: 'Number of matching files' },
+      files: { type: 'array', description: 'Matching file names or file detail objects' },
+      output: { type: 'string', description: 'Null-separated output (print0 mode)' },
+      hints: { type: 'object', description: 'Context-aware search hints' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -103,15 +114,16 @@ export class FindTool extends BaseTool {
     },
     required: ['scriptId'],
     llmGuidance: {
-      unixLike: 'find -name (by pattern) | GAS flat | virtual dotfiles',
-      whenToUse: 'finding files→user-friendly virtual names',
-      workflow: 'shell find: find({scriptId,name:"*.test.gs"})',
-      alternatives: 'raw_find→actual GAS names',
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal→shows virtual names'},
-      limitations: {flatFileStructure: 'no real dirs→filename prefixes', wildcardSupport: '*,?,[abc]→match filenames not paths', virtualFileNames: 'dotfiles virtual (.gitignore) not GAS (.gitignore.gs)'},
-      examples: ['find({scriptId,name:"*test*.gs"})', 'find({scriptId,size:"+10k"})'],
-      antiPatterns: ['❌ find then cat each file → use ripgrep to search content directly', '❌ find without pattern → use ls for listing all files', '❌ find for content search → use grep/ripgrep instead']
+      limitations: 'GAS flat structure (no real dirs); *,?,[abc] wildcards match filenames not paths; virtual dotfile names (.gitignore not .gitignore.gs). raw_find→actual GAS names',
+      antiPatterns: 'find then cat each→use ripgrep | find without pattern→use ls | find for content→use grep/ripgrep'
     }
+  };
+
+  public annotations = {
+    title: 'Find Files',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;
@@ -123,7 +135,7 @@ export class FindTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    
+
     // Apply virtual file translation for path if provided
     const translatedPath = params.path ? translatePathForOperation(params.path, true) : '';
     
@@ -320,7 +332,18 @@ export class FindTool extends BaseTool {
 export class RawFindTool extends BaseTool {
   public name = 'raw_find';
   public description = '[SEARCH:FILES:RAW] Find files using actual GAS filenames including .gs extension. WHEN: finding files by their exact GAS-internal names. AVOID: use find for virtual name matching. Example: raw_find({scriptId, pattern: "*.gs"})';
-  
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      scriptId: { type: 'string', description: 'GAS project ID' },
+      matchCount: { type: 'number', description: 'Number of matching files' },
+      files: { type: 'array', description: 'Matching file names or file detail objects' },
+      output: { type: 'string', description: 'Null-separated output (print0 mode)' },
+      hints: { type: 'object', description: 'Context-aware search hints' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -380,11 +403,15 @@ export class RawFindTool extends BaseTool {
     },
     required: ['scriptId'],
     llmGuidance: {
-      whenToUse: 'actual GAS file names (no translation)',
-      workflow: 'shell find: raw_find({scriptId,name:".git*"})',
-      alternatives: 'find→user-friendly virtual names',
-      examples: ['raw_find({scriptId,name:".git*"})']
+      vsFind: 'raw_find: actual GAS names | find: user-friendly virtual names'
     }
+  };
+
+  public annotations = {
+    title: 'Find Files (Raw)',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;
@@ -396,7 +423,7 @@ export class RawFindTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    
+
     // Use hybrid script ID resolution WITHOUT translation (raw mode)
     const hybridResolution = resolveHybridScriptId(params.scriptId, params.path || '');
     const scriptId = hybridResolution.scriptId;

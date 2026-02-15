@@ -19,7 +19,18 @@ import { join as pathJoin } from 'path';
  */
 export class RmTool extends BaseFileSystemTool {
   public name = 'rm';
-  public description = '[FILE:DELETE] Remove a file from a GAS project. WHEN: deleting files no longer needed. AVOID: use mv to rename instead of delete+create. Example: rm({scriptId, path: "OldUtils.gs"})';
+  public description = '[FILE:DELETE] Remove a file from a GAS project. WHEN: deleting files no longer needed. AVOID: use mv to rename instead of delete+create. Example: rm({scriptId, path: "OldUtils.gs"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether the deletion succeeded' },
+      path: { type: 'string', description: 'Path of deleted file' },
+      localDeleted: { type: 'boolean', description: 'Whether local cache file was deleted' },
+      remoteDeleted: { type: 'boolean', description: 'Whether remote GAS file was deleted' },
+      git: { type: 'object', description: 'Compact git hint (branch, uncommitted count, action)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -49,18 +60,16 @@ export class RmTool extends BaseFileSystemTool {
     },
     required: ['scriptId', 'path'],
     llmGuidance: {
-      // GIT INTEGRATION - CRITICAL for LLM behavior
-      gitIntegration: {
-        CRITICAL: 'This tool does NOT auto-commit to git',
-        behavior: 'Deletion pushes to GAS but does NOT commit locally',
-        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
-      },
-
-      unixLike: 'rm (delete) | GAS | git-recoverable via history',
-      whenToUse: 'Delete files from GAS project. Recoverable via git history after commit.',
-      examples: ['rm({scriptId,path:"old-utils"})', 'rm({scriptId,path:"backup/temp",changeReason:"Clean up temp files"})'],
-      nextSteps: ['git_feature commit→save deletion', 'ls→verify removal']
+      gitIntegration: 'CRITICAL: does NOT auto-commit. Must call git_feature({operation:"commit"}) after deletion.',
+      nextSteps: 'git_feature commit→save deletion | ls→verify removal'
     }
+  };
+
+  public annotations = {
+    title: 'Delete File',
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true
   };
 
   async execute(params: RemoveParams & { expectedHash?: string; force?: boolean }): Promise<RemoveResult> {

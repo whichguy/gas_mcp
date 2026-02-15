@@ -118,16 +118,14 @@ console.log('🚀 Execution and Deployment Tests');
 
 test('EXEC', 'Execution tools exist', checkFileExists('src/tools/execution.ts'));
 test('EXEC', 'Deployment tools exist', checkFileExists('src/tools/deployments.ts'));
-test('EXEC', 'Version management tools', checkFileExists('src/tools/versions.ts'));
+test('EXEC', 'Consolidated deployment tool', checkFileExists('src/tools/deployment.ts'));
 
 // Check execution capabilities
 test('EXEC', 'gas_run tool exists', checkFileContains('src/tools/execution.ts', 'gas_run'));
 test('EXEC', 'API executable support', checkFileContains('src/tools/execution.ts', 'gas_run_api_exec'));
 
-// Check deployment operations
-test('EXEC', 'Deployment creation', checkFileContains('src/tools/deployments.ts', 'gas_deploy_create'));
-test('EXEC', 'Deployment listing', checkFileContains('src/tools/deployments.ts', 'gas_deploy_list'));
-test('EXEC', 'Version management', checkFileContains('src/tools/versions.ts', ['gas_version_create', 'gas_version_list']));
+// Check deployment operations (consolidated in deployment.ts)
+test('EXEC', 'Deploy promote/rollback/status', checkFileContains('src/tools/deployment.ts', ['promote', 'rollback', 'status']));
 
 console.log();
 

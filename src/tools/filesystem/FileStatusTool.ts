@@ -77,17 +77,17 @@ export class FileStatusTool extends BaseFileSystemTool {
     required: ['path'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'SHA checksums|verify integrity|detect changes (no download)|compare with local Git',
-      workflow: 'file_status({scriptId:"...",path:"utils.gs"}) | file_status({scriptId:"...",path:"utils/*"})',
-      pathResolution: {explicitScriptId: 'file_status({scriptId:"1abc...",path:"utils.gs"})', embeddedScriptId: 'file_status({path:"1abc.../utils.gs"})', wildcards: '*,? wildcards: "utils/*","*.test.gs","*Controller*"', pseudoDirectories: 'GAS filename prefixes: "utils/helper"=single filename not folder'},
-      gitIntegration: {purpose: 'Git SHA-1→efficient change detect (no download)', format: 'sha1("blob "+<size>+"\\0"+<content>)→matches git hash-object', verification: 'echo -n "content"|git hash-object --stdin', workflow: ['1.file_status git-sha1 from GAS', '2.compare local git hash-object', '3.detect diverge (no download)', '4.rsync tool sync']},
-      examples: ['file_status({scriptId:"...",path:"utils.gs"})', 'file_status({scriptId:"...",path:"utils/*"})', 'file_status({scriptId:"...",path:"utils.gs",hashTypes:["git-sha1","sha256","md5"]})', 'file_status({scriptId:"...",path:"*.gs",includeMetadata:false})', 'file_status({path:"1abc.../utils/*"})'],
-      useCases: {verification: "verify file unchanged since sync", gitComparison: 'GAS vs local Git repo', changeDetection: 'changed files (no download all)', integrity: 'integrity during sync', bulkStatus: 'multiple files by pattern'},
-      hashTypes: {'git-sha1': 'Git SHA-1 blob format→matches git hash-object', 'sha256': 'SHA-256 (64 hex)', 'md5': 'MD5 legacy (32 hex)'},
-      metadata: {lines: 'line count', size: 'bytes', encoding: 'detected (UTF-8 typical)', createTime: 'ISO 8601 create', updateTime: 'ISO 8601 modify', lastModifyUser: 'user name+email'},
-      performance: {default: '50 files default', maximum: '200 max per request', optimization: 'specific patterns→reduce count', recommendation: 'large projects→specific patterns not wildcards'},
-      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→Git checksums'}
+      gitIntegration: 'Git SHA-1 no-download change detection: sha1("blob "+size+"\\0"+content)→matches git hash-object. get hash→compare local→detect diverge→rsync.',
+      hashTypes: 'git-sha1 (Git blob format); sha256 (64 hex); md5 (legacy 32 hex)',
+      performance: '50 default, 200 max. Large projects→use specific patterns not broad wildcards.'
     }
+  };
+
+  public annotations = {
+    title: 'File Status',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {

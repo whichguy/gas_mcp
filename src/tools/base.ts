@@ -117,6 +117,15 @@ export abstract class BaseTool implements Tool {
   /** Optional JSON schema defining structured output format (MCP 2025-11-25) */
   public outputSchema?: { type: 'object'; properties?: Record<string, object>; required?: string[]; [key: string]: unknown };
 
+  /** Optional MCP tool annotations for selection hints (MCP 2025-06-18) */
+  public annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
+
   /** 
    * Whether this tool requires authentication to function
    * 

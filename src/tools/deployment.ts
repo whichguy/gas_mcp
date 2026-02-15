@@ -10,6 +10,7 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { ExecTool } from './execution.js';
 import { generateDeployHints, generateDeployErrorHints, DeployHints } from '../utils/deployHints.js';
+import { mcpLogger } from '../utils/mcpLogger.js';
 
 /**
  * Environment tags for deployment identification
@@ -25,7 +26,32 @@ const ENV_TAGS = {
  */
 export class DeployTool extends BaseTool {
   public name = 'deploy';
-  public description = '[DEPLOY] Consolidated deployment workflow — promote, rollback, status, and reset across dev/staging/prod environments. WHEN: deploying code, checking deployment status, or rolling back. Example: deploy({scriptId, operation: "promote", environment: "staging"})';
+  public description = '[DEPLOY] Consolidated deployment workflow — promote, rollback, status, and reset across dev/staging/prod environments. WHEN: deploying code, checking deployment status, or rolling back. AVOID: use project_create to set up new projects; deploy for promoting/rolling back existing deployments. Example: deploy({scriptId, operation: "promote", environment: "staging"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      operation: { type: 'string', description: 'Operation performed: promote, rollback, status, or reset' },
+      // promote fields
+      from: { type: 'string', description: 'Source environment (promote: "dev" or "staging")' },
+      to: { type: 'string', description: 'Target environment (promote: "staging" or "prod")' },
+      version: { type: 'object', description: 'Version info (promote/rollback): {versionNumber, description, createTime}' },
+      deployment: { type: 'object', description: 'Deployment info (promote/rollback): {deploymentId, versionNumber, url}' },
+      note: { type: 'string', description: 'Additional context (promote staging→prod)' },
+      // rollback fields
+      environment: { type: 'string', description: 'Target environment (rollback only)' },
+      // status fields
+      environments: { type: 'object', description: 'Environment details (status only): {dev, staging, prod} each with deploymentId, versionNumber, url, updateTime' },
+      versionManagement: { type: 'object', description: 'Version stats (status only): {totalVersions, highestVersion, prodVersions, warnings}' },
+      // reset fields
+      status: { type: 'string', description: 'Reset outcome: "success" or "partial"' },
+      deployments: { type: 'object', description: 'New deployments (reset only): {dev, staging, prod} each with deploymentId, url, versionNumber' },
+      message: { type: 'string', description: 'Summary message (reset only)' },
+      warnings: { type: 'array', description: 'Warning messages (reset partial failures)' },
+      // common
+      hints: { type: 'object', description: 'Context-aware next-step hints' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -33,27 +59,16 @@ export class DeployTool extends BaseTool {
       operation: {
         type: 'string',
         enum: ['promote', 'rollback', 'status', 'reset'],
-        description: 'Operation: promote=move code, rollback=revert, status=view all, reset=recreate 3 deployments.',
-        llmHints: {
-          promote: 'dev→staging (create version) | staging→prod (update deployment)',
-          rollback: 'Revert to previous tagged version',
-          status: 'View all 3 environments',
-          reset: 'Recreate dev/staging/prod'
-        }
+        description: 'promote: dev→staging (version) or staging→prod | rollback: revert to previous version | status: view all 3 envs | reset: recreate deployments'
       },
       environment: {
         type: 'string',
         enum: ['staging', 'prod'],
-        description: 'Target env for promote/rollback. Both support rollback to previous version.',
-        llmHints: {
-          staging: 'Promote: HEAD→version | Rollback: previous version',
-          prod: 'Promote: staging→prod | Rollback: previous version'
-        }
+        description: 'Target env for promote/rollback. staging: HEAD→version, prod: staging→prod.'
       },
       description: {
         type: 'string',
-        description: 'Version description (required for promote to staging). Auto-tagged [STAGING].',
-        examples: ['v1.0 Release Candidate', 'Bug fixes for issue #123', 'New feature: user management']
+        description: 'Version description (required for promote to staging). Auto-tagged [STAGING].'
       },
       toVersion: {
         type: 'number',
@@ -68,6 +83,13 @@ export class DeployTool extends BaseTool {
       workflow: 'dev (HEAD) → promote → staging (versioned) → promote → prod (versioned)',
       environments: 'dev: HEAD | staging: snapshot | prod: stable'
     }
+  };
+
+  public annotations = {
+    title: 'Deployment Manager',
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;
@@ -88,6 +110,8 @@ export class DeployTool extends BaseTool {
       ['promote', 'rollback', 'status', 'reset'],
       'deployment operation'
     );
+
+    mcpLogger.info('deploy', { event: 'operation_start', operation, scriptId, environment: params.environment });
 
     try {
       let result: any;
@@ -120,8 +144,12 @@ export class DeployTool extends BaseTool {
         result.hints = hints;
       }
 
+      mcpLogger.info('deploy', { event: 'operation_complete', operation, scriptId });
+
       return result;
     } catch (error: any) {
+      mcpLogger.error('deploy', { event: 'operation_error', operation, scriptId, error: error.message });
+
       // Generate error-specific hints
       const errorHints = generateDeployErrorHints(operation, error.message);
 

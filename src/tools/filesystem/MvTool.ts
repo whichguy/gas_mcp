@@ -17,7 +17,22 @@ import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
  */
 export class MvTool extends BaseFileSystemTool {
   public name = 'mv';
-  public description = '[FILE:MOVE] Move or rename a file within a GAS project. WHEN: renaming files or reorganizing project structure. AVOID: use cp to keep the original; use rm+write for cross-project moves. Example: mv({scriptId, from: "Old.gs", to: "New.gs"})';
+  public description = '[FILE:MOVE] Move or rename a file within a GAS project. WHEN: renaming files or reorganizing project structure. AVOID: use cp to keep the original; use rm+write for cross-project moves. Example: mv({scriptId, from: "Old.gs", to: "New.gs"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      status: { type: 'string', description: 'Operation status (success)' },
+      from: { type: 'string', description: 'Source file path' },
+      to: { type: 'string', description: 'Destination file path' },
+      fromProjectId: { type: 'string', description: 'Source project script ID' },
+      toProjectId: { type: 'string', description: 'Destination project script ID' },
+      isCrossProject: { type: 'boolean', description: 'Whether move was cross-project' },
+      totalFiles: { type: 'number', description: 'Total files in project after move' },
+      message: { type: 'string', description: 'Summary message' },
+      git: { type: 'object', description: 'Compact git hint (branch, uncommitted count, action)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -63,18 +78,18 @@ export class MvTool extends BaseFileSystemTool {
     },
     required: ['scriptId', 'from', 'to'],
     llmGuidance: {
-      // GIT INTEGRATION - CRITICAL for LLM behavior
-      gitIntegration: {
-        CRITICAL: 'This tool does NOT auto-commit to git',
-        behavior: 'Move pushes to GAS but does NOT commit locally',
-        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
-      },
-
-      unixLike: 'mv (move/rename) | GAS | CommonJS module name update',
-      whenToUse: 'Move or rename files. Automatically updates CommonJS module name for proper require() resolution.',
-      examples: ['Rename: mv({scriptId,from:"Utils",to:"Helpers"})', 'Cross-project: mv({scriptId,from:"utils",to:"1xyz9abc.../utils"})'],
-      nextSteps: ['ripgrep→update require() calls', 'exec→test module resolution', 'git_feature commit→save changes']
+      gitIntegration: 'CRITICAL: does NOT auto-commit. Must call git_feature({operation:"commit"}) after move.',
+      commonJs: 'Auto-updates CommonJS module name for require() resolution',
+      nextSteps: 'ripgrep→update require() calls | exec→test | git_feature commit→save'
     }
+  };
+
+  public annotations = {
+    title: 'Move File',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
   };
 
   async execute(params: MoveParams & { expectedHash?: string; force?: boolean }): Promise<MoveResult> {

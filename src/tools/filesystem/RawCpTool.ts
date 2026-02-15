@@ -9,7 +9,18 @@ import { SCRIPT_ID_SCHEMA, ACCESS_TOKEN_SCHEMA } from './shared/schemas.js';
  */
 export class RawCpTool extends BaseFileSystemTool {
   public name = 'raw_cp';
-  public description = '[FILE:RAW:COPY] Remote-to-remote file copy with merge strategies — copies between projects or within a project preserving exact content. WHEN: cross-project file copying or copying with merge strategy. AVOID: use cp for simple in-project copies. Example: raw_cp({scriptId, from: "Utils.gs", to: "Utils.gs", targetScriptId: "..."})';
+  public description = '[FILE:RAW:COPY] Remote-to-remote file copy with merge strategies — copies between projects or within a project preserving exact content. WHEN: cross-project file copying or copying with merge strategy. AVOID: use cp for simple in-project copies. Example: raw_cp({scriptId, from: "Utils.gs", to: "Utils.gs", targetScriptId: "..."}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      copied: { type: 'number', description: 'Number of files copied' },
+      skipped: { type: 'number', description: 'Number of files skipped (conflicts)' },
+      overwritten: { type: 'number', description: 'Number of files overwritten' },
+      files: { type: 'array', description: 'Per-file results (name, action, status)' },
+      mergeStrategy: { type: 'string', description: 'Strategy used for conflict resolution' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -50,12 +61,17 @@ export class RawCpTool extends BaseFileSystemTool {
     required: ['sourceScriptId', 'destinationScriptId'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'bulk copy between projects without CommonJS processing',
-      workflow: 'raw_cp({sourceScriptId:"...",destinationScriptId:"..."})',
-      preservesWrappers: 'copies exact→preserves all wrappers+system code',
-      examples: ['all: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc..."})', 'specific: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",includeFiles:["Utils","Config"]})', 'exclude: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",excludeFiles:["Test","Debug"]})', 'overwrite: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",mergeStrategy:"overwrite-destination"})', 'dry run: raw_cp({sourceScriptId:"1abc2def...",destinationScriptId:"1xyz9abc...",dryRun:true})'],
-      mergeStrategies: {'preserve-destination': 'keep dest (default)', 'overwrite-destination': 'replace with source', 'skip-conflicts': 'only new files'}
+      vsCp: 'raw_cp: bulk cross-project copy preserving exact wrappers | cp: in-project copy with CommonJS processing',
+      mergeStrategies: 'preserve-destination (default) | overwrite-destination | skip-conflicts'
     }
+  };
+
+  public annotations = {
+    title: 'Copy File (Raw)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {

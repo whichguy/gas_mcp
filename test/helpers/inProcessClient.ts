@@ -464,29 +464,66 @@ export class InProcessTestClient {
    */
   async listTools(): Promise<any[]> {
     // In-process client doesn't use MCP protocol, but we can return info about available operations
-    // This is mainly for test compatibility
+    // All 44 tools registered in mcpServer.ts createSessionTools()
+    const schema = { type: 'object' as const };
     return [
-      { name: 'auth', description: 'OAuth authentication' },
-      { name: 'project_list', description: 'List GAS projects' },
-      { name: 'project_create', description: 'Create new GAS project' },
-      { name: 'cat', description: 'Read file contents' },
-      { name: 'write', description: 'Write file contents' },
-      { name: 'ls', description: 'List files in project' },
-      { name: 'exec', description: 'Execute code in GAS environment' },
-      {
-        name: 'sheet_sql',
-        description: 'Execute SQL-style operations on Google Sheets',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID or full URL' },
-            range: { type: 'string', description: 'Sheet and cell range in A1 notation' },
-            statement: { type: 'string', description: 'SQL statement using column letters' },
-            returnMetadata: { type: 'boolean', default: false, description: 'Return cell metadata' }
-          },
-          required: ['spreadsheetId', 'range', 'statement']
-        }
-      }
+      // Authentication
+      { name: 'auth', description: 'OAuth authentication', inputSchema: schema },
+      // Filesystem - Smart tools
+      { name: 'ls', description: 'List files in project', inputSchema: schema },
+      { name: 'file_status', description: 'File status with checksums', inputSchema: schema },
+      { name: 'cat', description: 'Read file contents', inputSchema: schema },
+      { name: 'write', description: 'Write file contents', inputSchema: schema },
+      { name: 'grep', description: 'Search file contents', inputSchema: schema },
+      { name: 'ripgrep', description: 'Advanced regex search', inputSchema: schema },
+      { name: 'sed', description: 'Stream editor', inputSchema: schema },
+      { name: 'edit', description: 'Edit file contents', inputSchema: schema },
+      { name: 'aider', description: 'AI-assisted editing', inputSchema: schema },
+      { name: 'find', description: 'Find files by pattern', inputSchema: schema },
+      { name: 'deps', description: 'Dependency analysis', inputSchema: schema },
+      { name: 'rm', description: 'Remove files', inputSchema: schema },
+      { name: 'mv', description: 'Move/rename files', inputSchema: schema },
+      { name: 'cp', description: 'Copy files', inputSchema: schema },
+      { name: 'cache_clear', description: 'Clear metadata cache', inputSchema: schema },
+      // Filesystem - Raw tools
+      { name: 'raw_cat', description: 'Read raw file contents', inputSchema: schema },
+      { name: 'raw_write', description: 'Write raw file contents', inputSchema: schema },
+      { name: 'raw_grep', description: 'Raw grep search', inputSchema: schema },
+      { name: 'raw_ripgrep', description: 'Raw ripgrep search', inputSchema: schema },
+      { name: 'raw_sed', description: 'Raw stream editor', inputSchema: schema },
+      { name: 'raw_edit', description: 'Raw file edit', inputSchema: schema },
+      { name: 'raw_aider', description: 'Raw AI-assisted editing', inputSchema: schema },
+      { name: 'raw_find', description: 'Raw find files', inputSchema: schema },
+      { name: 'raw_cp', description: 'Raw copy files', inputSchema: schema },
+      // Project management
+      { name: 'reorder', description: 'Reorder project files', inputSchema: schema },
+      { name: 'project_create', description: 'Create new GAS project', inputSchema: schema },
+      { name: 'project_init', description: 'Initialize project infrastructure', inputSchema: schema },
+      { name: 'project_list', description: 'List GAS projects', inputSchema: schema },
+      // Execution
+      { name: 'exec', description: 'Execute code in GAS environment', inputSchema: schema },
+      { name: 'exec_api', description: 'Execute via API', inputSchema: schema },
+      // Deployment
+      { name: 'deploy', description: 'Deploy GAS project', inputSchema: schema },
+      // Drive & Scripts
+      { name: 'find_drive_script', description: 'Find scripts in Drive', inputSchema: schema },
+      { name: 'create_script', description: 'Create new script', inputSchema: schema },
+      // Processes & Logs
+      { name: 'process_list', description: 'List running processes', inputSchema: schema },
+      { name: 'executions', description: 'Execution history', inputSchema: schema },
+      { name: 'cloud_logs', description: 'Cloud logging', inputSchema: schema },
+      // Triggers
+      { name: 'trigger', description: 'Manage triggers', inputSchema: schema },
+      // Git Sync
+      { name: 'rsync', description: 'Sync local and remote', inputSchema: schema },
+      { name: 'git_feature', description: 'Git feature branches', inputSchema: schema },
+      { name: 'config', description: 'Configuration management', inputSchema: schema },
+      // Sheets
+      { name: 'sheet_sql', description: 'SQL-style sheet operations', inputSchema: schema },
+      // Parallel Development
+      { name: 'worktree', description: 'Git worktree management', inputSchema: schema },
+      // Status
+      { name: 'status', description: 'Project health dashboard', inputSchema: schema },
     ];
   }
 

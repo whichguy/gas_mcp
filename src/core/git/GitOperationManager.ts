@@ -17,6 +17,7 @@
  */
 
 import { log } from '../../utils/logger.js';
+import { FileFilter } from '../../utils/fileFilter.js';
 import { ensureFeatureBranch } from '../../utils/gitAutoCommit.js';
 import { clearGASMetadata, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
@@ -200,6 +201,12 @@ export class GitOperationManager {
         const { LocalFileManager } = await import('../../utils/localFileManager.js');
 
         for (const [filename, content] of computedChanges.entries()) {
+          // GAS .git/* are sync breadcrumbs — skip to avoid EEXIST (worktree) or overwriting real git config (repo)
+          if (FileFilter.isGitBreadcrumbPath(filename)) {
+            log.warn(`[GIT-MANAGER] Skipping git breadcrumb: ${filename}`);
+            continue;
+          }
+
           // Add file extension for local filesystem
           const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
           const fullFilename = filename + fileExtension;

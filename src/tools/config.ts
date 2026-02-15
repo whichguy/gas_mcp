@@ -24,7 +24,20 @@ const execFileAsync = promisify(execFile);
  */
 export class ConfigTool extends BaseTool {
   public name = 'config';
-  public description = '[CONFIG] Read and write project configuration values via ConfigManager — hierarchical 5-level scope (userDoc/doc/user/domain/script). WHEN: managing project settings, API keys, or feature flags. Example: config({scriptId, operation: "get", key: "API_KEY"})';
+  public description = '[CONFIG] Read and write project configuration values via ConfigManager — hierarchical 5-level scope (userDoc/doc/user/domain/script). WHEN: managing project settings, API keys, or feature flags. AVOID: use exec for one-off reads; config for persistent key-value settings via ConfigManager. Example: config({scriptId, operation: "get", key: "API_KEY"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      action: { type: 'string', description: 'Action performed (get or set)' },
+      scriptId: { type: 'string', description: 'GAS project ID' },
+      currentPath: { type: 'string', description: 'Current sync folder path (get)' },
+      previousPath: { type: 'string', description: 'Previous sync folder path (set)' },
+      newPath: { type: 'string', description: 'New sync folder path (set)' },
+      moved: { type: 'boolean', description: 'Whether files were physically moved (set)' },
+      status: { type: 'string', description: 'Operation result status' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -68,6 +81,14 @@ export class ConfigTool extends BaseTool {
       moveExisting: 'physically moves git repo preserving history + updates .git/config',
       workflow: 'before move: git status/stash | after: cd <path> + rsync'
     }
+  };
+
+  public annotations = {
+    title: 'Configuration',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {

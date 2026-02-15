@@ -28,7 +28,28 @@ const execAsync = promisify(exec);
  */
 export class GitFeatureTool extends BaseFileSystemTool {
   public name = 'git_feature';
-  public description = '[GIT] Feature branch workflow — start, commit, push, finish, rollback, list, and switch branches in the local git mirror. WHEN: managing git history for GAS projects. Example: git_feature({scriptId, operation: "start", featureName: "user-auth"})';
+  public description = '[GIT] Feature branch workflow — start, commit, push, finish, rollback, list, and switch branches in the local git mirror. WHEN: managing git history for GAS projects. AVOID: use rsync for syncing files; git_feature for branch workflow and committing changes. Example: git_feature({scriptId, operation: "start", featureName: "user-auth"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      status: { type: 'string', description: 'Operation status (success)' },
+      operation: { type: 'string', description: 'Operation that was performed' },
+      branch: { type: 'string', description: 'Branch name involved' },
+      created: { type: 'boolean', description: 'Whether branch was created (start)' },
+      switched: { type: 'boolean', description: 'Whether branch was switched (switch)' },
+      deleted: { type: 'boolean', description: 'Whether branch was deleted (finish/rollback)' },
+      commitSha: { type: 'string', description: 'Full commit SHA (commit/finish)' },
+      shortSha: { type: 'string', description: 'Short commit SHA (commit)' },
+      message: { type: 'string', description: 'Commit message (commit)' },
+      filesChanged: { type: 'number', description: 'Number of files in commit (commit)' },
+      currentBranch: { type: 'string', description: 'Current branch after operation' },
+      pushed: { type: 'boolean', description: 'Whether pushed to remote (finish/push)' },
+      branches: { type: 'array', description: 'List of feature branches (list)' },
+      total: { type: 'number', description: 'Total feature branches (list)' },
+      isFeatureBranch: { type: 'boolean', description: 'Whether current branch is a feature branch' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -84,66 +105,21 @@ export class GitFeatureTool extends BaseFileSystemTool {
     required: ['operation', 'scriptId'],
     additionalProperties: false,
     llmGuidance: {
-      // PROACTIVE RULES - emphatic language for LLM behavior
-      proactiveRules: {
-        CRITICAL_BEFORE: 'Call git_feature({operation:"start"}) BEFORE making 3+ file changes for a new feature',
-        CRITICAL_AFTER: 'Call git_feature({operation:"finish", pushToRemote:true}) when feature work is complete',
-        NEVER: 'NEVER leave uncommitted work or orphaned feature branches - always commit and finish'
-      },
-
-      // TRIGGER PATTERNS - map user language to operations
-      trigger: {
-        start: [
-          'User says "build", "create", "implement", "add" + feature noun',
-          'Task requires 3+ file changes',
-          'Major architectural changes planned'
-        ],
-        commit: [
-          'After any file modification via write/edit/aider',
-          'User says "save", "checkpoint"',
-          'Before switching tasks or taking a break'
-        ],
-        finish: [
-          'User says "done", "finished", "complete", "that\'s all"',
-          'User requests "commit", "save", "push to github"',
-          'Before ending conversation with significant work'
-        ]
-      },
-
-      // SIZE HEURISTICS - when to use branches
-      sizeHeuristics: {
-        useBranch: '3+ files OR >100 lines OR named feature',
-        skipBranch: 'Single file fix OR config change OR docs'
-      },
-
-      // OPERATIONS - preserved from before
-      operations: {
-        start: 'Create feature branch. Use BEFORE starting new feature development.',
-        commit: 'Commit changes. REQUIRED after write/edit operations - they do NOT auto-commit.',
-        push: 'Push to remote. Use to backup work or share with team.',
-        finish: 'Merge to main and push. Use AFTER feature complete. ALWAYS use pushToRemote:true.',
-        rollback: 'Delete branch without merging. Use when abandoning feature.',
-        list: 'Show feature branches. Use to check current state.',
-        switch: 'Change branches. Use to switch between features.'
-      },
-
-      // EXAMPLES
-      examples: [
-        '// BEFORE starting major feature:',
-        'git_feature({operation: "start", scriptId, featureName: "user-auth"})',
-        '',
-        '// AFTER each write operation:',
-        'git_feature({operation: "commit", scriptId, message: "feat: Add login form"})',
-        '',
-        '// WHEN feature complete:',
-        'git_feature({operation: "finish", scriptId, pushToRemote: true})'
-      ],
-
-      // WORKFLOW - updated to reflect no auto-commit
-      workflow: 'BEFORE: start → write files → AFTER EACH: commit → WHEN DONE: finish+push',
-      writeToolBehavior: 'Write tools do NOT auto-commit. You MUST call git_feature commit explicitly after modifications.',
+      CRITICAL: 'start BEFORE 3+ file changes | commit AFTER each write (no auto-commit) | finish+push when done | NEVER leave uncommitted work',
+      trigger: 'start: user says build/create/implement + feature | commit: after write/edit/aider | finish: user says done/finished/complete',
+      operations: 'start: create branch | commit: REQUIRED after writes | push: backup to remote | finish: merge to main (use pushToRemote:true) | rollback: delete branch | list: show branches | switch: change branch',
+      workflow: 'start → write files → commit after each → finish+push when done',
+      branching: 'Use branch for 3+ files or named feature. Skip for single file fix or config change.',
       polyrepo: 'Use projectPath for nested repos: git_feature({..., projectPath: "backend"})'
     }
+  };
+
+  public annotations = {
+    title: 'Git Feature Workflow',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {

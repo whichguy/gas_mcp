@@ -5,6 +5,7 @@ import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 import { ensureGitInitialized } from './gitInit.js';
 import { isManifestFile } from './fileHelpers.js';
 import { clearGASMetadata } from './gasMetadataCache.js';
+import { FileFilter } from './fileFilter.js';
 
 /**
  * Local file representation
@@ -368,8 +369,11 @@ export class LocalFileManager {
     await fs.mkdir(projectPath, { recursive: true });
 
     for (const file of files) {
+      // GAS .git/* are sync breadcrumbs — skip to avoid EEXIST (worktree) or overwriting real git config (repo)
+      if (FileFilter.isGitBreadcrumbPath(file.name)) continue;
+
       const extension = this.getFileExtension(file.type, file.content);
-      
+
       // ✅ FIX: Parse directory structure from GAS filename
       // Convert "utils/helper" → "utils/helper.js" with proper directory structure
       const fileName = file.name;
@@ -393,16 +397,19 @@ export class LocalFileManager {
     const projectPath = await this.ensureProjectDirectory(actualWorkingDir, actualWorkingDir);
 
     for (const file of files) {
+      // GAS .git/* are sync breadcrumbs — skip to avoid EEXIST (worktree) or overwriting real git config (repo)
+      if (FileFilter.isGitBreadcrumbPath(file.name)) continue;
+
       const extension = this.getFileExtension(file.type, file.content);
       const fileName = this.normalizeFileName(file.name);
       const filePath = path.join(projectPath, `${fileName}${extension}`);
-      
+
       // Create directory for the file if it's in a subdirectory
       const fileDir = path.dirname(filePath);
       if (fileDir !== projectPath) {
         await fs.mkdir(fileDir, { recursive: true });
       }
-      
+
       await fs.writeFile(filePath, file.content, 'utf-8');
     }
   }
@@ -429,8 +436,11 @@ export class LocalFileManager {
     const filesList: string[] = [];
 
     for (const remoteFile of remoteFiles) {
+      // GAS .git/* are sync breadcrumbs — skip to avoid EEXIST (worktree) or overwriting real git config (repo)
+      if (FileFilter.isGitBreadcrumbPath(remoteFile.name)) continue;
+
       const extension = this.getFileExtension(remoteFile.type, remoteFile.content);
-      
+
       // Parse directory structure from GAS filename
       const fileName = remoteFile.name;
       const filePath = path.join(projectPath, `${fileName}${extension}`);

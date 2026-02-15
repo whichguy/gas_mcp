@@ -49,7 +49,18 @@ interface AiderResult {
  */
 export class RawAiderTool extends BaseTool {
   public name = 'raw_aider';
-  public description = '[FILE:RAW:AIDER] Fuzzy-match editing on raw content including CommonJS wrappers. WHEN: raw_edit fails due to whitespace differences in wrapper code. AVOID: use aider for normal user code; try raw_edit first. Example: raw_aider({scriptId, path: "Utils.gs", old_string: "...", new_string: "..."})';
+  public description = '[FILE:RAW:AIDER] Fuzzy-match editing on raw content including CommonJS wrappers. WHEN: raw_edit fails due to whitespace differences in wrapper code. AVOID: use aider for normal user code; try raw_edit first. Example: raw_aider({scriptId, path: "Utils.gs", old_string: "...", new_string: "..."}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether edits were applied successfully' },
+      editsApplied: { type: 'number', description: 'Number of edit operations applied' },
+      diff: { type: 'string', description: 'Git-style diff of changes' },
+      filePath: { type: 'string', description: 'Full resolved file path' },
+      matches: { type: 'array', description: 'Per-edit match details (searchText, foundText, similarity, applied)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -102,26 +113,18 @@ export class RawAiderTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Raw content (with _main+__defineModule__) + format var → fuzzy finds similar in complete file',
-      contentDifference: 'raw_aider: complete (_main+__defineModule__) | aider: clean user code',
-      howToUse: ['ID approx raw text (e.g. "_main  ()" extra spacing)', 'threshold: 0.9+ strict | 0.8 default | 0.7 permissive', 'dryRun first→preview raw matches', 'apply→best fuzzy in raw', 'check editsApplied count'],
-      whenNotToUse: ['user code→aider (auto unwrap) | exact raw→raw_edit (faster) | new system→raw_write | app dev→aider'],
-      bestPractices: ['dryRun first | default 0.8→adjust | specific searchText | context for match | single-file | multi-file→sed'],
-      tokenSavings: '95%+ vs write (~10tok: {success,editsApplied,filePath})',
-      examples: [{scenario: 'CommonJS wrapper spacing', code: 'path:"abc123.../CommonJS",edits:[{searchText:"function _main(module,exports,require)",replaceText:"function _mainWrapper(module, exports, require)"}]'}, {scenario: 'system permissive 0.7', code: 'path:"abc123.../__mcp_exec",edits:[{searchText:"function execute",replaceText:"function executeWithLogging",similarityThreshold:0.7}]'}, {scenario: 'preview raw (recommended)', code: 'path:"abc123.../CommonJS",edits:[{searchText:"__defineModule__",replaceText:"__defineModuleEnhanced__"}],dryRun:true'}],
-      vsGasAider: 'aider: unwrap for user code | raw_aider: preserve wrappers for system',
-      vsGasRawEdit: 'raw_edit: exact char match | raw_aider: fuzzy for variations',
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal raw fuzzy'}
-    },
-
-    llmHints: {
-      decision: 'Exact→raw_edit | format var→raw_aider | regex→sed',
-      preferOver: 'raw_edit (format/uncertain) | raw_write (95% save)',
-      idealFor: 'System wrappers with whitespace|_main spacing|CommonJS format',
-      avoid: 'User code→aider | exact→raw_edit | new→raw_write',
-      threshold: '0.9+ strict | 0.8 default | 0.7 permissive',
-      warning: 'Raw content only (preserves wrappers)'
+      tokenSavings: '95%+ vs raw_write. System files only (user code→aider)',
+      threshold: '0.9+ strict | 0.8 default | 0.7 permissive. dryRun first.',
+      decision: 'Exact→raw_edit | format var→raw_aider | regex→sed'
     }
+  };
+
+  public annotations = {
+    title: 'Fuzzy Edit (Raw)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

@@ -19,7 +19,24 @@ import { validateCommonJsIntegrity } from '../../utils/moduleWrapper.js';
  */
 export class RawWriteTool extends BaseFileSystemTool {
   public name = 'raw_write';
-  public description = '[FILE:RAW:WRITE] Write file content exactly as provided — no CommonJS wrapping applied. WHEN: writing CommonJS infrastructure files, updating system wrappers, or files that need exact content. AVOID: use write for normal user code (auto-wraps). Example: raw_write({scriptId, path: "require.gs", content: "...", type: "server_js"})';
+  public description = '[FILE:RAW:WRITE] Write file content exactly as provided — no CommonJS wrapping applied. WHEN: writing CommonJS infrastructure files, updating system wrappers, or files that need exact content. AVOID: use write for normal user code (auto-wraps). Example: raw_write({scriptId, path: "require.gs", content: "...", type: "server_js"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      status: { type: 'string', description: 'Operation status (success)' },
+      path: { type: 'string', description: 'Full path including scriptId' },
+      scriptId: { type: 'string', description: 'GAS project ID' },
+      filename: { type: 'string', description: 'File name' },
+      size: { type: 'number', description: 'Written content size in bytes' },
+      hash: { type: 'string', description: 'Git SHA-1 hash of raw written content' },
+      hashNote: { type: 'string', description: 'Explanation of hash computation' },
+      position: { type: 'number', description: 'File position in project execution order' },
+      totalFiles: { type: 'number', description: 'Total files in project' },
+      warnings: { type: 'array', description: 'Content integrity warnings' },
+      git: { type: 'object', description: 'Git detection or compact git hint' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -63,7 +80,7 @@ export class RawWriteTool extends BaseFileSystemTool {
       },
       changeReason: {
         type: 'string',
-        description: 'Optional commit message for git-enabled projects. If omitted, defaults to "Update {filename}" or "Add {filename}". Tip: Call git_feature({operation: "start"}) first for meaningful branch names.',
+        description: 'Informational note about the change. Not used for auto-commit (use git_feature to commit). Useful for documentation and manual commit messages.',
         examples: [
           'Add user authentication',
           'Fix validation bug in form',
@@ -92,10 +109,16 @@ export class RawWriteTool extends BaseFileSystemTool {
     required: ['path', 'content', 'fileType'],
     additionalProperties: false,
     llmGuidance: {
-      danger: '⚠️ OVERWRITES entire file without merge → data loss risk | Use write for safe merging',
-      whenToUse: 'new files from scratch | replace entire contents | appsscript.json manifest',
-      whenToAvoid: 'updating existing code | collaborative editing (use write/edit/aider instead)'
+      danger: 'OVERWRITES entire file without merge. Use write for safe CommonJS-wrapped development.'
     }
+  };
+
+  public annotations = {
+    title: 'Write File (Raw)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {
@@ -409,14 +432,13 @@ export class RawWriteTool extends BaseFileSystemTool {
   }
 
   /**
-   * Execute write with git workflow (feature branches + atomic commit)
+   * Execute write with git workflow (stage-only, no auto-commit)
    *
-   * Simplified atomic workflow for raw writes:
-   * 1. Ensure feature branch
-   * 2. Write local file
-   * 3. Run hooks and commit
-   * 4. Push to remote GAS
-   * 5. Rollback if remote push fails
+   * Stage-only workflow for raw writes (matches WriteTool pattern):
+   * 1. Check current branch
+   * 2. Write local file and validate with hooks
+   * 3. Push to remote GAS
+   * 4. Unstage if remote push fails
    */
   private async executeWithGitWorkflow(
     params: any,
@@ -431,8 +453,8 @@ export class RawWriteTool extends BaseFileSystemTool {
     contentWarnings: string[]
   ): Promise<any> {
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
-    const { writeLocalAndValidateWithHooks, revertGitCommit } = await import('../../utils/hookIntegration.js');
-    const { ensureFeatureBranch } = await import('../../utils/gitAutoCommit.js');
+    const { writeLocalAndValidateHooksOnly } = await import('../../utils/hookIntegration.js');
+    const { getCurrentBranchName, getUncommittedStatus, buildCompactGitHint } = await import('../../utils/gitStatus.js');
     const { log } = await import('../../utils/logger.js');
 
     // Get project paths
@@ -516,20 +538,16 @@ export class RawWriteTool extends BaseFileSystemTool {
     }
     // === END HASH-BASED CONFLICT DETECTION ===
 
-    // PHASE 0: Ensure feature branch
-    const branchResult = await ensureFeatureBranch(projectRoot);
-    log.info(
-      `[RAW_WRITE] Feature branch: ${branchResult.branch}${branchResult.created ? ' (auto-created)' : ' (existing)'}`
-    );
+    // PHASE 0: Check current branch (no auto-creation of feature branches)
+    const currentBranch = await getCurrentBranchName(projectRoot);
+    log.info(`[RAW_WRITE] Current branch: ${currentBranch}`);
 
-    // PHASE 1: Write local + run hooks + commit
-    const hookResult = await writeLocalAndValidateWithHooks(
+    // PHASE 1: Local validation with hooks (NO COMMIT - just validate and stage)
+    const hookResult = await writeLocalAndValidateHooksOnly(
       content,
       filePath,
-      filename,
-      parsedPath.scriptId,
-      projectRoot,
-      params.changeReason  // Pass custom commit message
+      fullFilename,
+      projectRoot
     );
 
     if (!hookResult.success) {
@@ -576,17 +594,7 @@ export class RawWriteTool extends BaseFileSystemTool {
         hashNote: 'Hash computed on raw content including CommonJS wrappers. Use for expectedHash on subsequent raw_write calls.',
         position: updatedFiles.findIndex((f: any) => fileNameMatches(f.name, filename)),
         totalFiles: updatedFiles.length,
-        git: {
-          enabled: true,
-          source: gitDiscovery.source,
-          gitPath: gitDiscovery.gitPath,
-          branch: branchResult.branch,
-          branchCreated: branchResult.created,
-          commitHash: hookResult.commitHash,
-          commitMessage: params.changeReason || `Update ${filename}`,
-          hookModified: hookResult.hookModified,
-          breadcrumbsPulled: gitDiscovery.breadcrumbsPulled
-        }
+        git: buildCompactGitHint(currentBranch, await getUncommittedStatus(projectRoot))
       };
 
       // Add content integrity warnings if any
@@ -603,29 +611,18 @@ export class RawWriteTool extends BaseFileSystemTool {
       return result;
 
     } catch (remoteError: any) {
-      // PHASE 3: Remote failed - revert git commit
-      log.error(`[RAW_WRITE] Remote write failed, reverting commit: ${remoteError.message}`);
+      // PHASE 3: Remote failed - unstage changes (simple cleanup, no commit to revert)
+      log.error(`[RAW_WRITE] Remote write failed for ${filename}, unstaging local changes: ${remoteError.message}`);
 
-      const revertResult = await revertGitCommit(
-        projectRoot,
-        hookResult.commitHash!,
-        filename
-      );
-
-      if (revertResult.success) {
-        throw new Error(`Remote write failed after local validation - all changes reverted: ${remoteError.message}`);
-      } else {
-        throw new Error(
-          `CRITICAL: Remote write failed AND commit revert failed.\n\n` +
-          `Manual recovery required:\n` +
-          `1. Navigate to: ${projectRoot}\n` +
-          `2. Check git status: git status\n` +
-          `3. If conflicts exist: git revert --abort\n` +
-          `4. To undo commit: git reset --hard HEAD~1 (WARNING: loses commit ${hookResult.commitHash})\n\n` +
-          `Original error: ${remoteError.message}\n` +
-          `Revert error: ${revertResult.error || 'unknown'}`
-        );
+      try {
+        const { unstageFile } = await import('../../utils/hookIntegration.js');
+        await unstageFile(fullFilename, projectRoot);
+        log.info(`[RAW_WRITE] Unstaged ${fullFilename} after remote failure`);
+      } catch (unstageError) {
+        log.warn(`[RAW_WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
       }
+
+      throw new Error(`Remote write failed for ${filename} - local changes unstaged: ${remoteError.message}`);
     }
   }
 }

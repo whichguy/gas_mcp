@@ -44,7 +44,18 @@ interface RawEditResult {
  */
 export class RawEditTool extends BaseTool {
   public name = 'raw_edit';
-  public description = '[FILE:RAW:EDIT] Token-efficient editing on raw content including CommonJS wrappers. WHEN: modifying _main() wrapper code, module infrastructure, or system-level content. AVOID: use edit for normal user code. Example: raw_edit({scriptId, path: "Utils.gs", old_string: "loadNow: false", new_string: "loadNow: true"})';
+  public description = '[FILE:RAW:EDIT] Token-efficient editing on raw content including CommonJS wrappers. WHEN: modifying _main() wrapper code, module infrastructure, or system-level content. AVOID: use edit for normal user code. Example: raw_edit({scriptId, path: "Utils.gs", old_string: "loadNow: false", new_string: "loadNow: true"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether edits were applied successfully' },
+      editsApplied: { type: 'number', description: 'Number of edit operations applied' },
+      diff: { type: 'string', description: 'Git-style diff of changes (dryRun or applied)' },
+      filePath: { type: 'string', description: 'Full resolved file path' },
+      tokenSavings: { type: 'object', description: 'Token efficiency stats (vsFullFile, outputTokensUsed, outputTokensSaved)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -101,19 +112,17 @@ export class RawEditTool extends BaseTool {
     required: ['path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Raw content (_main+__defineModule__) editing | system files | user code→prefer edit',
-      contentDifference: 'raw_edit: complete (_main+__defineModule__) | edit: clean user code',
-      tokenSavings: '95%+ vs raw_write (minimal ~10tok vs thousands)',
-      examples: ['CommonJS: path:"abc123.../CommonJS",edits:[{oldText:"function _main(",newText:"function _mainWrapper("}]', 'System: path:"abc123.../__mcp_exec",edits:[...]'],
-      vsGasEdit: 'edit: unwraps | raw_edit: preserves exact',
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal raw editing'}
-    },
-    llmHints: {
-      preferOver: 'raw_write (95% save) | edit (preserve wrappers)',
-      idealFor: 'CommonJS system|__mcp_exec|_main wrappers|system bugs',
-      avoid: 'User code→edit | new→raw_write | refactor→raw_write',
-      warning: 'System files only (user→edit)'
+      tokenSavings: '95%+ vs raw_write. System files only (user code→edit)',
+      idealFor: 'CommonJS system|__mcp_exec|_main wrappers|system bugs'
     }
+  };
+
+  public annotations = {
+    title: 'Edit File (Raw)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

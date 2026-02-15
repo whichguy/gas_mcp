@@ -1,0 +1,366 @@
+{
+  "timestamp": "2026-02-15T22:17:57.630Z",
+  "totalTokens": 39351,
+  "toolCount": 44,
+  "breakdown": {
+    "descriptions": 3707,
+    "inputSchemas": 26773,
+    "llmGuidance": 6436,
+    "outputSchemas": 6835,
+    "annotations": 1158
+  },
+  "perTool": {
+    "auth": {
+      "description": 62,
+      "inputSchema": 259,
+      "llmGuidance": 36,
+      "outputSchema": 136,
+      "annotations": 29,
+      "total": 506
+    },
+    "ls": {
+      "description": 65,
+      "inputSchema": 592,
+      "llmGuidance": 125,
+      "outputSchema": 53,
+      "annotations": 22,
+      "total": 750
+    },
+    "file_status": {
+      "description": 88,
+      "inputSchema": 447,
+      "llmGuidance": 86,
+      "outputSchema": 74,
+      "annotations": 22,
+      "total": 652
+    },
+    "cat": {
+      "description": 69,
+      "inputSchema": 490,
+      "llmGuidance": 115,
+      "outputSchema": 109,
+      "annotations": 24,
+      "total": 711
+    },
+    "write": {
+      "description": 99,
+      "inputSchema": 2085,
+      "llmGuidance": 1041,
+      "outputSchema": 110,
+      "annotations": 30,
+      "total": 2343
+    },
+    "grep": {
+      "description": 72,
+      "inputSchema": 856,
+      "llmGuidance": 150,
+      "outputSchema": 127,
+      "annotations": 23,
+      "total": 1097
+    },
+    "ripgrep": {
+      "description": 103,
+      "inputSchema": 1143,
+      "llmGuidance": 100,
+      "outputSchema": 307,
+      "annotations": 23,
+      "total": 1596
+    },
+    "sed": {
+      "description": 102,
+      "inputSchema": 981,
+      "llmGuidance": 431,
+      "outputSchema": 121,
+      "annotations": 29,
+      "total": 1253
+    },
+    "edit": {
+      "description": 122,
+      "inputSchema": 1379,
+      "llmGuidance": 722,
+      "outputSchema": 117,
+      "annotations": 30,
+      "total": 1667
+    },
+    "aider": {
+      "description": 125,
+      "inputSchema": 1355,
+      "llmGuidance": 671,
+      "outputSchema": 210,
+      "annotations": 30,
+      "total": 1740
+    },
+    "find": {
+      "description": 73,
+      "inputSchema": 450,
+      "llmGuidance": 74,
+      "outputSchema": 99,
+      "annotations": 22,
+      "total": 664
+    },
+    "deps": {
+      "description": 84,
+      "inputSchema": 384,
+      "llmGuidance": 122,
+      "outputSchema": 151,
+      "annotations": 24,
+      "total": 662
+    },
+    "rm": {
+      "description": 66,
+      "inputSchema": 415,
+      "llmGuidance": 46,
+      "outputSchema": 110,
+      "annotations": 22,
+      "total": 631
+    },
+    "mv": {
+      "description": 80,
+      "inputSchema": 506,
+      "llmGuidance": 67,
+      "outputSchema": 173,
+      "annotations": 28,
+      "total": 806
+    },
+    "cp": {
+      "description": 81,
+      "inputSchema": 494,
+      "llmGuidance": 57,
+      "outputSchema": 231,
+      "annotations": 28,
+      "total": 852
+    },
+    "cache_clear": {
+      "description": 52,
+      "inputSchema": 286,
+      "llmGuidance": 144,
+      "outputSchema": 173,
+      "annotations": 22,
+      "total": 555
+    },
+    "raw_cat": {
+      "description": 75,
+      "inputSchema": 212,
+      "llmGuidance": 74,
+      "outputSchema": 193,
+      "annotations": 23,
+      "total": 524
+    },
+    "raw_write": {
+      "description": 103,
+      "inputSchema": 1122,
+      "llmGuidance": 388,
+      "outputSchema": 204,
+      "annotations": 29,
+      "total": 1480
+    },
+    "raw_grep": {
+      "description": 64,
+      "inputSchema": 785,
+      "llmGuidance": 0,
+      "outputSchema": 113,
+      "annotations": 25,
+      "total": 1007
+    },
+    "raw_ripgrep": {
+      "description": 80,
+      "inputSchema": 1006,
+      "llmGuidance": 22,
+      "outputSchema": 136,
+      "annotations": 25,
+      "total": 1268
+    },
+    "raw_sed": {
+      "description": 94,
+      "inputSchema": 543,
+      "llmGuidance": 0,
+      "outputSchema": 121,
+      "annotations": 31,
+      "total": 809
+    },
+    "raw_edit": {
+      "description": 99,
+      "inputSchema": 401,
+      "llmGuidance": 35,
+      "outputSchema": 120,
+      "annotations": 29,
+      "total": 670
+    },
+    "raw_aider": {
+      "description": 94,
+      "inputSchema": 477,
+      "llmGuidance": 52,
+      "outputSchema": 112,
+      "annotations": 29,
+      "total": 733
+    },
+    "raw_find": {
+      "description": 57,
+      "inputSchema": 395,
+      "llmGuidance": 19,
+      "outputSchema": 99,
+      "annotations": 24,
+      "total": 595
+    },
+    "raw_cp": {
+      "description": 103,
+      "inputSchema": 431,
+      "llmGuidance": 52,
+      "outputSchema": 106,
+      "annotations": 29,
+      "total": 689
+    },
+    "reorder": {
+      "description": 85,
+      "inputSchema": 161,
+      "llmGuidance": 0,
+      "outputSchema": 119,
+      "annotations": 29,
+      "total": 414
+    },
+    "project_create": {
+      "description": 82,
+      "inputSchema": 499,
+      "llmGuidance": 212,
+      "outputSchema": 203,
+      "annotations": 29,
+      "total": 834
+    },
+    "project_init": {
+      "description": 86,
+      "inputSchema": 444,
+      "llmGuidance": 192,
+      "outputSchema": 181,
+      "annotations": 30,
+      "total": 763
+    },
+    "project_list": {
+      "description": 63,
+      "inputSchema": 33,
+      "llmGuidance": 0,
+      "outputSchema": 92,
+      "annotations": 23,
+      "total": 231
+    },
+    "exec": {
+      "description": 108,
+      "inputSchema": 878,
+      "llmGuidance": 281,
+      "outputSchema": 78,
+      "annotations": 29,
+      "total": 1111
+    },
+    "exec_api": {
+      "description": 86,
+      "inputSchema": 550,
+      "llmGuidance": 0,
+      "outputSchema": 79,
+      "annotations": 28,
+      "total": 763
+    },
+    "deploy": {
+      "description": 92,
+      "inputSchema": 319,
+      "llmGuidance": 37,
+      "outputSchema": 371,
+      "annotations": 24,
+      "total": 825
+    },
+    "find_drive_script": {
+      "description": 82,
+      "inputSchema": 132,
+      "llmGuidance": 65,
+      "outputSchema": 89,
+      "annotations": 30,
+      "total": 355
+    },
+    "create_script": {
+      "description": 84,
+      "inputSchema": 222,
+      "llmGuidance": 61,
+      "outputSchema": 154,
+      "annotations": 29,
+      "total": 510
+    },
+    "process_list": {
+      "description": 72,
+      "inputSchema": 660,
+      "llmGuidance": 22,
+      "outputSchema": 73,
+      "annotations": 23,
+      "total": 849
+    },
+    "executions": {
+      "description": 80,
+      "inputSchema": 564,
+      "llmGuidance": 65,
+      "outputSchema": 168,
+      "annotations": 23,
+      "total": 856
+    },
+    "cloud_logs": {
+      "description": 84,
+      "inputSchema": 412,
+      "llmGuidance": 76,
+      "outputSchema": 159,
+      "annotations": 22,
+      "total": 698
+    },
+    "trigger": {
+      "description": 84,
+      "inputSchema": 1320,
+      "llmGuidance": 89,
+      "outputSchema": 162,
+      "annotations": 23,
+      "total": 1608
+    },
+    "rsync": {
+      "description": 84,
+      "inputSchema": 612,
+      "llmGuidance": 308,
+      "outputSchema": 333,
+      "annotations": 28,
+      "total": 1077
+    },
+    "git_feature": {
+      "description": 85,
+      "inputSchema": 626,
+      "llmGuidance": 190,
+      "outputSchema": 301,
+      "annotations": 31,
+      "total": 1064
+    },
+    "config": {
+      "description": 88,
+      "inputSchema": 316,
+      "llmGuidance": 58,
+      "outputSchema": 137,
+      "annotations": 29,
+      "total": 590
+    },
+    "sheet_sql": {
+      "description": 91,
+      "inputSchema": 642,
+      "llmGuidance": 151,
+      "outputSchema": 156,
+      "annotations": 29,
+      "total": 939
+    },
+    "worktree": {
+      "description": 90,
+      "inputSchema": 753,
+      "llmGuidance": 0,
+      "outputSchema": 280,
+      "annotations": 24,
+      "total": 1167
+    },
+    "status": {
+      "description": 69,
+      "inputSchema": 136,
+      "llmGuidance": 0,
+      "outputSchema": 195,
+      "annotations": 23,
+      "total": 443
+    }
+  }
+}

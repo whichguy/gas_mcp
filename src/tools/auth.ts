@@ -16,6 +16,7 @@ import {
   authCompletionResolvers,
   resolverStates
 } from '../auth/authSignals.js';
+import { mcpLogger } from '../utils/mcpLogger.js';
 
 // OAuth scopes for Google Apps Script API
 const REQUIRED_SCOPES = [
@@ -220,6 +221,10 @@ export async function auth({
   accessToken?: string;
   tokenExpiresAt?: number;
   tokenExpiresIn?: number;
+  workflowHint?: {
+    suggestion: string;
+    reason: string;
+  };
 }> {
   // Use session manager if provided, otherwise fall back to global manager
   const authStateManager = sessionAuthManager || AuthStateManager.getInstance();
@@ -251,8 +256,14 @@ export async function auth({
               user: authStatus.user,
               tokenValid: authStatus.tokenValid,
               expiresIn: authStatus.expiresIn,
-              accessToken: authSession?.tokens?.access_token,
-              tokenExpiresAt: authSession?.tokens?.expires_at
+              accessToken: authSession?.tokens?.access_token
+                ? `****...${authSession.tokens.access_token.slice(-4)}`
+                : undefined,
+              tokenExpiresAt: authSession?.tokens?.expires_at,
+              workflowHint: {
+                suggestion: 'git_feature({operation:"start", scriptId, featureName:"..."}) before editing',
+                reason: 'Feature branches isolate changes and enable commit tracking'
+              }
             };
           } else {
             return {
@@ -326,15 +337,21 @@ export async function auth({
             : authStateManager.getAuthSession();
           
           return {
-            status: 'already_authenticated', 
+            status: 'already_authenticated',
             message: `Already authenticated as ${userInfo?.email}`,
             authenticated: true,
             user: userInfo,
-            accessToken: authSession?.tokens?.access_token,
+            accessToken: authSession?.tokens?.access_token
+              ? `****...${authSession.tokens.access_token.slice(-4)}`
+              : undefined,
             tokenExpiresAt: authSession?.tokens?.expires_at,
-            tokenExpiresIn: authSession?.tokens?.expires_at 
+            tokenExpiresIn: authSession?.tokens?.expires_at
               ? Math.max(0, Math.floor((authSession.tokens.expires_at - Date.now()) / 1000))
-              : undefined
+              : undefined,
+            workflowHint: {
+              suggestion: 'git_feature({operation:"start", scriptId, featureName:"..."}) before editing',
+              reason: 'Feature branches isolate changes and enable commit tracking'
+            }
           };
         }
 
@@ -345,7 +362,8 @@ export async function auth({
     }
   } catch (error: any) {
     console.error('Authentication error:', error);
-    
+    mcpLogger.error('auth', { event: 'login_failure', error: error.message, mode });
+
     // CLEANUP on any error
     activeAuthFlows.delete(authKey);
     authFlowMutex.delete(authKey);
@@ -390,6 +408,7 @@ async function performSynchronizedAuthFlow(
   openBrowser: boolean,
   waitForCompletion: boolean
 ): Promise<any> {
+  mcpLogger.info('auth', { event: 'oauth_flow_start', authKey });
   console.error(`Starting synchronized OAuth flow for ${authKey}...`);
   
   // Get config and create isolated auth client
@@ -447,7 +466,8 @@ async function performSynchronizedAuthFlow(
               }
               
               console.error(`Authentication session established for ${userInfo.email}`);
-              
+              mcpLogger.info('auth', { event: 'login_success', email: userInfo.email });
+
               // ENHANCEMENT: Cache deployment URLs after successful authentication
               await cacheDeploymentUrlsForSession(authStateManager, tokens.access_token);
               
@@ -468,6 +488,7 @@ async function performSynchronizedAuthFlow(
             }
           } catch (error: any) {
             console.error(`Error processing authentication session for ${authKey}:`, error);
+            mcpLogger.error('auth', { event: 'login_failure', error: error.message, authKey });
             reject(new OAuthError(`Session setup failed: ${error.message}`, 'validation'));
           }
         },
@@ -540,6 +561,7 @@ async function performSynchronizedAuthFlow(
               }
               
               console.error(`Non-blocking: Authentication session established for ${userInfo.email}`);
+              mcpLogger.info('auth', { event: 'login_success', email: userInfo.email, mode: 'non-blocking' });
               await cacheDeploymentUrlsForSession(authStateManager, tokens.access_token);
               
               // Signal session setup complete
@@ -590,7 +612,20 @@ async function performSynchronizedAuthFlow(
  */
 export class AuthTool extends BaseTool {
   public name = 'auth';
-  public description = '[AUTH] OAuth 2.0 authentication management — start flow, check status, or logout. WHEN: authenticating with Google Apps Script API. Example: auth({mode: "start"}) or auth({mode: "status"})';
+  public description = '[AUTH] OAuth 2.0 authentication management — start flow, check status, or logout. WHEN: authenticating with Google Apps Script API. AVOID: running auth before other tools (they auto-prompt). Example: auth({mode: "start"}) or auth({mode: "status"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      status: { type: 'string', description: 'Auth state: authenticated, not_authenticated, logged_out, auth_started' },
+      message: { type: 'string', description: 'Human-readable status message' },
+      authenticated: { type: 'boolean', description: 'Whether currently authenticated' },
+      user: { type: 'object', description: 'User info (email, name) when authenticated' },
+      tokenValid: { type: 'boolean', description: 'Whether access token is still valid' },
+      expiresIn: { type: 'number', description: 'Seconds until token expiry' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -623,6 +658,14 @@ export class AuthTool extends BaseTool {
       workflow: 'status → start (if needed) → OAuth in browser → other tools',
       firstStep: 'Required entry point before all other GAS operations'
     }
+  };
+
+  public annotations = {
+    title: 'Authentication',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
   };
 
   constructor(sessionAuthManager?: SessionAuthManager) {

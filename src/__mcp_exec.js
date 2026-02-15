@@ -239,12 +239,25 @@ function extractPostData(postData) {
 /**
  * Creates a function that evaluates code and returns the result.
  * Simple approach: wrap code to capture the last expression value.
+ *
+ * If code contains `return` statements, wraps in IIFE so `return`
+ * is syntactically valid (eval parses as Script, not function body).
  */
 function createFunction(code) {
   const c = code.trim();
   if (c === '') return function() { return undefined; };
 
-  // Use eval to execute code and return result of last expression
+  // Code with `return` needs a function body — wrap in IIFE.
+  // Regex targets return at statement boundaries (after ; { } or start-of-line).
+  // False positives (return inside strings/comments) are harmless — IIFE wrapping
+  // doesn't change behavior for code that doesn't actually use return.
+  if (/(?:^|[;\{\}])\s*return\b/m.test(c)) {
+    return function() {
+      return eval('(function() { ' + c + ' })()');
+    };
+  }
+
+  // No return statement — eval returns last expression value
   return function() {
     return eval(c);
   };
