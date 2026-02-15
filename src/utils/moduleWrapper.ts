@@ -712,6 +712,90 @@ export function shouldWrapContent(fileType: string, fileName: string): boolean {
 }
 
 /**
+ * Content integrity validation context
+ */
+export type ContentIntegrityContext = 'rsync-push' | 'rsync-pull' | 'raw-write';
+
+/**
+ * Validates CommonJS wrapper integrity for a SERVER_JS file's content.
+ * Returns an array of non-blocking warning strings.
+ *
+ * Checks:
+ * 1. SERVER_JS files that should have wrappers but don't
+ * 2. Files with partial wrappers (only _main or only __defineModule__)
+ *
+ * Skips validation for files exempt from wrapping (HTML, JSON, system files).
+ *
+ * @param filename - The GAS filename (e.g., "utils/helpers.gs")
+ * @param content - The file content to validate
+ * @param fileType - GAS file type: SERVER_JS, HTML, JSON
+ * @param context - Where validation is happening (for message phrasing)
+ * @returns Array of warning strings (empty if no issues)
+ */
+export function validateCommonJsIntegrity(
+  filename: string,
+  content: string,
+  fileType: string,
+  context: ContentIntegrityContext
+): string[] {
+  const warnings: string[] = [];
+
+  // Only validate SERVER_JS files that should be wrapped
+  if (!shouldWrapContent(fileType, filename)) {
+    return warnings;
+  }
+
+  const hasMain = commonJsPatterns.mainFunction.test(content);
+  const hasDefine = commonJsPatterns.defineModule.test(content);
+
+  if (hasMain && hasDefine) {
+    return warnings;
+  }
+
+  if (!hasMain && !hasDefine) {
+    if (context === 'rsync-push') {
+      warnings.push(
+        `${filename}: Missing CommonJS wrappers (no _main() or __defineModule__). ` +
+        `Local .gs/.js files should be stored wrapped. This file may have been edited ` +
+        `outside the mcp_gas toolchain. Use "write" tool to re-save with proper wrappers.`
+      );
+    } else if (context === 'rsync-pull') {
+      warnings.push(
+        `${filename}: Missing CommonJS wrappers (no _main() or __defineModule__). ` +
+        `This GAS file was likely created outside the CommonJS module system (e.g., via ` +
+        `the Apps Script editor). It won't participate in require()/module.exports. ` +
+        `Use "write" tool to convert it to a CommonJS module.`
+      );
+    } else if (context === 'raw-write') {
+      warnings.push(
+        `${filename}: Content lacks CommonJS wrappers (_main() and __defineModule__). ` +
+        `This SERVER_JS file won't participate in the module system (no require/exports). ` +
+        `If intentional, ignore this warning. Otherwise, use "write" instead of "raw_write" ` +
+        `for automatic wrapping.`
+      );
+    }
+    return warnings;
+  }
+
+  // Partial wrapper: one without the other
+  if (hasMain && !hasDefine) {
+    warnings.push(
+      `${filename}: Has function _main() but missing __defineModule__(_main) call. ` +
+      `The module will not be registered with the CommonJS system. ` +
+      `Add "__defineModule__(_main);" after the closing brace of _main().`
+    );
+  } else if (!hasMain && hasDefine) {
+    warnings.push(
+      `${filename}: Has __defineModule__(_main) but missing function _main(). ` +
+      `The __defineModule__ call references a function that doesn't exist. ` +
+      `This will cause a runtime error. Wrap code in function _main(module, exports, log) { ... }.`
+    );
+  }
+
+  return warnings;
+}
+
+/**
  * Extracts module name from file path, preserving directory structure
  * @param filePath - The file path (e.g., "scriptId/utils/helpers" or "utils/helpers")
  * @returns The module name with preserved path structure (e.g., "utils/helpers")

@@ -174,8 +174,7 @@ export async function checkSyncStatus(
     try {
       await fs.access(localFilePath);
       localFileExists = true;
-      // Get validated hash (checks mtime to detect external modifications)
-      // This will recompute if file was modified outside MCP tools
+      // Get validated hash from xattr cache (authoritative, no mtime check)
       const validatedResult = await getValidatedContentHash(localFilePath);
       localHash = validatedResult?.hash || null;
     } catch {

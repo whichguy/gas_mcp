@@ -20,7 +20,7 @@ describe('AiderTool', () => {
 
     it('should have descriptive description', () => {
       expect(aiderTool.description).to.include('fuzzy');
-      expect(aiderTool.description).to.include('Token-efficient');
+      expect(aiderTool.description).to.include('[FILE:AIDER]');
     });
 
     it('should have comprehensive input schema', () => {
@@ -120,9 +120,9 @@ describe('AiderTool', () => {
   });
 
   describe('Token Efficiency', () => {
-    it('should document 95%+ token savings in description', () => {
-      expect(aiderTool.description).to.include('95%+');
-      expect(aiderTool.description).to.include('token');
+    it('should document editing approach in description', () => {
+      expect(aiderTool.description).to.include('fuzzy');
+      expect(aiderTool.description).to.include('editing');
     });
 
     it('should mention token savings in workflow guidance', () => {

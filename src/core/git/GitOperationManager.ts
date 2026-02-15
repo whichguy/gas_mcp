@@ -347,18 +347,40 @@ export class GitOperationManager {
       // Strategies return wrappedContent (the content written to GAS remote).
       // Local files must match remote to prevent false sync drift detection.
       const wrappedContent = (operationResult as any)?.wrappedContent as Map<string, string> | undefined;
-      if (wrappedContent && syncMode !== 'local-only') {
+      if (wrappedContent && wrappedContent.size > 0 && syncMode !== 'local-only') {
         const { writeFile: writeFileAsync } = await import('fs/promises');
         const { join } = await import('path');
         const { LocalFileManager } = await import('../../utils/localFileManager.js');
 
+        const wrappedFilesWithExt: string[] = [];
         for (const [filename, content] of wrappedContent) {
           const ext = LocalFileManager.getFileExtensionFromName(filename);
-          const filePath = join(localPath, filename + ext);
+          const fullFilename = filename + ext;
+          const filePath = join(localPath, fullFilename);
           await writeFileAsync(filePath, content, 'utf-8');
           const hash = computeGitSha1(content);
           await updateCachedContentHash(filePath, hash);
-          log.debug(`[GIT-MANAGER] Overwrote local with wrapped content: ${filename + ext} (hash: ${hash.slice(0, 8)}...)`);
+          wrappedFilesWithExt.push(fullFilename);
+          log.debug(`[GIT-MANAGER] Overwrote local with wrapped content: ${fullFilename} (hash: ${hash.slice(0, 8)}...)`);
+        }
+
+        // Re-stage so git index matches working tree (WRAPPED content).
+        // Step 2 staged UNWRAPPED content; this updates the index to WRAPPED.
+        // Uses targeted `git add --` (not `git add .`) to avoid staging unrelated files.
+        // Non-fatal: remote and local are consistent; only git index would be stale.
+        try {
+          const { spawn } = await import('child_process');
+          await new Promise<void>((resolve, reject) => {
+            const git = spawn('git', ['add', '--', ...wrappedFilesWithExt], {
+              cwd: localPath,
+              stdio: ['ignore', 'pipe', 'pipe']
+            });
+            git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git add exit code ${code}`)));
+            git.on('error', reject);
+          });
+          log.debug(`[GIT-MANAGER] Re-staged ${wrappedContent.size} file(s) with wrapped content`);
+        } catch (restageErr: any) {
+          log.warn(`[GIT-MANAGER] Re-stage failed (non-fatal): ${restageErr.message}`);
         }
       }
 

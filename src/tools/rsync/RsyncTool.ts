@@ -87,6 +87,7 @@ interface RsyncExecuteResponse {
     command: string;
   };
   git?: RsyncGitHint;
+  warnings?: string[];
 }
 
 interface RsyncNoChangesResponse {
@@ -100,6 +101,7 @@ interface RsyncNoChangesResponse {
     filesDeleted: 0;
   };
   message: string;
+  warnings?: string[];
 }
 
 interface RsyncErrorResponse {
@@ -124,14 +126,7 @@ type RsyncResponse =
 export class RsyncTool extends BaseTool {
   public name = 'rsync';
 
-  public description = `[GIT] PREFERRED for multi-file changes. Edit files locally at ~/gas-repos/project-{scriptId}/ using Claude Code native tools, then push all at once (2 API calls for N files).
-
-Single-call stateless workflow:
-- pull: GAS → Local (add dryrun: true to preview)
-- push: Local → GAS (add dryrun: true to preview)
-
-Use dryrun: true to preview changes before applying.
-Use write/edit/aider for single-file or small changes (<3 files).`;
+  public description = '[SYNC] Stateless bidirectional sync between local git repo and remote GAS — pull or push with optional dryrun preview. WHEN: syncing local changes to GAS or pulling remote changes. AVOID: write/edit already push to GAS automatically. Example: rsync({scriptId, direction: "pull"}) or rsync({scriptId, direction: "push", dryrun: true})';
 
   public inputSchema = {
     type: 'object',
@@ -249,7 +244,7 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
 
       // Step 3: No changes — return early
       if (!diffResult.operations.hasChanges) {
-        return {
+        const noChangeResponse: RsyncNoChangesResponse = {
           success: true,
           operation,
           dryrun: false,
@@ -260,7 +255,11 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
             filesDeleted: 0,
           },
           message: 'Already in sync. No changes detected.',
-        } as RsyncNoChangesResponse;
+        };
+        if (diffResult.warnings.length > 0) {
+          noChangeResponse.warnings = diffResult.warnings;
+        }
+        return noChangeResponse;
       }
 
       // Step 4: Check deletion safety
@@ -302,6 +301,10 @@ Use write/edit/aider for single-file or small changes (<3 files).`;
         },
         recoveryInfo: result.recoveryInfo,
       };
+
+      if (diffResult.warnings.length > 0) {
+        response.warnings = diffResult.warnings;
+      }
 
       if (gitHint) {
         response.git = gitHint;
