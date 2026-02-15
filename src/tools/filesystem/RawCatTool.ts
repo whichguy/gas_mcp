@@ -17,6 +17,22 @@ export class RawCatTool extends BaseFileSystemTool {
   public name = 'raw_cat';
   public description = '[FILE:RAW:READ] Read file with full CommonJS wrappers visible — shows _main() function and module infrastructure. WHEN: debugging module system issues, inspecting loadNow/hoistedFunctions, or viewing exact GAS source. AVOID: use cat for clean user code. Example: raw_cat({scriptId, path: "Utils.gs"})';
 
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      path: { type: 'string', description: 'Full path including scriptId' },
+      scriptId: { type: 'string', description: 'GAS project ID' },
+      filename: { type: 'string', description: 'File name without scriptId prefix' },
+      type: { type: 'string', description: 'GAS file type (SERVER_JS, HTML, JSON)' },
+      content: { type: 'string', description: 'Raw file content including CommonJS wrappers' },
+      size: { type: 'number', description: 'Content size in bytes' },
+      updateTime: { type: 'string', description: 'Remote file update timestamp' },
+      hash: { type: 'string', description: 'Git SHA-1 hash of raw content' },
+      hashNote: { type: 'string', description: 'Explanation of hash computation' },
+      git: { type: 'object', description: 'Git workflow hint for LLM guidance' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -33,28 +49,16 @@ export class RawCatTool extends BaseFileSystemTool {
     required: ['path'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Debug CommonJS wrapper issues | View system infrastructure code | Compare wrapped vs unwrapped content',
-      catVsRawCat: {
-        cat: 'Use 99% of the time - returns clean user code without _main() wrapper, hash matches unwrapped content',
-        raw_cat: 'Use for debugging - returns full file including _main() wrapper, initModule(), and system code'
-      },
-      whenToUseRawCat: [
-        'Debugging CommonJS require() resolution issues',
-        'Viewing system files (common-js/require, __mcp_exec)',
-        'Understanding how loadNow/hoistedFunctions affect wrapper generation',
-        'Comparing local git hash with remote (raw_cat hash matches git hash-object)'
-      ],
-      responseFields: {
-        content: 'Full file content INCLUDING _main() wrapper and module infrastructure',
-        hash: 'Git SHA-1 of WRAPPED content (matches git hash-object on local synced file)',
-        hashNote: 'Explains that hash is on wrapped content'
-      },
-      troubleshooting: {
-        wrongHash: 'If cat hash != raw_cat hash, the difference is the CommonJS wrapper',
-        systemFiles: 'common-js/require and __mcp_exec are system files - use raw_cat to view',
-        wrapperIssues: 'Check loadNow setting in moduleOptions if module not initializing'
-      }
+      vsCat: 'cat=99% of time (clean code). raw_cat=debugging wrappers, system files (common-js/require, __mcp_exec), hash comparison (raw_cat hash matches git hash-object)',
+      troubleshooting: 'cat hash != raw_cat hash→CommonJS wrapper difference | module not loading→check loadNow in moduleOptions'
     }
+  };
+
+  public annotations = {
+    title: 'Read File (Raw)',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {
@@ -114,6 +118,16 @@ export class RawCatTool extends BaseFileSystemTool {
     if (gitHint) {
       result.gitBreadcrumbHint = gitHint;
     }
+
+    // Add git workflow hint
+    try {
+      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+      const repoPath = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
+      if (repoPath) {
+        const { buildReadHint } = await import('../../utils/gitStatus.js');
+        result.git = await buildReadHint(repoPath);
+      }
+    } catch { /* non-fatal */ }
 
     return result;
   }

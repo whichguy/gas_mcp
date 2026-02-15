@@ -79,26 +79,18 @@ export class CatTool extends BaseFileSystemTool {
     required: ['scriptId', 'path'],
     additionalProperties: false,
     llmGuidance: {
-      // LOCAL FILE EXPORT - Write content to local file
-      localFileSupport: {
-        toLocal: 'Save to local file: cat({scriptId, path:"utils.js", toLocal:"~/backup/utils.js"})',
-        useCase: 'Backup, export for external tools, local editing, migration',
-        behavior: 'Creates parent directories. Returns savedTo in response.'
-      },
-      unixLike: 'cat (read file) | GAS | CommonJS unwrap | prefers local cache',
-      whenToUse: 'normal file read (auto local/remote)',
-      workflow: 'cat({scriptId:"abc123...",path:"utils.gs"})',
-      alternatives: 'raw_cat→explicit project ID control',
-      efficientAlternatives: {searching: 'ripgrep|grep→faster than full file read', editing: 'edit→token-efficient small | aider→fuzzy match | sed→pattern replace', whenToUseCat: 'complete file content for understanding|major refactor'},
-      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→auto-unwraps CommonJS for clean edit'},
-      limitations: {fileTypes: 'SERVER_JS (.gs)|HTML (.html)|JSON (appsscript.json only)', moduleWrapping: 'auto-unwraps _main()→raw_cat for complete+wrappers', localCacheDependency: 'prefers ./src/→preferLocal:false force remote'},
-      pathRequirement: 'scriptId param+filename OR embed scriptId in path',
-      commonJsIntegration: 'SERVER_JS auto-integrated (require.js)→_main() wrapper removed→clean code for edit (require()/module/exports available at exec)',
-      moduleAccess: 'require("ModuleName")|module.exports={...}|exports.func=... (CommonJS handles loading+caching+deps)',
-      editingWorkflow: 'unwrapped for edit→auto-rewrapped on write',
-      examples: ['module: cat({scriptId:"1abc2def...",path:"Utils.gs"})', 'embedded: cat({scriptId:"",path:"1abc2def.../Calculator.gs"})', 'HTML: cat({scriptId:"1abc2def...",path:"sidebar.html"})', 'manifest: cat({scriptId:"1abc2def...",path:"appsscript.json"})'],
-      antiPatterns: ['❌ cat→edit→cat→edit (wasteful) → use single edit with multiple ops', '❌ cat large file to search → use ripgrep instead', '❌ cat then regex parse → use grep/ripgrep with pattern']
+      localFileSupport: 'toLocal:"~/backup/utils.js" → creates parent dirs, returns savedTo',
+      efficientAlternatives: 'ripgrep|grep→search; edit→small changes; aider→fuzzy; sed→pattern. Use cat for full understanding|major refactor.',
+      limitations: 'SERVER_JS|HTML|JSON only; auto-unwraps _main()→raw_cat for wrappers; preferLocal:false forces remote',
+      antiPatterns: 'cat→edit→cat→edit (use single edit) | cat to search (use ripgrep) | cat then regex (use grep)'
     }
+  };
+
+  public annotations = {
+    title: 'Read File (Smart)',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   async execute(params: CatParams): Promise<FileResult> {
@@ -248,6 +240,14 @@ export class CatTool extends BaseFileSystemTool {
                     // Add response hints
                     const fastPathHints = generateReadHints(filename, result.moduleOptions);
                     result.hints = fastPathHints;
+
+                    // Add git workflow hint
+                    if (gitStatus.repoPath) {
+                      try {
+                        const { buildReadHint } = await import('../../utils/gitStatus.js');
+                        result.git = await buildReadHint(gitStatus.repoPath);
+                      } catch { /* non-fatal */ }
+                    }
 
                     // Optimized path success - return with hash-verified local content
                     console.error(`✅ [SYNC] Using cached local content (hash: ${cachedHash.slice(0, 8)}...)`);
@@ -514,6 +514,14 @@ export class CatTool extends BaseFileSystemTool {
     // Add response hints
     const hints = generateReadHints(filename, result.moduleOptions);
     result.hints = hints;
+
+    // Add git workflow hint
+    if (gitStatus.repoPath) {
+      try {
+        const { buildReadHint } = await import('../../utils/gitStatus.js');
+        result.git = await buildReadHint(gitStatus.repoPath);
+      } catch { /* non-fatal */ }
+    }
 
     return result;
   }

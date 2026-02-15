@@ -18,6 +18,7 @@ import { RegexProcessor } from '../utils/regexProcessor.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { GuidanceFragments } from '../utils/guidanceFragments.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
+import type { CompactGitHint } from '../utils/gitStatus.js';
 
 /**
  * Interface for sed operation results
@@ -32,6 +33,7 @@ interface SedResult {
     error?: string;
   }>;
   gitBreadcrumbHints?: GitBreadcrumbEditHint[];
+  git?: CompactGitHint;
 }
 
 /**
@@ -74,7 +76,18 @@ interface ReplacementOperation {
  */
 export class SedTool extends BaseTool {
   public name = 'sed';
-  public description = '[FILE:SED] sed-style find/replace with regex support and capture groups ($1, $2) on clean user code. WHEN: bulk text replacements across a file using regex patterns. AVOID: use edit for simple string replacement; use ripgrep to preview matches first. Example: sed({scriptId, path: "Utils.gs", pattern: "s/oldFunc/newFunc/g"})';
+  public description = '[FILE:SED] sed-style find/replace with regex support and capture groups ($1, $2) on clean user code. WHEN: bulk text replacements across a file using regex patterns. AVOID: use edit for simple string replacement; use ripgrep to preview matches first. Example: sed({scriptId, path: "Utils.gs", pattern: "s/oldFunc/newFunc/g"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      filesProcessed: { type: 'number', description: 'Number of files processed' },
+      totalReplacements: { type: 'number', description: 'Total replacements made across all files' },
+      files: { type: 'array', description: 'Per-file results (path, replacements, success, error)' },
+      gitBreadcrumbHints: { type: 'array', description: 'Git breadcrumb hints for .git/* files' },
+      git: { type: 'object', description: 'Compact git hint (branch, uncommitted count, action)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -129,14 +142,18 @@ export class SedTool extends BaseTool {
     required: ['scriptId', 'pattern', 'replacement'],
     additionalProperties: false,
     llmGuidance: {
-      unixLike: 'sed s/old/new/g (replace) | GAS | CommonJS wrap/unwrap',
       toolSelection: GuidanceFragments.searchToolHints,
       errorResolutions: GuidanceFragments.errorResolutions,
-      whenToUse: 'Regex find/replace across files. Use capture groups ($1, $2) for complex transformations.',
-      examples: ['sed({scriptId,pattern:"oldFunc",replacement:"newFunc"})', 'sed({scriptId,pattern:"console\\\\.log",replacement:"Logger.log",path:"*.gs"})'],
-      nextSteps: ['exec->test changes', 'ripgrep->verify replacements', 'git_feature finish->commit'],
-      antiPatterns: ['sed for exact string -> use edit (more reliable)', 'complex regex without dryRun -> test with dryRun:true first', 'sed single file -> edit is more efficient']
+      antiPatterns: 'exact string->edit (reliable) | complex regex->dryRun:true first | single file->edit (efficient)'
     }
+  };
+
+  public annotations = {
+    title: 'Find and Replace',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   private ripgrepTool: RipgrepTool;
@@ -194,8 +211,8 @@ export class SedTool extends BaseTool {
         files: []
       };
 
-      // Track branch info from first successful write
-      let branchName: string | undefined;
+      // Track git hint from last successful write
+      let lastGitHint: CompactGitHint | undefined;
 
       for (const matchFile of searchResult.matches) {
         try {
@@ -233,9 +250,9 @@ export class SedTool extends BaseTool {
               force: params.force === true,  // Allow override if user explicitly requests
               accessToken: params.accessToken
             }) as any;  // WriteTool returns extended result with git info
-            // Capture branch name from first successful write
-            if (!branchName && writeResult.git?.branch) {
-              branchName = writeResult.git.branch;
+            // Capture git hint from last successful write
+            if (writeResult.git) {
+              lastGitHint = writeResult.git;
             }
           }
 
@@ -266,6 +283,11 @@ export class SedTool extends BaseTool {
 
       if (gitBreadcrumbHints.length > 0) {
         result.gitBreadcrumbHints = gitBreadcrumbHints;
+      }
+
+      // Propagate git workflow hint from last successful write
+      if (lastGitHint) {
+        result.git = lastGitHint;
       }
 
       return result;
@@ -332,7 +354,18 @@ export class SedTool extends BaseTool {
  */
 export class RawSedTool extends BaseTool {
   public name = 'raw_sed';
-  public description = '[FILE:RAW:SED] sed-style find/replace on raw content including CommonJS wrappers. WHEN: modifying _main() wrapper code or module infrastructure with regex patterns. AVOID: use sed for normal user code. Example: raw_sed({scriptId, path: "Utils.gs", pattern: "s/loadNow: false/loadNow: true/g"})';
+  public description = '[FILE:RAW:SED] sed-style find/replace on raw content including CommonJS wrappers. WHEN: modifying _main() wrapper code or module infrastructure with regex patterns. AVOID: use sed for normal user code. Example: raw_sed({scriptId, path: "Utils.gs", pattern: "s/loadNow: false/loadNow: true/g"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      filesProcessed: { type: 'number', description: 'Number of files processed' },
+      totalReplacements: { type: 'number', description: 'Total replacements made across all files' },
+      files: { type: 'array', description: 'Per-file results (path, replacements, success, error)' },
+      gitBreadcrumbHints: { type: 'array', description: 'Git breadcrumb hints for .git/* files' },
+      git: { type: 'object', description: 'Compact git hint (branch, uncommitted count, action)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -386,6 +419,14 @@ export class RawSedTool extends BaseTool {
     },
     required: ['scriptId', 'pattern', 'replacement'],
     additionalProperties: false
+  };
+
+  public annotations = {
+    title: 'Find and Replace (Raw)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   private ripgrepTool: RawRipgrepTool;
@@ -443,6 +484,9 @@ export class RawSedTool extends BaseTool {
         files: []
       };
 
+      // Track git hint from last successful write
+      let lastGitHint: CompactGitHint | undefined;
+
       for (const matchFile of searchResult.matches) {
         try {
           // Read raw file content (catTool now returns hash for conflict detection)
@@ -469,7 +513,7 @@ export class RawSedTool extends BaseTool {
           // HASH-BASED CONFLICT DETECTION: Pass hash from cat to write
           // If file was modified externally between cat and write, ConflictError is thrown
           if (!params.dryRun && replacementCount > 0) {
-            await this.writeTool.execute({
+            const writeResult = await this.writeTool.execute({
               path: `${scriptId}/${matchFile.fileName}`,
               content: newContent,
               fileType: 'SERVER_JS', // Default for raw operations
@@ -477,7 +521,11 @@ export class RawSedTool extends BaseTool {
               expectedHash: fileHash,
               force: params.force === true,  // Allow override if user explicitly requests
               accessToken: params.accessToken
-            });
+            }) as any;
+            // Capture git hint from last successful write
+            if (writeResult.git) {
+              lastGitHint = writeResult.git;
+            }
           }
 
           result.files.push({
@@ -507,6 +555,11 @@ export class RawSedTool extends BaseTool {
 
       if (gitBreadcrumbHints.length > 0) {
         result.gitBreadcrumbHints = gitBreadcrumbHints;
+      }
+
+      // Propagate git workflow hint from last successful write
+      if (lastGitHint) {
+        result.git = lastGitHint;
       }
 
       return result;

@@ -1,6 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'crypto';
 
 // Import session manager instead of singleton
@@ -89,6 +89,13 @@ import { WorktreeTool } from '../tools/worktree/index.js';
 
 // Import unified status dashboard
 import { StatusTool } from '../tools/StatusTool.js';
+
+// Import server context singleton
+import { ServerContext } from './ServerContext.js';
+
+// Import resource handlers
+import { listProjects, readProjectStatus } from '../resources/projectResources.js';
+import { readAuthStatus } from '../resources/authResources.js';
 
 // Import error handling
 import { MCPGasError, AuthenticationError, OAuthError } from '../errors/mcpErrors.js';
@@ -185,9 +192,10 @@ export class MCPGasServer {
   constructor() {
     this.server = new Server(
       { name: 'gas-server', version: '1.0.0' },
-      { capabilities: { tools: {} } }
+      { capabilities: { tools: {}, logging: {}, resources: {} } }
     );
     this.elicitation = new ElicitationHelper(this.server);
+    ServerContext.initialize(this.server);
 
     this.setupHandlers();
     this.initializeConfig();
@@ -528,6 +536,61 @@ export class MCPGasServer {
           isError: true
         };
       }
+    });
+
+    // List available MCP resources
+    this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+      const projectResources = await listProjects();
+      return {
+        resources: [
+          {
+            uri: 'gas://projects',
+            name: 'GAS Projects',
+            description: 'List of configured Google Apps Script projects',
+            mimeType: 'application/json'
+          },
+          {
+            uri: 'gas://auth/status',
+            name: 'Auth Status',
+            description: 'Current authentication state (tokens masked)',
+            mimeType: 'application/json'
+          },
+          ...projectResources
+        ]
+      };
+    });
+
+    // Read a specific MCP resource
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const { uri } = request.params;
+
+      if (uri === 'gas://projects') {
+        const projects = await listProjects();
+        return {
+          contents: [{
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(projects, null, 2)
+          }]
+        };
+      }
+
+      if (uri === 'gas://auth/status') {
+        const text = await readAuthStatus();
+        return {
+          contents: [{ uri, mimeType: 'application/json', text }]
+        };
+      }
+
+      const statusMatch = uri.match(/^gas:\/\/project\/([^/]+)\/status$/);
+      if (statusMatch) {
+        const text = await readProjectStatus(statusMatch[1]);
+        return {
+          contents: [{ uri, mimeType: 'application/json', text }]
+        };
+      }
+
+      throw new Error(`Unknown resource URI: ${uri}`);
     });
   }
 

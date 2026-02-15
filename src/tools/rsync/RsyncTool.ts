@@ -21,6 +21,7 @@ import { GASClient } from '../../api/gasClient.js';
 import { SyncPlanner, SyncPlanError, DiffResult } from './SyncPlanner.js';
 import { SyncExecutor, SyncExecuteError } from './SyncExecutor.js';
 import { getCurrentBranchName } from '../../utils/gitStatus.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 
 /**
  * Input schema for rsync tool
@@ -128,6 +129,30 @@ export class RsyncTool extends BaseTool {
 
   public description = '[SYNC] Stateless bidirectional sync between local git repo and remote GAS — pull or push with optional dryrun preview. WHEN: syncing local changes to GAS or pulling remote changes. AVOID: write/edit already push to GAS automatically. Example: rsync({scriptId, direction: "pull"}) or rsync({scriptId, direction: "push", dryrun: true})';
 
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether the operation succeeded' },
+      operation: { type: 'string', description: 'Sync direction: pull or push' },
+      dryrun: { type: 'boolean', description: 'Whether this was a preview (no changes applied)' },
+      // dryrun response fields
+      summary: { type: 'object', description: 'Change summary (dryrun): {direction, additions, updates, deletions, isBootstrap, totalOperations}' },
+      files: { type: 'object', description: 'Affected files (dryrun): {add: [{filename, size}], update: [{filename, sourceHash, destHash}], delete: [{filename}]}' },
+      nextStep: { type: 'string', description: 'Suggested next command (dryrun)' },
+      workflowContext: { type: 'string', description: 'Workflow context hint (dryrun)' },
+      // execute response fields
+      result: { type: 'object', description: 'Sync result (execute): {direction, filesAdded, filesUpdated, filesDeleted, commitSha}' },
+      recoveryInfo: { type: 'object', description: 'Recovery info (execute): {method, command}' },
+      git: { type: 'object', description: 'Git workflow hint (execute): {branch, isFeatureBranch, workflowHint: {action, command, reason}}' },
+      // no-changes response
+      message: { type: 'string', description: 'Status message when already in sync' },
+      // error response fields
+      error: { type: 'object', description: 'Error details (on failure): {code, message, details}' },
+      // common
+      warnings: { type: 'array', description: 'Warning messages' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     additionalProperties: false,
@@ -179,21 +204,21 @@ export class RsyncTool extends BaseTool {
     required: ['operation', 'scriptId'],
     llmGuidance: {
       ...GuidanceFragments.buildRsyncGuidance({
-        workflow: 'pull/push with optional dryrun: true to preview',
-        stateless: 'Single call — no planId needed. Use dryrun: true to preview.',
-        bootstrap: 'First sync creates manifest. No deletions allowed on bootstrap.',
+        workflow: 'pull/push with optional dryrun:true to preview. Single call, no planId.',
+        bootstrap: 'First sync creates manifest. No deletions on bootstrap.',
         recovery: 'On failure: git reset --hard {pre-sync-sha}',
       }),
-      postSync: 'After rsync, use git_feature to commit/push/finish. Check response git.workflowHint for next action.',
-      examples: [
-        'BATCH: Edit ~/gas-repos/project-{scriptId}/ locally → rsync push',
-        'Preview pull: rsync({operation:"pull", scriptId:"...", dryrun:true})',
-        'Apply pull: rsync({operation:"pull", scriptId:"..."})',
-        'Preview push: rsync({operation:"push", scriptId:"...", dryrun:true})',
-        'Apply push: rsync({operation:"push", scriptId:"..."})',
-        'Push with deletes: rsync({operation:"push", scriptId:"...", confirmDeletions:true})'
-      ]
+      postSync: 'After rsync, check response git.workflowHint for next action (commit/push/finish).',
+      examples: 'Batch: edit ~/gas-repos/project-{scriptId}/ locally → rsync push | Preview: dryrun:true | Deletes: confirmDeletions:true'
     }
+  };
+
+  public annotations = {
+    title: 'Sync Files',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;
@@ -213,6 +238,7 @@ export class RsyncTool extends BaseTool {
   async execute(params: RsyncInput): Promise<RsyncResponse> {
     const { operation, scriptId } = params;
 
+    mcpLogger.info('rsync', { event: 'sync_start', operation, scriptId, dryrun: !!params.dryrun });
     log.info(`[RSYNC] ${operation} operation for ${scriptId}${params.dryrun ? ' (dryrun)' : ''}`);
 
     // Validate scriptId
@@ -311,9 +337,17 @@ export class RsyncTool extends BaseTool {
         response.git = gitHint;
       }
 
+      mcpLogger.info('rsync', {
+        event: 'sync_complete',
+        operation,
+        scriptId,
+        filesChanged: result.filesAdded + result.filesUpdated + result.filesDeleted,
+      });
+
       return response;
 
     } catch (error) {
+      mcpLogger.error('rsync', { event: 'sync_error', operation, scriptId, error: error instanceof Error ? error.message : String(error) });
       return this.handleError(operation, error);
     }
   }

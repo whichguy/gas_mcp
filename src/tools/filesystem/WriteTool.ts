@@ -41,7 +41,18 @@ import type { WriteParams, WriteResult } from './shared/types.js';
  */
 export class WriteTool extends BaseFileSystemTool {
   public name = 'write';
-  public description = '[FILE:WRITE] Create or fully replace a file with automatic CommonJS wrapping. WHEN: creating new files or replacing entire file content. AVOID: use edit for partial changes (83% fewer tokens); use aider for fuzzy-match edits. Example: write({scriptId, path: "Utils.gs", content: "function add(a,b){return a+b}"})';
+  public description = '[FILE:WRITE] Create or fully replace a file with automatic CommonJS wrapping. WHEN: creating new files or replacing entire file content. AVOID: use edit for partial changes (83% fewer tokens); use aider for fuzzy-match edits. Example: write({scriptId, path: "Utils.gs", content: "function add(a,b){return a+b}"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      path: { type: 'string', description: 'Written file path' },
+      hash: { type: 'string', description: 'Git-SHA1 hash of written content' },
+      size: { type: 'number', description: 'Content size in bytes' },
+      commonJsProcessing: { type: 'object', description: 'CommonJS wrapping details (loadNow, hoistedFunctions)' },
+      git: { type: 'object', description: 'Git status hints (branch, uncommitted count, blocked state)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -118,33 +129,25 @@ export class WriteTool extends BaseFileSystemTool {
     required: ['scriptId', 'path'],  // content OR fromLocal must be provided
     additionalProperties: false,
     llmGuidance: {
-      // WORKFLOW SELECTION - when to use write vs batch local
       workflowSelection: GuidanceFragments.localFirstWorkflow,
-      // LOCAL FILE TRANSFER - Prefer fromLocal over inline content
-      localFileSupport: {
-        fromLocal: 'Read content from local file: write({scriptId, path:"app.js", fromLocal:"~/src/app.js"})',
-        useCase: 'Upload generated code, import existing files, bulk migration from local projects',
-        validation: 'Either content or fromLocal required (not both). Supports ~ expansion.',
-        recommendation: 'PREFER fromLocal over inline content when: (1) content exists locally, (2) content is large (>100 lines), (3) content was just generated. Saves tokens + enables local editing.'
-      },
-      // GIT INTEGRATION - CRITICAL for LLM behavior
+      localFileSupport: 'fromLocal:"~/src/app.js" reads local file instead of content param. PREFER when content exists locally or >100 lines (saves tokens). Either content or fromLocal required, not both.',
       gitIntegration: GuidanceFragments.gitIntegration,
       commonJs: GuidanceFragments.commonJsProcessing,
       moduleOptions: GuidanceFragments.moduleOptions,
       errorRecovery: GuidanceFragments.errorRecovery,
       errorResolutions: GuidanceFragments.errorResolutions,
-
-      whenToUse: 'Normal file write with auto CommonJS wrapping. Use edit/aider for small changes (95%+ token savings).',
-      alternatives: 'edit: exact text match, aider: fuzzy match, raw_write: no CommonJS processing',
       force: GuidanceFragments.forceWarning,
-      examples: [
-        'Basic: {path:"utils",content:"function add(a,b){return a+b}"}',
-        'Module: {path:"calc",content:"module.exports={add,multiply}"}',
-        'Event: {path:"Menu",content:"module.exports.__events__={onOpen:\\"onOpen\\"}",moduleOptions:{loadNow:true}}',
-        'Force: {path:"Code",content:"...",force:true}  // Overwrites remote even if out of sync'
-      ],
+      examples: 'Event handler: {path:"Menu",content:"module.exports.__events__={onOpen:\\"onOpen\\"}",moduleOptions:{loadNow:true}}',
       antiPatterns: GuidanceFragments.writeAntiPatterns
     }
+  };
+
+  public annotations = {
+    title: 'Write File (Smart)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   async execute(params: WriteParams): Promise<WriteResult> {

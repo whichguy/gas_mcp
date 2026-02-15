@@ -7,6 +7,7 @@ import { toResourcePath } from '../../utils/fileListCache.js';
 import { executeServerCode } from '../../utils/serverSideExec.js';
 import { log } from '../../utils/logger.js';
 import { generateLsHints } from '../../utils/responseHints.js';
+import type { CompactGitHint } from '../../utils/gitStatus.js';
 import type { ListParams, ListResult } from './shared/types.js';
 
 /**
@@ -70,23 +71,18 @@ export class LsTool extends BaseFileSystemTool {
     },
     additionalProperties: false,
     llmGuidance: {
-      unixLike: 'ls -la (list files) | GAS flat structure | virtual dotfiles | checksums option',
-      whenToUse: 'explore structure+find by pattern',
-      workflow: 'ls({scriptId:"..."}) | ls({scriptId:"...",path:"*.test*"})',
-      scriptTypeCompatibility: {standalone: '✅ Full Support', containerBound: '✅ Full Support', notes: 'Universal→shows virtual dotfile names'},
-      limitations: {flatFileStructure: 'no real dirs→filename prefixes ("utils/helper") simulate', wildcardPatterns: '*,? supported→matching by wildcardMode', virtualFileDisplay: 'dotfiles (.gitignore)→virtual not GAS names, .git/* files no extension change'},
-      examples: ['ls({})→all projects', 'ls({scriptId:"1abc2def..."})→files', 'ls({scriptId:"1abc2def...",path:"*.gs"})→pattern', 'ls({scriptId:"1abc2def...",path:"utils/*"})→subfolder', 'ls({scriptId:"1abc2def...",detailed:true})→detailed', 'ls({scriptId:"1abc2def...",checksums:true})→checksums'],
-      virtualFiles: 'dotfiles (.gitignore)→virtual names not GAS storage',
-      checksums: {
-        whenToUse: 'verify file integrity | detect changes | compare with local Git',
-        format: 'Git-compatible SHA-1: sha1("blob "+size+"\\0"+content)',
-        verification: 'matches: git hash-object <file>',
-        implementation: 'server-side via ScriptApp.getResource()',
-        note: 'No content download - hashes computed on GAS server'
-      },
-      positionField: {semantics: 'actual GAS execution order (0-based), NOT filtered array index', preserved: 'position values maintained even when filtering files (e.g., filter to api/* shows position=5, not position=0)', critical: 'require@0, ConfigManager@1, __mcp_exec@2 enforced in write operations', usage: 'use for reorder operations, understanding execution dependencies'},
-      antiPatterns: ['❌ ls then cat each file → use ripgrep to search content', '❌ ls for file content → use cat instead', '❌ ls without scriptId for specific project → add scriptId parameter']
+      limitations: 'GAS flat structure; *,? wildcards by wildcardMode; dotfiles→virtual names, .git/* no extension change',
+      checksums: 'Git SHA-1 server-side via ScriptApp.getResource(), no download. sha1("blob "+size+"\\0"+content) matches git hash-object.',
+      positionField: 'GAS execution order (0-based), NOT filtered index. Critical: require@0, ConfigManager@1, __mcp_exec@2.',
+      antiPatterns: 'ls then cat each (use ripgrep) | ls for content (use cat) | ls without scriptId (add scriptId param)'
     }
+  };
+
+  public annotations = {
+    title: 'List Files',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   async execute(params: ListParams): Promise<ListResult> {
@@ -210,6 +206,18 @@ export class LsTool extends BaseFileSystemTool {
     });
 
     const hints = generateLsHints(items.length, true);
+
+    // Add git workflow hint
+    let gitHint: CompactGitHint | undefined;
+    try {
+      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+      const repoPath = await LocalFileManager.getProjectDirectory(`project-${scriptId}`);
+      if (repoPath) {
+        const { buildReadHint } = await import('../../utils/gitStatus.js');
+        gitHint = await buildReadHint(repoPath);
+      }
+    } catch { /* non-fatal — repo may not exist yet */ }
+
     return {
       type: 'files',
       path: directory ? `${scriptId}/${directory}` : scriptId,
@@ -222,7 +230,8 @@ export class LsTool extends BaseFileSystemTool {
       items,
       totalFiles: metadata.length,
       ...(hashWarning && { warning: hashWarning }),
-      hints
+      hints,
+      ...(gitHint && { git: gitHint })
     };
   }
 

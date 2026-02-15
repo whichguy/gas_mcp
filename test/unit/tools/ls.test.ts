@@ -168,26 +168,20 @@ describe('LsTool', () => {
    */
 
   describe('llmGuidance documentation', () => {
-    it('should have checksums examples in llmGuidance', () => {
+    it('should have checksums guidance in llmGuidance', () => {
       const schema = lsTool.inputSchema as any;
 
       expect(schema.llmGuidance).to.exist;
-      expect(schema.llmGuidance.examples).to.be.an('array');
-
-      // Check for checksum-related examples
-      const hasChecksumExample = schema.llmGuidance.examples.some((ex: string) =>
-        ex.includes('checksums'));
-
-      expect(hasChecksumExample).to.be.true;
+      expect(schema.llmGuidance.checksums).to.be.a('string');
+      expect(schema.llmGuidance.checksums).to.include('SHA-1');
     });
 
-    it('should have checksums section in llmGuidance', () => {
+    it('should have key sections in llmGuidance', () => {
       const schema = lsTool.inputSchema as any;
 
-      expect(schema.llmGuidance.checksums).to.exist;
-      expect(schema.llmGuidance.checksums.whenToUse).to.include('verify file integrity');
-      expect(schema.llmGuidance.checksums.format).to.include('Git-compatible');
-      expect(schema.llmGuidance.checksums.verification).to.include('git hash-object');
+      expect(schema.llmGuidance.limitations).to.exist;
+      expect(schema.llmGuidance.positionField).to.exist;
+      expect(schema.llmGuidance.antiPatterns).to.exist;
     });
   });
 });

@@ -330,18 +330,18 @@ export function generateInfrastructureHints(
   const hints: ExecHints = {};
   const shim = infraStatus.execShim;
 
-  hints.context = 'Local cache out of sync with remote GAS file';
+  hints.context = '__mcp_exec infrastructure file metadata mismatch (does not affect this execution)';
 
   if (shim.error) {
     hints.warning = `Infrastructure verification failed: ${shim.error}`;
   } else {
-    hints.warning = `SHA mismatch: expected ${shim.expectedSHA?.slice(0, 12) || 'unknown'}..., got ${shim.actualSHA?.slice(0, 12) || 'unknown'}...`;
+    hints.warning = `Infrastructure metadata: __mcp_exec cached SHA differs from remote (expected ${shim.expectedSHA?.slice(0, 12) || 'unknown'}..., got ${shim.actualSHA?.slice(0, 12) || 'unknown'}...)`;
   }
 
   hints.suggestions = [
-    'Local cache hash differs from remote GAS file - cache may be stale',
-    'Use cat or rsync to pull remote content and update local cache',
-    'This ensures local files match what is actually deployed in GAS'
+    '__mcp_exec local metadata hash differs from remote — execution still works, but infrastructure may be outdated',
+    'To update: cat({scriptId, path:"__mcp_exec"}) or project_init({scriptId, force:true})',
+    'This is a metadata-only check — your code execution result above is valid regardless'
   ];
 
   hints.nextSteps = [

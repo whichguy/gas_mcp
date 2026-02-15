@@ -72,7 +72,19 @@ interface EditResult {
  */
 export class EditTool extends BaseTool {
   public name = 'edit';
-  public description = '[FILE:EDIT] Token-efficient partial file update via exact string matching — 83% fewer tokens than write for small changes. WHEN: modifying specific sections of a file (functions, imports, config). AVOID: use write for full file replacement; use aider for fuzzy matching when exact string is hard to specify. Example: edit({scriptId, path: "Utils.gs", old_string: "return a+b", new_string: "return a + b"})';
+  public description = '[FILE:EDIT] Token-efficient partial file update via exact string matching — 83% fewer tokens than write for small changes. WHEN: modifying specific sections of a file (functions, imports, config). AVOID: use write for full file replacement; use aider for fuzzy matching when exact string is hard to specify. Example: edit({scriptId, path: "Utils.gs", old_string: "return a+b", new_string: "return a + b"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether edit succeeded' },
+      editsApplied: { type: 'number', description: 'Number of edits applied' },
+      filePath: { type: 'string', description: 'Edited file path' },
+      hash: { type: 'string', description: 'Git-SHA1 hash after edit' },
+      diff: { type: 'string', description: 'Unified diff of changes' },
+      git: { type: 'object', description: 'Git status hints (branch, uncommitted count, blocked state)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -134,20 +146,12 @@ export class EditTool extends BaseTool {
     required: ['scriptId', 'path', 'edits'],
     additionalProperties: false,
     llmGuidance: {
-      // WORKFLOW SELECTION - when to use edit vs batch local
       workflowSelection: GuidanceFragments.localFirstWorkflow,
-      // GIT INTEGRATION - CRITICAL for LLM behavior
       gitIntegration: GuidanceFragments.gitIntegration,
       tokenEfficiency: GuidanceFragments.editTokenEfficiency,
       errorResolutions: GuidanceFragments.errorResolutions,
-
-      whenToUse: 'Token-efficient: LLM outputs only changed text (~40tok) vs full file (~4.5k tok)',
-      examples: ['Single: edits:[{oldText:"const DEBUG=false",newText:"const DEBUG=true"}]', 'Multi: edits:[{oldText:"port:3000",newText:"port:8080"},{oldText:"host:localhost",newText:"host:0.0.0.0"}]', 'Dry-run: dryRun:true', 'Duplicates: edits:[{oldText:"assert(true)",newText:"expect(true)",index:1}]'],
-      vsGasWrite: 'write: full file (4.5k tok) | edit: changed text (40 tok)',
-      vsGasSed: 'sed: regex patterns | edit: exact strings (more reliable)',
-      vsGasAider: 'edit: exact (simple,fast) | aider: fuzzy (handles variations)',
-      commonJsIntegration: 'Auto: unwrap->edit->rewrap | clean code->system handles infra',
-      scriptTypeCompatibility: {standalone: 'Full Support', containerBound: 'Full Support', notes: 'Universal token-efficient editing'},
+      commonJsIntegration: 'Auto: unwrap->edit->rewrap (clean code, system handles infra)',
+      examples: 'Multi: edits:[{oldText:"port:3000",newText:"port:8080"},{...}] | Duplicates: index:1 for 2nd match',
       antiPatterns: GuidanceFragments.editAntiPatterns
     },
     llmHints: {
@@ -156,6 +160,14 @@ export class EditTool extends BaseTool {
       avoid: 'New files→write | refactor→write | multi-file→sed | fuzzy→aider',
       response: '~10tok default | dryRun→diff'
     }
+  };
+
+  public annotations = {
+    title: 'Edit File (Smart)',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

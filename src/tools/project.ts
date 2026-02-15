@@ -11,8 +11,20 @@ import { ProjectResolver } from '../utils/projectResolver.js';
  */
 export class ReorderTool extends BaseTool {
   public name = 'reorder';
-  public description = '[PROJECT:REORDER] Change file execution order in a GAS project — critical for CommonJS (require.gs must be position 0). WHEN: fixing module loading order or organizing project files. Example: reorder({scriptId, fileOrder: ["require.gs", "ConfigManager.gs", "Main.gs"]})';
-  
+  public description = '[PROJECT:REORDER] Change file execution order in a GAS project — critical for CommonJS (require.gs must be position 0). WHEN: fixing module loading order or organizing project files. AVOID: manual reordering when project_init already sets correct order. Example: reorder({scriptId, fileOrder: ["require.gs", "ConfigManager.gs", "Main.gs"]})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      status: { type: 'string', description: 'Operation status (success)' },
+      fileName: { type: 'string', description: 'File that was reordered' },
+      previousPosition: { type: 'number', description: 'Previous position in execution order' },
+      newPosition: { type: 'number', description: 'New position in execution order' },
+      totalFiles: { type: 'number', description: 'Total files in project' },
+      fileOrder: { type: 'array', description: 'Updated file order' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -28,6 +40,14 @@ export class ReorderTool extends BaseTool {
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'fileName', 'newPosition']
+  };
+
+  public annotations = {
+    title: 'Reorder Files',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;
@@ -182,13 +202,30 @@ export class ReorderTool extends BaseTool {
  */
 export class ProjectListTool extends BaseTool {
   public name = 'project_list';
-  public description = '[PROJECT:LIST] List all configured GAS projects from gas-config.json with their script IDs and names. WHEN: discovering available projects or finding a script ID. Example: project_list({})';
+  public description = '[PROJECT:LIST] List all configured GAS projects from gas-config.json with their script IDs and names. WHEN: discovering available projects or finding a script ID. AVOID: use ls({scriptId}) to browse individual project files. Example: project_list({})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      projects: { type: 'array', description: 'List of projects with name, scriptId, description' },
+      totalProjects: { type: 'number', description: 'Total number of configured projects' },
+      currentProject: { type: 'object', description: 'Currently active project (if set)' },
+      configPath: { type: 'string', description: 'Path to gas-config.json' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
     properties: {
       ...SchemaFragments.workingDir
     }
+  };
+
+  public annotations = {
+    title: 'List Projects',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   constructor(sessionAuthManager?: SessionAuthManager) {

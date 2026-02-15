@@ -232,7 +232,21 @@ function generateMutationHints(operation: 'UPDATE' | 'DELETE', affectedRows: num
  */
 export class SheetSqlTool extends BaseTool {
   public name = 'sheet_sql';
-  public description = '[SHEETS:SQL] Query Google Sheets data using SQL-like syntax — SELECT, WHERE, ORDER BY, JOIN across sheets. WHEN: reading or analyzing spreadsheet data with filtering and sorting. Example: sheet_sql({spreadsheetId: "...", query: "SELECT A, B WHERE C > 100"})';
+  public description = '[SHEETS:SQL] Query Google Sheets data using SQL-like syntax — SELECT, WHERE, ORDER BY, JOIN across sheets. WHEN: reading or analyzing spreadsheet data with filtering and sorting. AVOID: use exec with SpreadsheetApp for complex operations; sheet_sql for simple row filtering/sorting. Example: sheet_sql({spreadsheetId: "...", query: "SELECT A, B WHERE C > 100"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      headers: { type: 'array', description: 'Column headers from the sheet' },
+      rows: { type: 'array', description: 'Data rows matching the query' },
+      rowCount: { type: 'number', description: 'Number of rows returned' },
+      updatedRange: { type: 'string', description: 'Range affected (INSERT/UPDATE/DELETE)' },
+      updatedRows: { type: 'number', description: 'Rows affected (INSERT/UPDATE/DELETE)' },
+      spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+      range: { type: 'string', description: 'Sheet range queried' },
+      hints: { type: 'object', description: 'Context-aware query hints' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -291,40 +305,18 @@ export class SheetSqlTool extends BaseTool {
     required: ['statement'],  // range and spreadsheetId/scriptId validated at runtime based on query type
     additionalProperties: false,
     llmGuidance: {
-      operationSupport: {
-        SELECT: 'Fully supported - uses Google Visualization Query API for sheets, local execution for virtual tables',
-        INSERT: 'Fully supported for sheets - uses Google Sheets API v4 append. Supports INSERT INTO (columns) VALUES (...) with header names',
-        UPDATE: 'Fully supported - local WHERE parsing with ORDER BY + LIMIT support. For virtual tables, returns modified data.',
-        DELETE: 'Fully supported - local WHERE parsing with ORDER BY + LIMIT support. For virtual tables, returns filtered data.'
-      },
-      virtualTables: {
-        description: 'Reference in-memory data using :name syntax. Perfect for JOINing sheet data with external data.',
-        syntax: 'SELECT * FROM :tableName WHERE condition',
-        joinSyntax: 'SELECT s.*, v.col FROM Sheet1!A:C AS s JOIN :virtualTable AS v ON s.A = v.id',
-        dataFormat: '2D array where first row = headers: [[\"id\",\"name\"], [\"u1\",\"Alice\"], [\"u2\",\"Bob\"]]',
-        supportedOps: ['SELECT', 'UPDATE (returns modified data)', 'DELETE (returns filtered data)'],
-        limitations: ['No INSERT to virtual tables', 'No persistence - returns modified data for caller to handle']
-      },
-      responseHints: {
-        description: 'Responses include contextual "hints" object with suggestions',
-        emptyResults: 'hints.suggestions will provide debugging steps for empty result sets',
-        largeResults: 'hints.warning when >1000 rows, suggests pagination',
-        insert: 'hints.nextSteps will suggest verification query after INSERT'
-      },
-      queryLanguageFeatures: {
-        supported: ['SELECT', 'WHERE', 'GROUP BY', 'PIVOT', 'ORDER BY', 'LIMIT', 'OFFSET', 'LABEL', 'FORMAT'],
-        aggregates: ['COUNT', 'SUM', 'AVG', 'MAX', 'MIN'],
-        operators: ['=', '<', '>', '<=', '>=', '<>', 'contains', 'starts with', 'ends with', 'matches', 'like'],
-        functions: ['lower', 'upper', 'year', 'month', 'day', 'hour', 'minute', 'second', 'now', 'dateDiff'],
-        notSupported: ['ROW()', 'JOIN', 'UNION', 'Subqueries']
-      },
-      bestPractices: [
-        'Always include sheet name in range for multi-sheet workbooks',
-        'Use LIMIT for large datasets to avoid timeout',
-        'For filtering text, use "contains" for partial match, "=" for exact',
-        'After INSERT, verify with SELECT WHERE <column> = <inserted_value>'
-      ]
+      operations: 'SELECT/INSERT/UPDATE/DELETE all supported. Virtual tables via :name syntax (2D array, first row=headers). JOIN: SELECT s.*, v.col FROM Sheet1!A:C AS s JOIN :virtualTable AS v ON s.A = v.id',
+      queryFeatures: 'Clauses: SELECT/WHERE/GROUP BY/PIVOT/ORDER BY/LIMIT/OFFSET/LABEL/FORMAT | Aggregates: COUNT/SUM/AVG/MAX/MIN | Operators: =/</>/contains/starts with/ends with/matches/like | Not supported: ROW()/JOIN/UNION/Subqueries',
+      bestPractices: 'Include sheet name in range for multi-sheet | LIMIT for large datasets | contains for partial match, = for exact | After INSERT verify with SELECT'
     }
+  };
+
+  public annotations = {
+    title: 'Sheets SQL Query',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   constructor(sessionAuthManager?: SessionAuthManager) {

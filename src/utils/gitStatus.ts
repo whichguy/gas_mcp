@@ -218,7 +218,7 @@ export interface CompactGitHint {
   files?: string[];                    // only when count > 0, max 10
   blocked: boolean;
   urgency?: 'CRITICAL' | 'HIGH';      // omit for NORMAL
-  action?: 'commit' | 'finish';       // LLM-efficient alias for next-best-action
+  action?: 'start' | 'commit' | 'finish'; // LLM-efficient alias for next-best-action
 }
 
 /**
@@ -244,6 +244,36 @@ export function buildCompactGitHint(
     blocked: uncommitted.count > 0,
     ...(urgency ? { urgency } : {}),
     ...(uncommitted.count > 0 ? { action: onFeatureBranch ? 'finish' as const : 'commit' as const } : {})
+  };
+}
+
+/**
+ * Build a lightweight git hint for read-only tool responses.
+ * Returns action: 'start' when on main/master with 0 uncommitted changes,
+ * signaling the LLM to create a feature branch before editing.
+ * Delegates to buildCompactGitHint for commit/finish hints when changes exist.
+ *
+ * @param repoPath - Path to git repository root
+ * @returns Compact hint structure (2 git spawns, ~10-20ms)
+ */
+export async function buildReadHint(repoPath: string): Promise<CompactGitHint> {
+  const [branch, uncommitted] = await Promise.all([
+    getCurrentBranchName(repoPath),
+    getUncommittedStatus(repoPath)
+  ]);
+
+  // If there are uncommitted changes, use the standard write-tool hint logic
+  if (uncommitted.count > 0) {
+    return buildCompactGitHint(branch, uncommitted);
+  }
+
+  // On main/master with nothing uncommitted → suggest starting a feature branch
+  const isMainBranch = branch === 'main' || branch === 'master';
+  return {
+    branch,
+    uncommitted: 0,
+    blocked: false,
+    ...(isMainBranch ? { action: 'start' as const } : {})
   };
 }
 

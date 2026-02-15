@@ -25,6 +25,7 @@ import { validateCommonJSOrdering, formatCommonJSOrderingIssues } from '../utils
 import { generateExecHints, generateInfrastructureHints, mergeExecHints, ExecHints } from '../utils/execHints.js';
 import { generateExecHints as generateExecResponseHints } from '../utils/responseHints.js';
 import type { InfrastructureStatus } from '../types/infrastructureTypes.js';
+import { mcpLogger } from '../utils/mcpLogger.js';
 import open from 'open';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -322,7 +323,17 @@ import { performDomainAuth } from './execution/auth/domain-auth.js';
  */
 export class ExecApiTool extends BaseTool {
   public name = 'exec_api';
-  public description = '[EXEC:API] Call a named function with parameters via Apps Script API — structured alternative to exec. WHEN: calling exported functions with typed arguments. AVOID: use exec for ad-hoc JS statements or require() calls. Example: exec_api({scriptId, functionName: "processData", parameters: [1, 2]})';
+  public description = '[EXEC:API] Call a named function with parameters via Apps Script API — structured alternative to exec. WHEN: calling exported functions with typed arguments. AVOID: use exec for ad-hoc JavaScript; exec_api for calling known module functions with structured args. Example: exec_api({scriptId, functionName: "processData", parameters: [1, 2]})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether execution succeeded' },
+      result: { description: 'Function return value' },
+      logger_output: { type: 'string', description: 'Captured Logger.log() output' },
+      execution_type: { type: 'string', description: 'How the function was executed' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -383,6 +394,14 @@ export class ExecApiTool extends BaseTool {
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'functionName']
+  };
+
+  public annotations = {
+    title: 'Execute API',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
   };
 
   private execTool: ExecTool;
@@ -470,7 +489,7 @@ export class ExecApiTool extends BaseTool {
  */
 export class ExecTool extends BaseTool {
   public name = 'exec';
-  public description = '[EXEC] Execute any JavaScript statement in a GAS project — supports Math, Date, all GAS services (SpreadsheetApp, DriveApp, etc.), and require() for CommonJS modules. WHEN: running ad-hoc code, testing expressions, or calling module functions. AVOID: use exec_api for structured function calls with typed params. Example: exec({scriptId, js_statement: "require(\'Utils\').process([1,2,3])"})';
+  public description = '[EXEC] Execute any JavaScript statement in a GAS project — supports Math, Date, all GAS services (SpreadsheetApp, DriveApp, etc.), and require() for CommonJS modules. WHEN: running ad-hoc code, testing expressions, or calling module functions. AVOID: use exec_api for calling existing module functions; exec for ad-hoc code and multi-service operations. Example: exec({scriptId, js_statement: "require(\'Utils\').process([1,2,3])"})';
 
   public outputSchema = {
     type: 'object' as const,
@@ -550,51 +569,23 @@ export class ExecTool extends BaseTool {
     required: ['scriptId', 'js_statement'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Execute JS expressions/functions. Auto-deploys. logFilter/logTail for verbose output.',
-      capabilities: 'ES6+ | require() | GAS services (Drive/Spreadsheet/Gmail/etc) | Logger captured',
-      examples: ['Math.pow(2,10)', 'require("Utils").process(data)', 'DriveApp.getRootFolder().getName()'],
-
-      // DEBUG: Module loading control - PRESERVE EXACT SIGNATURES
-      moduleLogging: {
-        funcs: ['setModuleLogging(pattern,enabled)', 'setModuleLogging(pattern,false,scope,true)', 'getModuleLogging()', 'listLoggingEnabled()', 'clearModuleLogging()'],
-        patterns: '"*"=all | "auth/*"=folder | ["mod1","mod2"]=multiple',
-        note: 'Logs on require(). Check logger_output.'
-      },
-
-      // DEBUG: ConfigManager - PRESERVE SCOPE PRIORITY
-      configManager: {
-        use: 'require("common-js/ConfigManager"); new CM("APP").get(key,default)',
-        scopes: 'userDoc > document > user > domain > script',
-        methods: 'get|set|setScript|setUser|delete',
-        note: 'Deploy stores DEV_URL/STAGING_URL/PROD_URL at script scope'
-      },
-
-      // DEBUG: Response format - PRESERVE DISCRIMINATION
-      response: {
-        check: 'status first: "success"→result, "error"→error object',
-        errorTypes: ['ExecutionError', 'EXECUTION_ERROR', 'AutoRedeployDisabled', 'TimeoutError'],
-        stack: '/dev=full, staging/prod="[hidden]"',
-        largeOutput: 'Auto-writes to /tmp/mcp-gas-exec-*.json if >8KB (~2K tokens). Response includes outputFile path + summary. Use Read tool to access full result.'
-      },
-
-      // DEBUG: Troubleshooting - PRESERVE DIAGNOSTICS
-      troubleshooting: {
-        test: 'exec({scriptId, js_statement:"2*3"}) verify basic',
-        logs: 'Check logger_output for "[DEFINE]","[ERROR]","Factory not found"',
-        causes: ['Missing loadNow:true for __events__/__global__', 'Circular deps', 'Syntax error', 'File order', 'Typo in require()']
-      },
-
-      // DEBUG: HTML validation - PRESERVE PATTERNS
-      htmlValidation: {
-        syntax: "HtmlService.createHtmlOutputFromFile('NAME')",
-        template: "HtmlService.createTemplateFromFile('NAME').evaluate()",
-        errors: {'Cannot find file':'check filename', 'Unexpected token':'<? ?> syntax', 'undefined is not a function':'wrap in include()'}
-      },
-
-      antiPatterns: ['exec for file ops→use cat/write', 'long js_statement→write module+require()']
+      moduleLogging: 'setModuleLogging(pattern,enabled) | getModuleLogging() | listLoggingEnabled() | clearModuleLogging(). Patterns: "*"=all | "auth/*"=folder. Check logger_output.',
+      configManager: 'require("common-js/ConfigManager"); new CM("APP").get(key,default). Scopes: userDoc>document>user>domain>script. Deploy stores DEV_URL/STAGING_URL/PROD_URL.',
+      response: 'Check status: "success"→result, "error"→error object. Errors: ExecutionError|EXECUTION_ERROR|AutoRedeployDisabled|TimeoutError. Stack: dev=full, staging/prod=hidden. >8KB auto-writes to /tmp file.',
+      troubleshooting: 'Test: exec({scriptId, js_statement:"2*3"}). Check logger_output for "[DEFINE]","[ERROR]","Factory not found". Causes: missing loadNow:true, circular deps, syntax error, file order, typo in require().',
+      htmlValidation: "createHtmlOutputFromFile('NAME') | createTemplateFromFile('NAME').evaluate(). Errors: 'Cannot find file'→check filename, 'Unexpected token'→scriptlet syntax, 'undefined is not a function'→wrap in include()",
+      antiPatterns: 'exec for file ops→use cat/write | long js_statement→write module+require()'
     }
     // NOTE: responseSchema removed for token efficiency (~750 tokens saved)
     // Response format documented in llmGuidance.response block above
+  };
+
+  public annotations = {
+    title: 'Execute Code',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;
@@ -685,6 +676,8 @@ export class ExecTool extends BaseTool {
 
     // Compact logging
     console.error(`[EXEC] ${scriptId.substring(0, 12)}... env:${environment} ${js_statement.substring(0, 60)}...${logFilter ? ` filter:"${logFilter.substring(0, 20)}"` : ''}${logTail ? ` tail:${logTail}` : ''}${skipSyncCheck ? ' (sync check skipped)' : ''}`);
+    const execStartTime = Date.now();
+    mcpLogger.info('exec', { event: 'exec_start', scriptId, statement: js_statement.substring(0, 100) });
 
     // PRE-FLIGHT SYNC CHECK: Detect drift between local and remote before execution
     // This prevents executing stale code when local files have diverged from remote
@@ -852,6 +845,8 @@ export class ExecTool extends BaseTool {
         envDeployment
       );
 
+      mcpLogger.info('exec', { event: 'exec_complete', scriptId, durationMs: Date.now() - execStartTime });
+
       // Include collision info if drift was detected but skipped
       if (collisionInfo && collisionInfo.hasCollisions) {
         return {
@@ -862,6 +857,8 @@ export class ExecTool extends BaseTool {
 
       return result;
     } catch (error: any) {
+      mcpLogger.error('exec', { event: 'exec_error', scriptId, error: error.message, durationMs: Date.now() - execStartTime });
+
       // Check for authentication errors (401/403)
       const statusCode = error.statusCode || error.response?.status || error.data?.statusCode;
       

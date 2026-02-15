@@ -35,6 +35,8 @@ export interface FileResult {
   };
   /** Signals whether file content differs from last cached read */
   contentChange?: ContentChangeInfo;
+  /** Git workflow hint for LLM guidance */
+  git?: CompactGitHint;
 }
 
 export interface WriteResult {
@@ -66,6 +68,8 @@ export interface ListResult {
   }>;
   totalFiles: number;
   path: string;
+  /** Git workflow hint for LLM guidance */
+  git?: CompactGitHint;
 }
 
 export interface RemoveResult {

@@ -22,6 +22,7 @@ import { spawn } from 'child_process';
 import { log } from './logger.js';
 import { computeGitSha1 } from './hashUtils.js';
 import { LocalFileManager } from './localFileManager.js';
+import { FileFilter } from './fileFilter.js';
 import { SessionIdentity } from './sessionIdentity.js';
 import type { GASFile } from '../api/gasTypes.js';
 import type { GASClient } from '../api/gasClient.js';
@@ -145,6 +146,12 @@ export class SessionWorktreeManager {
       const baseHashes: Record<string, string> = {};
 
       for (const file of files) {
+        // GAS .git/* are sync breadcrumbs — mkdir('.git') would EEXIST since worktree .git is a file
+        if (FileFilter.isGitBreadcrumbPath(file.name)) {
+          log.debug(`[SESSION-WT] Skipping git breadcrumb: ${file.name}`);
+          continue;
+        }
+
         const source = file.source || '';
         baseHashes[file.name] = computeGitSha1(source);
 

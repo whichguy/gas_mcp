@@ -31,7 +31,22 @@ const ALL_SECTIONS: Section[] = ['auth', 'project', 'git', 'deploy', 'locks', 'c
 
 export class StatusTool extends BaseTool {
   public name = 'status';
-  public description = '[STATUS] Project health dashboard — shows sync state, lock status, git branch, uncommitted changes, and deployment info. WHEN: diagnosing issues or checking overall project state. Example: status({scriptId})';
+  public description = '[STATUS] Project health dashboard — shows sync state, lock status, git branch, uncommitted changes, and deployment info. WHEN: diagnosing issues or checking overall project state. AVOID: use ls for file listing; status for project health overview. Example: status({scriptId})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      scriptId: { type: 'string', description: 'Project script ID' },
+      timestamp: { type: 'string', description: 'ISO 8601 timestamp of status check' },
+      auth: { type: 'object', description: 'Authentication status (authenticated, user email)' },
+      project: { type: 'object', description: 'Project info (title, file count, settings)' },
+      git: { type: 'object', description: 'Git state (branch, uncommitted changes, remote)' },
+      deploy: { type: 'object', description: 'Deployment status per environment (dev/staging/prod)' },
+      locks: { type: 'object', description: 'Active write locks and their age' },
+      cache: { type: 'object', description: 'Metadata cache stats (entries, hit rate)' },
+      sync: { type: 'object', description: 'Local/remote sync status (drift detection)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -48,6 +63,13 @@ export class StatusTool extends BaseTool {
     },
     required: ['scriptId'],
     additionalProperties: false
+  };
+
+  public annotations = {
+    title: 'Project Status',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

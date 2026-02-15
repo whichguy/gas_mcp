@@ -1,123 +1,17 @@
 import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
 import { dirname } from 'path';
 import { spawn } from 'child_process';
-import { LocalFileManager } from './localFileManager.js';
 import { clearGASMetadata } from './gasMetadataCache.js';
 
 /**
- * Result of hook validation and commit operation
+ * Result of hook-only validation (no commit)
  */
-export interface HookValidationResult {
+export interface HookOnlyValidationResult {
   success: boolean;
   contentAfterHooks?: string;
   hookModified?: boolean;
-  commitHash?: string;
   error?: string;
   previousContent?: string | null;
-}
-
-/**
- * Write file locally, run git commit with hooks, and validate
- * This implements local-first validation before remote sync
- *
- * @param content - Original content to write
- * @param filePath - Full local file path
- * @param filename - File name for commit message
- * @param projectName - Project name for git operations
- * @param workingDir - Working directory
- * @param changeReason - Optional custom commit message. If omitted, defaults to "Update {filename}" or "Add {filename}"
- * @returns HookValidationResult with success status and final content
- */
-export async function writeLocalAndValidateWithHooks(
-  content: string,
-  filePath: string,
-  filename: string,
-  projectName: string,
-  workingDir?: string,
-  changeReason?: string
-): Promise<HookValidationResult> {
-  let previousContent: string | null = null;
-
-  try {
-    // Step 1: Save previous version for potential rollback
-    try {
-      previousContent = await readFile(filePath, 'utf-8');
-      console.error(`💾 [HOOK_VALIDATION] Saved previous content for rollback: ${filename}`);
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        console.error(`📄 [HOOK_VALIDATION] New file (no previous content): ${filename}`);
-      } else {
-        console.error(`⚠️  [HOOK_VALIDATION] Could not read previous content: ${error.message}`);
-      }
-    }
-
-    // Step 2: Write new content to disk
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, content, 'utf-8');
-    console.error(`✍️  [HOOK_VALIDATION] Wrote content to local file: ${filename}`);
-
-    // Step 3: Attempt git commit (hooks execute here)
-    console.error(`🔧 [HOOK_VALIDATION] Running git commit with hooks: ${filename}`);
-
-    // Use custom changeReason or default message
-    const commitMessage = changeReason || (previousContent !== null
-      ? `Update ${filename}`
-      : `Add ${filename}`);
-
-    const gitResult = await LocalFileManager.autoCommitChanges(
-      projectName,
-      [filename],
-      commitMessage,
-      workingDir
-    );
-
-    // Step 4: Check if commit succeeded (hooks passed)
-    if (!gitResult.committed) {
-      // HOOKS FAILED OR NO CHANGES - Revert
-      console.error(`❌ [HOOK_VALIDATION] Git commit failed: ${gitResult.message}`);
-
-      await revertLocalFile(filePath, previousContent, filename);
-
-      return {
-        success: false,
-        error: gitResult.message,
-        previousContent
-      };
-    }
-
-    console.error(`✅ [HOOK_VALIDATION] Git commit succeeded: ${gitResult.commitHash}`);
-
-    // Step 5: Read final content (after hooks may have modified it)
-    const contentAfterHooks = await readFile(filePath, 'utf-8');
-    const hookModified = contentAfterHooks !== content;
-
-    if (hookModified) {
-      console.error(`🔧 [HOOK_VALIDATION] Hooks modified ${filename} (${content.length} → ${contentAfterHooks.length} bytes)`);
-    }
-
-    return {
-      success: true,
-      contentAfterHooks,
-      hookModified,
-      commitHash: gitResult.commitHash,
-      previousContent
-    };
-
-  } catch (error: any) {
-    // Catastrophic failure during validation
-    console.error(`💥 [HOOK_VALIDATION] Unexpected error: ${error.message}`);
-
-    // Attempt best-effort rollback
-    await revertLocalFile(filePath, previousContent, filename).catch((revertError: any) => {
-      console.error(`⚠️  [HOOK_VALIDATION] Rollback also failed: ${revertError.message}`);
-    });
-
-    return {
-      success: false,
-      error: `Hook validation failed: ${error.message}`,
-      previousContent
-    };
-  }
 }
 
 /**
@@ -148,59 +42,6 @@ async function revertLocalFile(
     console.error(`⚠️  [HOOK_VALIDATION] Revert failed: ${error.message}`);
     throw error;
   }
-}
-
-/**
- * Revert a git commit (used when remote sync fails after local commit)
- * Uses git revert to create a new commit that undoes changes
- *
- * @param projectPath - Full path to project directory
- * @param commitHash - Commit hash to revert
- * @param filename - File name for logging
- * @returns Success/failure result
- */
-export async function revertGitCommit(
-  projectPath: string,
-  commitHash: string,
-  filename: string
-): Promise<{ success: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    console.error(`↩️  [HOOK_ROLLBACK] Reverting commit ${commitHash} for ${filename}`);
-
-    const gitRevert = spawn('git', ['revert', '--no-edit', commitHash], {
-      cwd: projectPath,
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
-
-    let stderr = '';
-    gitRevert.stderr?.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    gitRevert.on('close', (code) => {
-      if (code === 0) {
-        console.error(`✅ [HOOK_ROLLBACK] Successfully reverted commit ${commitHash}`);
-        resolve({ success: true });
-      } else {
-        console.error(`❌ [HOOK_ROLLBACK] Failed to revert commit: ${stderr}`);
-        resolve({
-          success: false,
-          error: `Git revert failed: ${stderr}`
-        });
-      }
-    });
-  });
-}
-
-/**
- * Result of hook-only validation (no commit)
- */
-export interface HookOnlyValidationResult {
-  success: boolean;
-  contentAfterHooks?: string;
-  hookModified?: boolean;
-  error?: string;
-  previousContent?: string | null;
 }
 
 /**
@@ -276,17 +117,19 @@ export async function writeLocalAndValidateHooksOnly(
     console.error(`📦 [HOOK_ONLY] Staged file: ${filename}`);
 
     // Step 4: Run pre-commit hook directly (if exists)
-    const preCommitPath = `${gitRoot}/.git/hooks/pre-commit`;
+    // Use git rev-parse to resolve hooks dir — .git is a file in worktrees, not a directory
+    const hooksPathResult = await runGitCommand(['rev-parse', '--git-path', 'hooks/pre-commit'], gitRoot);
+    const preCommitPath = hooksPathResult.success && hooksPathResult.output?.trim()
+      ? (hooksPathResult.output.trim().startsWith('/') ? hooksPathResult.output.trim() : `${gitRoot}/${hooksPathResult.output.trim()}`)
+      : `${gitRoot}/.git/hooks/pre-commit`;
     const { access } = await import('fs/promises');
     const { constants } = await import('fs');
 
-    let hookRan = false;
     try {
       await access(preCommitPath, constants.X_OK);
       console.error(`🔧 [HOOK_ONLY] Running pre-commit hook...`);
 
       const hookResult = await runHook(preCommitPath, gitRoot);
-      hookRan = true;
 
       if (!hookResult.success) {
         console.error(`❌ [HOOK_ONLY] Pre-commit hook failed: ${hookResult.error}`);
@@ -378,7 +221,7 @@ async function runGitCommand(args: string[], cwd: string): Promise<{ success: bo
 /**
  * Unstage a file, handling empty repos (no commits yet)
  */
-async function unstageFile(filename: string, cwd: string): Promise<{ success: boolean; error?: string }> {
+export async function unstageFile(filename: string, cwd: string): Promise<{ success: boolean; error?: string }> {
   // Check if repo has any commits
   const hasCommits = await runGitCommand(['rev-parse', '--verify', 'HEAD'], cwd);
 
@@ -420,46 +263,4 @@ async function runHook(hookPath: string, cwd: string): Promise<{ success: boolea
       resolve({ success: false, error: `Failed to run hook: ${err.message}` });
     });
   });
-}
-
-/**
- * Simplified write without hook validation (legacy behavior)
- * Just writes file and commits, no validation or rollback
- *
- * @param content - Content to write
- * @param filePath - Full local file path
- * @param filename - File name for commit message
- * @param projectName - Project name for git operations
- * @param workingDir - Working directory
- * @returns Simple success/failure result
- */
-export async function writeLocalWithoutHooks(
-  content: string,
-  filePath: string,
-  filename: string,
-  projectName: string,
-  workingDir?: string
-): Promise<{ success: boolean; commitHash?: string; error?: string }> {
-  try {
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, content, 'utf-8');
-
-    const commitMessage = `Update ${filename}`;
-    const gitResult = await LocalFileManager.autoCommitChanges(
-      projectName,
-      [filename],
-      commitMessage,
-      workingDir
-    );
-
-    return {
-      success: true,
-      commitHash: gitResult.commitHash
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      error: error.message
-    };
-  }
 }

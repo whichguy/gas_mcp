@@ -16,6 +16,21 @@ export class CacheClearTool extends BaseFileSystemTool {
   public name = 'cache_clear';
   public description = '[FILE:CACHE] Clear local metadata cache for a project. WHEN: cache appears stale or after manual remote changes. AVOID: usually unnecessary — cache auto-invalidates on writes. Example: cache_clear({scriptId})';
 
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      status: { type: 'string', description: 'Operation status (success)' },
+      path: { type: 'string', description: 'Path that was cleared' },
+      scriptId: { type: 'string', description: 'GAS project ID' },
+      scope: { type: 'string', description: 'Scope of clear (file or project)' },
+      hadMetadata: { type: 'boolean', description: 'Whether cached metadata existed (file)' },
+      cleared: { type: 'boolean', description: 'Whether metadata was cleared (file)' },
+      totalFiles: { type: 'number', description: 'Total files processed (project)' },
+      totalCleared: { type: 'number', description: 'Files with cleared cache (project)' },
+      message: { type: 'string', description: 'Summary message' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -47,6 +62,13 @@ export class CacheClearTool extends BaseFileSystemTool {
       whenToUse: 'Debug sync issues | Force fresh API call to verify metadata | Test cache behavior',
       effect: 'Clears xattr metadata only (not file content) | Next operation re-caches via API'
     }
+  };
+
+  public annotations = {
+    title: 'Clear Cache',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {

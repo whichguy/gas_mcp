@@ -23,7 +23,21 @@ function escapeGasString(str: string): string {
  */
 export class TriggerTool extends BaseTool {
   public name = 'trigger';
-  public description = '[TRIGGER] Manage Apps Script triggers — list, create, and delete time-based or event-driven triggers. WHEN: scheduling functions or setting up event handlers (onEdit, onOpen, etc.). Example: trigger({scriptId, operation: "list"})';
+  public description = '[TRIGGER] Manage Apps Script triggers — list, create, and delete time-based or event-driven triggers. WHEN: scheduling functions or setting up event handlers (onEdit, onOpen, etc.). AVOID: use __events__ for onOpen/onEdit triggers; trigger tool for time-based and installable triggers. Example: trigger({scriptId, operation: "list"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      operation: { type: 'string', description: 'Operation performed (list, create, delete)' },
+      triggers: { type: 'array', description: 'List of triggers (list operation)' },
+      totalTriggers: { type: 'number', description: 'Total trigger count (list)' },
+      triggerId: { type: 'string', description: 'Created or deleted trigger ID' },
+      functionName: { type: 'string', description: 'Function associated with trigger' },
+      triggerType: { type: 'string', description: 'Type of trigger created' },
+      deleted: { type: 'number', description: 'Number of triggers deleted (delete)' },
+      status: { type: 'string', description: 'Operation status' }
+    }
+  };
 
   public inputSchema = {
     type: 'object' as const,
@@ -50,18 +64,7 @@ export class TriggerTool extends BaseTool {
       triggerType: {
         type: 'string',
         enum: ['time', 'spreadsheet', 'form', 'calendar', 'document', 'addon', 'gmail'],
-        description: 'Type of trigger to create - required for create operation',
-        examples: ['time', 'spreadsheet', 'form'],
-        llmHints: {
-          mostCommon: 'time (scheduled tasks), spreadsheet (onEdit/onChange)',
-          useCase: {
-            time: 'Daily reports, cleanup tasks, data sync',
-            spreadsheet: 'Cell validation, change logging, form responses',
-            form: 'Form submission processing, email notifications',
-            calendar: 'Event reminders (only onEventUpdated available)',
-            document: 'Document open events only (no onEdit for Docs)'
-          }
-        }
+        description: 'Type of trigger. Most common: time (scheduled), spreadsheet (onEdit/onChange). Required for create.',
       },
       // Delete operation parameters
       triggerId: {
@@ -234,34 +237,17 @@ export class TriggerTool extends BaseTool {
     required: ['operation', 'scriptId'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Automate recurring tasks | React to spreadsheet/form/calendar events | Schedule periodic execution',
-      operations: {
-        list: 'View existing triggers (use detailed:true for full info including IDs)',
-        create: 'Set up new automation (requires triggerType + corresponding options)',
-        delete: 'Remove by triggerId, functionName, or deleteAll:true'
-      },
-      triggerTypeRecommendations: {
-        time: 'Best for: scheduled reports, data sync, cleanup tasks. Use timeOptions with interval (minutes/hours/days/weeks/monthly)',
-        spreadsheet: 'Best for: onEdit validation, onChange logging, onFormSubmit processing. Requires spreadsheetOptions.eventType',
-        form: 'Best for: form submission processing, confirmation emails. Requires formOptions with formId',
-        calendar: 'Best for: event reminders, sync. Note: only onEventUpdated supported (no onEventCreated/Deleted)',
-        document: 'Best for: document open events. Note: onEdit not available for Docs (only Sheets)',
-        addon: 'Lifecycle triggers (onInstall/onEnable/onDisable) - configured in appsscript.json manifest',
-        gmail: 'Gmail add-on triggers - configured in appsscript.json manifest under addOns.gmail'
-      },
-      commonPatterns: {
-        dailyReport: 'trigger({operation:"create", triggerType:"time", functionName:"generateReport", timeOptions:{interval:"days", value:1, hour:9}})',
-        onSheetEdit: 'trigger({operation:"create", triggerType:"spreadsheet", functionName:"onEditHandler", spreadsheetOptions:{eventType:"onEdit"}})',
-        formSubmit: 'trigger({operation:"create", triggerType:"form", functionName:"processSubmission", formOptions:{formId:"...", eventType:"onFormSubmit"}})'
-      },
-      limitations: [
-        'Maximum 20 triggers per user per script',
-        'Time triggers have 1-minute minimum granularity',
-        'Spreadsheet onEdit only fires for user edits (not script changes)',
-        'Calendar only supports onEventUpdated (create/delete detected via custom logic)',
-        'Document triggers limited to onOpen only'
-      ]
+      operations: 'list (detailed:true for IDs) | create (triggerType+options) | delete (triggerId/functionName/deleteAll)',
+      triggerTypes: 'time: scheduled | spreadsheet: onEdit/onChange/onFormSubmit | form/calendar/document/addon/gmail',
+      limitations: 'Max 20 triggers/user/script | onEdit=user edits only | calendar=onEventUpdated only | Docs=onOpen only'
     }
+  };
+
+  public annotations = {
+    title: 'Trigger Manager',
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true
   };
 
   async execute(args: any): Promise<any> {

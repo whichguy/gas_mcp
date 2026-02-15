@@ -39,16 +39,24 @@ import { generateSearchHints as generateResponseSearchHints } from '../utils/res
 export class GrepTool extends BaseTool {
   public name = 'grep';
   public description = '[SEARCH] Simple single-pattern content search across project files — returns matching lines with context. WHEN: searching for a specific string or simple pattern. AVOID: use ripgrep for multi-pattern, advanced regex, or context control. Example: grep({scriptId, pattern: "processData"})';
-  
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      searchPattern: { type: 'string', description: 'Pattern that was searched' },
+      totalMatches: { type: 'number', description: 'Total number of matches found' },
+      totalFiles: { type: 'number', description: 'Number of files with matches' },
+      filesSearched: { type: 'number', description: 'Total files searched' },
+      truncated: { type: 'boolean', description: 'Whether results were truncated' },
+      matches: { type: 'array', description: 'Array of {file, matches: [{line, content, context}]}' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     llmGuidance: {
-      unixLike: 'grep -rn (search) | GAS | CommonJS unwrap | max 200 results',
       toolSelection: GuidanceFragments.searchToolHints,
-      whenToUse: 'PREFER ripgrep (multi-pattern+smart case) | grep for simple single-pattern',
-      limitations: '200 result max, 500 file max',
-      nextSteps: ['cat->context', 'sed->replace', 'write->save'],
-      contentType: 'unwrapped user code (no CommonJS wrappers)',
+      limitations: '200 result max, 500 file max | PREFER ripgrep for multi-pattern+smart case',
       antiPatterns: GuidanceFragments.searchAntiPatterns
     },
     properties: {
@@ -149,6 +157,13 @@ export class GrepTool extends BaseTool {
     required: ['scriptId', 'pattern']
   };
 
+  public annotations = {
+    title: 'Search Content',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
+  };
+
   private gasClient: GASClient;
   private grepEngine: GrepSearchEngine;
 
@@ -160,7 +175,7 @@ export class GrepTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    
+
     // Validate required parameters
     if (!params.pattern) {
       throw new ValidationError('pattern', params.pattern, 'non-empty search pattern');
@@ -407,7 +422,18 @@ export class GrepTool extends BaseTool {
 export class RawGrepTool extends BaseTool {
   public name = 'raw_grep';
   public description = '[SEARCH:RAW] Search full file content including CommonJS wrappers — searches _main(), module.exports, etc. WHEN: searching for module system patterns or wrapper code. AVOID: use grep for normal code search. Example: raw_grep({scriptId, pattern: "loadNow"})';
-  
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      matches: { type: 'array', description: 'Array of match results (file, line, content, lineNumber)' },
+      matchCount: { type: 'number', description: 'Total number of matches found' },
+      filesSearched: { type: 'number', description: 'Number of files searched' },
+      filesMatched: { type: 'number', description: 'Number of files with matches' },
+      truncated: { type: 'boolean', description: 'Whether results were truncated at limit' }
+    }
+  };
+
   public inputSchema = {
     type: 'object',
     properties: {
@@ -506,6 +532,13 @@ export class RawGrepTool extends BaseTool {
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern']
+  };
+
+  public annotations = {
+    title: 'Search Content (Raw)',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

@@ -13,7 +13,21 @@ import { ValidationError } from '../errors/mcpErrors.js';
  */
 export class ExecutionsTool extends BaseTool {
   public name = 'executions';
-  public description = '[LOGS:EXECUTIONS] View Apps Script execution history — list recent executions or get detailed execution info. WHEN: checking execution status, timing, or error details. Example: executions({scriptId, operation: "list"})';
+  public description = '[LOGS:EXECUTIONS] View Apps Script execution history — list recent executions or get detailed execution info. WHEN: checking execution status, timing, or error details. AVOID: use cloud_logs for detailed debug output; use process_list for currently-running processes. Example: executions({scriptId, operation: "list"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      operation: { type: 'string', description: 'Operation performed (list or get)' },
+      processes: { type: 'array', description: 'Execution entries with status, timing, function' },
+      totalReturned: { type: 'number', description: 'Number of executions returned' },
+      statusCounts: { type: 'object', description: 'Count per status (COMPLETED, FAILED, etc.)' },
+      hasMore: { type: 'boolean', description: 'Whether more pages available' },
+      nextPageToken: { type: 'string', description: 'Token for next page' },
+      processId: { type: 'string', description: 'Process ID (get operation)' },
+      metadata: { type: 'object', description: 'Process metadata (get operation)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -28,40 +42,23 @@ export class ExecutionsTool extends BaseTool {
       // List operation parameters
       functionName: {
         type: 'string',
-        description: 'Filter by function name (list operation). PERFORMANCE: Optimized query path.',
-        llmHints: {
-          optimization: 'Providing functionName improves query performance',
-          usage: 'Use when debugging specific function executions',
-          examples: ['onEdit', 'doGet', 'processData']
-        }
+        description: 'Filter by function name (list). Improves query performance 2-3x.'
       },
 
       minutes: {
         type: 'number',
-        description: 'Minutes to look back (default: 10). Typical debugging window is 7-8 min.',
+        description: 'Minutes to look back (default: 10). Use 5-10 for recent issues, 60+ for triggers, 1440 for 24h. If no results, widen: 10→60→240→1440.',
         default: 10,
         minimum: 1,
-        maximum: 10080,
-        llmHints: {
-          debugging: 'Use 5-10 minutes for recent issues (most common use case)',
-          triggers: 'Use 60+ minutes for scheduled trigger analysis',
-          historical: 'Use 1440 (24h) for day-over-day comparison',
-          progressive: 'If no results, widen: 10 → 60 → 240 → 1440'
-        }
+        maximum: 10080
       },
 
       timeRange: {
         type: 'object',
-        description: 'Explicit time range in RFC3339 format (list operation). Overrides minutes parameter.',
+        description: 'Explicit RFC3339 time range (overrides minutes).',
         properties: {
-          start: {
-            type: 'string',
-            description: 'Start time in RFC3339 UTC "Zulu" format (e.g., "2024-01-01T00:00:00Z")'
-          },
-          end: {
-            type: 'string',
-            description: 'End time in RFC3339 UTC "Zulu" format (e.g., "2024-01-01T23:59:59Z")'
-          }
+          start: { type: 'string', description: 'Start time RFC3339 UTC (e.g., "2024-01-01T00:00:00Z")' },
+          end: { type: 'string', description: 'End time RFC3339 UTC (e.g., "2024-01-01T23:59:59Z")' }
         }
       },
 
@@ -69,43 +66,26 @@ export class ExecutionsTool extends BaseTool {
         type: 'string',
         enum: ['COMPLETED', 'FAILED', 'TIMED_OUT', 'RUNNING', 'ALL'],
         default: 'ALL',
-        description: 'Filter by process status (default: ALL)',
-        llmHints: {
-          debugging: 'Use FAILED to quickly find errors (most common for debugging)',
-          monitoring: 'Use ALL for comprehensive view',
-          performance: 'Use COMPLETED for successful execution analysis'
-        }
+        description: 'Filter by status. Use FAILED for debugging, ALL for monitoring.'
       },
 
       pageSize: {
         type: 'number',
-        description: 'Max processes to return (default: 10). Keep small to avoid context overflow.',
+        description: 'Max processes to return (default: 10, max: 50). Default prevents token overflow.',
         minimum: 1,
         maximum: 50,
-        default: 10,
-        llmHints: {
-          contextSafe: 'Default 10 prevents token overflow (~400 tokens total)',
-          pagination: 'Use with pageToken to iterate through larger result sets'
-        }
+        default: 10
       },
 
       pageToken: {
         type: 'string',
-        description: 'Token for pagination. Get from previous response.pagination.nextPageToken.',
-        llmHints: {
-          workflow: 'Call with pageToken until hasMore is false',
-          warning: 'Results may become stale across pages if new executions occur'
-        }
+        description: 'Pagination token from previous response. Call until hasMore is false.'
       },
 
       // Get operation parameters
       processId: {
         type: 'string',
-        description: 'Process ID (required for get operation). Get from list response.',
-        llmHints: {
-          source: 'Get from executions list: processes[].processId',
-          usage: 'Use get operation to see process metadata for specific execution'
-        }
+        description: 'Process ID (required for get). Get from list response processes[].processId.'
       },
 
       includeMetadata: {
@@ -119,17 +99,17 @@ export class ExecutionsTool extends BaseTool {
     required: ['operation', 'scriptId'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Debug recent failures | Monitor execution history | Find slow executions',
-      limitation: '⚠️ This provides metadata only. For detailed Logger.log() output, use exec() tool instead.',
-      workflow: 'Step 1: list recent executions (default 10 min) → Step 2: Check recommendations for failures → Step 3: Use exec() for detailed logs if needed',
-      typicalFlow: 'executions({operation:"list", scriptId, minutes:10}) → check statusCounts → follow recommendations',
-      performance: 'functionName filter improves query performance 2-3x',
-      examples: [
-        'Recent failures: operation: "list", statusFilter: "FAILED", minutes: 10',
-        'All executions: operation: "list", minutes: 10',
-        'Specific function: operation: "list", functionName: "doGet", minutes: 60'
-      ]
+      limitation: 'Metadata only — use exec() for Logger.log() output.',
+      workflow: 'list (default 10 min) → check statusCounts → use exec() for detailed logs if needed',
+      examples: 'Failures: statusFilter:"FAILED" | Function: functionName:"doGet", minutes:60'
     }
+  };
+
+  public annotations = {
+    title: 'Execution Logs',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

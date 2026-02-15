@@ -270,7 +270,20 @@ export class DepsTool extends BaseTool {
   private gasClient: GASClient;
 
   public name = 'deps';
-  public description = '[ANALYSIS:DEPS] Generate dependency graph for CommonJS modules — shows require() relationships, circular dependencies, and load order. WHEN: understanding module structure or debugging load order issues. Example: deps({scriptId})';
+  public description = '[ANALYSIS:DEPS] Generate dependency graph for CommonJS modules — shows require() relationships, circular dependencies, and load order. WHEN: understanding module structure or debugging load order issues. AVOID: use grep/ripgrep to search for specific require() calls; deps for full dependency visualization. Example: deps({scriptId})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      totalFiles: { type: 'number', description: 'Total JavaScript files analyzed' },
+      totalDependencies: { type: 'number', description: 'Total dependency relationships' },
+      circularDependencies: { type: 'array', description: 'Circular dependency chains detected' },
+      orphanedFiles: { type: 'array', description: 'Files with no dependents' },
+      entryPoints: { type: 'array', description: 'Module entry point files' },
+      systemFiles: { type: 'array', description: 'System infrastructure files' },
+      modules: { type: 'array', description: 'Module details (name, imports, exports, complexity)' }
+    }
+  };
 
   constructor(authManager?: any) {
     super(authManager);
@@ -304,30 +317,18 @@ export class DepsTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Analyze module dependencies | Find circular imports | Identify orphaned files | Understand project structure',
-      analysisTypes: {
-        full: 'Complete analysis with all modules, dependencies, and relationships (default)',
-        summary: 'Top 20 most depended-on, most dependencies, largest, most complex modules',
-        circular: 'Focus on circular dependency detection with impact analysis',
-        orphaned: 'Find files with dependencies but no dependents (may be unused)',
-        graph: 'Returns nodes and edges for visualization (compatible with D3.js, Graphviz)'
-      },
-      outputInterpretation: {
-        dependents: 'Files that require() THIS module - high count = critical shared module',
-        dependencies: 'Files THIS module requires() - high count = complex module',
-        circular: 'Array of files forming a cycle - refactor to break the loop',
-        complexity: 'Weighted score: functions*3 + conditionals*2 + loops*2 + size/1000',
-        entryPoints: 'Files with dependents but no dependencies (or system files) - start here when debugging',
-        orphanedFiles: 'Files that import others but nothing imports them - check if still needed'
-      },
-      bestPractices: [
-        'High complexity + many dependents = refactoring priority',
-        'Circular dependencies block dead code elimination',
-        'Orphaned files may indicate dead code',
-        'Use includeSystem:true to see CommonJS infrastructure dependencies'
-      ],
-      exampleWorkflow: 'deps({analysisType:"summary"}) → identify high-impact modules → deps({analysisType:"circular"}) → fix cycles'
+      analysisTypes: 'full (default) | summary (top 20) | circular (cycles) | orphaned (unused) | graph (D3/Graphviz)',
+      interpretation: 'dependents=who requires this (high=critical) | dependencies=what this requires (high=complex) | complexity=functions*3+conditionals*2+loops*2+size/1000',
+      bestPractices: 'High complexity+many dependents=refactor priority | circular deps block dead code elimination | orphaned=may be unused',
+      workflow: 'summary→identify high-impact→circular→fix cycles'
     }
+  };
+
+  public annotations = {
+    title: 'Dependency Analysis',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   async execute(params: any): Promise<any> {

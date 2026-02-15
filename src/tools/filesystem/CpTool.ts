@@ -20,7 +20,25 @@ import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
  */
 export class CpTool extends BaseFileSystemTool {
   public name = 'cp';
-  public description = '[FILE:COPY] Copy a file within a GAS project. WHEN: duplicating files or creating variants. AVOID: use mv to move without keeping original; use raw_cp for cross-project copies. Example: cp({scriptId, from: "Utils.gs", to: "UtilsBackup.gs"})';
+  public description = '[FILE:COPY] Copy a file within a GAS project. WHEN: duplicating files or creating variants. AVOID: use mv to move without keeping original; use raw_cp for cross-project copies. Example: cp({scriptId, from: "Utils.gs", to: "UtilsBackup.gs"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      status: { type: 'string', description: 'Operation status (success)' },
+      from: { type: 'string', description: 'Source file path' },
+      to: { type: 'string', description: 'Destination file path' },
+      fromProjectId: { type: 'string', description: 'Source project script ID' },
+      toProjectId: { type: 'string', description: 'Destination project script ID' },
+      isCrossProject: { type: 'boolean', description: 'Whether copy was cross-project' },
+      commonJsProcessed: { type: 'boolean', description: 'Whether CommonJS was unwrapped/rewrapped' },
+      size: { type: 'number', description: 'File size in bytes' },
+      totalFiles: { type: 'number', description: 'Total files in project after copy' },
+      hash: { type: 'string', description: 'Git SHA-1 hash of destination file' },
+      message: { type: 'string', description: 'Summary message' },
+      git: { type: 'object', description: 'Compact git hint (branch, uncommitted count, action)' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -67,20 +85,17 @@ export class CpTool extends BaseFileSystemTool {
     required: ['scriptId', 'from', 'to'],
     additionalProperties: false,
     llmGuidance: {
-      // GIT INTEGRATION - CRITICAL for LLM behavior
-      gitIntegration: {
-        CRITICAL: 'This tool does NOT auto-commit to git',
-        behavior: 'Copy pushes to GAS but does NOT commit locally',
-        requiredAction: 'git_feature({operation:"commit", scriptId, message:"..."})'
-      },
-
-      unixLike: 'cp (copy) | GAS | CommonJS unwrap→rewrap',
-      whenToUse: 'copy files + proper CommonJS handling',
-      workflow: 'cp({scriptId:"...",from:"utils",to:"utils-backup"})',
-      commonJsProcessing: 'unwraps source→rewraps dest with correct module name',
-      examples: ['within: cp({scriptId:"1abc2def...",from:"utils",to:"utils-backup"})', 'cross-project: cp({scriptId:"1abc2def...",from:"utils",to:"1xyz9abc.../utils"})', 'subfolder: cp({scriptId:"1abc2def...",from:"main",to:"archive/main-v1"})', 'rename: cp({scriptId:"1abc2def...",from:"Calculator",to:"CalcBackup"})'],
-      vsRawCp: 'raw_cp→bulk ops without CommonJS processing'
+      gitIntegration: 'CRITICAL: does NOT auto-commit. Must call git_feature({operation:"commit"}) after copy.',
+      commonJs: 'Auto unwraps source→rewraps dest with correct module name. raw_cp→bulk ops without CommonJS processing.'
     }
+  };
+
+  public annotations = {
+    title: 'Copy File',
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true
   };
 
   async execute(params: CopyParams): Promise<CopyResult> {

@@ -115,7 +115,27 @@ function getStateFromResult(result: object): WorktreeState | undefined {
  */
 export class WorktreeTool extends BaseFileSystemTool {
   public name = 'worktree';
-  public description = '[GIT:WORKTREE] Manage git worktrees for parallel development — add, claim, release, merge, remove, list, status, sync. WHEN: enabling multiple agents to work on the same project concurrently. Example: worktree({scriptId, operation: "add", featureName: "feature-a"})';
+  public description = '[GIT:WORKTREE] Manage git worktrees for parallel development — add, claim, release, merge, remove, list, status, sync. WHEN: enabling multiple agents to work on the same project concurrently. AVOID: use git_feature for single-branch work; worktree for parallel multi-agent development. Example: worktree({scriptId, operation: "add", featureName: "feature-a"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      success: { type: 'boolean', description: 'Whether operation succeeded' },
+      worktree: { type: 'object', description: 'Worktree info (scriptId, branch, state, localPath)' },
+      worktrees: { type: 'array', description: 'List of worktrees (list/batch-add)' },
+      created: { type: 'boolean', description: 'Whether worktree was created (add/claim)' },
+      state: { type: 'string', description: 'Current worktree state (release)' },
+      merged: { type: 'boolean', description: 'Whether merge succeeded (merge)' },
+      commitSha: { type: 'string', description: 'Merge commit SHA (merge)' },
+      synced: { type: 'array', description: 'Files synced from parent (sync)' },
+      conflicts: { type: 'array', description: 'Conflicting files (sync/merge)' },
+      orphans: { type: 'array', description: 'Orphaned worktrees found (cleanup)' },
+      cleaned: { type: 'number', description: 'Number of worktrees cleaned (cleanup)' },
+      error: { type: 'string', description: 'Error code if operation failed' },
+      message: { type: 'string', description: 'Error or status message' },
+      hints: { type: 'object', description: 'Context-aware hints for next steps' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -256,6 +276,13 @@ export class WorktreeTool extends BaseFileSystemTool {
       }
     },
     required: ['operation']
+  };
+
+  public annotations = {
+    title: 'Worktree Manager',
+    readOnlyHint: false,
+    destructiveHint: true,
+    openWorldHint: true
   };
 
   private lockManager: WorktreeLockManager;

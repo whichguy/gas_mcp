@@ -34,11 +34,8 @@ describe('AiderTool', () => {
     it('should have llmGuidance with key sections', () => {
       const schema = aiderTool.inputSchema as any;
       expect(schema.llmGuidance).to.exist;
-      expect(schema.llmGuidance.whenToUse).to.exist;
-      expect(schema.llmGuidance.toolChoice).to.exist;
       expect(schema.llmGuidance.threshold).to.exist;
-      expect(schema.llmGuidance.workflow).to.exist;
-      expect(schema.llmGuidance.examples).to.be.an('array');
+      expect(schema.llmGuidance.antiPatterns).to.exist;
     });
 
     it('should have llmHints with decision guidance', () => {
@@ -125,33 +122,30 @@ describe('AiderTool', () => {
       expect(aiderTool.description).to.include('editing');
     });
 
-    it('should mention token savings in workflow guidance', () => {
+    it('should mention threshold in guidance', () => {
       const schema = aiderTool.inputSchema as any;
-      expect(schema.llmGuidance.workflow).to.include('95%+');
+      expect(schema.llmGuidance.threshold).to.include('0.8');
     });
   });
 
   describe('Tool Comparison Guidance', () => {
-    it('should provide tool selection guidance', () => {
+    it('should provide anti-pattern guidance', () => {
       const schema = aiderTool.inputSchema as any;
-      expect(schema.llmGuidance.toolChoice).to.exist;
-      expect(schema.llmGuidance.toolChoice).to.include('edit');
-      expect(schema.llmGuidance.toolChoice).to.include('aider');
-      expect(schema.llmGuidance.toolChoice).to.include('sed');
+      expect(schema.llmGuidance.antiPatterns).to.exist;
+      expect(schema.llmGuidance.antiPatterns).to.include('edit');
+      expect(schema.llmGuidance.antiPatterns).to.include('git_feature');
     });
 
-    it('should explain when to use aider vs other tools', () => {
-      const schema = aiderTool.inputSchema as any;
-      expect(schema.llmGuidance.whenToUse.toLowerCase()).to.include('fuzzy');
-      expect(schema.llmGuidance.whenToUse).to.include('edit');
+    it('should explain when to use aider vs other tools in description', () => {
+      expect(aiderTool.description.toLowerCase()).to.include('fuzzy');
+      expect(aiderTool.description).to.include('edit');
     });
   });
 
   describe('Use Case Examples', () => {
-    it('should provide comprehensive examples', () => {
+    it('should provide use case guidance in llmHints', () => {
       const schema = aiderTool.inputSchema as any;
-      expect(schema.llmGuidance.examples).to.be.an('array');
-      expect(schema.llmGuidance.examples.length).to.be.at.least(2);
+      expect(schema.llmHints.useCases).to.exist;
     });
 
     it('should document ideal use cases', () => {
@@ -195,7 +189,7 @@ describe('AiderTool', () => {
   describe('Best Practices', () => {
     it('should recommend dryRun first', () => {
       const schema = aiderTool.inputSchema as any;
-      expect(schema.llmGuidance.workflow).to.include('dryRun');
+      expect(schema.llmGuidance.threshold).to.include('dryRun');
     });
 
     it('should document default threshold', () => {

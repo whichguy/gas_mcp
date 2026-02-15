@@ -88,7 +88,20 @@ interface CloudLogsResponse {
  */
 export class CloudLogsTool extends BaseTool {
   public name = 'cloud_logs';
-  public description = '[LOGS:CLOUD] Browse Cloud Logging entries for a GAS project — list recent logs or get detailed log entries. WHEN: debugging server-side errors, viewing execution logs, or monitoring. Example: cloud_logs({scriptId, operation: "list"})';
+  public description = '[LOGS:CLOUD] Browse Cloud Logging entries for a GAS project — list recent logs or get detailed log entries. WHEN: debugging server-side errors, viewing execution logs, or monitoring. AVOID: use executions for execution status/timing; cloud_logs for Logger.log output and stack traces. Example: cloud_logs({scriptId, operation: "list"})';
+
+  public outputSchema = {
+    type: 'object' as const,
+    properties: {
+      summary: { type: 'object', description: 'Log summary (total, severityCounts, timeRange, uniqueFunctions)' },
+      entries: { type: 'array', description: 'Log entries with timestamp, severity, message, function' },
+      pagination: { type: 'object', description: 'Pagination info (hasMore, nextPageToken, pageSize)' },
+      recommendations: { type: 'array', description: 'Dynamic recommendations for next actions' },
+      gcpProjectId: { type: 'string', description: 'GCP project ID used' },
+      scriptId: { type: 'string', description: 'GAS project ID' },
+      cached: { type: 'boolean', description: 'Whether GCP project ID was cached' }
+    }
+  };
 
   public inputSchema = {
     type: 'object',
@@ -139,16 +152,17 @@ export class CloudLogsTool extends BaseTool {
     required: ['scriptId'],
     additionalProperties: false,
     llmGuidance: {
-      whenToUse: 'Fetch historical Logger.log() output | Debug past executions | Analyze patterns',
-      limitation: 'Requires accessible GCP project. Default GCP projects may not be API-accessible.',
-      workflow: 'cloud_logs({scriptId}) → check recommendations → filter/paginate as needed',
-      tokenSafety: 'Default pageSize=20 prevents context overflow. Increase cautiously.',
-      examples: [
-        'Recent logs: cloud_logs({scriptId})',
-        'Errors only: cloud_logs({scriptId, severity:"ERROR"})',
-        'Specific function: cloud_logs({scriptId, functionName:"doGet", startTime:"-1h"})'
-      ]
+      limitation: 'Requires accessible GCP project (default projects may not be API-accessible).',
+      workflow: 'cloud_logs({scriptId}) → check recommendations → filter/paginate. Default pageSize=20 (token-safe).',
+      examples: 'Errors: severity:"ERROR" | Function: functionName:"doGet", startTime:"-1h"'
     }
+  };
+
+  public annotations = {
+    title: 'Cloud Logs',
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: true
   };
 
   private gasClient: GASClient;

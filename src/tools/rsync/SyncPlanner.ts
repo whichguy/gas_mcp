@@ -24,6 +24,7 @@ import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncManifest, ManifestLoadResult } from './SyncManifest.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { SyncDiff, DiffFileInfo, SyncDiffResult } from './SyncDiff.js';
+import { FileFilter, EXCLUDED_DIRS } from '../../utils/fileFilter.js';
 import { fileNameMatches } from '../../api/pathParser.js';
 import { getUncommittedStatus, getCurrentBranchName } from '../../utils/gitStatus.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
@@ -32,10 +33,6 @@ import {
   unwrapModuleContent,
   validateCommonJsIntegrity,
 } from '../../utils/moduleWrapper.js';
-import {
-  FileFilter,
-  EXCLUDED_DIRS,
-} from '../../utils/fileFilter.js';
 import { getValidatedContentHash } from '../../utils/gasMetadataCache.js';
 
 /**
@@ -604,6 +601,9 @@ export class SyncPlanner {
   private convertGasFilesToDiff(gasFiles: GASFile[]): DiffFileInfo[] {
     return gasFiles
       .filter(f => f.source !== undefined)
+      // GAS .git/config is a sync breadcrumb, not real git config.
+      // Writing it locally: EEXIST in worktrees (.git is file), overwrites real config in repos (.git is dir)
+      .filter(f => !FileFilter.isGitBreadcrumbPath(f.name))
       .map(f => {
         const source = f.source as string;
         const fileType = f.type || 'SERVER_JS';

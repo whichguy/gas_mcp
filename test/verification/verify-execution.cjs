@@ -44,23 +44,13 @@ test('API executable support', checkFile('src/tools/execution.ts', 'gas_run_api_
 test('Execution timeout handling', checkFile('src/tools/execution.ts', 'timeout'));
 test('Logger output capture', checkFile('src/tools/execution.ts', ['logger', 'output']));
 
-console.log('\n🏗️  Deployment Management');
-test('Deployment creation', checkFile('src/tools/deployments.ts', 'gas_deploy_create'));
-test('Deployment listing', checkFile('src/tools/deployments.ts', 'gas_deploy_list'));
-test('Deployment details', checkFile('src/tools/deployments.ts', 'gas_deploy_get_details'));
-test('Deployment updates', checkFile('src/tools/deployments.ts', 'gas_deploy_update'));
-test('Deployment deletion', checkFile('src/tools/deployments.ts', 'gas_deploy_delete'));
-
-console.log('\n🔢 Version Management');
-test('Version creation', checkFile('src/tools/versions.ts', 'gas_version_create'));
-test('Version listing', checkFile('src/tools/versions.ts', 'gas_version_list'));
-test('Version details', checkFile('src/tools/versions.ts', 'gas_version_get'));
-test('Version-based deployments', checkFile('src/tools/deployments.ts', 'versionNumber'));
-
-console.log('\n🌐 Web App Features');
-test('Web app deployment support', checkFile('src/tools/deployments.ts', 'WEB_APP'));
-test('Access control settings', checkFile('src/tools/deployments.ts', ['accessLevel', 'webAppAccess']));
-test('Execution permissions', checkFile('src/tools/deployments.ts', 'webAppExecuteAs'));
+console.log('\n🏗️  Deployment Management (Consolidated)');
+test('Consolidated deploy tool', checkFile('src/tools/deployment.ts', 'DeployTool'));
+test('Deploy promote operation', checkFile('src/tools/deployment.ts', 'promote'));
+test('Deploy rollback operation', checkFile('src/tools/deployment.ts', 'rollback'));
+test('Deploy status operation', checkFile('src/tools/deployment.ts', 'status'));
+test('Deploy reset operation', checkFile('src/tools/deployment.ts', 'reset'));
+test('Version management in deploy', checkFile('src/tools/deployment.ts', 'versionNumber'));
 test('Proxy setup capabilities', checkFile('src/tools/proxySetup.ts', 'gas_proxy_setup'));
 
 console.log('\n🔧 Runtime Infrastructure');
