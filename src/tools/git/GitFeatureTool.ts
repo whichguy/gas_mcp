@@ -484,7 +484,32 @@ export class GitFeatureTool extends BaseFileSystemTool {
     log.info(`[GIT_FEATURE] Switching to default branch: ${safeDefaultBranch}`);
 
     await this.execGitCommand(['checkout', safeDefaultBranch], gitRoot);
-    await this.execGitCommand(['merge', '--squash', safeTargetBranch], gitRoot);
+
+    try {
+      await this.execGitCommand(['merge', '--squash', safeTargetBranch], gitRoot);
+    } catch (mergeError) {
+      // Check for merge conflicts
+      const statusOutput = await this.execGitCommand(['status', '--porcelain'], gitRoot);
+      const hasConflicts = statusOutput.split('\n').some(
+        (line: string) => line.startsWith('UU ') || line.startsWith('AA ') || line.startsWith('DD ')
+      );
+
+      if (hasConflicts) {
+        // Abort the merge to restore clean state
+        await this.execGitCommand(['merge', '--abort'], gitRoot).catch(() => {
+          // If abort also fails, reset
+          return this.execGitCommand(['reset', '--hard', 'HEAD'], gitRoot);
+        });
+        // Switch back to feature branch
+        await this.execGitCommand(['checkout', safeTargetBranch], gitRoot);
+        throw new Error(
+          `Merge conflicts detected between '${targetBranch}' and '${defaultBranch}'. ` +
+          `The merge was aborted and you are back on '${targetBranch}'. ` +
+          `Resolve conflicts manually: git -C ${gitRoot} checkout ${defaultBranch} && git -C ${gitRoot} merge ${targetBranch}`
+        );
+      }
+      throw mergeError;
+    }
 
     // Create squash commit with feature name
     const featureDesc = targetBranch.replace('llm-feature-', '').replace('llm-feature-auto-', 'auto-');

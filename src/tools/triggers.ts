@@ -5,6 +5,19 @@ import { ExecTool } from './execution.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 
 /**
+ * Escape a string for safe interpolation into GAS code templates.
+ * Prevents code injection via user-controlled inputs (functionName, triggerId, etc.).
+ */
+function escapeGasString(str: string): string {
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+}
+
+/**
  * Unified trigger management tool for Google Apps Script projects
  * Provides comprehensive trigger operations: list, create, delete
  */
@@ -431,16 +444,17 @@ export class TriggerTool extends BaseTool {
           })()
         `;
       } else if (triggerId) {
+        const safeTriggerId = escapeGasString(triggerId);
         jsStatement = `
           (function() {
             try {
               const triggers = ScriptApp.getProjectTriggers();
-              const trigger = triggers.find(t => t.getUniqueId() === '${triggerId}');
+              const trigger = triggers.find(t => t.getUniqueId() === '${safeTriggerId}');
 
               if (!trigger) {
                 return {
                   success: false,
-                  error: 'Trigger with ID ${triggerId} not found'
+                  error: 'Trigger with ID ${safeTriggerId} not found'
                 };
               }
 
@@ -448,7 +462,7 @@ export class TriggerTool extends BaseTool {
               return {
                 success: true,
                 message: 'Trigger deleted successfully',
-                deletedTriggerId: '${triggerId}'
+                deletedTriggerId: '${safeTriggerId}'
               };
             } catch (error) {
               return {
@@ -459,16 +473,17 @@ export class TriggerTool extends BaseTool {
           })()
         `;
       } else if (functionName) {
+        const safeFunctionName = escapeGasString(functionName);
         jsStatement = `
           (function() {
             try {
               const triggers = ScriptApp.getProjectTriggers();
-              const matchingTriggers = triggers.filter(t => t.getHandlerFunction() === '${functionName}');
+              const matchingTriggers = triggers.filter(t => t.getHandlerFunction() === '${safeFunctionName}');
 
               if (matchingTriggers.length === 0) {
                 return {
                   success: false,
-                  error: 'No triggers found for function ${functionName}'
+                  error: 'No triggers found for function ${safeFunctionName}'
                 };
               }
 
@@ -479,7 +494,7 @@ export class TriggerTool extends BaseTool {
               return {
                 success: true,
                 deletedCount: matchingTriggers.length,
-                message: \`Deleted \${matchingTriggers.length} triggers for function ${functionName}\`
+                message: \`Deleted \${matchingTriggers.length} triggers for function ${safeFunctionName}\`
               };
             } catch (error) {
               return {
@@ -525,8 +540,9 @@ export class TriggerTool extends BaseTool {
     }
 
     const { interval, value, specificDate, weekDay, monthDay, hour, minute, timezone } = options;
+    const safeFunctionName = escapeGasString(functionName);
 
-    let triggerBuilder = `ScriptApp.newTrigger('${functionName}').timeBased()`;
+    let triggerBuilder = `ScriptApp.newTrigger('${safeFunctionName}').timeBased()`;
 
     switch (interval) {
       case 'minutes':
@@ -591,7 +607,7 @@ export class TriggerTool extends BaseTool {
         if (!specificDate) {
           throw new Error('specificDate is required for one-time triggers');
         }
-        triggerBuilder += `.at(new Date('${specificDate}'))`;
+        triggerBuilder += `.at(new Date('${escapeGasString(specificDate)}'))`;
         break;
       default:
         throw new Error(`Unsupported time interval: ${interval}`);
@@ -599,7 +615,7 @@ export class TriggerTool extends BaseTool {
 
     // Add timezone support if provided
     if (timezone && interval !== 'specific') {
-      triggerBuilder += `.inTimezone('${timezone}')`;
+      triggerBuilder += `.inTimezone('${escapeGasString(timezone)}')`;
     }
 
     return `
@@ -611,13 +627,13 @@ export class TriggerTool extends BaseTool {
             triggerId: trigger.getUniqueId(),
             message: 'Time-based trigger created successfully',
             details: {
-              interval: '${interval}',
+              interval: '${escapeGasString(interval)}',
               ${value ? `value: ${value},` : ''}
-              ${weekDay ? `weekDay: '${weekDay}',` : ''}
+              ${weekDay ? `weekDay: '${escapeGasString(String(weekDay))}',` : ''}
               ${monthDay ? `monthDay: ${monthDay},` : ''}
               ${hour !== undefined ? `hour: ${hour},` : ''}
               ${minute !== undefined ? `minute: ${minute},` : ''}
-              ${timezone ? `timezone: '${timezone}'` : ''}
+              ${timezone ? `timezone: '${escapeGasString(timezone)}'` : ''}
             }
           };
         } catch (error) {
@@ -636,12 +652,13 @@ export class TriggerTool extends BaseTool {
     }
 
     const { spreadsheetId, sheetName, eventType, range } = options;
+    const safeFunctionName = escapeGasString(functionName);
 
     let spreadsheetRef = spreadsheetId
-      ? `SpreadsheetApp.openById('${spreadsheetId}')`
+      ? `SpreadsheetApp.openById('${escapeGasString(spreadsheetId)}')`
       : 'SpreadsheetApp.getActive()';
 
-    let triggerBuilder = `ScriptApp.newTrigger('${functionName}').forSpreadsheet(${spreadsheetRef})`;
+    let triggerBuilder = `ScriptApp.newTrigger('${safeFunctionName}').forSpreadsheet(${spreadsheetRef})`;
 
     switch (eventType) {
       case 'onOpen':
@@ -669,21 +686,21 @@ export class TriggerTool extends BaseTool {
           const trigger = ${triggerBuilder}.create();
           ${sheetName ? `
           // Note: Sheet-specific targeting requires custom logic in the trigger function
-          // The trigger function should check: if (e.source.getSheetName() !== '${sheetName}') return;
+          // The trigger function should check: if (e.source.getSheetName() !== '${escapeGasString(sheetName)}') return;
           ` : ''}
           ${range ? `
           // Note: Range-specific targeting requires custom logic in the trigger function
-          // The trigger function should check if the edit is within range '${range}'
+          // The trigger function should check if the edit is within range '${escapeGasString(range)}'
           ` : ''}
           return {
             success: true,
             triggerId: trigger.getUniqueId(),
             message: 'Spreadsheet trigger created successfully',
             details: {
-              eventType: '${eventType}',
-              ${spreadsheetId ? `spreadsheetId: '${spreadsheetId}',` : ''}
-              ${sheetName ? `sheetName: '${sheetName}',` : ''}
-              ${range ? `range: '${range}',` : ''}
+              eventType: '${escapeGasString(eventType)}',
+              ${spreadsheetId ? `spreadsheetId: '${escapeGasString(spreadsheetId)}',` : ''}
+              ${sheetName ? `sheetName: '${escapeGasString(sheetName)}',` : ''}
+              ${range ? `range: '${escapeGasString(range)}',` : ''}
               note: 'Sheet/range filtering must be implemented in the trigger function'
             }
           };
@@ -703,7 +720,8 @@ export class TriggerTool extends BaseTool {
     }
 
     const { formId, eventType } = options;
-    let triggerBuilder = `ScriptApp.newTrigger('${functionName}').forForm(FormApp.openById('${formId}'))`;
+    const safeFunctionName = escapeGasString(functionName);
+    let triggerBuilder = `ScriptApp.newTrigger('${safeFunctionName}').forForm(FormApp.openById('${escapeGasString(formId)}'))`;
 
     switch (eventType) {
       case 'onFormSubmit':
@@ -725,8 +743,8 @@ export class TriggerTool extends BaseTool {
             triggerId: trigger.getUniqueId(),
             message: 'Form trigger created successfully',
             details: {
-              formId: '${formId}',
-              eventType: '${eventType}'
+              formId: '${escapeGasString(formId)}',
+              eventType: '${escapeGasString(eventType)}'
             }
           };
         } catch (error) {
@@ -746,18 +764,19 @@ export class TriggerTool extends BaseTool {
 
     const { calendarId, calendarName, eventType } = options;
 
+    const safeFunctionName = escapeGasString(functionName);
     let calendarRef;
     if (calendarId) {
       calendarRef = calendarId === 'primary'
         ? 'CalendarApp.getDefaultCalendar()'
-        : `CalendarApp.getCalendarById('${calendarId}')`;
+        : `CalendarApp.getCalendarById('${escapeGasString(calendarId)}')`;
     } else if (calendarName) {
-      calendarRef = `CalendarApp.getCalendarsByName('${calendarName}')[0]`;
+      calendarRef = `CalendarApp.getCalendarsByName('${escapeGasString(calendarName)}')[0]`;
     } else {
       calendarRef = 'CalendarApp.getDefaultCalendar()';
     }
 
-    let triggerBuilder = `ScriptApp.newTrigger('${functionName}').forCalendar(${calendarRef})`;
+    let triggerBuilder = `ScriptApp.newTrigger('${safeFunctionName}').forCalendar(${calendarRef})`;
 
     switch (eventType) {
       case 'onEventUpdated':
@@ -784,10 +803,10 @@ export class TriggerTool extends BaseTool {
             triggerId: trigger.getUniqueId(),
             message: 'Calendar trigger created successfully',
             details: {
-              ${calendarId ? `calendarId: '${calendarId}',` : ''}
-              ${calendarName ? `calendarName: '${calendarName}',` : ''}
-              eventType: '${eventType}',
-              ${eventType !== 'onEventUpdated' ? `note: 'Apps Script only supports onEventUpdated - your function must detect ${eventType} events manually'` : ''}
+              ${calendarId ? `calendarId: '${escapeGasString(calendarId)}',` : ''}
+              ${calendarName ? `calendarName: '${escapeGasString(calendarName)}',` : ''}
+              eventType: '${escapeGasString(eventType)}',
+              ${eventType !== 'onEventUpdated' ? `note: 'Apps Script only supports onEventUpdated - your function must detect ${escapeGasString(eventType)} events manually'` : ''}
             }
           };
         } catch (error) {
@@ -806,7 +825,8 @@ export class TriggerTool extends BaseTool {
     }
 
     const { documentId, eventType } = options;
-    let triggerBuilder = `ScriptApp.newTrigger('${functionName}').forDocument(DocumentApp.openById('${documentId}'))`;
+    const safeFunctionName = escapeGasString(functionName);
+    let triggerBuilder = `ScriptApp.newTrigger('${safeFunctionName}').forDocument(DocumentApp.openById('${escapeGasString(documentId)}'))`;
 
     switch (eventType) {
       case 'onOpen':
@@ -829,8 +849,8 @@ export class TriggerTool extends BaseTool {
             triggerId: trigger.getUniqueId(),
             message: 'Document trigger created successfully',
             details: {
-              documentId: '${documentId}',
-              eventType: '${eventType}',
+              documentId: '${escapeGasString(documentId)}',
+              eventType: '${escapeGasString(eventType)}',
               ${eventType === 'onEdit' ? `note: 'Google Docs only supports onOpen - onEdit events are not available'` : ''}
             }
           };
@@ -862,8 +882,8 @@ export class TriggerTool extends BaseTool {
             success: true,
             message: 'Add-on trigger configuration noted',
             details: {
-              eventType: '${eventType}',
-              note: 'Add-on triggers (${eventType}) should be configured in appsscript.json manifest file under "oauthScopes" and "addOns" sections'
+              eventType: '${escapeGasString(eventType)}',
+              note: 'Add-on triggers (${escapeGasString(eventType)}) should be configured in appsscript.json manifest file under "oauthScopes" and "addOns" sections'
             },
             manifestExample: {
               "addOns": {
@@ -902,9 +922,9 @@ export class TriggerTool extends BaseTool {
             success: true,
             message: 'Gmail trigger configuration noted',
             details: {
-              eventType: '${eventType}',
-              ${labelName ? `labelName: '${labelName}',` : ''}
-              note: 'Gmail triggers (${eventType}) must be configured in appsscript.json manifest under "addOns.gmail" section'
+              eventType: '${escapeGasString(eventType)}',
+              ${labelName ? `labelName: '${escapeGasString(labelName)}',` : ''}
+              note: 'Gmail triggers (${escapeGasString(eventType)}) must be configured in appsscript.json manifest under "addOns.gmail" section'
             },
             manifestExample: {
               "addOns": {
@@ -913,12 +933,12 @@ export class TriggerTool extends BaseTool {
                   "logoUrl": "https://example.com/logo.png",
                   "contextualTriggers": [{
                     "unconditional": {},
-                    "onTriggerFunction": "${functionName}"
+                    "onTriggerFunction": "${escapeGasString(functionName)}"
                   }],
                   "composeTrigger": {
                     "selectActions": [{
                       "text": "Your Action",
-                      "runFunction": "${functionName}"
+                      "runFunction": "${escapeGasString(functionName)}"
                     }]
                   }
                 }
