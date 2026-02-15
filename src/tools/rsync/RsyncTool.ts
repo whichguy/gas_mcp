@@ -274,7 +274,7 @@ export class RsyncTool extends BaseTool {
         );
       }
 
-      // Step 5: Apply changes
+      // Step 5: Apply changes (pass pre-fetched GAS files to avoid redundant API calls)
       const result = await this.executor.apply({
         direction: operation,
         scriptId,
@@ -283,6 +283,7 @@ export class RsyncTool extends BaseTool {
         isBootstrap: diffResult.isBootstrap,
         accessToken,
         confirmDeletions: params.confirmDeletions,
+        prefetchedGasFiles: diffResult.gasFiles,
       });
 
       // Step 6: Build git workflow hint

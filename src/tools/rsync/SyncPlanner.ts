@@ -84,6 +84,8 @@ export interface DiffResult {
   warnings: string[];
   sourceFileCount: number;
   destFileCount: number;
+  /** Pre-fetched GAS files from diff computation, reusable by executor */
+  gasFiles?: GASFile[];
 }
 
 /**
@@ -182,6 +184,7 @@ export class SyncPlanner {
         warnings,
         sourceFileCount: direction === 'pull' ? gasFiles.length : localFiles.length,
         destFileCount: direction === 'pull' ? localFiles.length : gasFiles.length,
+        gasFiles,
       };
 
       log.info(`[PLANNER] Diff computed: +${diffResult.add.length} ~${diffResult.update.length} -${diffResult.delete.length}`);
