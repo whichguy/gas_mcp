@@ -102,8 +102,10 @@ These systems are **independent** — choose based on whether you need Sheets cu
 ### 5. Deployment
 **Tools:** `deploy` (recommended — library version pinning) | `version_deploy` (advanced — raw web app deployments)
 **Library workflow:** `deploy({operation: "promote", to: "staging", scriptId, description: "v1.0"})` → test → `deploy({operation: "promote", to: "prod", scriptId})`
+**Safety:** Both tools use LockManager for concurrent write protection. `dryRun: true` previews changes without applying.
+**Resilience:** ConfigManager write failures produce `configWarning` (deployment still succeeds). Rollback with missing state gives helpful error with current pin.
 **Auto-Storage:** URLs and deployment IDs stored in PropertiesService via ConfigManager
-**See:** [docs/DEPLOYMENT_WORKFLOW.md](docs/DEPLOYMENT_WORKFLOW.md) for complete guide
+**See:** [docs/LIBRARY_DEPLOYMENT_WORKFLOW.md](docs/LIBRARY_DEPLOYMENT_WORKFLOW.md) for library deploy guide | [docs/DEPLOYMENT_WORKFLOW.md](docs/DEPLOYMENT_WORKFLOW.md) for web app deploy guide
 
 ### 6. Write Locking
 **Protection:** Filesystem-based per-project write locks prevent concurrent modification (GAS API has no server-side concurrency control)

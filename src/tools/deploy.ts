@@ -69,6 +69,9 @@ export class LibraryDeployTool extends BaseTool {
       versions: { type: 'object', description: 'Version management info (status): total, cleanup candidates' },
       createdVersion: { type: 'number', description: 'Version created before failure (error recovery)' },
       retryWith: { type: 'string', description: 'Suggested retry command with useVersion (error recovery)' },
+      discrepancies: { type: 'array', description: 'Detected mismatches between local config, ConfigManager, and consumer manifests (status only)' },
+      reconciled: { type: 'array', description: 'List of values corrected during reconciliation (status with reconcile:true only)' },
+      configWarning: { type: 'string', description: 'Warning when ConfigManager writes failed (deployment still succeeded). Rollback may need explicit toVersion.' },
       hints: { type: 'object', description: 'Context-aware next-step hints' },
     },
   };
@@ -114,6 +117,11 @@ export class LibraryDeployTool extends BaseTool {
         type: 'boolean',
         description: 'Skip library reference validation on consumer manifests.',
       },
+      reconcile: {
+        type: 'boolean',
+        description: 'Auto-fix discrepancies found by status (uses consumer manifest as source of truth). Only applies to status operation.',
+      },
+      ...SchemaFragments.dryRun,
       ...SchemaFragments.scriptId,
       ...SchemaFragments.accessToken,
     },
@@ -160,7 +168,7 @@ export class LibraryDeployTool extends BaseTool {
           result = await this.handleRollback(scriptId, params, accessToken);
           break;
         case 'status':
-          result = await this.handleStatus(scriptId, accessToken);
+          result = await this.handleStatus(scriptId, params, accessToken);
           break;
         case 'setup':
           result = await this.handleSetup(scriptId, params, accessToken);
@@ -214,34 +222,68 @@ export class LibraryDeployTool extends BaseTool {
   }
 
   private async promoteToStaging(scriptId: string, params: any, accessToken?: string): Promise<any> {
+    const dryRun = !!params.dryRun;
+
     // Look up staging consumer
     const envConfig = await this.getEnvironmentConfig(scriptId);
     let stagingScriptId = envConfig?.staging?.consumerScriptId;
 
     // Auto-create consumer if missing
     if (!stagingScriptId) {
+      if (dryRun) {
+        return {
+          operation: 'promote',
+          environment: 'staging',
+          dryRun: true,
+          wouldCreate: 'staging consumer project (not yet configured)',
+          note: 'Cannot fully preview — staging consumer does not exist yet. Run without dryRun to auto-create.',
+        };
+      }
       console.error('🔧 Creating staging consumer project...');
       const consumer = await this.autoCreateConsumer(scriptId, 'staging', envConfig, accessToken);
       stagingScriptId = consumer.consumerScriptId;
       console.error(`✅ Created staging consumer: ${stagingScriptId}`);
     }
 
-    // Create version (or reuse)
+    // Determine version
     let versionNumber: number;
     let versionDescription: string;
     if (params.useVersion) {
       versionNumber = params.useVersion;
       versionDescription = `[reused] v${versionNumber}`;
-      console.error(`♻️  Reusing existing version ${versionNumber}`);
     } else {
       if (!params.description) {
         throw new ValidationError('description', undefined, 'non-empty string when promoting to staging');
       }
       const description = this.validate.string(params.description, 'description', 'promote');
       versionDescription = `${ENV_TAGS.staging} ${description}`;
-      const version = await this.gasClient.createVersion(scriptId, versionDescription, accessToken);
-      versionNumber = version.versionNumber;
-      console.error(`✅ Created version ${versionNumber}: ${versionDescription}`);
+
+      if (dryRun) {
+        // Preview: determine next version number without creating
+        const versionsResponse = await this.gasClient.listVersions(scriptId, 1, undefined, accessToken);
+        const highestVersion = versionsResponse.versions?.length > 0
+          ? Math.max(...versionsResponse.versions.map((v: any) => v.versionNumber))
+          : 0;
+        versionNumber = highestVersion + 1;
+      } else {
+        const version = await this.gasClient.createVersion(scriptId, versionDescription, accessToken);
+        versionNumber = version.versionNumber;
+        console.error(`✅ Created version ${versionNumber}: ${versionDescription}`);
+      }
+    }
+
+    // Read current pin for preview
+    const currentPin = await this.readConsumerLibraryVersion(stagingScriptId, scriptId, accessToken).catch(() => null);
+
+    if (dryRun) {
+      return {
+        operation: 'promote',
+        environment: 'staging',
+        dryRun: true,
+        wouldCreateVersion: versionNumber,
+        wouldPin: { consumer: stagingScriptId, from: currentPin, to: versionNumber },
+        description: versionDescription,
+      };
     }
 
     // Update consumer's library version pin
@@ -253,16 +295,11 @@ export class LibraryDeployTool extends BaseTool {
         params.force,
         accessToken
       );
+      await this.verifyConsumerPin(stagingScriptId, scriptId, versionNumber, accessToken);
       console.error(`✅ Staging pinned to v${versionNumber} (was v${previousVersion || 'none'})`);
 
-      // Store in ConfigManager
-      await this.storeEnvironmentState(scriptId, 'staging', versionNumber, previousVersion, accessToken);
-
-      // Update local config cache
-      await this.updateLocalConfig(scriptId, 'staging', versionNumber);
-
-      // Advisory cleanup check
-      const cleanup = await this.checkVersionCleanup(scriptId, accessToken);
+      // Store in ConfigManager (non-fatal — deployment already succeeded)
+      const storeResult = await this.storeEnvironmentState(scriptId, 'staging', versionNumber, previousVersion, accessToken);
 
       return {
         operation: 'promote',
@@ -271,7 +308,9 @@ export class LibraryDeployTool extends BaseTool {
         description: versionDescription,
         previousVersion: previousVersion || null,
         consumer: { scriptId: stagingScriptId },
-        ...(cleanup.candidates > 0 ? { cleanup } : {}),
+        ...(storeResult.failures.length > 0 ? {
+          configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}. Rollback may need toVersion parameter.`
+        } : {}),
       };
     } catch (pinError: any) {
       // Version was created but pin failed — provide recovery info
@@ -286,6 +325,7 @@ export class LibraryDeployTool extends BaseTool {
   }
 
   private async promoteToProd(scriptId: string, params: any, accessToken?: string): Promise<any> {
+    const dryRun = !!params.dryRun;
     const envConfig = await this.getEnvironmentConfig(scriptId);
 
     // Read staging's current pin (source of truth)
@@ -302,10 +342,33 @@ export class LibraryDeployTool extends BaseTool {
     // Auto-create prod consumer if missing
     let prodScriptId = envConfig?.prod?.consumerScriptId;
     if (!prodScriptId) {
+      if (dryRun) {
+        return {
+          operation: 'promote',
+          environment: 'prod',
+          dryRun: true,
+          wouldCreate: 'prod consumer project (not yet configured)',
+          wouldPin: { from: null, to: stagingVersion },
+          note: 'Cannot fully preview — prod consumer does not exist yet. Run without dryRun to auto-create.',
+        };
+      }
       console.error('🔧 Creating prod consumer project...');
       const consumer = await this.autoCreateConsumer(scriptId, 'prod', envConfig, accessToken);
       prodScriptId = consumer.consumerScriptId;
       console.error(`✅ Created prod consumer: ${prodScriptId}`);
+    }
+
+    // Read current prod pin for preview
+    const currentProdPin = await this.readConsumerLibraryVersion(prodScriptId, scriptId, accessToken).catch(() => null);
+
+    if (dryRun) {
+      return {
+        operation: 'promote',
+        environment: 'prod',
+        dryRun: true,
+        wouldPin: { consumer: prodScriptId, from: currentProdPin, to: stagingVersion },
+        note: 'Prod would be pinned to staging version',
+      };
     }
 
     // Update prod's library version pin to staging's version
@@ -316,16 +379,11 @@ export class LibraryDeployTool extends BaseTool {
       params.force,
       accessToken
     );
+    await this.verifyConsumerPin(prodScriptId, scriptId, stagingVersion, accessToken);
     console.error(`✅ Prod pinned to v${stagingVersion} (was v${previousVersion || 'none'})`);
 
-    // Store in ConfigManager
-    await this.storeEnvironmentState(scriptId, 'prod', stagingVersion, previousVersion, accessToken);
-
-    // Update local config cache
-    await this.updateLocalConfig(scriptId, 'prod', stagingVersion);
-
-    // Advisory cleanup check
-    const cleanup = await this.checkVersionCleanup(scriptId, accessToken);
+    // Store in ConfigManager (non-fatal — deployment already succeeded)
+    const storeResult = await this.storeEnvironmentState(scriptId, 'prod', stagingVersion, previousVersion, accessToken);
 
     return {
       operation: 'promote',
@@ -334,7 +392,9 @@ export class LibraryDeployTool extends BaseTool {
       previousVersion: previousVersion || null,
       consumer: { scriptId: prodScriptId },
       note: 'Prod now serves same library version as staging',
-      ...(cleanup.candidates > 0 ? { cleanup } : {}),
+      ...(storeResult.failures.length > 0 ? {
+        configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}. Rollback may need toVersion parameter.`
+      } : {}),
     };
   }
 
@@ -367,7 +427,13 @@ export class LibraryDeployTool extends BaseTool {
         // Read previous version from ConfigManager
         const previousVersion = await this.getConfigManagerValue(scriptId, CONFIG_KEYS[to].previousVersion, accessToken);
         if (!previousVersion) {
-          throw new ValidationError(`${to}_previous_version`, 'none stored', `at least one prior promote to enable rollback`);
+          // ConfigManager has no previous version — read current pin to help user specify toVersion
+          const currentPin = await this.readConsumerLibraryVersion(consumerScriptId, scriptId, accessToken).catch(() => null);
+          throw new ValidationError(
+            `${to}_previous_version`,
+            'none stored',
+            `no previous version in ConfigManager. Current ${to} pin is v${currentPin || 'unknown'}. Use toVersion to specify rollback target.`
+          );
         }
         targetVersion = parseInt(previousVersion, 10);
       }
@@ -375,13 +441,24 @@ export class LibraryDeployTool extends BaseTool {
       // Read current version for swap
       const currentVersion = await this.readConsumerLibraryVersion(consumerScriptId, scriptId, accessToken);
 
+      if (params.dryRun) {
+        return {
+          operation: 'rollback',
+          environment: to,
+          dryRun: true,
+          wouldRollbackTo: targetVersion,
+          currentVersion,
+          consumer: { scriptId: consumerScriptId },
+        };
+      }
+
       // Update pin
       await this.updateConsumerLibraryPin(consumerScriptId, scriptId, targetVersion, params.force, accessToken);
+      await this.verifyConsumerPin(consumerScriptId, scriptId, targetVersion, accessToken);
       console.error(`✅ Rolled back ${to} from v${currentVersion} to v${targetVersion}`);
 
-      // Toggle: current becomes previous, target becomes current
-      await this.storeEnvironmentState(scriptId, to, targetVersion, currentVersion, accessToken);
-      await this.updateLocalConfig(scriptId, to, targetVersion);
+      // Toggle: current becomes previous, target becomes current (non-fatal)
+      const storeResult = await this.storeEnvironmentState(scriptId, to, targetVersion, currentVersion, accessToken);
 
       return {
         operation: 'rollback',
@@ -390,6 +467,9 @@ export class LibraryDeployTool extends BaseTool {
         rolledBackFrom: currentVersion,
         consumer: { scriptId: consumerScriptId },
         note: 'Rollback is a toggle — a second rollback undoes this one',
+        ...(storeResult.failures.length > 0 ? {
+          configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}. Next rollback may need toVersion parameter.`
+        } : {}),
       };
     } finally {
       await lockManager.releaseLock(scriptId);
@@ -400,7 +480,7 @@ export class LibraryDeployTool extends BaseTool {
   // Status
   // ---------------------------------------------------------------------------
 
-  private async handleStatus(scriptId: string, accessToken?: string): Promise<any> {
+  private async handleStatus(scriptId: string, params: any, accessToken?: string): Promise<any> {
     const envConfig = await this.getEnvironmentConfig(scriptId);
 
     // Read actual version pins from consumer manifests (source of truth)
@@ -429,13 +509,40 @@ export class LibraryDeployTool extends BaseTool {
     const cleanupCandidates = versions.filter((v: any) => !keepSet.has(v.versionNumber));
     const warnings = this.generateVersionWarnings(versions.length);
 
-    // Cross-check local config vs remote
     const discrepancies: string[] = [];
-    if (envConfig?.staging?.libraryVersion && stagingVersion && envConfig.staging.libraryVersion !== stagingVersion) {
-      discrepancies.push(`Staging: local config says v${envConfig.staging.libraryVersion}, actual pin is v${stagingVersion}`);
+
+    // Cross-check ConfigManager stored versions vs consumer manifest
+    const storedStagingVersion = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.staging.version, accessToken).catch(() => null);
+    const storedProdVersion = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.prod.version, accessToken).catch(() => null);
+    if (storedStagingVersion && stagingVersion && parseInt(storedStagingVersion, 10) !== stagingVersion) {
+      discrepancies.push(`Staging: ConfigManager says v${storedStagingVersion}, actual consumer pin is v${stagingVersion}`);
     }
-    if (envConfig?.prod?.libraryVersion && prodVersion && envConfig.prod.libraryVersion !== prodVersion) {
-      discrepancies.push(`Prod: local config says v${envConfig.prod.libraryVersion}, actual pin is v${prodVersion}`);
+    if (storedProdVersion && prodVersion && parseInt(storedProdVersion, 10) !== prodVersion) {
+      discrepancies.push(`Prod: ConfigManager says v${storedProdVersion}, actual consumer pin is v${prodVersion}`);
+    }
+
+    // Reconcile if requested and discrepancies found
+    let reconciled: string[] | undefined;
+    if (params.reconcile && discrepancies.length > 0) {
+      reconciled = [];
+
+      // Consumer manifest is source of truth — update ConfigManager and local config to match
+      for (const env of ['staging', 'prod'] as const) {
+        const consumerVersion = env === 'staging' ? stagingVersion : prodVersion;
+        if (!consumerVersion) continue;
+
+        // Fix ConfigManager
+        const storedVersion = env === 'staging' ? storedStagingVersion : storedProdVersion;
+        if (storedVersion && parseInt(storedVersion, 10) !== consumerVersion) {
+          try {
+            await this.setConfigManagerValue(scriptId, CONFIG_KEYS[env].version, String(consumerVersion), accessToken);
+            reconciled.push(`ConfigManager ${CONFIG_KEYS[env].version} → v${consumerVersion}`);
+          } catch (error: any) {
+            console.error(`⚠️  Reconcile failed for ConfigManager ${CONFIG_KEYS[env].version}: ${error.message}`);
+          }
+        }
+
+      }
     }
 
     return {
@@ -463,6 +570,7 @@ export class LibraryDeployTool extends BaseTool {
         warnings,
       },
       ...(discrepancies.length > 0 ? { discrepancies } : {}),
+      ...(reconciled && reconciled.length > 0 ? { reconciled } : {}),
       userSymbol: envConfig?.userSymbol || null,
     };
   }
@@ -553,9 +661,20 @@ export class LibraryDeployTool extends BaseTool {
       console.error('✅ Saved template config to gas-config.json');
     }
 
-    // Store in ConfigManager
-    await this.setConfigManagerValue(scriptId, 'TEMPLATE_SCRIPT_ID', templateScriptId, accessToken);
-    await this.setConfigManagerValue(scriptId, 'USER_SYMBOL', userSymbol, accessToken);
+    // Store in ConfigManager (non-fatal — setup succeeded even if this fails)
+    const configFailures: string[] = [];
+    try {
+      await this.setConfigManagerValue(scriptId, 'TEMPLATE_SCRIPT_ID', templateScriptId, accessToken);
+    } catch (error: any) {
+      console.error(`⚠️  Failed to store TEMPLATE_SCRIPT_ID: ${error.message}`);
+      configFailures.push('TEMPLATE_SCRIPT_ID');
+    }
+    try {
+      await this.setConfigManagerValue(scriptId, 'USER_SYMBOL', userSymbol, accessToken);
+    } catch (error: any) {
+      console.error(`⚠️  Failed to store USER_SYMBOL: ${error.message}`);
+      configFailures.push('USER_SYMBOL');
+    }
 
     return {
       operation: 'setup',
@@ -564,6 +683,9 @@ export class LibraryDeployTool extends BaseTool {
       libraryScriptId: scriptId,
       libraryReference: { version: '0', developmentMode: true },
       message: `Template wired to library @ HEAD. Next: deploy({operation:"promote", to:"staging", scriptId:"${scriptId}", description:"v1.0"})`,
+      ...(configFailures.length > 0 ? {
+        configWarning: `ConfigManager failed for: ${configFailures.join(', ')}. Setup succeeded but remote config may be incomplete.`
+      } : {}),
     };
 
     } finally {
@@ -653,6 +775,26 @@ export class LibraryDeployTool extends BaseTool {
     return previousVersion;
   }
 
+  /**
+   * Verify that a consumer pin update actually persisted by reading it back.
+   * Catches silent write failures before we record the version in ConfigManager.
+   */
+  private async verifyConsumerPin(
+    consumerScriptId: string,
+    libraryScriptId: string,
+    expectedVersion: number,
+    accessToken?: string
+  ): Promise<void> {
+    const actualVersion = await this.readConsumerLibraryVersion(consumerScriptId, libraryScriptId, accessToken);
+    if (actualVersion !== expectedVersion) {
+      throw new GASApiError(
+        `Pin verification failed: expected consumer ${consumerScriptId} at v${expectedVersion}, ` +
+        `but read back v${actualVersion || 'none'}. The manifest write may not have persisted.`
+      );
+    }
+    console.error(`✅ Verified consumer pin at v${expectedVersion}`);
+  }
+
   // ---------------------------------------------------------------------------
   // Auto-create consumer projects
   // ---------------------------------------------------------------------------
@@ -695,18 +837,21 @@ export class LibraryDeployTool extends BaseTool {
       projectEntry.environments[environment] = {
         consumerScriptId,
         spreadsheetId,
-        libraryVersion: 0,
       };
       await McpGasConfigManager.saveConfig(config);
     }
 
-    // Store in ConfigManager
-    await this.setConfigManagerValue(
-      libraryScriptId,
-      CONFIG_KEYS[environment].scriptId,
-      consumerScriptId,
-      accessToken
-    );
+    // Store in ConfigManager (non-fatal — consumer already created)
+    try {
+      await this.setConfigManagerValue(
+        libraryScriptId,
+        CONFIG_KEYS[environment].scriptId,
+        consumerScriptId,
+        accessToken
+      );
+    } catch (error: any) {
+      console.error(`⚠️  Failed to store ${CONFIG_KEYS[environment].scriptId} in ConfigManager: ${error.message}`);
+    }
 
     return { consumerScriptId, spreadsheetId };
   }
@@ -886,15 +1031,14 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     value: string,
     accessToken?: string
   ): Promise<void> {
-    try {
-      await this.gasClient.executeFunction(
-        scriptId,
-        'exec_api',
-        [null, 'ConfigManager', 'setScript', key, value],
-        accessToken
-      );
-    } catch (error: any) {
-      console.error(`⚠️  Failed to store ConfigManager ${key}: ${error.message}`);
+    const result = await this.gasClient.executeFunction(
+      scriptId,
+      'exec_api',
+      [null, 'ConfigManager', 'setScript', key, value],
+      accessToken
+    );
+    if (result.error) {
+      throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${result.error}`);
     }
   }
 
@@ -904,13 +1048,66 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     version: number,
     previousVersion: number | null,
     accessToken?: string
-  ): Promise<void> {
+  ): Promise<{ failures: string[] }> {
     const keys = CONFIG_KEYS[environment];
-    await this.setConfigManagerValue(scriptId, keys.version, String(version), accessToken);
-    if (previousVersion !== null) {
-      await this.setConfigManagerValue(scriptId, keys.previousVersion, String(previousVersion), accessToken);
+    const failures: string[] = [];
+
+    try {
+      await this.setConfigManagerValue(scriptId, keys.version, String(version), accessToken);
+    } catch (error: any) {
+      console.error(`⚠️  Failed to store ${keys.version}: ${error.message}`);
+      failures.push(keys.version);
     }
-    await this.setConfigManagerValue(scriptId, keys.promotedAt, new Date().toISOString(), accessToken);
+
+    if (previousVersion !== null) {
+      try {
+        await this.setConfigManagerValue(scriptId, keys.previousVersion, String(previousVersion), accessToken);
+      } catch (error: any) {
+        console.error(`⚠️  Failed to store ${keys.previousVersion}: ${error.message}`);
+        failures.push(keys.previousVersion);
+      }
+    }
+
+    try {
+      await this.setConfigManagerValue(scriptId, keys.promotedAt, new Date().toISOString(), accessToken);
+    } catch (error: any) {
+      console.error(`⚠️  Failed to store ${keys.promotedAt}: ${error.message}`);
+      failures.push(keys.promotedAt);
+    }
+
+    // Append to audit trail (non-fatal)
+    try {
+      await this.appendDeployLog(scriptId, environment, version, previousVersion, accessToken);
+    } catch (error: any) {
+      console.error(`⚠️  Failed to append deploy log: ${error.message}`);
+    }
+
+    return { failures };
+  }
+
+  /**
+   * Append an entry to the deployment audit log stored in ConfigManager.
+   * Keeps last 20 entries per environment (well under PropertiesService 9KB limit).
+   */
+  private async appendDeployLog(
+    scriptId: string,
+    environment: LibraryEnvironment,
+    version: number,
+    previousVersion: number | null,
+    accessToken?: string
+  ): Promise<void> {
+    const logKey = `${environment.toUpperCase()}_DEPLOY_LOG`;
+    const existing = await this.getConfigManagerValue(scriptId, logKey, accessToken);
+    const log: any[] = existing ? JSON.parse(existing) : [];
+
+    log.unshift({
+      v: version,
+      prev: previousVersion,
+      ts: new Date().toISOString(),
+    });
+
+    // Keep only last 20 entries
+    await this.setConfigManagerValue(scriptId, logKey, JSON.stringify(log.slice(0, 20)), accessToken);
   }
 
   // ---------------------------------------------------------------------------
@@ -974,19 +1171,6 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       }
     }
     return null;
-  }
-
-  private async updateLocalConfig(scriptId: string, environment: LibraryEnvironment, version: number): Promise<void> {
-    try {
-      const config = await McpGasConfigManager.getConfig();
-      const project = this.findProjectByScriptId(config, scriptId);
-      if (project?.environments?.[environment]) {
-        project.environments[environment].libraryVersion = version;
-        await McpGasConfigManager.saveConfig(config);
-      }
-    } catch (error: any) {
-      console.error(`⚠️  Failed to update local config: ${error.message}`);
-    }
   }
 
   private async getProjectName(scriptId: string): Promise<string> {

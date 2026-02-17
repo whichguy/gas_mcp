@@ -1,16 +1,18 @@
 /**
- * Unit tests for LibraryDeployTool
+ * Unit tests for LibraryDeployTool and VersionDeployTool
  *
  * Tests core functionality:
  * - generateThinShim: shim code generation with userSymbol injection
  * - validateUserSymbol: JS identifier validation
  * - deriveUserSymbol: project name → PascalCase conversion
  * - Schema correctness: inputSchema, outputSchema, annotations
+ * - New features: dryRun, reconcile, configWarning, audit trail
  */
 
 import { expect } from 'chai';
 import { describe, it, beforeEach } from 'mocha';
 import { LibraryDeployTool } from '../../../src/tools/deploy.js';
+import { VersionDeployTool } from '../../../src/tools/deployment.js';
 import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
 
 describe('LibraryDeployTool', () => {
@@ -206,6 +208,100 @@ describe('LibraryDeployTool', () => {
 
     it('should handle spaces', () => {
       expect(testConversion('my tool')).to.equal('MyTool');
+    });
+  });
+
+  // ============================================================
+  // New Feature Schema Tests
+  // ============================================================
+  describe('new feature schemas', () => {
+    it('should have dryRun in inputSchema', () => {
+      expect(tool.inputSchema.properties).to.have.property('dryRun');
+      expect(tool.inputSchema.properties.dryRun.type).to.equal('boolean');
+    });
+
+    it('should have reconcile in inputSchema', () => {
+      expect(tool.inputSchema.properties).to.have.property('reconcile');
+      expect(tool.inputSchema.properties.reconcile.type).to.equal('boolean');
+    });
+
+    it('should have configWarning in outputSchema', () => {
+      const fields = Object.keys(tool.outputSchema.properties);
+      expect(fields).to.include('configWarning');
+    });
+
+    it('should have discrepancies in outputSchema', () => {
+      const fields = Object.keys(tool.outputSchema.properties);
+      expect(fields).to.include('discrepancies');
+    });
+
+    it('should have reconciled in outputSchema', () => {
+      const fields = Object.keys(tool.outputSchema.properties);
+      expect(fields).to.include('reconciled');
+    });
+  });
+});
+
+// ==============================================================
+// VersionDeployTool Tests
+// ==============================================================
+describe('VersionDeployTool', () => {
+  let tool: VersionDeployTool;
+
+  beforeEach(() => {
+    tool = new VersionDeployTool(new SessionAuthManager());
+  });
+
+  describe('schema', () => {
+    it('should have correct tool name', () => {
+      expect(tool.name).to.equal('version_deploy');
+    });
+
+    it('should have inputSchema with required fields', () => {
+      expect(tool.inputSchema).to.exist;
+      expect(tool.inputSchema.required).to.include('operation');
+      expect(tool.inputSchema.required).to.include('scriptId');
+    });
+
+    it('should have operation enum with 4 values', () => {
+      const opProp = tool.inputSchema.properties.operation;
+      expect(opProp.enum).to.deep.equal(['promote', 'rollback', 'status', 'reset']);
+    });
+
+    it('should have dryRun in inputSchema', () => {
+      expect(tool.inputSchema.properties).to.have.property('dryRun');
+      expect(tool.inputSchema.properties.dryRun.type).to.equal('boolean');
+    });
+
+    it('should have outputSchema with expected fields', () => {
+      expect(tool.outputSchema).to.exist;
+      expect(tool.outputSchema.type).to.equal('object');
+      const fields = Object.keys(tool.outputSchema.properties);
+      expect(fields).to.include('operation');
+      expect(fields).to.include('hints');
+    });
+
+    it('should have correct annotations', () => {
+      expect(tool.annotations.title).to.equal('Version Deploy (Advanced)');
+      expect(tool.annotations.readOnlyHint).to.be.false;
+      expect(tool.annotations.destructiveHint).to.be.true;
+    });
+
+    it('should have llmGuidance preferring deploy()', () => {
+      const guidance = (tool.inputSchema as any).llmGuidance;
+      expect(guidance).to.exist;
+      expect(guidance.preference).to.include('deploy()');
+    });
+
+    it('should have description positioning as low-level', () => {
+      expect(tool.description).to.include('[VERSION_DEPLOY]');
+      expect(tool.description).to.include('Low-level');
+      expect(tool.description).to.include('deploy()');
+    });
+
+    it('should have configWarning in outputSchema', () => {
+      const fields = Object.keys(tool.outputSchema.properties);
+      expect(fields).to.include('configWarning');
     });
   });
 });
