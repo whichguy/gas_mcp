@@ -245,10 +245,10 @@ export class GitOperationManager {
           return filename + fileExtension;
         });
 
-        const stageResult = await LocalFileManager.stageChangesOnly(
-          options.scriptId,
+        const stageResult = await this.stageFiles(
+          localPath,
           affectedFilesWithExtensions,
-          localPath
+          operation.getType()
         );
 
         if (!stageResult.staged) {
@@ -473,6 +473,56 @@ export class GitOperationManager {
         `Git operation failed and was rolled back: ${error.message}`
       );
     }
+  }
+
+  /**
+   * Stage specific files in a git repository at the given path.
+   *
+   * Uses `cwd: localPath` directly, which works for both main repos
+   * (~/gas-repos/project-{id}/) and session worktrees (~/.mcp-gas/worktrees/{id}/{session}/).
+   * This replaces LocalFileManager.stageChangesOnly() which hardcodes ~/gas-repos/.
+   */
+  private async stageFiles(
+    localPath: string,
+    files: string[],
+    operationType: OperationType
+  ): Promise<{ staged: boolean; stagedFiles: string[]; message: string }> {
+    const { spawn } = await import('child_process');
+
+    // Stage specific files (targeted, not `git add .`)
+    await new Promise<void>((resolve, reject) => {
+      const git = spawn('git', ['add', '--', ...files], {
+        cwd: localPath,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      let stderr = '';
+      git.stderr?.on('data', (data: Buffer) => { stderr += data.toString(); });
+      git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Git add failed: ${stderr}`)));
+      git.on('error', reject);
+    });
+
+    // Check what was actually staged
+    const stagedFiles = await new Promise<string[]>((resolve) => {
+      const git = spawn('git', ['diff', '--cached', '--name-only'], {
+        cwd: localPath,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      let stdout = '';
+      git.stdout?.on('data', (data: Buffer) => { stdout += data.toString(); });
+      git.on('close', () => {
+        resolve(stdout.trim().split('\n').filter(f => f.length > 0));
+      });
+    });
+
+    if (stagedFiles.length === 0) {
+      return { staged: false, stagedFiles: [], message: 'No changes to stage' };
+    }
+
+    return {
+      staged: true,
+      stagedFiles,
+      message: `Staged ${stagedFiles.length} file(s)`
+    };
   }
 
   /**
