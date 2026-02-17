@@ -1,6 +1,9 @@
 # Deployment Workflow Guide
 
-Complete guide to managing Google Apps Script deployments across development, staging, and production environments.
+> **Note:** This document covers `version_deploy` (web app deployments). For standard library
+> version pinning (recommended for most projects), see the `deploy` tool documentation.
+
+Complete guide to managing Google Apps Script web app deployments across development, staging, and production environments.
 
 ---
 
@@ -107,7 +110,7 @@ All environments use automatic tagging: `[DEV]`, `[STAGING]`, `[PROD]` for easy 
 
 ```typescript
 // 1. Reset to create all 3 environments
-const result = await deploy({
+const result = await version_deploy({
   operation: 'reset',
   scriptId: 'your-script-id-here'
 });
@@ -122,7 +125,7 @@ const result = await deploy({
 
 ```typescript
 // 2. After development, promote to staging
-const promoteResult = await deploy({
+const promoteResult = await version_deploy({
   operation: 'promote',
   environment: 'staging',
   scriptId: 'your-script-id-here',
@@ -137,7 +140,7 @@ const promoteResult = await deploy({
 
 ```typescript
 // 3. After testing in staging, promote to prod
-const prodResult = await deploy({
+const prodResult = await version_deploy({
   operation: 'promote',
   environment: 'prod',
   scriptId: 'your-script-id-here'
@@ -160,7 +163,7 @@ Moves code forward through the deployment pipeline.
 **Creates a version snapshot** from current HEAD and updates staging deployment.
 
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'promote',
   environment: 'staging',
   scriptId: 'abc123...',
@@ -188,7 +191,7 @@ await deploy({
 **Updates production** to staging's current version.
 
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'promote',
   environment: 'prod',
   scriptId: 'abc123...'
@@ -219,7 +222,7 @@ Reverts to a previous version.
 #### Automatic Rollback (to previous version)
 
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'rollback',
   environment: 'staging',  // or 'prod'
   scriptId: 'abc123...'
@@ -234,7 +237,7 @@ await deploy({
 #### Manual Rollback (to specific version)
 
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'rollback',
   environment: 'prod',
   scriptId: 'abc123...',
@@ -264,7 +267,7 @@ await deploy({
 View current state of all deployments.
 
 ```typescript
-const status = await deploy({
+const status = await version_deploy({
   operation: 'status',
   scriptId: 'abc123...'
 });
@@ -307,7 +310,7 @@ const status = await deploy({
 Recreates all three deployments from scratch.
 
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'reset',
   scriptId: 'abc123...'
 });
@@ -350,7 +353,7 @@ await deploy({
 // Dev always points to HEAD - instant testing
 
 // Check current state
-await deploy({
+await version_deploy({
   operation: 'status',
   scriptId: 'abc123...'
 });
@@ -361,7 +364,7 @@ await deploy({
 
 ```typescript
 // Feature ready for QA
-await deploy({
+await version_deploy({
   operation: 'promote',
   environment: 'staging',
   scriptId: 'abc123...',
@@ -383,7 +386,7 @@ await deploy({
 
 ```typescript
 // All tests passed in staging
-await deploy({
+await version_deploy({
   operation: 'promote',
   environment: 'prod',
   scriptId: 'abc123...'
@@ -396,7 +399,7 @@ await deploy({
 
 ```typescript
 // Critical bug found - rollback immediately
-await deploy({
+await version_deploy({
   operation: 'rollback',
   environment: 'prod',
   scriptId: 'abc123...'
@@ -480,7 +483,7 @@ await deploy({
 **After each promotion**:
 ```typescript
 // 1. Check status
-const status = await deploy({
+const status = await version_deploy({
   operation: 'status',
   scriptId: 'abc123...'
 });
@@ -506,7 +509,7 @@ console.log(`Test at: ${status.staging.url}`);
 
 **Solution**:
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'reset',
   scriptId: 'abc123...'
 });
@@ -518,7 +521,7 @@ await deploy({
 
 **Solution**: Promote dev→staging first to create a version
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'promote',
   environment: 'staging',
   scriptId: 'abc123...',
@@ -532,7 +535,7 @@ await deploy({
 
 **Solution**: Add description
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'promote',
   environment: 'staging',
   scriptId: 'abc123...',
@@ -547,7 +550,7 @@ await deploy({
 **Solution**: Rollback and test properly
 ```typescript
 // 1. Rollback prod to previous version
-await deploy({
+await version_deploy({
   operation: 'rollback',
   environment: 'prod',
   scriptId: 'abc123...'
@@ -574,7 +577,7 @@ await deploy({
 
 **Solution**: First promotion creates version 1
 ```typescript
-await deploy({
+await version_deploy({
   operation: 'promote',
   environment: 'staging',
   scriptId: 'abc123...',
@@ -595,7 +598,7 @@ await deploy({
 ## Questions?
 
 **Q: How do I get deployment URLs?**
-A: Use `deploy({operation: 'status', ...})` to see all URLs
+A: Use `version_deploy({operation: 'status', ...})` to see all URLs
 
 **Q: Can I skip staging and go directly to prod?**
 A: Not recommended - always test in staging first for safety
@@ -607,7 +610,7 @@ A: Google Apps Script keeps all versions - manage manually if needed
 A: No - dev/staging/prod are fixed by design for consistency
 
 **Q: What if I delete a deployment accidentally?**
-A: Run `deploy({operation: 'reset', ...})` to recreate all three
+A: Run `version_deploy({operation: 'reset', ...})` to recreate all three
 
 **Q: Can I have more than 3 environments?**
 A: Current design supports 3 - extend manually if needed

@@ -48,16 +48,16 @@ export function generateDeployHints(environment: string): ResponseHint {
   const hints: ResponseHint = {};
   switch (environment) {
     case 'dev':
-      hints.next = 'deploy({operation: "promote", environment: "staging"}) to promote';
+      hints.next = 'version_deploy({operation: "promote", environment: "staging"}) to promote';
       break;
     case 'staging':
-      hints.next = 'deploy({operation: "promote", environment: "prod"}) to promote';
+      hints.next = 'version_deploy({operation: "promote", environment: "prod"}) to promote';
       break;
     case 'prod':
-      hints.next = 'deploy({operation: "status"}) to verify';
+      hints.next = 'version_deploy({operation: "status"}) to verify';
       break;
   }
-  hints.related = ['deploy({operation: "status"}) for current state'];
+  hints.related = ['version_deploy({operation: "status"}) for current state'];
   return hints;
 }
 

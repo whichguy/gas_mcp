@@ -196,7 +196,7 @@ describe('Deployment Promotion & Environment Execution', function() {
 
       console.log('\n🚀 Initializing deployment infrastructure...');
 
-      const result = await client.callTool('deploy', {
+      const result = await client.callTool('version_deploy', {
         operation: 'reset',
         scriptId: testScriptId
       });
@@ -215,7 +215,7 @@ describe('Deployment Promotion & Environment Execution', function() {
 
       console.log('\n🔍 Verifying deployment status...');
 
-      const result = await client.callTool('deploy', {
+      const result = await client.callTool('version_deploy', {
         operation: 'status',
         scriptId: testScriptId
       });
@@ -282,7 +282,7 @@ function getVersionInfo() {
 
       console.log('\n⬆️  Promoting dev→staging...');
 
-      const result = await client.callTool('deploy', {
+      const result = await client.callTool('version_deploy', {
         operation: 'promote',
         environment: 'staging',
         description: 'Version 1 - Initial Release',
@@ -303,7 +303,7 @@ function getVersionInfo() {
 
       console.log('\n🔍 Verifying staging deployment...');
 
-      const result = await client.callTool('deploy', {
+      const result = await client.callTool('version_deploy', {
         operation: 'status',
         scriptId: testScriptId
       });
@@ -421,7 +421,7 @@ function getVersionInfo() {
 
       console.log('\n⬆️  Promoting staging→prod...');
 
-      const result = await client.callTool('deploy', {
+      const result = await client.callTool('version_deploy', {
         operation: 'promote',
         environment: 'prod',
         scriptId: testScriptId
@@ -463,7 +463,7 @@ function getVersionInfo() {
 
       console.log('\n⬆️  Promoting dev→staging (2nd time)...');
 
-      const result = await client.callTool('deploy', {
+      const result = await client.callTool('version_deploy', {
         operation: 'promote',
         environment: 'staging',
         description: 'Version 2 - Second Release',

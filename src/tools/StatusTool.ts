@@ -18,12 +18,7 @@ import { LockManager } from '../utils/lockManager.js';
 import { execGitCommand } from '../utils/gitCommands.js';
 import { getCachedGASMetadata } from '../utils/gasMetadataCache.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
-
-const ENV_TAGS = {
-  dev: '[DEV]',
-  staging: '[STAGING]',
-  prod: '[PROD]'
-} as const;
+import { ENV_TAGS } from '../utils/deployConstants.js';
 
 type Section = 'auth' | 'project' | 'git' | 'deploy' | 'locks' | 'cache' | 'sync';
 

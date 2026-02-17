@@ -257,8 +257,8 @@ export class ProjectCreateTool extends BaseTool {
       let deploymentResult: any = null;
       try {
         console.error('🚀 [GAS_PROJECT_CREATE] Creating default deployments (dev/staging/prod)...');
-        const { DeployTool } = await import('./deployment.js');
-        const deployTool = new DeployTool(this.sessionAuthManager);
+        const { VersionDeployTool } = await import('./deployment.js');
+        const deployTool = new VersionDeployTool(this.sessionAuthManager);
         deploymentResult = await deployTool.execute({
           operation: 'reset',
           scriptId: project.scriptId,
@@ -267,7 +267,7 @@ export class ProjectCreateTool extends BaseTool {
         console.error('✅ [GAS_PROJECT_CREATE] Default deployments created with ConfigManager storage');
       } catch (deployError: any) {
         console.error(`⚠️  [GAS_PROJECT_CREATE] Failed to create deployments: ${deployError.message}`);
-        console.error('    Run deploy({operation: "reset"}) manually to create deployments');
+        console.error('    Run version_deploy({operation: "reset"}) manually to create deployments');
       }
 
       // Git initialization removed - users must manually create .git/config breadcrumb
@@ -596,8 +596,8 @@ export class ProjectInitTool extends BaseTool {
       // Create default deployments if missing
       try {
         console.error('🔍 [GAS_PROJECT_INIT] Checking for existing deployments...');
-        const { DeployTool } = await import('./deployment.js');
-        const deployTool = new DeployTool(this.sessionAuthManager);
+        const { VersionDeployTool } = await import('./deployment.js');
+        const deployTool = new VersionDeployTool(this.sessionAuthManager);
 
         // Check status first
         const statusResult = await deployTool.execute({
@@ -632,7 +632,7 @@ export class ProjectInitTool extends BaseTool {
         }
       } catch (deployError: any) {
         console.error(`⚠️  [GAS_PROJECT_INIT] Failed to check/create deployments: ${deployError.message}`);
-        console.error('    Run deploy({operation: "reset"}) manually to create deployments');
+        console.error('    Run version_deploy({operation: "reset"}) manually to create deployments');
         result.deploymentWarning = deployError.message;
       }
 

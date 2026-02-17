@@ -129,23 +129,8 @@ export class ProjectResolver {
     }
 
     if (typeof projectParam === 'object') {
-      // Environment parameter shortcuts
-      const config = await this.getProjectConfig(workingDir);
-      
-      if (projectParam.dev && config.environments?.dev) {
-        return config.environments.dev.scriptId;
-      }
-      if (projectParam.staging && config.environments?.staging) {
-        return config.environments.staging.scriptId;
-      }
-      if (projectParam.prod && config.environments?.production) {
-        return config.environments.production.scriptId;
-      }
-      if (projectParam.production && config.environments?.production) {
-        return config.environments.production.scriptId;
-      }
-
-      throw new ValidationError('projectParam', JSON.stringify(projectParam), 'valid environment (dev, staging, prod)');
+      // Environment parameter shortcuts — environments are now per-project
+      throw new ValidationError('projectParam', JSON.stringify(projectParam), 'string project name or script ID (object environment shortcuts removed)');
     }
 
     throw new ValidationError('projectParam', String(projectParam), 'string or environment object');
@@ -295,35 +280,17 @@ export class ProjectResolver {
         }
       }
 
-      // Check environments
-      if (config.environments) {
-        for (const [env, project] of Object.entries(config.environments)) {
-          if (project?.scriptId === scriptId) {
-            return `${env} (environment)`;
-          }
-        }
-      }
-
       return null;
     } catch (error: any) {
       console.error(`⚠️ [PROJECT_RESOLVER] Unified config failed, trying legacy approach: ${error.message}`);
-      
+
       // Fall back to legacy method
       try {
         const config = await this.getProjectConfig(workingDir);
-        
+
         for (const [name, project] of Object.entries(config.projects)) {
           if (project.scriptId === scriptId) {
             return name;
-          }
-        }
-
-        // Check environments
-        if (config.environments) {
-          for (const [env, project] of Object.entries(config.environments)) {
-            if (project?.scriptId === scriptId) {
-              return `${env} (environment)`;
-            }
           }
         }
 
@@ -355,20 +322,6 @@ export class ProjectResolver {
         }
       }
 
-      // Add environments from unified config
-      if (config.environments) {
-        for (const [env, project] of Object.entries(config.environments)) {
-          if (project) {
-            results.push({
-              name: env,
-              scriptId: project.scriptId,
-              description: project.name,
-              type: 'environment'
-            });
-          }
-        }
-      }
-
       return results;
     } catch (error: any) {
       console.error(`⚠️ [PROJECT_RESOLVER] Unified config failed, trying legacy approach: ${error.message}`);
@@ -386,20 +339,6 @@ export class ProjectResolver {
             description: project.description,
             type: 'project'
           });
-        }
-
-        // Add environments
-        if (config.environments) {
-          for (const [env, project] of Object.entries(config.environments)) {
-            if (project) {
-              results.push({
-                name: env,
-                scriptId: project.scriptId,
-                description: project.name,
-                type: 'environment'
-              });
-            }
-          }
         }
 
         return results;
