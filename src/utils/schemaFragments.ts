@@ -293,7 +293,7 @@ export class SchemaFragments {
       examples: [1, 5, 10],
       llmHints: {
         typical: 'Versions start at 1 and increment with each deployment',
-        discovery: 'Use deploy({operation:"status"}) to see current versions'
+        discovery: 'Use deploy({operation:"status"}) or version_deploy({operation:"status"}) to see current versions'
       }
     }
   };

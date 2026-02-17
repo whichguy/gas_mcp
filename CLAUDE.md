@@ -100,8 +100,8 @@ These systems are **independent** — choose based on whether you need Sheets cu
 **Metadata Caching:** 85-95% faster (5-50ms vs 800-1200ms) via extended attributes. See [docs/METADATA_CACHING.md](docs/METADATA_CACHING.md)
 
 ### 5. Deployment
-**Workflow:** `dev (HEAD) → promote → staging (v1,v2,v3...) → promote → prod (stable)`
-**Operations:** promote | rollback | status | reset via `deploy({operation, environment, scriptId})`
+**Tools:** `deploy` (recommended — library version pinning) | `version_deploy` (advanced — raw web app deployments)
+**Library workflow:** `deploy({operation: "promote", to: "staging", scriptId, description: "v1.0"})` → test → `deploy({operation: "promote", to: "prod", scriptId})`
 **Auto-Storage:** URLs and deployment IDs stored in PropertiesService via ConfigManager
 **See:** [docs/DEPLOYMENT_WORKFLOW.md](docs/DEPLOYMENT_WORKFLOW.md) for complete guide
 
@@ -226,7 +226,7 @@ git_feature({operation: 'finish', scriptId, pushToRemote: true})
 | **File (Raw)** | 9 | raw_cat, raw_write, raw_cp, raw_grep, raw_find, raw_ripgrep, raw_sed, raw_edit, raw_aider |
 | **Analysis** | 1 | deps (dependency graphs) |
 | **Execution** | 2 | exec, exec_api |
-| **Deployment** | 11 | deploy, project_create, project_init, deploy_create, deploy_delete, deploy_get_details, deploy_list, deploy_update, version_create, version_get, version_list |
+| **Deployment** | 12 | deploy, version_deploy, project_create, project_init, deploy_create, deploy_delete, deploy_get_details, deploy_list, deploy_update, version_create, version_get, version_list |
 | **Management** | 4 | auth, project_list, reorder, process_list |
 | **Logging** | 2 | cloud_logs (list + get operations), executions (execution history) |
 | **Triggers** | 1 | trigger (list + create + delete operations) |

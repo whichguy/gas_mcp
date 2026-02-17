@@ -947,7 +947,7 @@ function htmlAuthSuccessResponse(executionResult) {
         if (!stagingDeployment) {
           return {
             success: false,
-            error: 'Staging deployment not found. Run deploy({operation: "reset"}) via MCP to create deployments'
+            error: 'Staging deployment not found. Run version_deploy({operation: "reset"}) via MCP to create deployments'
           };
         }
 
@@ -1026,7 +1026,7 @@ function htmlAuthSuccessResponse(executionResult) {
         if (!prodDeployment) {
           return {
             success: false,
-            error: 'Production deployment not found. Run deploy({operation: "reset"}) via MCP to create deployments'
+            error: 'Production deployment not found. Run version_deploy({operation: "reset"}) via MCP to create deployments'
           };
         }
 

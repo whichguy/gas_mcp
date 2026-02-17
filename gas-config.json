@@ -73,9 +73,9 @@
       "description": "Created: 7/17/2025"
     },
     "module-test": {
-      "scriptId": "1s-MDMcYHBkMID6PWNqgGJ9-LuDmGnO5hgCWJMjZDvJ4alSVALQXJcd14",
+      "scriptId": "1KQSYcl1BZ1F4cRT1qM4VWKb63Wm60dEzmgf7EpkSinB-enzCI9aEPCC_",
       "name": "module-test",
-      "description": "Created: 1/23/2026"
+      "description": "Created: 2/16/2026"
     },
     "module-validation": {
       "scriptId": "1cm2Zl0iT4zRYmn5COgVCfZYuQuJYkKGWfNiLfmY-bpdD1iGRGBlMmEfb",
@@ -508,12 +508,12 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1vBDYRvnmwR9pX8--ZTC7gFlVlpcORTbwwrh1TpgGvek__iYqYLRL2z40",
+      "scriptId": "1GvqgY6hsP_4jiLDEwT_1_5HQ0y2y9ByjbjiToEpai4uj6ROdoFSi7Nql",
       "name": "consolidated-test-project",
-      "description": "Created: 2/14/2026"
+      "description": "Created: 2/16/2026"
     },
     "exec-test": {
-      "scriptId": "1pzhL1NwKGpzkVusZPPQ5igNqeWW2QnLua6Lnki__muBzT8MaAAu3WezY",
+      "scriptId": "1YNN8VJBBYqaOVT0VeSl0YDdEHKt9EJ7alY9hVr84wurbEG7hHlum-eKY",
       "name": "exec-test",
       "description": "Created: 2/14/2026"
     },
@@ -528,9 +528,9 @@
       "description": "Created: 2/14/2026"
     },
     "file-ops-test": {
-      "scriptId": "1ADy60DSg-0XSnzMNVbboKXyB8Zn2KgorpoYkOE8p9aAN9hQrxLI9fSdf",
+      "scriptId": "177Lcudl0LErxQ_qbsnPF9suRWNqgC5uYZ62cw3ecfR-L7DC_5-RlFXRH",
       "name": "file-ops-test",
-      "description": "Created: 1/23/2026"
+      "description": "Created: 2/16/2026"
     },
     "real-gas-e2e-test-176021807938": {
       "scriptId": "1jhIP5JveC9MOJRuCyDnD_nPb2zQZNfq0mXvoH7PARjD9NipyZ9CQI6vx",
@@ -746,6 +746,21 @@
       "scriptId": "1IDfFwvi9gKC3G4gDwErIws2NymyzJW2URM6mC1-U0RUGBJ4XOgci8noJ",
       "name": "drive-reorganizer",
       "description": "Created: 2/14/2026"
+    },
+    "shared-exec-test": {
+      "scriptId": "1bCJp6tg81S49dDg4KRr6xRHbtlKjUfwCtBEE27-j1F6TfP8EJTC7xHA_",
+      "name": "shared-exec-test",
+      "description": "Created: 2/16/2026"
+    },
+    "sheet-chat-update-service": {
+      "scriptId": "15VJZHj3vzVsHTu7qXJOQ_r4-RoL3IybtdnDItKX94fmdRPM8AYAyoj1p",
+      "name": "sheet-chat-update-service",
+      "description": "Created: 2/16/2026"
+    },
+    "update-service-test-client": {
+      "scriptId": "1FnCsCxEDh5D-KYTDiYraFDFMy6b5jT0svdwfiwnm_Hb58dVSeeuldJpH",
+      "name": "update-service-test-client",
+      "description": "Created: 2/16/2026"
     }
   },
   "localRoot": {
@@ -755,7 +770,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-02-14T23:09:17.060Z"
+    "lastModified": "2026-02-17T01:34:57.633Z"
   },
   "debug": true,
   "currentProject": {

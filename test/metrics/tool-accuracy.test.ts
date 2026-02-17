@@ -48,7 +48,7 @@ import {
   ProjectCreateTool,
   ProjectInitTool
 } from '../../src/tools/deployments.js';
-import { DeployTool } from '../../src/tools/deployment.js';
+import { VersionDeployTool } from '../../src/tools/deployment.js';
 import {
   FindDriveScriptTool,
   CreateScriptTool
@@ -81,7 +81,8 @@ const selectionTests: SelectionTestCase[] = [
   { task: 'Delete the old utils.gs file', expectedTool: 'rm', category: 'file-delete' },
   { task: 'Create a new GAS project with deployment infrastructure', expectedTool: 'project_create', category: 'project' },
   { task: 'Execute a quick calculation on the GAS server', expectedTool: 'exec', category: 'execution' },
-  { task: 'Deploy my project to staging', expectedTool: 'deploy', category: 'deployment' },
+  { task: 'Deploy my web app to staging', expectedTool: 'version_deploy', category: 'deployment' },
+  { task: 'Pin my library version for staging consumers', expectedTool: 'deploy', category: 'deployment' },
   { task: 'Check my authentication status', expectedTool: 'auth', category: 'auth' },
   { task: 'Find files matching *.test.gs pattern', expectedTool: 'find', category: 'search' },
   { task: 'Replace all occurrences of oldName with newName in a file', expectedTool: 'sed', category: 'edit' },
@@ -181,7 +182,7 @@ const usageTests: UsageTestCase[] = [
     expectedRequired: ['scriptId', 'pattern', 'replacement'],
   },
   {
-    tool: 'deploy',
+    tool: 'version_deploy',
     validParams: { scriptId: 'test123', operation: 'status' },
     invalidParams: {},
     expectedRequired: ['scriptId', 'operation'],
@@ -239,7 +240,7 @@ describe('Tool Accuracy Baselines', function () {
     RawSedTool, RawEditTool, RawAiderTool, RawFindTool, RawCpTool,
     ReorderTool, ProjectCreateTool, ProjectInitTool, ProjectListTool,
     ExecTool, ExecApiTool,
-    DeployTool,
+    VersionDeployTool,
     FindDriveScriptTool, CreateScriptTool,
     ProcessListTool, ExecutionsTool, CloudLogsTool,
     TriggerTool,

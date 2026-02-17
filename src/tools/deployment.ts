@@ -1,6 +1,8 @@
 /**
- * Consolidated deployment management tool for Google Apps Script
- * Manages deployments across dev/staging/prod environments with version control
+ * Version-based deployment management tool for Google Apps Script
+ * Manages web app deployments across dev/staging/prod environments with version control
+ *
+ * Note: For library version pinning (consumer spreadsheets), see LibraryDeployTool in deploy.ts
  */
 
 import { BaseTool } from './base.js';
@@ -11,22 +13,14 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { ExecTool } from './execution.js';
 import { generateDeployHints, generateDeployErrorHints, DeployHints } from '../utils/deployHints.js';
 import { mcpLogger } from '../utils/mcpLogger.js';
+import { ENV_TAGS } from '../utils/deployConstants.js';
 
 /**
- * Environment tags for deployment identification
+ * Version-based deployment tool with environment-aware web app management
  */
-const ENV_TAGS = {
-  dev: '[DEV]',
-  staging: '[STAGING]',
-  prod: '[PROD]'
-} as const;
-
-/**
- * Consolidated deployment tool with environment-aware management
- */
-export class DeployTool extends BaseTool {
-  public name = 'deploy';
-  public description = '[DEPLOY] Consolidated deployment workflow — promote, rollback, status, and reset across dev/staging/prod environments. WHEN: deploying code, checking deployment status, or rolling back. AVOID: use project_create to set up new projects; deploy for promoting/rolling back existing deployments. Example: deploy({scriptId, operation: "promote", environment: "staging"})';
+export class VersionDeployTool extends BaseTool {
+  public name = 'version_deploy';
+  public description = '[VERSION_DEPLOY] Low-level web app deployment API — direct control over dev/staging/prod web app deployments (versioned deployment IDs, URLs). Rarely needed: prefer deploy() for standard library version management. Use only for: resetting deployment infrastructure, inspecting raw deployment state, or managing web app URLs directly. Example: version_deploy({scriptId, operation: "status"})';
 
   public outputSchema = {
     type: 'object' as const,
@@ -80,13 +74,14 @@ export class DeployTool extends BaseTool {
     },
     required: ['operation', 'scriptId'],
     llmGuidance: {
+      preference: 'PREFER deploy() for standard deployment workflows. version_deploy is low-level — use only for direct web app deployment control or infrastructure reset.',
       workflow: 'dev (HEAD) → promote → staging (versioned) → promote → prod (versioned)',
       environments: 'dev: HEAD | staging: snapshot | prod: stable'
     }
   };
 
   public annotations = {
-    title: 'Deployment Manager',
+    title: 'Version Deploy (Advanced)',
     readOnlyHint: false,
     destructiveHint: true,
     openWorldHint: true
@@ -111,7 +106,7 @@ export class DeployTool extends BaseTool {
       'deployment operation'
     );
 
-    mcpLogger.info('deploy', { event: 'operation_start', operation, scriptId, environment: params.environment });
+    mcpLogger.info('version_deploy', { event: 'operation_start', operation, scriptId, environment: params.environment });
 
     try {
       let result: any;
@@ -144,11 +139,11 @@ export class DeployTool extends BaseTool {
         result.hints = hints;
       }
 
-      mcpLogger.info('deploy', { event: 'operation_complete', operation, scriptId });
+      mcpLogger.info('version_deploy', { event: 'operation_complete', operation, scriptId });
 
       return result;
     } catch (error: any) {
-      mcpLogger.error('deploy', { event: 'operation_error', operation, scriptId, error: error.message });
+      mcpLogger.error('version_deploy', { event: 'operation_error', operation, scriptId, error: error.message });
 
       // Generate error-specific hints
       const errorHints = generateDeployErrorHints(operation, error.message);
@@ -190,7 +185,7 @@ export class DeployTool extends BaseTool {
 
       // Step 2: Update staging deployment to new version
       if (!deployments.staging) {
-        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run deploy({operation: "reset"}) to create deployments');
+        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run version_deploy({operation: "reset"}) to create deployments');
       }
 
       await this.gasClient.updateDeployment(
@@ -250,11 +245,11 @@ export class DeployTool extends BaseTool {
     } else {
       // Promote staging→prod: Update prod to staging version
       if (!deployments.staging) {
-        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run deploy({operation: "reset"}) to create deployments');
+        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run version_deploy({operation: "reset"}) to create deployments');
       }
 
       if (!deployments.prod) {
-        throw new ValidationError('prod_deployment', 'not found', 'existing prod deployment - run deploy({operation: "reset"}) to create deployments');
+        throw new ValidationError('prod_deployment', 'not found', 'existing prod deployment - run version_deploy({operation: "reset"}) to create deployments');
       }
 
       // Get staging version
@@ -350,7 +345,7 @@ export class DeployTool extends BaseTool {
       throw new ValidationError(
         `${environment}_deployment`,
         'not found',
-        `existing ${environment} deployment - run deploy({operation: "reset"}) to create deployments`
+        `existing ${environment} deployment - run version_deploy({operation: "reset"}) to create deployments`
       );
     }
 
@@ -668,7 +663,7 @@ export class DeployTool extends BaseTool {
       response.warnings = [
         `Failed to delete ${deletionFailures.length} old deployment(s). Manual cleanup may be required.`,
         `Failed deployment IDs: ${deletionFailures.join(', ')}`,
-        `Run deploy({operation: "status", scriptId: "${scriptId}"}) to see all deployments`
+        `Run version_deploy({operation: "status", scriptId: "${scriptId}"}) to see all deployments`
       ];
     }
 

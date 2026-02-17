@@ -29,7 +29,7 @@ export function generateDeployHints(
         hints.context = 'Created versioned snapshot from HEAD';
         hints.nextSteps = [
           'Test staging URL to verify changes',
-          'When ready: deploy({operation:"promote", environment:"prod", scriptId})'
+          'When ready: version_deploy({operation:"promote", environment:"prod", scriptId})'
         ];
         hints.workflow = [
           'Current: dev (HEAD) → staging (v' + (result?.version?.versionNumber || 'N') + ')',
@@ -39,7 +39,7 @@ export function generateDeployHints(
         hints.context = 'Production now serves staging version';
         hints.nextSteps = [
           'Verify prod URL serves expected content',
-          'If issues: deploy({operation:"rollback", environment:"prod", scriptId})'
+          'If issues: version_deploy({operation:"rollback", environment:"prod", scriptId})'
         ];
         hints.workflow = [
           'Complete: staging (v' + (result?.version?.versionNumber || 'N') + ') → prod',
@@ -55,7 +55,7 @@ export function generateDeployHints(
         'Fix issues in dev, then re-promote when ready'
       ];
       hints.suggestions = [
-        'Use deploy({operation:"status", scriptId}) to see current state',
+        'Use version_deploy({operation:"status", scriptId}) to see current state',
         'To specify exact version: toVersion parameter'
       ];
       break;
@@ -73,7 +73,7 @@ export function generateDeployHints(
         if (missing.length > 0) {
           hints.warning = `Missing deployments: ${missing.join(', ')}`;
           hints.suggestions = [
-            'Run deploy({operation:"reset", scriptId}) to create all 3 standard deployments'
+            'Run version_deploy({operation:"reset", scriptId}) to create all 3 standard deployments'
           ];
         }
 
@@ -82,7 +82,7 @@ export function generateDeployHints(
           hints.nextSteps = hints.nextSteps || [];
           hints.nextSteps.push(
             `Staging v${envs.staging.versionNumber} ready to promote to prod`,
-            'deploy({operation:"promote", environment:"prod", scriptId})'
+            'version_deploy({operation:"promote", environment:"prod", scriptId})'
           );
         }
 
@@ -112,7 +112,7 @@ export function generateDeployHints(
       hints.context = 'Created fresh dev/staging/prod deployments';
       hints.nextSteps = [
         'All deployments point to HEAD (no versioned snapshots yet)',
-        'Develop in dev, then: deploy({operation:"promote", environment:"staging", description:"v1.0", scriptId})'
+        'Develop in dev, then: version_deploy({operation:"promote", environment:"staging", description:"v1.0", scriptId})'
       ];
       hints.workflow = [
         '1. Develop and test in dev (auto-updates to HEAD)',
@@ -146,8 +146,8 @@ export function generateDeployErrorHints(
   if (errorMessage.includes('not found')) {
     hints.context = 'Required deployment not found';
     hints.suggestions = [
-      'Run deploy({operation:"reset", scriptId}) to create all 3 standard deployments',
-      'Use deploy({operation:"status", scriptId}) to see existing deployments'
+      'Run version_deploy({operation:"reset", scriptId}) to create all 3 standard deployments',
+      'Use version_deploy({operation:"status", scriptId}) to see existing deployments'
     ];
   }
 
@@ -155,14 +155,14 @@ export function generateDeployErrorHints(
     hints.context = 'Cannot operate on HEAD deployment';
     hints.suggestions = [
       'Promote dev→staging first to create a versioned snapshot',
-      'deploy({operation:"promote", environment:"staging", description:"...", scriptId})'
+      'version_deploy({operation:"promote", environment:"staging", description:"...", scriptId})'
     ];
   }
 
   if (errorMessage.includes('description')) {
     hints.context = 'Description required for staging promotion';
     hints.suggestions = [
-      'Add description parameter: deploy({..., description:"v1.0 Feature X"})',
+      'Add description parameter: version_deploy({..., description:"v1.0 Feature X"})',
       'Description is auto-tagged with [STAGING] prefix'
     ];
   }
@@ -173,6 +173,130 @@ export function generateDeployErrorHints(
       'Current deployment may have been manually changed',
       'Use status operation to check current state',
       'Consider using reset to recreate clean deployments'
+    ];
+  }
+
+  return hints;
+}
+
+/**
+ * Generate hints for library deploy operations (version pinning)
+ */
+export function generateLibraryDeployHints(
+  operation: 'promote' | 'rollback' | 'status' | 'setup',
+  environment?: 'staging' | 'prod',
+  result?: any
+): DeployHints {
+  const hints: DeployHints = {};
+
+  switch (operation) {
+    case 'promote':
+      if (environment === 'staging') {
+        hints.context = 'Pinned staging consumers to new library version';
+        hints.nextSteps = [
+          'Test staging spreadsheet to verify library changes work correctly',
+          'When ready: deploy({operation:"promote", to:"prod", scriptId})'
+        ];
+        hints.workflow = [
+          'Current: library v' + (result?.version?.versionNumber || 'N') + ' → staging consumers updated',
+          'Next: promote to prod when staging testing complete'
+        ];
+      } else if (environment === 'prod') {
+        hints.context = 'Pinned prod consumers to staging library version';
+        hints.nextSteps = [
+          'Verify prod spreadsheet serves expected behavior',
+          'If issues: deploy({operation:"rollback", to:"staging", scriptId})'
+        ];
+        hints.workflow = [
+          'Complete: library v' + (result?.version?.versionNumber || 'N') + ' → prod consumers updated',
+          'Staging and prod consumers now use same library version'
+        ];
+      }
+      break;
+
+    case 'rollback':
+      hints.context = `Reverted ${environment || 'staging'} consumers to previous library version`;
+      hints.nextSteps = [
+        `Verify ${environment || 'staging'} spreadsheet uses expected library version`,
+        'Fix issues in library, then re-promote when ready'
+      ];
+      hints.suggestions = [
+        'Use deploy({operation:"status", scriptId}) to see current version pinning',
+        'Note: a second rollback undoes the first (toggle behavior)'
+      ];
+      break;
+
+    case 'status': {
+      const versionCount = result?.versions?.length || result?.versionCount || 0;
+      if (versionCount > 150) {
+        hints.warning = `${versionCount}/200 versions used — approaching GAS limit`;
+        hints.suggestions = [
+          'Delete old versions via GAS UI (Manage Versions) to free capacity'
+        ];
+      }
+      hints.nextSteps = [
+        'To promote: deploy({operation:"promote", to:"staging", scriptId, description:"..."})',
+        'To rollback: deploy({operation:"rollback", to:"staging", scriptId})'
+      ];
+      break;
+    }
+
+    case 'setup':
+      hints.context = 'Library deploy infrastructure configured';
+      hints.nextSteps = [
+        'Deploy workflow ready — promote to staging first',
+        'deploy({operation:"promote", to:"staging", scriptId, description:"Initial staging setup"})'
+      ];
+      hints.workflow = [
+        '1. Develop library code',
+        '2. Promote to staging: deploy({operation:"promote", to:"staging", scriptId, description:"..."})',
+        '3. Test staging consumers',
+        '4. Promote to prod: deploy({operation:"promote", to:"prod", scriptId})'
+      ];
+      break;
+  }
+
+  return hints;
+}
+
+/**
+ * Generate hints for library deploy errors
+ */
+export function generateLibraryDeployErrorHints(
+  operation: string,
+  errorMessage: string
+): DeployHints {
+  const hints: DeployHints = {};
+
+  if (errorMessage.includes('library reference') || errorMessage.includes('library mismatch')) {
+    hints.context = 'Library reference mismatch detected';
+    hints.suggestions = [
+      'Use force: true to override: deploy({operation:"' + operation + '", ..., force: true})',
+      'Or check configuration with deploy({operation:"status", scriptId})'
+    ];
+  }
+
+  if (errorMessage.includes('consumer') && errorMessage.includes('not found')) {
+    hints.context = 'Consumer project not found in configuration';
+    hints.suggestions = [
+      'Run setup first: deploy({operation:"setup", scriptId, templateScriptId:"..."})',
+      'Ensure consumer scriptIds are correct in the configuration'
+    ];
+  }
+
+  if (errorMessage.includes('version') && (errorMessage.includes('create') || errorMessage.includes('failed'))) {
+    hints.context = 'Library version creation failed';
+    hints.suggestions = [
+      'Retry the operation — this may be a transient GAS API error',
+      'Check that the library project is accessible and not at the 200 version limit'
+    ];
+  }
+
+  if (errorMessage.includes('partial') && errorMessage.includes('createdVersion')) {
+    hints.context = 'Partial failure — library version was created but consumer update failed';
+    hints.suggestions = [
+      'Use the useVersion parameter to retry with the already-created version',
+      'deploy({operation:"' + operation + '", scriptId, useVersion: <versionNumber>})'
     ];
   }
 

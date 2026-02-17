@@ -504,7 +504,8 @@ export class InProcessTestClient {
       { name: 'exec', description: 'Execute code in GAS environment', inputSchema: schema },
       { name: 'exec_api', description: 'Execute via API', inputSchema: schema },
       // Deployment
-      { name: 'deploy', description: 'Deploy GAS project', inputSchema: schema },
+      { name: 'version_deploy', description: 'Web app deployment workflow', inputSchema: schema },
+      { name: 'deploy', description: 'Library version pinning', inputSchema: schema },
       // Drive & Scripts
       { name: 'find_drive_script', description: 'Find scripts in Drive', inputSchema: schema },
       { name: 'create_script', description: 'Create new script', inputSchema: schema },

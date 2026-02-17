@@ -535,7 +535,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     // Add promotion hint after successful finish
     const promotionHint = pushed ? {
       message: `Feature '${featureDesc}' merged and pushed to ${defaultBranch}.`,
-      hint: `Consider promoting to staging: deploy({ operation: 'promote', environment: 'staging', scriptId, description: 'Feature: ${featureDesc}' })`,
+      hint: `Consider promoting to staging: deploy({ operation: 'promote', to: 'staging', scriptId, description: 'Feature: ${featureDesc}' })`,
       workflow: 'dev (HEAD) → staging (versioned) → prod (stable)'
     } : undefined;
 

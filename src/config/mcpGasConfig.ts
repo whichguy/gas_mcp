@@ -3,6 +3,36 @@ import path from 'path';
 import type { WorktreesConfig, WorktreeLock } from '../types/worktreeTypes.js';
 
 /**
+ * Per-project environment consumer info (e.g., staging/prod spreadsheet + library bindings)
+ */
+export interface McpGasProjectEnvironment {
+  consumerScriptId: string;
+  spreadsheetId: string;
+  libraryVersion: number;
+}
+
+/**
+ * Environment configuration for a project's distribution targets
+ */
+export interface McpGasProjectEnvironments {
+  staging?: McpGasProjectEnvironment;
+  prod?: McpGasProjectEnvironment;
+  templateScriptId?: string;
+  templateSpreadsheetId?: string;
+  userSymbol?: string;
+}
+
+/**
+ * A single GAS project entry in the configuration
+ */
+export interface McpGasProject {
+  scriptId: string;
+  name: string;
+  description?: string;
+  environments?: McpGasProjectEnvironments;
+}
+
+/**
  * Unified MCP Gas Server Configuration
  * Consolidates OAuth, projects, current project, local root settings, and worktrees
  */
@@ -14,36 +44,25 @@ export interface McpGasConfig {
     redirect_uris: string[];
     scopes: string[];
   };
-  
+
   // Project Management
   projects: {
-    [projectName: string]: {
-      scriptId: string;
-      name: string;
-      description?: string;
-    };
+    [projectName: string]: McpGasProject;
   };
-  
-  // Environment Management
-  environments?: {
-    dev?: { scriptId: string; name: string; };
-    staging?: { scriptId: string; name: string; };
-    production?: { scriptId: string; name: string; };
-  };
-  
+
   // Current Active Project
   currentProject?: {
     projectName: string;
     scriptId: string;
     lastSync: string;
   };
-  
+
   // Local Root Directory for Projects
   localRoot: {
     rootPath: string;
     lastUpdated: string;
   };
-  
+
   // Server Configuration
   server: {
     defaultWorkingDir: string;
@@ -349,10 +368,8 @@ export class McpGasConfigManager {
         config.projects = projectsData.projects;
         console.error(`   ✅ Migrated ${Object.keys(projectsData.projects).length} projects`);
       }
-      if (projectsData.environments) {
-        config.environments = projectsData.environments;
-        console.error(`   ✅ Migrated environments configuration`);
-      }
+      // Note: Legacy top-level environments are no longer supported.
+      // Environment config is now per-project via McpGasProject.environments.
     } catch (error) {
       console.error(`   ⚠️ No projects config to migrate`);
     }

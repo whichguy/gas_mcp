@@ -170,7 +170,7 @@ export function generateExecHints(
       hints.context = 'autoRedeploy is disabled and deployment may need setup';
       hints.suggestions = [
         'Set autoRedeploy:true to auto-configure infrastructure',
-        'Or manually deploy: deploy({operation:"reset", scriptId})'
+        'Or manually deploy: version_deploy({operation:"reset", scriptId})'
       ];
     }
 

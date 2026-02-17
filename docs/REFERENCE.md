@@ -383,7 +383,11 @@ log({operation: "get", scriptId: "...", processId: "..."})
 - **Filter by script**: Use `userProcessFilter.scriptId` parameter
 - **Note**: Consolidated from separate `process_list_script` tool
 
-### Deployments (10 tools)
+### Deployments (12 tools)
+
+**Deployment Workflow:**
+- `deploy` - Library version pinning (recommended) — promote/rollback/status/setup
+- `version_deploy` - Web app deployment management (advanced) — promote/rollback/status/reset
 
 **Version Management:**
 - `version_create` - ✅ Works for both types
