@@ -830,6 +830,10 @@ function onOpen(e) {
   ${userSymbol}.onOpen(e);
 }
 
+function onInstall(e) {
+  onOpen(e);
+}
+
 function onEdit(e) {
   ${userSymbol}.onEdit(e);
 }
