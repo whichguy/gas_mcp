@@ -190,7 +190,7 @@ export async function getAllBranches(projectPath: string): Promise<string[]> {
 
     return result.stdout
       .split('\n')
-      .map(line => line.trim().replace(/^\*\s+/, ''))  // Remove * marker from current branch
+      .map(line => line.trim().replace(/^[*+]\s+/, ''))  // Remove * (current) and + (worktree) markers
       .filter(Boolean);  // Remove empty lines
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);

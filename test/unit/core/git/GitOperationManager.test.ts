@@ -13,6 +13,90 @@ import { tmpdir } from 'os';
  * This is the core fix: session worktrees at ~/.mcp-gas/worktrees/ must work,
  * not just ~/gas-repos/project-{id}/.
  */
+describe('getAllBranches - branch name parsing', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'git-branches-test-'));
+    execSync('git init', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.email "test@test.com"', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.name "Test"', { cwd: tempDir, stdio: 'ignore' });
+    writeFileSync(join(tempDir, '.gitkeep'), '');
+    execSync('git add .gitkeep && git commit -m "init"', { cwd: tempDir, stdio: 'ignore' });
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('should strip * prefix from current branch', async () => {
+    // The default branch (main/master) will have * prefix in git branch output
+    const { getAllBranches } = await import(
+      '../../../../src/utils/gitAutoCommit.js'
+    );
+
+    const branches = await getAllBranches(tempDir);
+
+    // Should not contain * prefix
+    expect(branches.every(b => !b.startsWith('*'))).to.be.true;
+    expect(branches.length).to.be.greaterThan(0);
+  });
+
+  it('should strip + prefix from worktree branches', async () => {
+    // Create a branch and a worktree that checks it out — this produces + prefix
+    execSync('git branch llm-feature-test-worktree', { cwd: tempDir, stdio: 'ignore' });
+
+    const worktreeDir = mkdtempSync(join(tmpdir(), 'git-wt-'));
+    try {
+      execSync(`git worktree add "${worktreeDir}" llm-feature-test-worktree`, {
+        cwd: tempDir,
+        stdio: 'ignore'
+      });
+
+      const { getAllBranches } = await import(
+        '../../../../src/utils/gitAutoCommit.js'
+      );
+
+      const branches = await getAllBranches(tempDir);
+
+      // The worktree branch should appear without + prefix
+      expect(branches).to.include('llm-feature-test-worktree');
+      expect(branches.every(b => !b.startsWith('+'))).to.be.true;
+    } finally {
+      execSync(`git worktree remove "${worktreeDir}" --force`, { cwd: tempDir, stdio: 'ignore' });
+      rmSync(worktreeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('should return clean branch names for mixed output', async () => {
+    // Create multiple branches, one in a worktree
+    execSync('git branch feature-a', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git branch feature-b', { cwd: tempDir, stdio: 'ignore' });
+
+    const worktreeDir = mkdtempSync(join(tmpdir(), 'git-wt-'));
+    try {
+      execSync(`git worktree add "${worktreeDir}" feature-a`, {
+        cwd: tempDir,
+        stdio: 'ignore'
+      });
+
+      const { getAllBranches } = await import(
+        '../../../../src/utils/gitAutoCommit.js'
+      );
+
+      const branches = await getAllBranches(tempDir);
+
+      // All branches should be clean names
+      expect(branches).to.include('feature-a');
+      expect(branches).to.include('feature-b');
+      expect(branches.every(b => !b.startsWith('*') && !b.startsWith('+'))).to.be.true;
+    } finally {
+      execSync(`git worktree remove "${worktreeDir}" --force`, { cwd: tempDir, stdio: 'ignore' });
+      rmSync(worktreeDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('GitOperationManager - stageFiles path correctness', () => {
   let tempDir: string;
 
