@@ -49,6 +49,7 @@ import {
   ProjectInitTool
 } from '../../src/tools/deployments.js';
 import { VersionDeployTool } from '../../src/tools/deployment.js';
+import { LibraryDeployTool } from '../../src/tools/deploy.js';
 import {
   FindDriveScriptTool,
   CreateScriptTool
@@ -188,6 +189,12 @@ const usageTests: UsageTestCase[] = [
     expectedRequired: ['scriptId', 'operation'],
   },
   {
+    tool: 'deploy',
+    validParams: { scriptId: 'test123', operation: 'status' },
+    invalidParams: {},
+    expectedRequired: ['scriptId', 'operation'],
+  },
+  {
     tool: 'rsync',
     validParams: { operation: 'pull', scriptId: 'test123' },
     invalidParams: { scriptId: 'test123' },
@@ -222,6 +229,8 @@ const responseTests: ResponseTestCase[] = [
   { tool: 'ls', expectedFields: ['items', 'total'] },
   { tool: 'file_status', expectedFields: ['path', 'type', 'size'] },
   { tool: 'exec', expectedFields: ['success', 'result', 'logger_output'] },
+  { tool: 'deploy', expectedFields: ['operation', 'version', 'environment', 'hints'] },
+  { tool: 'version_deploy', expectedFields: ['operation', 'deployment', 'environments', 'hints'] },
 ];
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -240,7 +249,7 @@ describe('Tool Accuracy Baselines', function () {
     RawSedTool, RawEditTool, RawAiderTool, RawFindTool, RawCpTool,
     ReorderTool, ProjectCreateTool, ProjectInitTool, ProjectListTool,
     ExecTool, ExecApiTool,
-    VersionDeployTool,
+    VersionDeployTool, LibraryDeployTool,
     FindDriveScriptTool, CreateScriptTool,
     ProcessListTool, ExecutionsTool, CloudLogsTool,
     TriggerTool,
