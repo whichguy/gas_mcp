@@ -46,6 +46,13 @@ export function generateDeployHints(
           'Both environments now serve same version'
         ];
       }
+      if (result?.configWarning) {
+        hints.warning = result.configWarning;
+        hints.suggestions = [
+          ...(hints.suggestions || []),
+          'Run version_deploy({operation:"status", scriptId}) to verify deployment state'
+        ];
+      }
       break;
 
     case 'rollback':
@@ -120,6 +127,16 @@ export function generateDeployHints(
         '3. Test staging, then promote staging→prod'
       ];
 
+      // ConfigManager warnings
+      if (result?.configWarning) {
+        hints.warning = hints.warning
+          ? `${hints.warning}; ${result.configWarning}`
+          : result.configWarning;
+        hints.suggestions = [
+          ...(hints.suggestions || []),
+          'Run version_deploy({operation:"status", scriptId}) to verify stored URLs'
+        ];
+      }
       // Partial success
       if (result?.status === 'partial') {
         hints.warning = 'Some old deployments could not be deleted';
@@ -191,6 +208,13 @@ export function generateLibraryDeployHints(
 
   switch (operation) {
     case 'promote':
+      if (result?.dryRun) {
+        hints.context = 'Dry-run preview — no changes made';
+        hints.nextSteps = [
+          'To execute: remove dryRun parameter and run again'
+        ];
+        break;
+      }
       if (environment === 'staging') {
         hints.context = 'Pinned staging consumers to new library version';
         hints.nextSteps = [
@@ -198,23 +222,38 @@ export function generateLibraryDeployHints(
           'When ready: deploy({operation:"promote", to:"prod", scriptId})'
         ];
         hints.workflow = [
-          'Current: library v' + (result?.version?.versionNumber || 'N') + ' → staging consumers updated',
+          'Current: library v' + (result?.version?.versionNumber || result?.version || 'N') + ' → staging consumers updated',
           'Next: promote to prod when staging testing complete'
         ];
       } else if (environment === 'prod') {
         hints.context = 'Pinned prod consumers to staging library version';
         hints.nextSteps = [
           'Verify prod spreadsheet serves expected behavior',
-          'If issues: deploy({operation:"rollback", to:"staging", scriptId})'
+          'If issues: deploy({operation:"rollback", to:"prod", scriptId})'
         ];
         hints.workflow = [
-          'Complete: library v' + (result?.version?.versionNumber || 'N') + ' → prod consumers updated',
+          'Complete: library v' + (result?.version?.versionNumber || result?.version || 'N') + ' → prod consumers updated',
           'Staging and prod consumers now use same library version'
+        ];
+      }
+      if (result?.configWarning) {
+        hints.warning = result.configWarning;
+        hints.suggestions = [
+          ...(hints.suggestions || []),
+          'Run deploy({operation:"status", scriptId, reconcile:true}) to fix ConfigManager state',
+          'Use toVersion parameter for rollback if automatic rollback fails'
         ];
       }
       break;
 
     case 'rollback':
+      if (result?.dryRun) {
+        hints.context = 'Dry-run preview — no changes made';
+        hints.nextSteps = [
+          'To execute: remove dryRun parameter and run again'
+        ];
+        break;
+      }
       hints.context = `Reverted ${environment || 'staging'} consumers to previous library version`;
       hints.nextSteps = [
         `Verify ${environment || 'staging'} spreadsheet uses expected library version`,
@@ -224,6 +263,10 @@ export function generateLibraryDeployHints(
         'Use deploy({operation:"status", scriptId}) to see current version pinning',
         'Note: a second rollback undoes the first (toggle behavior)'
       ];
+      if (result?.configWarning) {
+        hints.warning = result.configWarning;
+        hints.suggestions.push('Run deploy({operation:"status", scriptId, reconcile:true}) to fix ConfigManager state');
+      }
       break;
 
     case 'status': {
@@ -233,6 +276,15 @@ export function generateLibraryDeployHints(
         hints.suggestions = [
           'Delete old versions via GAS UI (Manage Versions) to free capacity'
         ];
+      }
+      if (result?.discrepancies?.length > 0 && !result?.reconciled) {
+        hints.suggestions = [
+          ...(hints.suggestions || []),
+          'Discrepancies found — run deploy({operation:"status", scriptId, reconcile:true}) to auto-fix'
+        ];
+      }
+      if (result?.reconciled?.length > 0) {
+        hints.context = `Reconciled ${result.reconciled.length} value(s) using consumer manifests as source of truth`;
       }
       hints.nextSteps = [
         'To promote: deploy({operation:"promote", to:"staging", scriptId, description:"..."})',
@@ -289,6 +341,15 @@ export function generateLibraryDeployErrorHints(
     hints.suggestions = [
       'Retry the operation — this may be a transient GAS API error',
       'Check that the library project is accessible and not at the 200 version limit'
+    ];
+  }
+
+  if (errorMessage.includes('pin verification failed') || errorMessage.includes('Pin verification failed')) {
+    hints.context = 'Consumer pin write did not persist — manifest may have reverted';
+    hints.suggestions = [
+      'Retry the operation — this may be a transient GAS API write failure',
+      'Check consumer manifest manually with cat({path:"appsscript.json", scriptId:"<consumer>"})',
+      'Use deploy({operation:"status", scriptId}) to compare expected vs actual pins'
     ];
   }
 

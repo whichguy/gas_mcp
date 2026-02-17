@@ -1,7 +1,8 @@
-# Deployment Workflow Guide
+# Deployment Workflow Guide (Web App)
 
-> **Note:** This document covers `version_deploy` (web app deployments). For standard library
-> version pinning (recommended for most projects), see the `deploy` tool documentation.
+> **Note:** This document covers `version_deploy` (low-level web app deployments). For standard
+> library version pinning (recommended for most projects), see
+> **[LIBRARY_DEPLOYMENT_WORKFLOW.md](LIBRARY_DEPLOYMENT_WORKFLOW.md)**.
 
 Complete guide to managing Google Apps Script web app deployments across development, staging, and production environments.
 

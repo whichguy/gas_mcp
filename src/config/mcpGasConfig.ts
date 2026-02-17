@@ -8,7 +8,7 @@ import type { WorktreesConfig, WorktreeLock } from '../types/worktreeTypes.js';
 export interface McpGasProjectEnvironment {
   consumerScriptId: string;
   spreadsheetId: string;
-  libraryVersion: number;
+  libraryVersion?: number;
 }
 
 /**

@@ -10,6 +10,7 @@ import { GASClient, EntryPointType, WebAppAccess, GASDeployment } from '../api/g
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
+import { LockManager } from '../utils/lockManager.js';
 import { ExecTool } from './execution.js';
 import { generateDeployHints, generateDeployErrorHints, DeployHints } from '../utils/deployHints.js';
 import { mcpLogger } from '../utils/mcpLogger.js';
@@ -42,6 +43,7 @@ export class VersionDeployTool extends BaseTool {
       deployments: { type: 'object', description: 'New deployments (reset only): {dev, staging, prod} each with deploymentId, url, versionNumber' },
       message: { type: 'string', description: 'Summary message (reset only)' },
       warnings: { type: 'array', description: 'Warning messages (reset partial failures)' },
+      configWarning: { type: 'string', description: 'Warning when ConfigManager writes failed (deployment still succeeded)' },
       // common
       hints: { type: 'object', description: 'Context-aware next-step hints' }
     }
@@ -69,6 +71,7 @@ export class VersionDeployTool extends BaseTool {
         description: 'Version for rollback (optional). If omitted, auto-finds previous tagged version.',
         minimum: 1
       },
+      ...SchemaFragments.dryRun,
       ...SchemaFragments.scriptId,
       ...SchemaFragments.accessToken
     },
@@ -168,6 +171,11 @@ export class VersionDeployTool extends BaseTool {
       'promote operation'
     );
 
+    const lockManager = LockManager.getInstance();
+    await lockManager.acquireLock(scriptId, `version-deploy-promote-${environment}`);
+
+    try {
+    const dryRun = !!params.dryRun;
     const deployments = await this.findEnvironmentDeployments(scriptId, accessToken);
 
     if (environment === 'staging') {
@@ -179,15 +187,33 @@ export class VersionDeployTool extends BaseTool {
       const description = this.validate.string(params.description, 'description', 'promote operation');
       const taggedDescription = `${ENV_TAGS.staging} ${description}`;
 
+      if (!deployments.staging) {
+        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run version_deploy({operation: "reset"}) to create deployments');
+      }
+
+      if (dryRun) {
+        // Preview: determine next version number without creating
+        const versionsResponse = await this.gasClient.listVersions(scriptId, 1, undefined, accessToken);
+        const highestVersion = versionsResponse.versions?.length > 0
+          ? Math.max(...versionsResponse.versions.map((v: any) => v.versionNumber))
+          : 0;
+        return {
+          operation: 'promote',
+          dryRun: true,
+          from: 'dev',
+          to: 'staging',
+          wouldCreateVersion: highestVersion + 1,
+          wouldUpdateDeployment: deployments.staging.deploymentId,
+          currentStagingVersion: deployments.staging.versionNumber,
+          description: taggedDescription,
+        };
+      }
+
       // Step 1: Create version from HEAD
       const version = await this.gasClient.createVersion(scriptId, taggedDescription, accessToken);
       console.error(`✅ Created version ${version.versionNumber}: ${taggedDescription}`);
 
       // Step 2: Update staging deployment to new version
-      if (!deployments.staging) {
-        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run version_deploy({operation: "reset"}) to create deployments');
-      }
-
       await this.gasClient.updateDeployment(
         scriptId,
         deployments.staging.deploymentId,
@@ -211,6 +237,7 @@ export class VersionDeployTool extends BaseTool {
       const stagingUrl = this.extractWebAppUrl(updatedStaging);
 
       // Store in ConfigManager
+      let configWarning: string | undefined;
       if (stagingUrl) {
         try {
           await this.setDeploymentInConfigManager(
@@ -223,6 +250,7 @@ export class VersionDeployTool extends BaseTool {
           console.error('✅ Updated staging URL in ConfigManager');
         } catch (configError: any) {
           console.error(`⚠️  Failed to update ConfigManager: ${configError.message}`);
+          configWarning = `ConfigManager write failed: ${configError.message}`;
         }
       }
 
@@ -239,7 +267,8 @@ export class VersionDeployTool extends BaseTool {
           deploymentId: deployments.staging.deploymentId,
           versionNumber: version.versionNumber,
           url: stagingUrl
-        }
+        },
+        ...(configWarning ? { configWarning } : {}),
       };
 
     } else {
@@ -256,6 +285,18 @@ export class VersionDeployTool extends BaseTool {
       const stagingVersion = deployments.staging.versionNumber;
       if (!stagingVersion) {
         throw new ValidationError('staging_version', 'HEAD (null)', 'versioned deployment - promote dev→staging first to create a version');
+      }
+
+      if (dryRun) {
+        return {
+          operation: 'promote',
+          dryRun: true,
+          from: 'staging',
+          to: 'prod',
+          wouldPinVersion: stagingVersion,
+          wouldUpdateDeployment: deployments.prod.deploymentId,
+          currentProdVersion: deployments.prod.versionNumber,
+        };
       }
 
       // Update prod deployment to staging version
@@ -282,6 +323,7 @@ export class VersionDeployTool extends BaseTool {
       const prodUrl = this.extractWebAppUrl(updatedProd);
 
       // Store in ConfigManager
+      let configWarning: string | undefined;
       if (prodUrl) {
         try {
           await this.setDeploymentInConfigManager(
@@ -294,6 +336,7 @@ export class VersionDeployTool extends BaseTool {
           console.error('✅ Updated prod URL in ConfigManager');
         } catch (configError: any) {
           console.error(`⚠️  Failed to update ConfigManager: ${configError.message}`);
+          configWarning = `ConfigManager write failed: ${configError.message}`;
         }
       }
 
@@ -314,8 +357,12 @@ export class VersionDeployTool extends BaseTool {
           versionNumber: stagingVersion,
           url: prodUrl
         },
-        note: 'Staging and prod now serve the same version'
+        note: 'Staging and prod now serve the same version',
+        ...(configWarning ? { configWarning } : {}),
       };
+    }
+    } finally {
+      await lockManager.releaseLock(scriptId);
     }
   }
 
@@ -336,6 +383,10 @@ export class VersionDeployTool extends BaseTool {
       'rollback operation'
     );
 
+    const lockManager = LockManager.getInstance();
+    await lockManager.acquireLock(scriptId, `version-deploy-rollback-${environment}`);
+
+    try {
     const deployments = await this.findEnvironmentDeployments(scriptId, accessToken);
     const envTag = environment === 'staging' ? ENV_TAGS.staging : ENV_TAGS.prod;
     const deployment = deployments[environment];
@@ -395,6 +446,17 @@ export class VersionDeployTool extends BaseTool {
       targetVersion = envVersions[currentIndex + 1].versionNumber;
     }
 
+    if (params.dryRun) {
+      return {
+        operation: 'rollback',
+        dryRun: true,
+        environment,
+        wouldRollbackTo: targetVersion,
+        currentVersion,
+        deploymentId: deployment.deploymentId,
+      };
+    }
+
     // Update deployment to target version
     await this.gasClient.updateDeployment(
       scriptId,
@@ -427,6 +489,9 @@ export class VersionDeployTool extends BaseTool {
         url: this.extractWebAppUrl(deployment)
       }
     };
+    } finally {
+      await lockManager.releaseLock(scriptId);
+    }
   }
 
   /**
@@ -483,6 +548,10 @@ export class VersionDeployTool extends BaseTool {
    * Handle reset operation with transactional safety
    */
   private async handleReset(scriptId: string, accessToken?: string): Promise<any> {
+    const lockManager = LockManager.getInstance();
+    await lockManager.acquireLock(scriptId, 'version-deploy-reset');
+
+    try {
     console.error('🔄 Resetting deployments...');
 
     // Step 1: List existing deployments (for cleanup later)
@@ -491,6 +560,7 @@ export class VersionDeployTool extends BaseTool {
     // Step 2: Create 3 new standard deployments FIRST (before deleting old ones)
     // This ensures the project is never left without deployments if creation fails
     const created: string[] = [];
+    const configFailures: string[] = [];
     let devDeployment, stagingDeployment, prodDeployment;
     let devUrl = '', stagingUrl = '', prodUrl = '';
 
@@ -570,32 +640,20 @@ export class VersionDeployTool extends BaseTool {
 
       // Step 2.6: Store all deployment URLs and IDs in ConfigManager
       console.error('💾 Storing deployment info in ConfigManager...');
-      try {
-        await this.setDeploymentInConfigManager(
-          scriptId,
-          'dev',
-          devDeployment.deploymentId,
-          devUrl,
-          accessToken
-        );
-        await this.setDeploymentInConfigManager(
-          scriptId,
-          'staging',
-          stagingDeployment.deploymentId,
-          stagingUrl,
-          accessToken
-        );
-        await this.setDeploymentInConfigManager(
-          scriptId,
-          'prod',
-          prodDeployment.deploymentId,
-          prodUrl,
-          accessToken
-        );
+      for (const [env, deplId, url] of [
+        ['dev', devDeployment.deploymentId, devUrl],
+        ['staging', stagingDeployment.deploymentId, stagingUrl],
+        ['prod', prodDeployment.deploymentId, prodUrl],
+      ] as const) {
+        try {
+          await this.setDeploymentInConfigManager(scriptId, env, deplId, url, accessToken);
+        } catch (configError: any) {
+          console.error(`⚠️  Failed to store ${env} deployment info: ${configError.message}`);
+          configFailures.push(env);
+        }
+      }
+      if (configFailures.length === 0) {
         console.error('✅ Deployment info stored in ConfigManager');
-      } catch (configError: any) {
-        // Don't fail the operation if ConfigManager fails - deployments are still created
-        console.error(`⚠️  Failed to store deployment info in ConfigManager: ${configError.message}`);
       }
 
     } catch (error: any) {
@@ -655,7 +713,10 @@ export class VersionDeployTool extends BaseTool {
           versionNumber: null
         }
       },
-      message: 'All deployments reset. Three standard deployments created (dev/staging/prod), all pointing to HEAD.'
+      message: 'All deployments reset. Three standard deployments created (dev/staging/prod), all pointing to HEAD.',
+      ...(configFailures.length > 0 ? {
+        configWarning: `ConfigManager write failed for: ${configFailures.join(', ')}. URLs may not be stored.`
+      } : {}),
     };
 
     // Add warnings if deletion failed
@@ -668,6 +729,9 @@ export class VersionDeployTool extends BaseTool {
     }
 
     return response;
+    } finally {
+      await lockManager.releaseLock(scriptId);
+    }
   }
 
   /**
