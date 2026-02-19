@@ -1,21 +1,24 @@
 /**
- * Library version pinning deployment tool for Google Apps Script
+ * Per-environment library deployment tool for Google Apps Script
  *
- * Manages library versions and consumer spreadsheet environment pins.
- * One library project (dev workspace) with staging/prod consumer spreadsheets
- * that pin to specific library versions via appsscript.json.
+ * File-push model: each environment has a standalone -source library and
+ * thin-shim consumers that reference it at HEAD with developmentMode: true.
+ * Promote = push files between -source libraries. All consumer copies
+ * auto-update via HEAD resolution.
  *
  * Architecture:
- *   Library Project (standalone, edit via MCP GAS)
- *     ├── HEAD (current dev code)
- *     ├── v3 ← staging pins here
- *     └── v2 ← prod pins here
+ *   Main Library = dev-source (development, all source + CommonJS infra)
+ *     └── Dev consumers (thin shim → main library @ HEAD, developmentMode: true)
  *
- *   Staging Sheet (container-bound thin shim → library @ v3)
- *   Prod Sheet (container-bound thin shim → library @ v2)
- *   Template Sheet (container-bound thin shim → library @ HEAD, developmentMode: true)
+ *   stage-source (standalone) ← files pushed from main library
+ *     └── Stage consumers (thin shim → stage-source @ HEAD, developmentMode: true)
  *
- * Note: For web app deployment management, see VersionDeployTool in deployment.ts
+ *   prod-source (standalone) ← files pushed from stage-source
+ *     └── Prod consumers (thin shim → prod-source @ HEAD, developmentMode: true)
+ *
+ * No versioning. No rollback. Fix-forward if something breaks.
+ *
+ * Note: For deployment infrastructure reset, see DeployConfigTool in deployment.ts
  */
 
 import { BaseTool } from './base.js';
@@ -25,54 +28,62 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { LockManager } from '../utils/lockManager.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
-import { generateLibraryDeployHints, generateLibraryDeployErrorHints, DeployHints } from '../utils/deployHints.js';
+import { generateLibraryDeployHints, generateLibraryDeployErrorHints } from '../utils/deployHints.js';
 import { mcpLogger } from '../utils/mcpLogger.js';
-import { ENV_TAGS, LibraryEnvironment } from '../utils/deployConstants.js';
+import { LibraryEnvironment, SOURCE_CONFIG_KEYS } from '../utils/deployConstants.js';
+import { ExecTool } from './execution.js';
 
 /**
  * ConfigManager property keys per environment
  */
 const CONFIG_KEYS = {
   staging: {
-    version: 'STAGING_VERSION',
-    previousVersion: 'STAGING_PREVIOUS_VERSION',
-    promotedAt: 'STAGING_PROMOTED_AT',
+    sourceScriptId: SOURCE_CONFIG_KEYS.staging,
     scriptId: 'STAGING_SCRIPT_ID',
     spreadsheetUrl: 'STAGING_SPREADSHEET_URL',
+    promotedAt: 'STAGING_PROMOTED_AT',
   },
   prod: {
-    version: 'PROD_VERSION',
-    previousVersion: 'PROD_PREVIOUS_VERSION',
-    promotedAt: 'PROD_PROMOTED_AT',
+    sourceScriptId: SOURCE_CONFIG_KEYS.prod,
     scriptId: 'PROD_SCRIPT_ID',
     spreadsheetUrl: 'PROD_SPREADSHEET_URL',
+    promotedAt: 'PROD_PROMOTED_AT',
   },
 } as const;
 
 /**
- * Library version pinning deployment tool
+ * Per-environment file-push deployment tool
  */
 export class LibraryDeployTool extends BaseTool {
   public name = 'deploy';
-  public description = '[DEPLOY] Deployment tool (recommended) — promote library versions to staging/prod consumer spreadsheets, rollback version pins, check environment status, or setup template wiring. Standard tool for all deployment workflows. For low-level web app deployment control, use version_deploy. Example: deploy({scriptId, operation: "promote", to: "staging", description: "v1.0"})';
+  public description = 'Deploy to staging/prod — pushes files to per-environment -source library, consumers auto-update via HEAD. For deployment infrastructure reset, use deploy_config().';
 
   public outputSchema = {
     type: 'object' as const,
     properties: {
-      operation: { type: 'string', description: 'Operation performed: promote, rollback, status, or setup' },
-      version: { type: 'number', description: 'Library version number (promote/rollback)' },
-      environment: { type: 'string', description: 'Target environment: staging or prod' },
-      previousVersion: { type: 'number', description: 'Previous version before this operation' },
-      dev: { type: 'object', description: 'Dev environment info (status): always HEAD' },
-      staging: { type: 'object', description: 'Staging environment info (status): version pin + consumer details' },
-      prod: { type: 'object', description: 'Prod environment info (status): version pin + consumer details' },
-      versions: { type: 'object', description: 'Version management info (status): total, cleanup candidates' },
-      createdVersion: { type: 'number', description: 'Version created before failure (error recovery)' },
-      retryWith: { type: 'string', description: 'Suggested retry command with useVersion (error recovery)' },
-      discrepancies: { type: 'array', description: 'Detected mismatches between local config, ConfigManager, and consumer manifests (status only)' },
-      reconciled: { type: 'array', description: 'List of values corrected during reconciliation (status with reconcile:true only)' },
-      configWarning: { type: 'string', description: 'Warning when ConfigManager writes failed (deployment still succeeded). Rollback may need explicit toVersion.' },
-      hints: { type: 'object', description: 'Context-aware next-step hints' },
+      operation:        { type: 'string', description: 'promote | status | setup' },
+      environment:      { type: 'string', description: 'Target environment (promote): staging | prod' },
+      sourceScriptId:   { type: 'string', description: '-source library that received pushed files (promote)' },
+      filesPromoted:    { type: 'number', description: 'Files pushed to -source library (promote)' },
+      description:      { type: 'string', description: 'Promotion description (promote)' },
+      consumer:         { type: 'object', description: 'Consumer shim info (promote): { scriptId } — container-bound script pointing to -source @HEAD' },
+      spreadsheetUrl:   { type: 'string', description: 'Direct link to the environment spreadsheet — open to access the sidebar. Present on promote + status.' },
+      note:             { type: 'string', description: 'Additional context (prod promote)' },
+      // setup fields
+      templateScriptId: { type: 'string', description: 'Container-bound script wired as dev consumer (setup)' },
+      libraryScriptId:  { type: 'string', description: 'Library that was configured (setup)' },
+      userSymbol:       { type: 'string', description: 'Library namespace symbol (setup + status)' },
+      libraryReference: { type: 'object', description: 'Library ref written to template: { version, developmentMode } (setup)' },
+      message:          { type: 'string', description: 'Next-step guidance (setup)' },
+      // status fields
+      dev:     { type: 'object', description: 'Dev environment (status): { scriptId }' },
+      staging: { type: 'object', description: 'Staging environment (status): { sourceScriptId, consumerScriptId, spreadsheetId, spreadsheetUrl, lastPromotedAt } | { configured: false }' },
+      prod:    { type: 'object', description: 'Prod environment (status): { sourceScriptId, consumerScriptId, spreadsheetId, spreadsheetUrl, lastPromotedAt } | { configured: false }' },
+      discrepancies:  { type: 'array',  description: 'Consumer manifest issues detected (status)' },
+      shimValidation: { type: 'object', description: 'Shim validation result (promote): { valid, updated, issue? }' },
+      sheetSync:      { type: 'object', description: 'Sheet sync results (promote): { source, target, synced[], added[], skipped[] }. Sheets are synced via copyTo() — copies structure + template data only. Application or user data not present in the source spreadsheet is NOT migrated.' },
+      configWarning:  { type: 'string', description: 'Non-fatal ConfigManager write failures (deployment still succeeded)' },
+      hints:          { type: 'object', description: 'Context-aware next-step hints' },
     },
   };
 
@@ -81,29 +92,29 @@ export class LibraryDeployTool extends BaseTool {
     properties: {
       operation: {
         type: 'string',
-        enum: ['promote', 'rollback', 'status', 'setup'],
+        enum: ['promote', 'status', 'setup'],
+        default: 'promote',
         description:
-          'promote: create library version + pin consumer | rollback: toggle to previous version | status: show all environment pins | setup: wire template to library @ HEAD',
+          'promote (default): push files to target -source library. status: show all envs. setup: wire template.',
       },
       to: {
         type: 'string',
         enum: ['staging', 'prod'],
         description:
-          'Target environment. staging: create version from HEAD + pin staging consumer. prod: copy staging version pin to prod consumer.',
+          'Target environment. staging: push files from main library → staging-source. prod: push files from staging-source → prod-source.',
       },
       description: {
         type: 'string',
-        description: 'Version description (required for promote to staging). Auto-tagged [STAGING].',
+        description: 'Promotion description (contextual note).',
       },
-      toVersion: {
-        type: 'number',
-        description: 'Override rollback target version (optional). If omitted, uses stored previous version.',
-        minimum: 1,
-      },
-      useVersion: {
-        type: 'number',
-        description: 'Reuse existing version number (for retry after partial promote failure). Skips version creation.',
-        minimum: 1,
+      syncSheets: {
+        type: 'boolean',
+        description: 'Sync spreadsheet sheets from source to target environment during promote. Default: true. '
+          + 'Copies sheets (structure, formulas, formatting, and template data) from the upstream environment\'s '
+          + 'spreadsheet. Does NOT handle application/user data migration — if target environments need seeded '
+          + 'data (reference tables, config sheets, live data not present in the template), that must be handled '
+          + 'separately via exec() or manual copy.',
+        default: true,
       },
       userSymbol: {
         type: 'string',
@@ -113,48 +124,61 @@ export class LibraryDeployTool extends BaseTool {
         type: 'string',
         description: 'Container-bound script ID of the dev/template spreadsheet (for setup operation).',
       },
-      force: {
-        type: 'boolean',
-        description: 'Skip library reference validation on consumer manifests.',
-      },
-      reconcile: {
-        type: 'boolean',
-        description: 'Auto-fix discrepancies found by status (uses consumer manifest as source of truth). Only applies to status operation.',
-      },
       ...SchemaFragments.dryRun,
       ...SchemaFragments.scriptId,
       ...SchemaFragments.accessToken,
     },
-    required: ['operation', 'scriptId'],
+    required: ['scriptId'],
     llmGuidance: {
-      workflow: 'setup → promote staging → test → promote prod | rollback toggles between last two versions',
-      environments: 'template: HEAD (dev mode) | staging: pinned version | prod: pinned version',
+      workflow: 'setup (once, optional) → promote to staging → test → promote to prod',
+      auto_behaviors: [
+        'First promote auto-creates staging/prod -source library + consumer spreadsheet if not yet configured',
+        'Every promote validates consumer shim (rewrites if stale or developmentMode missing)',
+        'syncSheets:true (default) copies sheets (structure + template data) from source spreadsheet to target — does NOT migrate application/user data',
+        'spreadsheetUrl always returned — share with user to access the environment',
+      ],
+      self_contained: 'deploy handles all environment setup automatically — no prerequisite tool calls needed',
+      defaults: 'dryRun:false | syncSheets:true | userSymbol: derived from project name',
+      limitations: [
+        'syncSheets copies sheet tabs via copyTo() — only data already in the source template spreadsheet travels with the deploy',
+        'Application data, user records, and reference tables not present in the source spreadsheet must be seeded/copied separately',
+        'To seed data post-deploy: use exec() with SpreadsheetApp to write to the target spreadsheet, or open the spreadsheetUrl and edit manually',
+      ],
     },
   };
 
   public annotations = {
-    title: 'Library Deploy',
+    title: 'Deploy',
     readOnlyHint: false,
     destructiveHint: true,
     openWorldHint: true,
   };
 
   private gasClient: GASClient;
+  private execTool: ExecTool;
 
   constructor(sessionAuthManager?: SessionAuthManager) {
     super(sessionAuthManager);
     this.gasClient = new GASClient();
+    this.execTool = new ExecTool(sessionAuthManager);
   }
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    const scriptId = this.validate.scriptId(params.scriptId, 'library deploy');
+    const scriptId = this.validate.scriptId(params.scriptId, 'deploy');
+
+    // Default operation to 'promote'
     const operation = this.validate.enum(
-      params.operation,
+      params.operation || 'promote',
       'operation',
-      ['promote', 'rollback', 'status', 'setup'],
-      'library deploy'
+      ['promote', 'status', 'setup'],
+      'deploy'
     );
+
+    // Normalize 'environment' → 'to' for backward compat
+    if (params.environment && !params.to) {
+      params.to = params.environment;
+    }
 
     mcpLogger.info('deploy', { event: 'operation_start', operation, scriptId, to: params.to });
 
@@ -164,9 +188,6 @@ export class LibraryDeployTool extends BaseTool {
         case 'promote':
           result = await this.handlePromote(scriptId, params, accessToken);
           break;
-        case 'rollback':
-          result = await this.handleRollback(scriptId, params, accessToken);
-          break;
         case 'status':
           result = await this.handleStatus(scriptId, params, accessToken);
           break;
@@ -174,11 +195,11 @@ export class LibraryDeployTool extends BaseTool {
           result = await this.handleSetup(scriptId, params, accessToken);
           break;
         default:
-          throw new ValidationError('operation', operation, 'one of: promote, rollback, status, setup');
+          throw new ValidationError('operation', operation, 'one of: promote, status, setup');
       }
 
       const hints = generateLibraryDeployHints(
-        operation as 'promote' | 'rollback' | 'status' | 'setup',
+        operation as 'promote' | 'status' | 'setup',
         params.to,
         result
       );
@@ -223,257 +244,208 @@ export class LibraryDeployTool extends BaseTool {
 
   private async promoteToStaging(scriptId: string, params: any, accessToken?: string): Promise<any> {
     const dryRun = !!params.dryRun;
+    const envConfig = await this.getEnvironmentConfig(scriptId, accessToken);
 
-    // Look up staging consumer
-    const envConfig = await this.getEnvironmentConfig(scriptId);
-    let stagingScriptId = envConfig?.staging?.consumerScriptId;
+    let stagingSourceScriptId = envConfig?.staging?.sourceScriptId;
+    let stagingConsumerScriptId = envConfig?.staging?.consumerScriptId;
+    let stagingSpreadsheetId = envConfig?.staging?.spreadsheetId;
 
-    // Auto-create consumer if missing
-    if (!stagingScriptId) {
+    // Auto-create environment if missing
+    if (!stagingSourceScriptId || !stagingConsumerScriptId) {
       if (dryRun) {
         return {
           operation: 'promote',
           environment: 'staging',
           dryRun: true,
-          wouldCreate: 'staging consumer project (not yet configured)',
-          note: 'Cannot fully preview — staging consumer does not exist yet. Run without dryRun to auto-create.',
+          wouldCreate: 'staging -source library + consumer (not yet configured)',
+          note: 'Cannot fully preview — staging environment does not exist yet. Run without dryRun to auto-create.',
         };
       }
-      console.error('🔧 Creating staging consumer project...');
+      console.error('🔧 Creating staging environment...');
       const consumer = await this.autoCreateConsumer(scriptId, 'staging', envConfig, accessToken);
-      stagingScriptId = consumer.consumerScriptId;
-      console.error(`✅ Created staging consumer: ${stagingScriptId}`);
+      stagingSourceScriptId = consumer.sourceScriptId;
+      stagingConsumerScriptId = consumer.consumerScriptId;
+      stagingSpreadsheetId = consumer.spreadsheetId;
+      console.error(`✅ Created staging: source=${stagingSourceScriptId}, consumer=${stagingConsumerScriptId}`);
     }
 
-    // Determine version
-    let versionNumber: number;
-    let versionDescription: string;
-    if (params.useVersion) {
-      versionNumber = params.useVersion;
-      versionDescription = `[reused] v${versionNumber}`;
-    } else {
-      if (!params.description) {
-        throw new ValidationError('description', undefined, 'non-empty string when promoting to staging');
-      }
-      const description = this.validate.string(params.description, 'description', 'promote');
-      versionDescription = `${ENV_TAGS.staging} ${description}`;
-
-      if (dryRun) {
-        // Preview: determine next version number without creating
-        const versionsResponse = await this.gasClient.listVersions(scriptId, 1, undefined, accessToken);
-        const highestVersion = versionsResponse.versions?.length > 0
-          ? Math.max(...versionsResponse.versions.map((v: any) => v.versionNumber))
-          : 0;
-        versionNumber = highestVersion + 1;
-      } else {
-        const version = await this.gasClient.createVersion(scriptId, versionDescription, accessToken);
-        versionNumber = version.versionNumber;
-        console.error(`✅ Created version ${versionNumber}: ${versionDescription}`);
-      }
-    }
-
-    // Read current pin for preview
-    const currentPin = await this.readConsumerLibraryVersion(stagingScriptId, scriptId, accessToken).catch(() => null);
+    // Read all files from main library
+    const libraryFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
     if (dryRun) {
       return {
         operation: 'promote',
         environment: 'staging',
         dryRun: true,
-        wouldCreateVersion: versionNumber,
-        wouldPin: { consumer: stagingScriptId, from: currentPin, to: versionNumber },
-        description: versionDescription,
+        sourceScriptId: stagingSourceScriptId,
+        wouldPush: `${libraryFiles.length} files from main library → staging-source`,
+        description: params.description || null,
       };
     }
 
-    // Update consumer's library version pin
-    try {
-      const previousVersion = await this.updateConsumerLibraryPin(
-        stagingScriptId,
-        scriptId,
-        versionNumber,
-        params.force,
-        accessToken
+    // Push all files to staging-source (strip mcp_environments — that's dev-only tracking metadata)
+    const filesToPush = this.stripMcpEnvironments(libraryFiles);
+    await this.gasClient.updateProjectContent(stagingSourceScriptId!, filesToPush, accessToken);
+    console.error(`✅ Pushed ${libraryFiles.length} files to staging-source`);
+
+    // Store promote timestamp (non-fatal)
+    const storeResult = await this.storePromoteTimestamp(scriptId, 'staging', accessToken);
+
+    // Validate/repair staging consumer shim (catches config drift between promotes)
+    // libraryFiles is the dev library content — manifest is used for scopes/timezone reference
+    const devManifestForShim = libraryFiles.find((f: GASFile) => f.name === 'appsscript');
+    const devManifestJsonForShim = devManifestForShim?.source ? JSON.parse(devManifestForShim.source) : {};
+    // userSymbol: params takes precedence, then manifest-primary path (template.userSymbol),
+    // then gas-config.json fallback path (top-level userSymbol), then derive from project name
+    const userSymbol = params.userSymbol || envConfig?.template?.userSymbol || envConfig?.userSymbol || await this.deriveUserSymbol(scriptId);
+    if (!params.userSymbol && !envConfig?.template?.userSymbol && !envConfig?.userSymbol) {
+      console.error(`⚠️  [shim validation] userSymbol not found in config — derived "${userSymbol}" from project name. Verify this matches the library's intended namespace.`);
+    }
+    let shimValidation: any;
+    if (stagingConsumerScriptId) {
+      shimValidation = await this.validateAndRepairConsumerShim(
+        stagingConsumerScriptId, stagingSourceScriptId!, userSymbol, devManifestJsonForShim, accessToken
       );
-      await this.verifyConsumerPin(stagingScriptId, scriptId, versionNumber, accessToken);
-      console.error(`✅ Staging pinned to v${versionNumber} (was v${previousVersion || 'none'})`);
-
-      // Store in ConfigManager (non-fatal — deployment already succeeded)
-      const storeResult = await this.storeEnvironmentState(scriptId, 'staging', versionNumber, previousVersion, accessToken);
-
-      return {
-        operation: 'promote',
-        environment: 'staging',
-        version: versionNumber,
-        description: versionDescription,
-        previousVersion: previousVersion || null,
-        consumer: { scriptId: stagingScriptId },
-        ...(storeResult.failures.length > 0 ? {
-          configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}. Rollback may need toVersion parameter.`
-        } : {}),
-      };
-    } catch (pinError: any) {
-      // Version was created but pin failed — provide recovery info
-      if (!params.useVersion) {
-        throw Object.assign(new GASApiError(`Pin update failed after version creation: ${pinError.message}`), {
-          createdVersion: versionNumber,
-          retryWith: `deploy({operation:"promote", to:"staging", scriptId:"${scriptId}", useVersion:${versionNumber}})`,
-        });
-      }
-      throw pinError;
     }
+
+    // Sheet sync: template → staging
+    let sheetSync: any = undefined;
+    if (params.syncSheets !== false) {
+      const sourceSpreadsheetId = envConfig?.templateSpreadsheetId;
+      const targetSpreadsheetId = envConfig?.staging?.spreadsheetId;
+      if (sourceSpreadsheetId && targetSpreadsheetId) {
+        try {
+          sheetSync = await this.syncSheets(sourceSpreadsheetId, targetSpreadsheetId, scriptId, accessToken);
+        } catch (syncError: any) {
+          console.error(`⚠️  Sheet sync failed: ${syncError.message}`);
+          sheetSync = { error: syncError.message };
+        }
+      }
+    }
+
+    const stagingSpreadsheetUrl = stagingSpreadsheetId
+      ? `https://docs.google.com/spreadsheets/d/${stagingSpreadsheetId}`
+      : null;
+
+    return {
+      operation: 'promote',
+      environment: 'staging',
+      sourceScriptId: stagingSourceScriptId,
+      filesPromoted: libraryFiles.length,
+      description: params.description || null,
+      consumer: { scriptId: stagingConsumerScriptId },
+      ...(stagingSpreadsheetUrl ? { spreadsheetUrl: stagingSpreadsheetUrl } : {}),
+      shimValidation: shimValidation ?? { valid: null, updated: false, issue: 'shim validation not performed' },
+      ...(sheetSync ? { sheetSync } : {}),
+      ...(storeResult.failures.length > 0 ? {
+        configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
+      } : {}),
+    };
   }
 
   private async promoteToProd(scriptId: string, params: any, accessToken?: string): Promise<any> {
     const dryRun = !!params.dryRun;
-    const envConfig = await this.getEnvironmentConfig(scriptId);
+    const envConfig = await this.getEnvironmentConfig(scriptId, accessToken);
 
-    // Read staging's current pin (source of truth)
-    const stagingScriptId = envConfig?.staging?.consumerScriptId;
-    if (!stagingScriptId) {
-      throw new ValidationError('staging_consumer', 'not configured', 'existing staging consumer — promote to staging first or run setup');
+    // Need staging source to read from
+    const stagingSourceScriptId = envConfig?.staging?.sourceScriptId;
+    if (!stagingSourceScriptId) {
+      throw new ValidationError('staging_source', 'not configured', 'existing staging-source library — promote to staging first');
     }
 
-    const stagingVersion = await this.readConsumerLibraryVersion(stagingScriptId, scriptId, accessToken);
-    if (!stagingVersion) {
-      throw new ValidationError('staging_version', 'not pinned', 'staging consumer pinned to a version — promote to staging first');
-    }
+    let prodSourceScriptId = envConfig?.prod?.sourceScriptId;
+    let prodConsumerScriptId = envConfig?.prod?.consumerScriptId;
+    let prodSpreadsheetId = envConfig?.prod?.spreadsheetId;
 
-    // Auto-create prod consumer if missing
-    let prodScriptId = envConfig?.prod?.consumerScriptId;
-    if (!prodScriptId) {
+    // Auto-create prod environment if missing
+    if (!prodSourceScriptId || !prodConsumerScriptId) {
       if (dryRun) {
         return {
           operation: 'promote',
           environment: 'prod',
           dryRun: true,
-          wouldCreate: 'prod consumer project (not yet configured)',
-          wouldPin: { from: null, to: stagingVersion },
-          note: 'Cannot fully preview — prod consumer does not exist yet. Run without dryRun to auto-create.',
+          wouldCreate: 'prod -source library + consumer (not yet configured)',
+          note: 'Cannot fully preview — prod environment does not exist yet. Run without dryRun to auto-create.',
         };
       }
-      console.error('🔧 Creating prod consumer project...');
+      console.error('🔧 Creating prod environment...');
       const consumer = await this.autoCreateConsumer(scriptId, 'prod', envConfig, accessToken);
-      prodScriptId = consumer.consumerScriptId;
-      console.error(`✅ Created prod consumer: ${prodScriptId}`);
+      prodSourceScriptId = consumer.sourceScriptId;
+      prodConsumerScriptId = consumer.consumerScriptId;
+      prodSpreadsheetId = consumer.spreadsheetId;
+      console.error(`✅ Created prod: source=${prodSourceScriptId}, consumer=${prodConsumerScriptId}`);
     }
 
-    // Read current prod pin for preview
-    const currentProdPin = await this.readConsumerLibraryVersion(prodScriptId, scriptId, accessToken).catch(() => null);
+    // Read all files from staging-source
+    const stagingFiles = await this.gasClient.getProjectContent(stagingSourceScriptId, accessToken);
 
     if (dryRun) {
       return {
         operation: 'promote',
         environment: 'prod',
         dryRun: true,
-        wouldPin: { consumer: prodScriptId, from: currentProdPin, to: stagingVersion },
-        note: 'Prod would be pinned to staging version',
+        sourceScriptId: prodSourceScriptId,
+        wouldPush: `${stagingFiles.length} files from staging-source → prod-source`,
       };
     }
 
-    // Update prod's library version pin to staging's version
-    const previousVersion = await this.updateConsumerLibraryPin(
-      prodScriptId,
-      scriptId,
-      stagingVersion,
-      params.force,
-      accessToken
-    );
-    await this.verifyConsumerPin(prodScriptId, scriptId, stagingVersion, accessToken);
-    console.error(`✅ Prod pinned to v${stagingVersion} (was v${previousVersion || 'none'})`);
+    // Push all files to prod-source (strip mcp_environments defensively — staging-source should not have it, but guard anyway)
+    const prodFilesToPush = this.stripMcpEnvironments(stagingFiles);
+    await this.gasClient.updateProjectContent(prodSourceScriptId!, prodFilesToPush, accessToken);
+    console.error(`✅ Pushed ${stagingFiles.length} files to prod-source`);
 
-    // Store in ConfigManager (non-fatal — deployment already succeeded)
-    const storeResult = await this.storeEnvironmentState(scriptId, 'prod', stagingVersion, previousVersion, accessToken);
+    // Store promote timestamp (non-fatal)
+    const storeResult = await this.storePromoteTimestamp(scriptId, 'prod', accessToken);
+
+    // Validate/repair prod consumer shim — use staging-source manifest for scopes/timezone reference
+    const stagingSourceManifestForShim = stagingFiles.find((f: GASFile) => f.name === 'appsscript');
+    const stagingSourceManifestJsonForShim = stagingSourceManifestForShim?.source ? JSON.parse(stagingSourceManifestForShim.source) : {};
+    // userSymbol: params takes precedence, then manifest-primary path (template.userSymbol),
+    // then gas-config.json fallback path (top-level userSymbol), then derive from project name
+    const prodUserSymbol = params.userSymbol || envConfig?.template?.userSymbol || envConfig?.userSymbol || await this.deriveUserSymbol(scriptId);
+    if (!params.userSymbol && !envConfig?.template?.userSymbol && !envConfig?.userSymbol) {
+      console.error(`⚠️  [shim validation] userSymbol not found in config — derived "${prodUserSymbol}" from project name. Verify this matches the library's intended namespace.`);
+    }
+    let shimValidation: any;
+    if (prodConsumerScriptId) {
+      shimValidation = await this.validateAndRepairConsumerShim(
+        prodConsumerScriptId, prodSourceScriptId!, prodUserSymbol, stagingSourceManifestJsonForShim, accessToken
+      );
+    }
+
+    // Sheet sync: staging → prod
+    let sheetSync: any = undefined;
+    if (params.syncSheets !== false) {
+      const stagingSpreadsheetId = envConfig?.staging?.spreadsheetId;
+      if (stagingSpreadsheetId && prodSpreadsheetId) {
+        try {
+          sheetSync = await this.syncSheets(stagingSpreadsheetId, prodSpreadsheetId, scriptId, accessToken);
+        } catch (syncError: any) {
+          console.error(`⚠️  Sheet sync failed: ${syncError.message}`);
+          sheetSync = { error: syncError.message };
+        }
+      }
+    }
+
+    const prodSpreadsheetUrl = prodSpreadsheetId
+      ? `https://docs.google.com/spreadsheets/d/${prodSpreadsheetId}`
+      : null;
 
     return {
       operation: 'promote',
       environment: 'prod',
-      version: stagingVersion,
-      previousVersion: previousVersion || null,
-      consumer: { scriptId: prodScriptId },
-      note: 'Prod now serves same library version as staging',
+      sourceScriptId: prodSourceScriptId,
+      filesPromoted: stagingFiles.length,
+      description: params.description || null,
+      consumer: { scriptId: prodConsumerScriptId },
+      ...(prodSpreadsheetUrl ? { spreadsheetUrl: prodSpreadsheetUrl } : {}),
+      note: 'Prod-source now has same code as staging-source',
+      shimValidation: shimValidation ?? { valid: null, updated: false, issue: 'shim validation not performed' },
+      ...(sheetSync ? { sheetSync } : {}),
       ...(storeResult.failures.length > 0 ? {
-        configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}. Rollback may need toVersion parameter.`
+        configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
       } : {}),
     };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Rollback
-  // ---------------------------------------------------------------------------
-
-  private async handleRollback(scriptId: string, params: any, accessToken?: string): Promise<any> {
-    if (!params.to) {
-      throw new ValidationError('to', undefined, '"staging" or "prod" (rollback requires target environment)');
-    }
-    const to = this.validate.enum(params.to, 'to', ['staging', 'prod'], 'rollback') as LibraryEnvironment;
-
-    const lockManager = LockManager.getInstance();
-    await lockManager.acquireLock(scriptId, `deploy-rollback-${to}`);
-
-    try {
-      const envConfig = await this.getEnvironmentConfig(scriptId);
-      const consumerScriptId = envConfig?.[to]?.consumerScriptId;
-
-      if (!consumerScriptId) {
-        throw new ValidationError(`${to}_consumer`, 'not configured', `existing ${to} consumer — run setup or promote first`);
-      }
-
-      // Determine target version
-      let targetVersion: number;
-      if (params.toVersion) {
-        targetVersion = this.validate.number(params.toVersion, 'toVersion', 'rollback', 1);
-      } else {
-        // Read previous version from ConfigManager
-        const previousVersion = await this.getConfigManagerValue(scriptId, CONFIG_KEYS[to].previousVersion, accessToken);
-        if (!previousVersion) {
-          // ConfigManager has no previous version — read current pin to help user specify toVersion
-          const currentPin = await this.readConsumerLibraryVersion(consumerScriptId, scriptId, accessToken).catch(() => null);
-          throw new ValidationError(
-            `${to}_previous_version`,
-            'none stored',
-            `no previous version in ConfigManager. Current ${to} pin is v${currentPin || 'unknown'}. Use toVersion to specify rollback target.`
-          );
-        }
-        targetVersion = parseInt(previousVersion, 10);
-      }
-
-      // Read current version for swap
-      const currentVersion = await this.readConsumerLibraryVersion(consumerScriptId, scriptId, accessToken);
-
-      if (params.dryRun) {
-        return {
-          operation: 'rollback',
-          environment: to,
-          dryRun: true,
-          wouldRollbackTo: targetVersion,
-          currentVersion,
-          consumer: { scriptId: consumerScriptId },
-        };
-      }
-
-      // Update pin
-      await this.updateConsumerLibraryPin(consumerScriptId, scriptId, targetVersion, params.force, accessToken);
-      await this.verifyConsumerPin(consumerScriptId, scriptId, targetVersion, accessToken);
-      console.error(`✅ Rolled back ${to} from v${currentVersion} to v${targetVersion}`);
-
-      // Toggle: current becomes previous, target becomes current (non-fatal)
-      const storeResult = await this.storeEnvironmentState(scriptId, to, targetVersion, currentVersion, accessToken);
-
-      return {
-        operation: 'rollback',
-        environment: to,
-        version: targetVersion,
-        rolledBackFrom: currentVersion,
-        consumer: { scriptId: consumerScriptId },
-        note: 'Rollback is a toggle — a second rollback undoes this one',
-        ...(storeResult.failures.length > 0 ? {
-          configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}. Next rollback may need toVersion parameter.`
-        } : {}),
-      };
-    } finally {
-      await lockManager.releaseLock(scriptId);
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -481,97 +453,67 @@ export class LibraryDeployTool extends BaseTool {
   // ---------------------------------------------------------------------------
 
   private async handleStatus(scriptId: string, params: any, accessToken?: string): Promise<any> {
-    const envConfig = await this.getEnvironmentConfig(scriptId);
+    const envConfig = await this.getEnvironmentConfig(scriptId, accessToken);
 
-    // Read actual version pins from consumer manifests (source of truth)
-    const stagingVersion = envConfig?.staging?.consumerScriptId
-      ? await this.readConsumerLibraryVersion(envConfig.staging.consumerScriptId, scriptId, accessToken).catch(() => null)
-      : null;
-    const prodVersion = envConfig?.prod?.consumerScriptId
-      ? await this.readConsumerLibraryVersion(envConfig.prod.consumerScriptId, scriptId, accessToken).catch(() => null)
-      : null;
+    // Read promote timestamps from ConfigManager
+    const stagingPromotedAt = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.staging.promotedAt, accessToken).catch(() => null);
+    const prodPromotedAt = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.prod.promotedAt, accessToken).catch(() => null);
 
-    // List all library versions
-    const versionsResponse = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
-    const versions = versionsResponse.versions || [];
-
-    // Compute keep set
-    const keepSet = new Set<number>();
-    if (stagingVersion) keepSet.add(stagingVersion);
-    if (prodVersion) keepSet.add(prodVersion);
-
-    // Cross-check with ConfigManager stored values
-    const storedStagingPrev = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.staging.previousVersion, accessToken).catch(() => null);
-    const storedProdPrev = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.prod.previousVersion, accessToken).catch(() => null);
-    if (storedStagingPrev) keepSet.add(parseInt(storedStagingPrev, 10));
-    if (storedProdPrev) keepSet.add(parseInt(storedProdPrev, 10));
-
-    const cleanupCandidates = versions.filter((v: any) => !keepSet.has(v.versionNumber));
-    const warnings = this.generateVersionWarnings(versions.length);
-
+    // Verify consumer manifests reference correct -source libraries
     const discrepancies: string[] = [];
 
-    // Cross-check ConfigManager stored versions vs consumer manifest
-    const storedStagingVersion = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.staging.version, accessToken).catch(() => null);
-    const storedProdVersion = await this.getConfigManagerValue(scriptId, CONFIG_KEYS.prod.version, accessToken).catch(() => null);
-    if (storedStagingVersion && stagingVersion && parseInt(storedStagingVersion, 10) !== stagingVersion) {
-      discrepancies.push(`Staging: ConfigManager says v${storedStagingVersion}, actual consumer pin is v${stagingVersion}`);
-    }
-    if (storedProdVersion && prodVersion && parseInt(storedProdVersion, 10) !== prodVersion) {
-      discrepancies.push(`Prod: ConfigManager says v${storedProdVersion}, actual consumer pin is v${prodVersion}`);
-    }
-
-    // Reconcile if requested and discrepancies found
-    let reconciled: string[] | undefined;
-    if (params.reconcile && discrepancies.length > 0) {
-      reconciled = [];
-
-      // Consumer manifest is source of truth — update ConfigManager and local config to match
-      for (const env of ['staging', 'prod'] as const) {
-        const consumerVersion = env === 'staging' ? stagingVersion : prodVersion;
-        if (!consumerVersion) continue;
-
-        // Fix ConfigManager
-        const storedVersion = env === 'staging' ? storedStagingVersion : storedProdVersion;
-        if (storedVersion && parseInt(storedVersion, 10) !== consumerVersion) {
-          try {
-            await this.setConfigManagerValue(scriptId, CONFIG_KEYS[env].version, String(consumerVersion), accessToken);
-            reconciled.push(`ConfigManager ${CONFIG_KEYS[env].version} → v${consumerVersion}`);
-          } catch (error: any) {
-            console.error(`⚠️  Reconcile failed for ConfigManager ${CONFIG_KEYS[env].version}: ${error.message}`);
+    for (const env of ['staging', 'prod'] as const) {
+      const sourceScriptId = envConfig?.[env]?.sourceScriptId;
+      const consumerScriptId = envConfig?.[env]?.consumerScriptId;
+      if (sourceScriptId && consumerScriptId) {
+        try {
+          const files = await this.gasClient.getProjectContent(consumerScriptId, accessToken);
+          const manifest = files.find((f: GASFile) => f.name === 'appsscript');
+          if (manifest?.source) {
+            const manifestJson = JSON.parse(manifest.source);
+            const lib = manifestJson.dependencies?.libraries?.find(
+              (l: any) => l.libraryId === sourceScriptId
+            );
+            if (!lib) {
+              discrepancies.push(`${env}: consumer does not reference ${env}-source library ${sourceScriptId}`);
+            } else if (!lib.developmentMode) {
+              discrepancies.push(`${env}: consumer library reference missing developmentMode: true`);
+            }
           }
+        } catch (error: any) {
+          console.error(`⚠️  Could not verify ${env} consumer: ${error.message}`);
         }
-
       }
     }
 
     return {
       operation: 'status',
-      dev: { version: 'HEAD', description: 'Always at latest code' },
-      staging: envConfig?.staging?.consumerScriptId
+      dev: { scriptId, description: 'Main library — all source code lives here' },
+      staging: envConfig?.staging?.sourceScriptId
         ? {
-            version: stagingVersion,
+            sourceScriptId: envConfig.staging.sourceScriptId,
             consumerScriptId: envConfig.staging.consumerScriptId,
             spreadsheetId: envConfig.staging.spreadsheetId,
+            spreadsheetUrl: envConfig.staging.spreadsheetId
+              ? `https://docs.google.com/spreadsheets/d/${envConfig.staging.spreadsheetId}`
+              : null,
+            lastPromotedAt: stagingPromotedAt || null,
           }
         : { configured: false },
-      prod: envConfig?.prod?.consumerScriptId
+      prod: envConfig?.prod?.sourceScriptId
         ? {
-            version: prodVersion,
+            sourceScriptId: envConfig.prod.sourceScriptId,
             consumerScriptId: envConfig.prod.consumerScriptId,
             spreadsheetId: envConfig.prod.spreadsheetId,
+            spreadsheetUrl: envConfig.prod.spreadsheetId
+              ? `https://docs.google.com/spreadsheets/d/${envConfig.prod.spreadsheetId}`
+              : null,
+            lastPromotedAt: prodPromotedAt || null,
           }
         : { configured: false },
-      versionGap: stagingVersion && prodVersion ? stagingVersion - prodVersion : null,
-      versions: {
-        total: versions.length,
-        keepSet: Array.from(keepSet),
-        cleanupCandidates: cleanupCandidates.length,
-        warnings,
-      },
       ...(discrepancies.length > 0 ? { discrepancies } : {}),
-      ...(reconciled && reconciled.length > 0 ? { reconciled } : {}),
-      userSymbol: envConfig?.userSymbol || null,
+      // manifest-primary path stores userSymbol at template.userSymbol; gas-config.json path at top-level
+      userSymbol: envConfig?.template?.userSymbol || envConfig?.userSymbol || null,
     };
   }
 
@@ -585,6 +527,10 @@ export class LibraryDeployTool extends BaseTool {
 
     if (!templateScriptId) {
       throw new ValidationError('templateScriptId', undefined, 'container-bound script ID of the dev/template spreadsheet');
+    }
+
+    if (templateScriptId === scriptId) {
+      throw new ValidationError('templateScriptId', templateScriptId, 'a different project than the library scriptId — a project cannot be its own library dependency');
     }
 
     const lockManager = LockManager.getInstance();
@@ -624,29 +570,18 @@ export class LibraryDeployTool extends BaseTool {
       });
     }
 
-    // Write updated manifest
-    await this.gasClient.updateProjectContent(
-      templateScriptId,
-      templateFiles.map((f: GASFile) =>
+    // Build updated file list — apply manifest update and add Code.gs shim if absent
+    const hasCodeGs = templateFiles.some((f: GASFile) => f.name === 'Code');
+    const updatedFiles: GASFile[] = [
+      ...templateFiles.map((f: GASFile) =>
         f.name === 'appsscript' ? { ...f, source: JSON.stringify(manifestJson, null, 2) } : f
       ),
-      accessToken
-    );
-    console.error(`✅ Template manifest updated — library @ HEAD with userSymbol "${userSymbol}"`);
+      ...(hasCodeGs ? [] : [{ name: 'Code', type: 'SERVER_JS' as const, source: this.generateThinShim(userSymbol) }]),
+    ];
 
-    // Write thin shim Code.gs if not already present
-    const hasCodeGs = templateFiles.some((f: GASFile) => f.name === 'Code');
-    if (!hasCodeGs) {
-      const shimSource = this.generateThinShim(userSymbol);
-      const updatedFiles = [
-        ...templateFiles.map((f: GASFile) =>
-          f.name === 'appsscript' ? { ...f, source: JSON.stringify(manifestJson, null, 2) } : f
-        ),
-        { name: 'Code', type: 'SERVER_JS' as const, source: shimSource },
-      ];
-      await this.gasClient.updateProjectContent(templateScriptId, updatedFiles, accessToken);
-      console.error('✅ Thin shim Code.gs written to template');
-    }
+    // Single write: manifest + optional shim together
+    await this.gasClient.updateProjectContent(templateScriptId, updatedFiles, accessToken);
+    console.error(`✅ Template updated — library @ HEAD with userSymbol "${userSymbol}"${hasCodeGs ? '' : ' + thin shim Code.gs added'}`);
 
     // Save config
     const config = await McpGasConfigManager.getConfig();
@@ -657,8 +592,30 @@ export class LibraryDeployTool extends BaseTool {
       }
       projectEntry.environments.templateScriptId = templateScriptId;
       projectEntry.environments.userSymbol = userSymbol;
-      await McpGasConfigManager.saveConfig(config);
-      console.error('✅ Saved template config to gas-config.json');
+      try {
+        await McpGasConfigManager.saveConfig(config);
+        console.error('✅ Saved template config to gas-config.json');
+      } catch (saveError: any) {
+        console.error(`⚠️  [handleSetup] Failed to save to gas-config.json: ${saveError.message} — continuing (mcp_environments manifest write is authoritative)`);
+      }
+    }
+
+    // Persist template info to dev project's appsscript.json under mcp_environments.template
+    try {
+      const devFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      const devManifest = devFiles.find((f: GASFile) => f.name === 'appsscript');
+      if (devManifest?.source) {
+        const devJson = JSON.parse(devManifest.source);
+        if (!devJson.mcp_environments) devJson.mcp_environments = {};
+        devJson.mcp_environments.template = { scriptId: templateScriptId, userSymbol };
+        const updatedDevFiles = devFiles.map((f: GASFile) =>
+          f.name === 'appsscript' ? { ...f, source: JSON.stringify(devJson, null, 2) } : f
+        );
+        await this.gasClient.updateProjectContent(scriptId, updatedDevFiles, accessToken);
+        console.error(`✅ Written mcp_environments.template to dev project manifest`);
+      }
+    } catch (e: any) {
+      console.error(`⚠️  Failed to write mcp_environments.template to dev manifest: ${e.message}`);
     }
 
     // Store in ConfigManager (non-fatal — setup succeeded even if this fails)
@@ -682,7 +639,7 @@ export class LibraryDeployTool extends BaseTool {
       userSymbol,
       libraryScriptId: scriptId,
       libraryReference: { version: '0', developmentMode: true },
-      message: `Template wired to library @ HEAD. Next: deploy({operation:"promote", to:"staging", scriptId:"${scriptId}", description:"v1.0"})`,
+      message: `Template wired to library @ HEAD. Next: deploy({to:"staging", scriptId:"${scriptId}"})`,
       ...(configFailures.length > 0 ? {
         configWarning: `ConfigManager failed for: ${configFailures.join(', ')}. Setup succeeded but remote config may be incomplete.`
       } : {}),
@@ -694,109 +651,7 @@ export class LibraryDeployTool extends BaseTool {
   }
 
   // ---------------------------------------------------------------------------
-  // Consumer manifest operations
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Read the library version pin from a consumer's appsscript.json
-   */
-  private async readConsumerLibraryVersion(
-    consumerScriptId: string,
-    libraryScriptId: string,
-    accessToken?: string
-  ): Promise<number | null> {
-    const files = await this.gasClient.getProjectContent(consumerScriptId, accessToken);
-    const manifest = files.find((f: GASFile) => f.name === 'appsscript');
-    if (!manifest?.source) return null;
-
-    const manifestJson = JSON.parse(manifest.source);
-    const lib = manifestJson.dependencies?.libraries?.find(
-      (l: any) => l.libraryId === libraryScriptId
-    );
-    if (!lib?.version) return null;
-
-    const version = parseInt(lib.version, 10);
-    return isNaN(version) || version === 0 ? null : version;
-  }
-
-  /**
-   * Update a consumer's library version pin in appsscript.json
-   * Returns the previous version number (or null if none)
-   */
-  private async updateConsumerLibraryPin(
-    consumerScriptId: string,
-    libraryScriptId: string,
-    newVersion: number,
-    force?: boolean,
-    accessToken?: string
-  ): Promise<number | null> {
-    const files = await this.gasClient.getProjectContent(consumerScriptId, accessToken);
-    const manifest = files.find((f: GASFile) => f.name === 'appsscript');
-    if (!manifest?.source) {
-      throw new GASApiError(`Consumer ${consumerScriptId} has no appsscript.json`);
-    }
-
-    const manifestJson = JSON.parse(manifest.source);
-    const libraries = manifestJson.dependencies?.libraries || [];
-    const lib = libraries.find((l: any) => l.libraryId === libraryScriptId);
-
-    if (!lib && !force) {
-      throw new ValidationError(
-        'library_reference',
-        `not found in consumer ${consumerScriptId}`,
-        `consumer manifest to reference library ${libraryScriptId} — run setup or use force:true`
-      );
-    }
-
-    const previousVersion = lib ? parseInt(lib.version, 10) || null : null;
-
-    if (lib) {
-      lib.version = String(newVersion);
-      // Ensure developmentMode is off for pinned versions
-      delete lib.developmentMode;
-    } else {
-      // force mode: add the library reference with derived userSymbol
-      const symbol = await this.deriveUserSymbol(libraryScriptId);
-      if (!manifestJson.dependencies) manifestJson.dependencies = {};
-      if (!manifestJson.dependencies.libraries) manifestJson.dependencies.libraries = [];
-      manifestJson.dependencies.libraries.push({
-        userSymbol: symbol,
-        libraryId: libraryScriptId,
-        version: String(newVersion),
-      });
-    }
-
-    // Write ONLY the manifest back (surgical update)
-    const updatedFiles = files.map((f: GASFile) =>
-      f.name === 'appsscript' ? { ...f, source: JSON.stringify(manifestJson, null, 2) } : f
-    );
-    await this.gasClient.updateProjectContent(consumerScriptId, updatedFiles, accessToken);
-
-    return previousVersion;
-  }
-
-  /**
-   * Verify that a consumer pin update actually persisted by reading it back.
-   * Catches silent write failures before we record the version in ConfigManager.
-   */
-  private async verifyConsumerPin(
-    consumerScriptId: string,
-    libraryScriptId: string,
-    expectedVersion: number,
-    accessToken?: string
-  ): Promise<void> {
-    const actualVersion = await this.readConsumerLibraryVersion(consumerScriptId, libraryScriptId, accessToken);
-    if (actualVersion !== expectedVersion) {
-      throw new GASApiError(
-        `Pin verification failed: expected consumer ${consumerScriptId} at v${expectedVersion}, ` +
-        `but read back v${actualVersion || 'none'}. The manifest write may not have persisted.`
-      );
-    }
-    console.error(`✅ Verified consumer pin at v${expectedVersion}`);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Auto-create consumer projects
+  // Auto-create environment (-source library + consumer)
   // ---------------------------------------------------------------------------
 
   private async autoCreateConsumer(
@@ -804,32 +659,53 @@ export class LibraryDeployTool extends BaseTool {
     environment: LibraryEnvironment,
     envConfig: any,
     accessToken?: string
-  ): Promise<{ consumerScriptId: string; spreadsheetId: string }> {
-    const userSymbol = envConfig?.userSymbol || await this.deriveUserSymbol(libraryScriptId);
+  ): Promise<{ consumerScriptId: string; spreadsheetId: string; sourceScriptId: string }> {
+    // Re-check manifest in case IDs were written between config read and this call
+    const latestConfig = await this.getEnvironmentConfig(libraryScriptId, accessToken);
+    const existing = latestConfig?.[environment];
+    if (existing?.sourceScriptId && existing?.consumerScriptId && existing?.spreadsheetId) {
+      console.error(`✅ ${environment} environment already exists in manifest — skipping creation`);
+      return {
+        sourceScriptId: existing.sourceScriptId,
+        consumerScriptId: existing.consumerScriptId,
+        spreadsheetId: existing.spreadsheetId,
+      };
+    }
+
+    // manifest-primary path stores userSymbol at template.userSymbol; gas-config.json path at top-level
+    const userSymbol = envConfig?.template?.userSymbol || envConfig?.userSymbol
+      || latestConfig?.template?.userSymbol || latestConfig?.userSymbol
+      || await this.deriveUserSymbol(libraryScriptId);
     const tag = environment === 'staging' ? 'STAGING' : 'PROD';
     const projectName = await this.getProjectName(libraryScriptId);
+
+    // 1. Read main library manifest once (used for consumer scopes/timezone)
+    //    Do NOT push files here — the caller's promote flow handles the file push.
+    const libraryFiles = await this.gasClient.getProjectContent(libraryScriptId, accessToken);
+    const libraryManifest = libraryFiles.find((f: GASFile) => f.name === 'appsscript');
+    const libraryManifestJson = libraryManifest?.source ? JSON.parse(libraryManifest.source) : {};
+
+    // 2. Create standalone -source library (empty — caller will push files)
+    const sourceTitle = `${projectName} [${tag}-SOURCE]`;
+    const sourceScriptId = await this.createStandaloneProject(sourceTitle, accessToken);
+    console.error(`✅ Created ${tag}-source library: ${sourceScriptId}`);
+
+    // 3. Create blank spreadsheet for consumer
     const sheetTitle = `${projectName} [${tag}]`;
+    const spreadsheetId = await this.createBlankSpreadsheet(sheetTitle, accessToken);
 
-    let spreadsheetId: string;
-    let consumerScriptId: string;
+    // 4. Create container-bound script in spreadsheet
+    const consumerScriptId = await this.createContainerBoundScript(spreadsheetId, sheetTitle, accessToken);
 
-    const templateSpreadsheetId = envConfig?.templateSpreadsheetId;
-
-    // TODO: Path A (copy from template) requires DriveApp.getFileById(id).makeCopy(title)
-    // via exec_api — implement when template copy is needed. For now, always create blank.
-    if (templateSpreadsheetId) {
-      console.error(`⚠️  Template copy not yet implemented — creating blank spreadsheet for ${environment}`);
-    } else {
-      console.error(`📄 Creating blank spreadsheet for ${environment}...`);
-    }
-    spreadsheetId = await this.createBlankSpreadsheet(sheetTitle, accessToken);
-    consumerScriptId = await this.createContainerBoundScript(spreadsheetId, sheetTitle, accessToken);
-
-    // Write thin shim + manifest to consumer
-    await this.writeConsumerShim(consumerScriptId, libraryScriptId, userSymbol, null, accessToken);
+    // 5. Write thin shim to consumer referencing -source library (no CommonJS — consumers are thin shims)
+    //    Use main library manifest for scopes/timezone since -source is empty at this point.
+    await this.writeConsumerShim(consumerScriptId, sourceScriptId, userSymbol, libraryManifestJson, accessToken);
     console.error(`✅ Consumer shim written for ${environment}`);
 
-    // Save to local config
+    // 6. Save to local config (migration bridge + no-token fallback)
+    //    The authoritative store is the dev project's appsscript.json (step 8 below).
+    //    This write keeps gas-config.json usable as a local cache for the legacy fallback
+    //    path in getEnvironmentConfig() when no accessToken is available.
     const config = await McpGasConfigManager.getConfig();
     const projectEntry = this.findProjectByScriptId(config, libraryScriptId);
     if (projectEntry) {
@@ -837,23 +713,65 @@ export class LibraryDeployTool extends BaseTool {
       projectEntry.environments[environment] = {
         consumerScriptId,
         spreadsheetId,
+        sourceScriptId,
       };
-      await McpGasConfigManager.saveConfig(config);
+      try {
+        await McpGasConfigManager.saveConfig(config);
+      } catch (saveError: any) {
+        // Non-fatal: manifest is the authoritative store (step 8); gas-config.json is a local cache
+        console.error(`⚠️  [autoCreateConsumer] Failed to save environment to gas-config.json: ${saveError.message} — continuing (manifest write at step 8 is authoritative)`);
+      }
     }
 
-    // Store in ConfigManager (non-fatal — consumer already created)
+    // 7. Store in ConfigManager (non-fatal — environment already created)
+    const configKeys: Array<[string, string]> = [
+      [CONFIG_KEYS[environment].scriptId, consumerScriptId],
+      [CONFIG_KEYS[environment].sourceScriptId, sourceScriptId],
+      [CONFIG_KEYS[environment].spreadsheetUrl, spreadsheetId],
+    ];
+    for (const [key, value] of configKeys) {
+      try {
+        await this.setConfigManagerValue(libraryScriptId, key, value, accessToken);
+      } catch (error: any) {
+        console.error(`⚠️  Failed to store ${key} in ConfigManager: ${error.message}`);
+      }
+    }
+
+    // 8. Persist IDs to dev project's appsscript.json (sole source of truth for environment IDs)
     try {
-      await this.setConfigManagerValue(
-        libraryScriptId,
-        CONFIG_KEYS[environment].scriptId,
-        consumerScriptId,
-        accessToken
+      await this.updateDevManifestWithEnvironmentIds(
+        libraryScriptId, environment, { sourceScriptId, consumerScriptId, spreadsheetId }, accessToken
       );
-    } catch (error: any) {
-      console.error(`⚠️  Failed to store ${CONFIG_KEYS[environment].scriptId} in ConfigManager: ${error.message}`);
+      console.error(`✅ Written mcp_environments.${environment} to dev project manifest`);
+    } catch (e: any) {
+      console.error(`⚠️  Failed to write mcp_environments to dev manifest: ${e.message}`);
     }
 
-    return { consumerScriptId, spreadsheetId };
+    return { consumerScriptId, spreadsheetId, sourceScriptId };
+  }
+
+  private async createStandaloneProject(
+    title: string,
+    accessToken?: string
+  ): Promise<string> {
+    const token = accessToken || await this.getAuthTokenFallback();
+    const createResponse = await fetch('https://script.googleapis.com/v1/projects', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title }),
+    });
+
+    if (!createResponse.ok) {
+      const errorText = await createResponse.text();
+      throw new GASApiError(`Failed to create standalone project: ${createResponse.status} ${errorText}`);
+    }
+
+    const project = await createResponse.json();
+    console.error(`✅ Created standalone project: ${project.scriptId} (${title})`);
+    return project.scriptId;
   }
 
   private async createBlankSpreadsheet(
@@ -911,46 +829,45 @@ export class LibraryDeployTool extends BaseTool {
   }
 
   /**
-   * Write thin shim and manifest to a consumer project
+   * Write thin shim and manifest to a consumer project.
+   * Always uses developmentMode: true — consumer resolves to -source library at HEAD.
+   *
+   * @param sourceManifestJson - Pre-fetched manifest from the source library (for scopes/timezone).
+   *   Pass the main library manifest when creating a new environment (avoids re-reading empty -source).
    */
   private async writeConsumerShim(
     consumerScriptId: string,
-    libraryScriptId: string,
+    sourceScriptId: string,
     userSymbol: string,
-    version: number | null,
+    sourceManifestJson: Record<string, any>,
     accessToken?: string
   ): Promise<void> {
     this.validateUserSymbol(userSymbol);
 
-    // Read existing files to get manifest scopes
-    const libraryFiles = await this.gasClient.getProjectContent(libraryScriptId, accessToken);
-    const libraryManifest = libraryFiles.find((f: GASFile) => f.name === 'appsscript');
-    const libraryManifestJson = libraryManifest?.source ? JSON.parse(libraryManifest.source) : {};
-
-    // Build consumer manifest
+    // Build consumer manifest — always developmentMode: true
     const consumerManifest = {
-      timeZone: libraryManifestJson.timeZone || 'America/New_York',
+      timeZone: sourceManifestJson.timeZone || 'America/New_York',
       dependencies: {
         libraries: [
           {
             userSymbol,
-            libraryId: libraryScriptId,
-            version: version !== null ? String(version) : '0',
-            ...(version === null ? { developmentMode: true } : {}),
+            libraryId: sourceScriptId,
+            version: '0',
+            developmentMode: true,
           },
         ],
       },
       exceptionLogging: 'STACKDRIVER',
       runtimeVersion: 'V8',
-      // Copy OAuth scopes from library
-      ...(libraryManifestJson.oauthScopes ? { oauthScopes: libraryManifestJson.oauthScopes } : {}),
+      // Copy OAuth scopes from source library
+      ...(sourceManifestJson.oauthScopes ? { oauthScopes: sourceManifestJson.oauthScopes } : {}),
     };
 
     const shimSource = this.generateThinShim(userSymbol);
 
     const files: GASFile[] = [
-      { name: 'appsscript', type: 'JSON' as any, source: JSON.stringify(consumerManifest, null, 2) },
-      { name: 'Code', type: 'SERVER_JS' as any, source: shimSource },
+      { name: 'appsscript', type: 'JSON' as const, source: JSON.stringify(consumerManifest, null, 2) },
+      { name: 'Code', type: 'SERVER_JS' as const, source: shimSource },
     ];
 
     await this.gasClient.updateProjectContent(consumerScriptId, files, accessToken);
@@ -1002,6 +919,95 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   }
 
   // ---------------------------------------------------------------------------
+  // Sheet Sync
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Sync spreadsheet sheets from source to target.
+   *
+   * Strategy (match by sheet name):
+   *   1. Source sheet matches target → replace (copy fresh, delete old, rename)
+   *   2. Source sheet no match → copy to target
+   *   3. Target sheet no match → leave untouched
+   *
+   * Uses sheet.copyTo(target) to preserve formulas, formatting, data validation,
+   * and conditional formatting.
+   */
+  private async syncSheets(
+    sourceSpreadsheetId: string,
+    targetSpreadsheetId: string,
+    scriptId: string,
+    accessToken?: string
+  ): Promise<any> {
+    // Validate IDs before embedding in GAS script string to prevent injection
+    const SPREADSHEET_ID_RE = /^[A-Za-z0-9_-]{25,60}$/;
+    if (!SPREADSHEET_ID_RE.test(sourceSpreadsheetId) || !SPREADSHEET_ID_RE.test(targetSpreadsheetId)) {
+      throw new ValidationError('spreadsheetId', `${sourceSpreadsheetId}|${targetSpreadsheetId}`, 'valid Sheets ID (alphanumeric, hyphens, underscores, 25-60 chars)');
+    }
+
+    console.error(`🔄 Syncing sheets: ${sourceSpreadsheetId} → ${targetSpreadsheetId}`);
+
+    // Execute via GAS — copyTo preserves formulas, formatting, data validation
+    const js_statement = `
+      var source = SpreadsheetApp.openById('${sourceSpreadsheetId}');
+      var target = SpreadsheetApp.openById('${targetSpreadsheetId}');
+      var sourceSheets = source.getSheets();
+      var targetSheets = target.getSheets();
+      var targetNames = targetSheets.map(function(s) { return s.getName(); });
+      var synced = [], added = [], skipped = [];
+
+      for (var i = 0; i < sourceSheets.length; i++) {
+        var srcSheet = sourceSheets[i];
+        var name = srcSheet.getName();
+        var copied = srcSheet.copyTo(target);
+
+        var targetIdx = targetNames.indexOf(name);
+        if (targetIdx !== -1) {
+          // Replace: delete old, rename copy
+          target.deleteSheet(targetSheets[targetIdx]);
+          copied.setName(name);
+          synced.push(name);
+        } else {
+          // New sheet
+          copied.setName(name);
+          added.push(name);
+        }
+      }
+
+      // Collect names of target sheets not in source (left untouched)
+      var sourceNames = sourceSheets.map(function(s) { return s.getName(); });
+      for (var j = 0; j < targetNames.length; j++) {
+        if (sourceNames.indexOf(targetNames[j]) === -1) {
+          skipped.push(targetNames[j]);
+        }
+      }
+
+      Logger.log(JSON.stringify({ synced: synced, added: added, skipped: skipped }));
+    `;
+
+    const result = await this.execTool.execute({
+      scriptId,
+      js_statement,
+      autoRedeploy: false,
+      accessToken,
+    });
+
+    // Parse the sync result from Logger output
+    let syncResult: any = { source: sourceSpreadsheetId, target: targetSpreadsheetId };
+    try {
+      if (result?.logger_output) {
+        const parsed = JSON.parse(result.logger_output);
+        syncResult = { ...syncResult, ...parsed };
+      }
+    } catch {
+      // Best-effort parsing
+    }
+
+    console.error(`✅ Sheet sync complete: ${syncResult.synced?.length || 0} synced, ${syncResult.added?.length || 0} added, ${syncResult.skipped?.length || 0} skipped`);
+    return syncResult;
+  }
+
+  // ---------------------------------------------------------------------------
   // ConfigManager operations (via GAS exec)
   // ---------------------------------------------------------------------------
 
@@ -1042,31 +1048,13 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     }
   }
 
-  private async storeEnvironmentState(
+  private async storePromoteTimestamp(
     scriptId: string,
     environment: LibraryEnvironment,
-    version: number,
-    previousVersion: number | null,
     accessToken?: string
   ): Promise<{ failures: string[] }> {
     const keys = CONFIG_KEYS[environment];
     const failures: string[] = [];
-
-    try {
-      await this.setConfigManagerValue(scriptId, keys.version, String(version), accessToken);
-    } catch (error: any) {
-      console.error(`⚠️  Failed to store ${keys.version}: ${error.message}`);
-      failures.push(keys.version);
-    }
-
-    if (previousVersion !== null) {
-      try {
-        await this.setConfigManagerValue(scriptId, keys.previousVersion, String(previousVersion), accessToken);
-      } catch (error: any) {
-        console.error(`⚠️  Failed to store ${keys.previousVersion}: ${error.message}`);
-        failures.push(keys.previousVersion);
-      }
-    }
 
     try {
       await this.setConfigManagerValue(scriptId, keys.promotedAt, new Date().toISOString(), accessToken);
@@ -1075,93 +1063,129 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       failures.push(keys.promotedAt);
     }
 
-    // Append to audit trail (non-fatal)
-    try {
-      await this.appendDeployLog(scriptId, environment, version, previousVersion, accessToken);
-    } catch (error: any) {
-      console.error(`⚠️  Failed to append deploy log: ${error.message}`);
-    }
-
     return { failures };
-  }
-
-  /**
-   * Append an entry to the deployment audit log stored in ConfigManager.
-   * Keeps last 20 entries per environment (well under PropertiesService 9KB limit).
-   */
-  private async appendDeployLog(
-    scriptId: string,
-    environment: LibraryEnvironment,
-    version: number,
-    previousVersion: number | null,
-    accessToken?: string
-  ): Promise<void> {
-    const logKey = `${environment.toUpperCase()}_DEPLOY_LOG`;
-    const existing = await this.getConfigManagerValue(scriptId, logKey, accessToken);
-    const log: any[] = existing ? JSON.parse(existing) : [];
-
-    log.unshift({
-      v: version,
-      prev: previousVersion,
-      ts: new Date().toISOString(),
-    });
-
-    // Keep only last 20 entries
-    await this.setConfigManagerValue(scriptId, logKey, JSON.stringify(log.slice(0, 20)), accessToken);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Version cleanup (advisory only — GAS API cannot delete versions)
-  // ---------------------------------------------------------------------------
-
-  private async checkVersionCleanup(scriptId: string, accessToken?: string): Promise<any> {
-    try {
-      const response = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
-      const versions = response.versions || [];
-      const total = versions.length;
-
-      // Build keep set from ConfigManager
-      const keepSet = new Set<number>();
-      for (const env of ['staging', 'prod'] as const) {
-        const current = await this.getConfigManagerValue(scriptId, CONFIG_KEYS[env].version, accessToken);
-        const prev = await this.getConfigManagerValue(scriptId, CONFIG_KEYS[env].previousVersion, accessToken);
-        if (current) keepSet.add(parseInt(current, 10));
-        if (prev) keepSet.add(parseInt(prev, 10));
-      }
-
-      const candidates = versions.filter((v: any) => !keepSet.has(v.versionNumber)).length;
-      const warnings = this.generateVersionWarnings(total);
-
-      return { total, candidates, keepSet: Array.from(keepSet), warnings };
-    } catch {
-      return { total: 0, candidates: 0, keepSet: [], warnings: [] };
-    }
-  }
-
-  private generateVersionWarnings(versionCount: number): any[] {
-    const warnings: any[] = [];
-    if (versionCount >= 150) {
-      warnings.push({
-        level: versionCount >= 190 ? 'CRITICAL' : versionCount >= 180 ? 'HIGH' : 'WARNING',
-        message: `${versionCount}/200 versions used${versionCount >= 190 ? ' — LIMIT APPROACHING!' : ''}`,
-        action: 'Delete old versions manually via Apps Script UI > Project History',
-      });
-    }
-    return warnings;
   }
 
   // ---------------------------------------------------------------------------
   // Config helpers
   // ---------------------------------------------------------------------------
 
-  private async getEnvironmentConfig(scriptId: string): Promise<any> {
+  /**
+   * Write environment IDs into the dev project's appsscript.json under mcp_environments.
+   * This is the sole source of truth for environment IDs — portable across machines/git clones.
+   */
+  private async updateDevManifestWithEnvironmentIds(
+    devScriptId: string,
+    environment: LibraryEnvironment,
+    ids: { sourceScriptId: string; consumerScriptId: string; spreadsheetId: string },
+    accessToken?: string
+  ): Promise<void> {
+    const files = await this.gasClient.getProjectContent(devScriptId, accessToken);
+    const manifest = files.find((f: GASFile) => f.name === 'appsscript');
+    if (!manifest?.source) {
+      throw new Error('dev project appsscript.json not found — cannot persist environment IDs');
+    }
+
+    const json = JSON.parse(manifest.source);
+    if (!json.mcp_environments) json.mcp_environments = {};
+    json.mcp_environments[environment] = ids;
+
+    const updated = files.map((f: GASFile) =>
+      f.name === 'appsscript' ? { ...f, source: JSON.stringify(json, null, 2) } : f
+    );
+    await this.gasClient.updateProjectContent(devScriptId, updated, accessToken);
+  }
+
+  /**
+   * Strip mcp_environments from appsscript.json before pushing to -source libraries.
+   * All other manifest properties (oauthScopes, timeZone, runtimeVersion, etc.) are preserved.
+   */
+  private stripMcpEnvironments(files: GASFile[]): GASFile[] {
+    return files.map((f: GASFile) => {
+      if (f.name !== 'appsscript' || !f.source) return f;
+      try {
+        const json = JSON.parse(f.source);
+        if (!json.mcp_environments) return f;
+        const { mcp_environments: _mcp_environments, ...rest } = json;
+        return { ...f, source: JSON.stringify(rest, null, 2) };
+      } catch { return f; }
+    });
+  }
+
+  /**
+   * Validate a consumer shim and re-write it if stale.
+   * Called on every promote to catch config drift between promotes.
+   */
+  private async validateAndRepairConsumerShim(
+    consumerScriptId: string,
+    sourceScriptId: string,
+    userSymbol: string,
+    sourceManifestJson: Record<string, any>,
+    accessToken?: string
+  ): Promise<{ valid: boolean; updated: boolean; issue?: string }> {
+    try {
+      const files = await this.gasClient.getProjectContent(consumerScriptId, accessToken);
+      const manifest = files.find((f: GASFile) => f.name === 'appsscript');
+      if (!manifest?.source) {
+        await this.writeConsumerShim(consumerScriptId, sourceScriptId, userSymbol, sourceManifestJson, accessToken);
+        return { valid: false, updated: true, issue: 'missing manifest — re-wrote shim' };
+      }
+
+      const json = JSON.parse(manifest.source);
+      const lib = json.dependencies?.libraries?.find((l: any) => l.libraryId === sourceScriptId);
+      if (lib && lib.developmentMode === true) {
+        return { valid: true, updated: false };
+      }
+
+      // Stale — re-write shim
+      await this.writeConsumerShim(consumerScriptId, sourceScriptId, userSymbol, sourceManifestJson, accessToken);
+      const issue = !lib
+        ? `library reference missing (expected ${sourceScriptId})`
+        : 'developmentMode was not true';
+      return { valid: false, updated: true, issue };
+    } catch (e: any) {
+      // Distinguish 404 (consumer deleted) from transient errors — both are non-fatal but
+      // a deleted consumer means files are being pushed to a -source with no active consumer
+      const is404 = e.message?.includes('404') || e.status === 404 || e.code === 404;
+      const issue = is404
+        ? `consumer project not found (404) — run deploy setup to recreate it`
+        : `validation error: ${e.message}`;
+      return { valid: false, updated: false, issue };
+    }
+  }
+
+  private async getEnvironmentConfig(scriptId: string, accessToken?: string): Promise<any> {
+    // Primary: read mcp_environments from dev project's appsscript.json
+    if (!accessToken) {
+      console.error('⚠️  [getEnvironmentConfig] No accessToken provided — skipping manifest read, using gas-config.json fallback');
+    }
+    if (accessToken) {
+      try {
+        const files = await this.gasClient.getProjectContent(scriptId, accessToken);
+        const manifest = files.find((f: GASFile) => f.name === 'appsscript');
+        if (manifest?.source) {
+          const json = JSON.parse(manifest.source);
+          if (json.mcp_environments) {
+            return json.mcp_environments;
+          }
+        }
+      } catch (e: any) {
+        console.error(`⚠️  [getEnvironmentConfig] Could not read mcp_environments from dev manifest: ${e.message} — falling back to gas-config.json`);
+      }
+    }
+
+    // Legacy fallback: gas-config.json (for projects not yet migrated to manifest-based tracking,
+    // or when accessToken is unavailable)
     try {
       const config = await McpGasConfigManager.getConfig();
       const project = this.findProjectByScriptId(config, scriptId);
-      return project?.environments || null;
-    } catch {
-      return null;
-    }
+      if (project?.environments?.staging?.sourceScriptId) {
+        console.error(`ℹ️  [getEnvironmentConfig] Using gas-config.json fallback for environment config (mcp_environments not found in dev manifest)`);
+        return project.environments;
+      }
+    } catch { /* fall through */ }
+
+    return null;
   }
 
   private findProjectByScriptId(config: any, scriptId: string): any {
@@ -1186,10 +1210,12 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   private async deriveUserSymbol(scriptId: string): Promise<string> {
     const name = await this.getProjectName(scriptId);
     // Convert kebab-case or snake_case to PascalCase
-    return name
+    const pascal = name
       .split(/[-_\s]+/)
       .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
       .join('');
+    // Ensure valid JS identifier — prefix with 'Lib' if result starts with a digit
+    return /^[a-zA-Z_]/.test(pascal) ? pascal : `Lib${pascal}`;
   }
 
   private async getAuthTokenFallback(): Promise<string> {
