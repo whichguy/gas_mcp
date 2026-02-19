@@ -1,18 +1,18 @@
 /**
- * Unit tests for LibraryDeployTool and VersionDeployTool
+ * Unit tests for LibraryDeployTool and DeployConfigTool
  *
  * Tests core functionality:
  * - generateThinShim: shim code generation with userSymbol injection
  * - validateUserSymbol: JS identifier validation
  * - deriveUserSymbol: project name → PascalCase conversion
  * - Schema correctness: inputSchema, outputSchema, annotations
- * - New features: dryRun, reconcile, configWarning, audit trail
+ * - File-push model: no versioning, no rollback
  */
 
 import { expect } from 'chai';
 import { describe, it, beforeEach } from 'mocha';
 import { LibraryDeployTool } from '../../../src/tools/deploy.js';
-import { VersionDeployTool } from '../../../src/tools/deployment.js';
+import { DeployConfigTool } from '../../../src/tools/deployment.js';
 import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
 
 describe('LibraryDeployTool', () => {
@@ -30,15 +30,22 @@ describe('LibraryDeployTool', () => {
       expect(tool.name).to.equal('deploy');
     });
 
-    it('should have inputSchema with required fields', () => {
+    it('should have inputSchema with scriptId required (operation defaults to promote)', () => {
       expect(tool.inputSchema).to.exist;
-      expect(tool.inputSchema.required).to.include('operation');
       expect(tool.inputSchema.required).to.include('scriptId');
+      // operation is no longer required — defaults to 'promote'
+      expect(tool.inputSchema.required).to.not.include('operation');
     });
 
-    it('should have operation enum with 4 values', () => {
+    it('should have operation enum with 3 values (no rollback) and default promote', () => {
       const opProp = tool.inputSchema.properties.operation;
-      expect(opProp.enum).to.deep.equal(['promote', 'rollback', 'status', 'setup']);
+      expect(opProp.enum).to.deep.equal(['promote', 'status', 'setup']);
+      expect(opProp.default).to.equal('promote');
+    });
+
+    it('should NOT have rollback in operation enum', () => {
+      const opProp = tool.inputSchema.properties.operation;
+      expect(opProp.enum).to.not.include('rollback');
     });
 
     it('should have to enum with staging and prod', () => {
@@ -46,18 +53,68 @@ describe('LibraryDeployTool', () => {
       expect(toProp.enum).to.deep.equal(['staging', 'prod']);
     });
 
-    it('should have outputSchema with expected fields', () => {
+    it('should NOT have version param (no versioning)', () => {
+      expect(tool.inputSchema.properties).to.not.have.property('version');
+      expect(tool.inputSchema.properties).to.not.have.property('useVersion');
+      expect(tool.inputSchema.properties).to.not.have.property('toVersion');
+    });
+
+    it('should NOT have force param (no version pinning)', () => {
+      expect(tool.inputSchema.properties).to.not.have.property('force');
+    });
+
+    it('should NOT have reconcile param (no version discrepancies)', () => {
+      expect(tool.inputSchema.properties).to.not.have.property('reconcile');
+    });
+
+    it('should have syncSheets param defaulting to true', () => {
+      expect(tool.inputSchema.properties).to.have.property('syncSheets');
+      expect(tool.inputSchema.properties.syncSheets.type).to.equal('boolean');
+      expect(tool.inputSchema.properties.syncSheets.default).to.equal(true);
+    });
+
+    it('should have syncProperties param defaulting to true', () => {
+      expect(tool.inputSchema.properties).to.have.property('syncProperties');
+      expect(tool.inputSchema.properties.syncProperties.type).to.equal('boolean');
+      expect(tool.inputSchema.properties.syncProperties.default).to.equal(true);
+    });
+
+    it('should have outputSchema with file-push fields', () => {
       expect(tool.outputSchema).to.exist;
       expect(tool.outputSchema.type).to.equal('object');
       const fields = Object.keys(tool.outputSchema.properties);
       expect(fields).to.include('operation');
-      expect(fields).to.include('version');
+      expect(fields).to.include('sourceScriptId');
+      expect(fields).to.include('filesPromoted');
       expect(fields).to.include('environment');
+      expect(fields).to.include('sheetSync');
+      expect(fields).to.include('propertySync');
       expect(fields).to.include('hints');
+      expect(fields).to.include('shimValidation');  // 13a: shim validation per promote
+      // newly declared fields (gap-closure)
+      expect(fields).to.include('consumer');
+      expect(fields).to.include('spreadsheetUrl');
+      expect(fields).to.include('note');
+      expect(fields).to.include('description');
+      expect(fields).to.include('templateScriptId');
+      expect(fields).to.include('libraryScriptId');
+      expect(fields).to.include('libraryReference');
+      expect(fields).to.include('message');
+      expect(fields).to.include('userSymbol');
+    });
+
+    it('should NOT have version-related output fields', () => {
+      const fields = Object.keys(tool.outputSchema.properties);
+      expect(fields).to.not.include('version');
+      expect(fields).to.not.include('previousVersion');
+      expect(fields).to.not.include('createdVersion');
+      expect(fields).to.not.include('retryWith');
+      expect(fields).to.not.include('reconciled');
+      expect(fields).to.not.include('versions');
     });
 
     it('should have correct annotations', () => {
-      expect(tool.annotations.title).to.equal('Library Deploy');
+      expect(tool.annotations.title).to.equal('Deploy');
       expect(tool.annotations.readOnlyHint).to.be.false;
       expect(tool.annotations.destructiveHint).to.be.true;
       expect(tool.annotations.openWorldHint).to.be.true;
@@ -67,13 +124,21 @@ describe('LibraryDeployTool', () => {
       const guidance = (tool.inputSchema as any).llmGuidance;
       expect(guidance).to.exist;
       expect(guidance.workflow).to.be.a('string');
-      expect(guidance.environments).to.be.a('string');
+      expect(guidance.workflow).to.include('staging');
+      expect(guidance.auto_behaviors).to.be.an('array').with.length.above(0);
+      expect(guidance.self_contained).to.be.a('string');
+      expect(guidance.defaults).to.be.a('string');
+      // deploy_config should NOT appear as a prerequisite — it causes bad LLM plans
+      expect(guidance).to.not.have.property('note');
     });
 
-    it('should have description positioning deploy as recommended', () => {
-      expect(tool.description).to.include('[DEPLOY]');
-      expect(tool.description).to.include('recommended');
-      expect(tool.description).to.include('version_deploy');
+    it('should have description referencing deploy_config', () => {
+      expect(tool.description).to.include('deploy_config');
+    });
+
+    it('should have description referencing file-push model', () => {
+      expect(tool.description).to.include('-source');
+      expect(tool.description).to.include('HEAD');
     });
   });
 
@@ -212,17 +277,12 @@ describe('LibraryDeployTool', () => {
   });
 
   // ============================================================
-  // New Feature Schema Tests
+  // Schema: File-Push Model Tests
   // ============================================================
-  describe('new feature schemas', () => {
+  describe('file-push model schemas', () => {
     it('should have dryRun in inputSchema', () => {
       expect(tool.inputSchema.properties).to.have.property('dryRun');
       expect(tool.inputSchema.properties.dryRun.type).to.equal('boolean');
-    });
-
-    it('should have reconcile in inputSchema', () => {
-      expect(tool.inputSchema.properties).to.have.property('reconcile');
-      expect(tool.inputSchema.properties.reconcile.type).to.equal('boolean');
     });
 
     it('should have configWarning in outputSchema', () => {
@@ -235,26 +295,632 @@ describe('LibraryDeployTool', () => {
       expect(fields).to.include('discrepancies');
     });
 
-    it('should have reconciled in outputSchema', () => {
+    it('should have sourceScriptId in outputSchema', () => {
       const fields = Object.keys(tool.outputSchema.properties);
-      expect(fields).to.include('reconciled');
+      expect(fields).to.include('sourceScriptId');
+    });
+
+    it('should have filesPromoted in outputSchema', () => {
+      const fields = Object.keys(tool.outputSchema.properties);
+      expect(fields).to.include('filesPromoted');
+    });
+  });
+
+  // ============================================================
+  // Setup operation parameter tests
+  // ============================================================
+  describe('setup operation schema', () => {
+    it('should have templateScriptId param for setup', () => {
+      expect(tool.inputSchema.properties).to.have.property('templateScriptId');
+      expect(tool.inputSchema.properties.templateScriptId.type).to.equal('string');
+    });
+
+    it('should have userSymbol param for setup', () => {
+      expect(tool.inputSchema.properties).to.have.property('userSymbol');
+      expect(tool.inputSchema.properties.userSymbol.type).to.equal('string');
+    });
+
+    it('should NOT require templateScriptId at schema level (validated at runtime)', () => {
+      // templateScriptId is required by setup op but NOT listed in top-level required[]
+      // because it only applies to the setup operation, not promote/status
+      expect(tool.inputSchema.required).to.not.include('templateScriptId');
+    });
+  });
+
+  // ============================================================
+  // deriveUserSymbol edge cases
+  // ============================================================
+  describe('deriveUserSymbol — digit-leading guard', () => {
+    function testConversionWithGuard(name: string): string {
+      const pascal = name
+        .split(/[-_\s]+/)
+        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join('');
+      return /^[a-zA-Z_]/.test(pascal) ? pascal : `Lib${pascal}`;
+    }
+
+    it('should prefix Lib for digit-leading project names', () => {
+      expect(testConversionWithGuard('123project')).to.equal('Lib123project');
+      expect(testConversionWithGuard('4tools')).to.equal('Lib4tools');
+    });
+
+    it('should not prefix valid PascalCase names', () => {
+      expect(testConversionWithGuard('sheets-chat')).to.equal('SheetsChat');
+      expect(testConversionWithGuard('MyTool')).to.equal('MyTool');
+    });
+
+    it('should not prefix underscore-leading names (split treats _ as separator → valid PascalCase)', () => {
+      // _internal splits to ['', 'internal'] → 'Internal' — still a valid JS identifier
+      expect(testConversionWithGuard('_internal')).to.equal('Internal');
+    });
+  });
+
+  // ============================================================
+  // stripMcpEnvironments Tests (13c)
+  // ============================================================
+  describe('stripMcpEnvironments', () => {
+    function callStrip(t: any, files: any[]): any[] {
+      return t.stripMcpEnvironments(files);
+    }
+
+    it('should strip mcp_environments from appsscript.json', () => {
+      const files = [
+        {
+          name: 'appsscript', type: 'JSON',
+          source: JSON.stringify({
+            timeZone: 'America/New_York',
+            oauthScopes: ['scope1'],
+            mcp_environments: { staging: { sourceScriptId: 'abc' } }
+          })
+        },
+        { name: 'Code', type: 'SERVER_JS', source: 'function main() {}' }
+      ];
+      const result = callStrip(tool, files);
+      const manifest = JSON.parse(result[0].source);
+      expect(manifest).to.not.have.property('mcp_environments');
+      expect(manifest.timeZone).to.equal('America/New_York');
+      expect(manifest.oauthScopes).to.deep.equal(['scope1']);
+      expect(result[1].source).to.equal('function main() {}');
+    });
+
+    it('should leave appsscript without mcp_environments unchanged', () => {
+      const files = [
+        {
+          name: 'appsscript', type: 'JSON',
+          source: JSON.stringify({ timeZone: 'America/Chicago', runtimeVersion: 'V8' })
+        }
+      ];
+      const result = callStrip(tool, files);
+      const manifest = JSON.parse(result[0].source);
+      expect(manifest.timeZone).to.equal('America/Chicago');
+      expect(manifest.runtimeVersion).to.equal('V8');
+    });
+
+    it('should not modify non-appsscript files even if they contain mcp_environments text', () => {
+      const files = [
+        { name: 'Code', type: 'SERVER_JS', source: 'var mcp_environments = {};' },
+        { name: 'Utils', type: 'SERVER_JS', source: '// mcp_environments' }
+      ];
+      const result = callStrip(tool, files);
+      expect(result[0].source).to.equal(files[0].source);
+      expect(result[1].source).to.equal(files[1].source);
+    });
+
+    it('should handle invalid JSON in appsscript gracefully (return file unchanged)', () => {
+      const files = [{ name: 'appsscript', type: 'JSON', source: 'not valid json' }];
+      const result = callStrip(tool, files);
+      expect(result[0].source).to.equal('not valid json');
+    });
+
+    it('should preserve all non-mcp manifest properties', () => {
+      const original = {
+        timeZone: 'America/Chicago',
+        exceptionLogging: 'STACKDRIVER',
+        runtimeVersion: 'V8',
+        oauthScopes: ['scope1', 'scope2'],
+        dependencies: { libraries: [{ libraryId: 'abc', version: '0', developmentMode: true }] },
+        webapp: { access: 'ANYONE', executeAs: 'USER_ACCESSING' },
+        mcp_environments: { staging: { sourceScriptId: 'xyz' } }
+      };
+      const files = [{ name: 'appsscript', type: 'JSON', source: JSON.stringify(original) }];
+      const result = callStrip(tool, files);
+      const manifest = JSON.parse(result[0].source);
+      expect(manifest).to.not.have.property('mcp_environments');
+      expect(manifest.timeZone).to.equal('America/Chicago');
+      expect(manifest.webapp).to.deep.equal(original.webapp);
+      expect(manifest.dependencies).to.deep.equal(original.dependencies);
+      expect(manifest.oauthScopes).to.deep.equal(original.oauthScopes);
+    });
+
+    it('should return a new array (not mutate input)', () => {
+      const source = JSON.stringify({ timeZone: 'UTC', mcp_environments: { staging: {} } });
+      const files = [{ name: 'appsscript', type: 'JSON', source }];
+      const result = callStrip(tool, files);
+      expect(result).to.not.equal(files);
+      expect(files[0].source).to.equal(source);  // original unchanged
+    });
+  });
+
+  // ============================================================
+  // updateDevManifestWithEnvironmentIds Tests (13b)
+  // ============================================================
+  describe('updateDevManifestWithEnvironmentIds', () => {
+    it('should merge new environment key without disturbing existing mcp_environments keys', async () => {
+      const currentManifest = {
+        timeZone: 'America/New_York',
+        mcp_environments: {
+          template: { scriptId: 'tmpl123', userSymbol: 'MyLib' }
+        }
+      };
+      const writtenFiles: any[] = [];
+
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          { name: 'Code', type: 'SERVER_JS', source: 'function main() {}' },
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify(currentManifest) }
+        ],
+        updateProjectContent: async (_id: string, files: any[]) => { writtenFiles.push(...files); return files; }
+      };
+
+      await (tool as any).updateDevManifestWithEnvironmentIds(
+        'devId', 'staging',
+        { sourceScriptId: 'src123', consumerScriptId: 'cons123', spreadsheetId: 'sheet123' }
+      );
+
+      const appsscript = writtenFiles.find((f: any) => f.name === 'appsscript');
+      const json = JSON.parse(appsscript.source);
+      expect(json.mcp_environments.staging).to.deep.equal({
+        sourceScriptId: 'src123', consumerScriptId: 'cons123', spreadsheetId: 'sheet123'
+      });
+      // Existing template key preserved
+      expect(json.mcp_environments.template).to.deep.equal({ scriptId: 'tmpl123', userSymbol: 'MyLib' });
+      // Non-mcp properties preserved
+      expect(json.timeZone).to.equal('America/New_York');
+    });
+
+    it('should create mcp_environments key if not present', async () => {
+      const writtenFiles: any[] = [];
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify({ timeZone: 'UTC' }) }
+        ],
+        updateProjectContent: async (_id: string, files: any[]) => { writtenFiles.push(...files); return files; }
+      };
+
+      await (tool as any).updateDevManifestWithEnvironmentIds(
+        'devId', 'prod',
+        { sourceScriptId: 'psrc', consumerScriptId: 'pcons', spreadsheetId: 'psheet' }
+      );
+
+      const json = JSON.parse(writtenFiles.find((f: any) => f.name === 'appsscript').source);
+      expect(json.mcp_environments.prod.sourceScriptId).to.equal('psrc');
+    });
+
+    it('should throw if appsscript is missing (prevents silent ID loss)', async () => {
+      (tool as any).gasClient = {
+        getProjectContent: async () => [{ name: 'Code', type: 'SERVER_JS', source: '' }],
+        updateProjectContent: async () => []
+      };
+
+      let threw = false;
+      try {
+        await (tool as any).updateDevManifestWithEnvironmentIds(
+          'devId', 'staging', { sourceScriptId: 'x', consumerScriptId: 'y', spreadsheetId: 'z' }
+        );
+      } catch (e: any) {
+        threw = true;
+        expect(e.message).to.include('appsscript.json not found');
+      }
+      expect(threw).to.be.true;
+    });
+  });
+
+  // ============================================================
+  // autoCreateConsumer double-create guard Tests (13d)
+  // ============================================================
+  describe('autoCreateConsumer double-create guard', () => {
+    it('should return existing IDs from manifest without calling createStandaloneProject', async () => {
+      const existingIds = {
+        sourceScriptId: 'existing-source',
+        consumerScriptId: 'existing-consumer',
+        spreadsheetId: 'existing-sheet'
+      };
+
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          {
+            name: 'appsscript', type: 'JSON',
+            source: JSON.stringify({ mcp_environments: { staging: existingIds } })
+          }
+        ],
+        updateProjectContent: async () => []
+      };
+
+      let createCalled = false;
+      (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-id'; };
+
+      const result = await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
+
+      expect(result.sourceScriptId).to.equal('existing-source');
+      expect(result.consumerScriptId).to.equal('existing-consumer');
+      expect(result.spreadsheetId).to.equal('existing-sheet');
+      expect(createCalled).to.be.false;
+    });
+
+    it('should proceed with creation when manifest entry is missing spreadsheetId (partial entry falls through)', async () => {
+      // Legacy entries without spreadsheetId must not early-return undefined for spreadsheetId
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          {
+            name: 'appsscript', type: 'JSON',
+            source: JSON.stringify({ mcp_environments: { staging: { sourceScriptId: 'src', consumerScriptId: 'cons' /* no spreadsheetId */ } } })
+          }
+        ],
+        updateProjectContent: async () => []
+      };
+
+      let createCalled = false;
+      (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-src'; };
+      (tool as any).createBlankSpreadsheet = async () => 'new-sheet';
+      (tool as any).createContainerBoundScript = async () => 'new-consumer';
+      (tool as any).writeConsumerShim = async () => {};
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).updateDevManifestWithEnvironmentIds = async () => {};
+      try {
+        await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
+      } catch {
+        // May throw on config save — that's OK
+      }
+      expect(createCalled).to.be.true;
+    });
+
+    it('should proceed with creation when manifest has no matching environment', async () => {
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          {
+            name: 'appsscript', type: 'JSON',
+            source: JSON.stringify({ mcp_environments: { prod: { sourceScriptId: 'prod-src' } } })
+          }
+        ],
+        updateProjectContent: async () => []
+      };
+
+      let createCalled = false;
+      (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-src'; };
+      // Stub out the rest of the create path to avoid real API calls
+      (tool as any).createBlankSpreadsheet = async () => 'new-sheet';
+      (tool as any).createContainerBoundScript = async () => 'new-consumer';
+      (tool as any).writeConsumerShim = async () => {};
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).updateDevManifestWithEnvironmentIds = async () => {};
+      const origConfig = (tool as any).gasClient.getProjectContent;
+      let callCount = 0;
+      (tool as any).gasClient.getProjectContent = async (id: string) => {
+        callCount++;
+        // Return manifest with project name for getProjectName path
+        return origConfig(id);
+      };
+      // Don't need full stub — just verify createCalled
+      try {
+        await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
+      } catch {
+        // May throw on config read — that's OK, we only care createCalled is true
+      }
+
+      expect(createCalled).to.be.true;
+    });
+  });
+
+  // ============================================================
+  // validateAndRepairConsumerShim Tests
+  // ============================================================
+  describe('validateAndRepairConsumerShim', () => {
+    const SOURCE_ID = 'src-script-id';
+    const CONSUMER_ID = 'consumer-script-id';
+    const USER_SYMBOL = 'MyLib';
+    const MANIFEST_JSON = { timeZone: 'America/New_York', oauthScopes: ['scope1'] };
+
+    function makeManifest(lib?: object): any[] {
+      const manifest: any = { timeZone: 'America/New_York' };
+      if (lib !== undefined) {
+        manifest.dependencies = { libraries: [lib] };
+      }
+      return [{ name: 'appsscript', type: 'JSON', source: JSON.stringify(manifest) }];
+    }
+
+    it('should return { valid: true, updated: false } when library reference + developmentMode are correct', async () => {
+      (tool as any).gasClient = {
+        getProjectContent: async () => makeManifest({ libraryId: SOURCE_ID, version: '0', developmentMode: true, userSymbol: USER_SYMBOL }),
+      };
+
+      const result = await (tool as any).validateAndRepairConsumerShim(CONSUMER_ID, SOURCE_ID, USER_SYMBOL, MANIFEST_JSON);
+      expect(result).to.deep.equal({ valid: true, updated: false });
+    });
+
+    it('should re-write shim and return issue when library reference is missing', async () => {
+      let shimWritten = false;
+      (tool as any).gasClient = {
+        getProjectContent: async () => makeManifest(/* no libraries */),
+      };
+      (tool as any).writeConsumerShim = async () => { shimWritten = true; };
+
+      const result = await (tool as any).validateAndRepairConsumerShim(CONSUMER_ID, SOURCE_ID, USER_SYMBOL, MANIFEST_JSON);
+      expect(result.valid).to.be.false;
+      expect(result.updated).to.be.true;
+      expect(result.issue).to.include('library reference missing');
+      expect(shimWritten).to.be.true;
+    });
+
+    it('should re-write shim and return issue when developmentMode is not true', async () => {
+      let shimWritten = false;
+      (tool as any).gasClient = {
+        getProjectContent: async () => makeManifest({ libraryId: SOURCE_ID, version: '1', developmentMode: false, userSymbol: USER_SYMBOL }),
+      };
+      (tool as any).writeConsumerShim = async () => { shimWritten = true; };
+
+      const result = await (tool as any).validateAndRepairConsumerShim(CONSUMER_ID, SOURCE_ID, USER_SYMBOL, MANIFEST_JSON);
+      expect(result.valid).to.be.false;
+      expect(result.updated).to.be.true;
+      expect(result.issue).to.equal('developmentMode was not true');
+      expect(shimWritten).to.be.true;
+    });
+
+    it('should re-write shim when appsscript manifest is missing', async () => {
+      let shimWritten = false;
+      (tool as any).gasClient = {
+        getProjectContent: async () => [{ name: 'Code', type: 'SERVER_JS', source: '' }],
+      };
+      (tool as any).writeConsumerShim = async () => { shimWritten = true; };
+
+      const result = await (tool as any).validateAndRepairConsumerShim(CONSUMER_ID, SOURCE_ID, USER_SYMBOL, MANIFEST_JSON);
+      expect(result.valid).to.be.false;
+      expect(result.updated).to.be.true;
+      expect(result.issue).to.include('missing manifest');
+      expect(shimWritten).to.be.true;
+    });
+
+    it('should return 404-specific issue without throwing when consumer project not found', async () => {
+      (tool as any).gasClient = {
+        getProjectContent: async () => { throw Object.assign(new Error('404 Not Found'), { status: 404 }); }
+      };
+
+      const result = await (tool as any).validateAndRepairConsumerShim(CONSUMER_ID, SOURCE_ID, USER_SYMBOL, MANIFEST_JSON);
+      expect(result.valid).to.be.false;
+      expect(result.updated).to.be.false;
+      expect(result.issue).to.include('404');
+    });
+
+    it('should return validation error issue without throwing on non-404 error', async () => {
+      (tool as any).gasClient = {
+        getProjectContent: async () => { throw new Error('Network timeout'); }
+      };
+
+      const result = await (tool as any).validateAndRepairConsumerShim(CONSUMER_ID, SOURCE_ID, USER_SYMBOL, MANIFEST_JSON);
+      expect(result.valid).to.be.false;
+      expect(result.updated).to.be.false;
+      expect(result.issue).to.include('validation error');
+      expect(result.issue).to.include('Network timeout');
+    });
+  });
+
+  // ============================================================
+  // doSyncProperties Tests
+  // ============================================================
+  describe('doSyncProperties', () => {
+    const SOURCE_ID = 'source-script-id';
+    const TARGET_ID = 'target-script-id';
+
+    function makeExecResult(scriptProps: Record<string, string>, docProps: Record<string, string>): any {
+      return { logger_output: JSON.stringify({ script: scriptProps, doc: docProps }) };
+    }
+
+    it('should copy non-managed script-scope and doc-scope properties to target', async () => {
+      const scriptCalls: [string, string, string][] = [];
+      const docCalls: [string, string, string][] = [];
+
+      (tool as any).execTool = {
+        execute: async () => makeExecResult({ USER_FLAG: 'true', STAGING_URL: 'https://...' }, { DOC_SETTING: 'value' }),
+      };
+      (tool as any).setConfigManagerValue = async (id: string, key: string, val: string) => {
+        scriptCalls.push([id, key, val]);
+      };
+      (tool as any).setDocConfigManagerValue = async (id: string, key: string, val: string) => {
+        docCalls.push([id, key, val]);
+      };
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'token');
+
+      // USER_FLAG copied; STAGING_URL (managed) filtered out
+      expect(result.synced).to.include('USER_FLAG');
+      expect(result.synced).to.include('doc:DOC_SETTING');
+      expect(result.skipped).to.include('STAGING_URL');
+      expect(result.errors).to.be.undefined;
+
+      expect(scriptCalls).to.have.length(1);
+      expect(scriptCalls[0]).to.deep.equal([TARGET_ID, 'USER_FLAG', 'true']);
+
+      expect(docCalls).to.have.length(1);
+      expect(docCalls[0]).to.deep.equal([TARGET_ID, 'DOC_SETTING', 'value']);
+    });
+
+    it('should return empty synced with skipped list when all properties are managed', async () => {
+      (tool as any).execTool = {
+        execute: async () => makeExecResult({ STAGING_URL: 'x', DEV_URL: 'y' }, {}),
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID);
+
+      expect(result.synced).to.deep.equal([]);
+      expect(result.skipped).to.include('STAGING_URL');
+      expect(result.skipped).to.include('DEV_URL');
+    });
+
+    it('should return { synced: [], skipped: [] } when source has no properties', async () => {
+      (tool as any).execTool = {
+        execute: async () => makeExecResult({}, {}),
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID);
+
+      expect(result.synced).to.deep.equal([]);
+      expect(result.skipped).to.deep.equal([]);
+      expect(result).to.not.have.property('errors');
+    });
+
+    it('should collect errors for failed writes without throwing', async () => {
+      (tool as any).execTool = {
+        execute: async () => makeExecResult({ KEY_A: 'val' }, { KEY_B: 'val2' }),
+      };
+      (tool as any).setConfigManagerValue = async () => { throw new Error('write failed'); };
+      (tool as any).setDocConfigManagerValue = async () => { throw new Error('doc write failed'); };
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID);
+
+      expect(result.errors).to.include('KEY_A');
+      expect(result.errors).to.include('doc:KEY_B');
+      expect(result.synced).to.deep.equal([]);
+    });
+
+    it('should handle missing logger_output gracefully (best-effort parse)', async () => {
+      (tool as any).execTool = {
+        execute: async () => ({ logger_output: null }),
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID);
+
+      expect(result.synced).to.deep.equal([]);
+      expect(result.skipped).to.deep.equal([]);
+    });
+
+    it('should use sourceScriptId for exec and targetScriptId for writes', async () => {
+      let execScriptId: string | undefined;
+      let writeTargetId: string | undefined;
+
+      (tool as any).execTool = {
+        execute: async ({ scriptId }: any) => {
+          execScriptId = scriptId;
+          return makeExecResult({ MY_KEY: 'val' }, {});
+        },
+      };
+      (tool as any).setConfigManagerValue = async (id: string) => { writeTargetId = id; };
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'tok');
+
+      expect(execScriptId).to.equal(SOURCE_ID);
+      expect(writeTargetId).to.equal(TARGET_ID);
+    });
+  });
+
+  // ============================================================
+  // setDocConfigManagerValue Tests
+  // ============================================================
+  describe('setDocConfigManagerValue', () => {
+    it('should call ConfigManager.setDocument (not setScript) with key and value', async () => {
+      const calls: any[][] = [];
+      (tool as any).gasClient = {
+        executeFunction: async (_id: string, _fn: string, args: any[]) => {
+          calls.push(args);
+          return { error: null };
+        },
+      };
+
+      await (tool as any).setDocConfigManagerValue('scriptId', 'MY_DOC_KEY', 'val', 'token');
+
+      expect(calls).to.have.length(1);
+      // args[2] is the ConfigManager function name
+      expect(calls[0][2]).to.equal('setDocument');
+      expect(calls[0][3]).to.equal('MY_DOC_KEY');
+      expect(calls[0][4]).to.equal('val');
+    });
+
+    it('should throw GASApiError when executeFunction returns an error', async () => {
+      (tool as any).gasClient = {
+        executeFunction: async () => ({ error: 'permission denied' }),
+      };
+
+      let threw = false;
+      try {
+        await (tool as any).setDocConfigManagerValue('scriptId', 'KEY', 'val');
+      } catch (e: any) {
+        threw = true;
+        expect(e.message).to.include('setDocument');
+        expect(e.message).to.include('KEY');
+      }
+      expect(threw).to.be.true;
+    });
+  });
+
+  // ============================================================
+  // handleSetup saveConfig non-fatal Tests
+  // ============================================================
+  describe('handleSetup saveConfig resilience', () => {
+    it('should succeed even when McpGasConfigManager.saveConfig throws', async () => {
+      // Stub all the dependencies handleSetup calls
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify({ timeZone: 'UTC' }) },
+          { name: 'Code', type: 'SERVER_JS', source: 'function main() {}' }
+        ],
+        updateProjectContent: async (_id: string, files: any[]) => files,
+        getProject: async () => ({ title: 'MyLib Project' }),
+      };
+      (tool as any).addLibraryToProject = async () => {};
+      (tool as any).updateDevManifestWithEnvironmentIds = async () => {};
+      (tool as any).deriveUserSymbol = async () => 'MyLib';
+
+      // Dynamically override McpGasConfigManager for this test
+      const mcpConfig = await import('../../../src/config/mcpGasConfig.js');
+      const origGetConfig = mcpConfig.McpGasConfigManager.getConfig;
+      const origSaveConfig = mcpConfig.McpGasConfigManager.saveConfig;
+      (mcpConfig.McpGasConfigManager as any).getConfig = async () => ({
+        projects: [{ scriptId: 'dev-id', name: 'MyLib', environments: {} }]
+      });
+      (mcpConfig.McpGasConfigManager as any).saveConfig = async () => {
+        throw new Error('disk full');
+      };
+
+      let threw = false;
+      try {
+        await (tool as any).handleSetup('dev-id', {
+          operation: 'setup',
+          scriptId: 'dev-id',
+          templateScriptId: 'tmpl-id',
+          userSymbol: 'MyLib',
+        });
+      } catch (e: any) {
+        // Only expect throws from lock/auth issues, not from saveConfig
+        if (e.message?.includes('disk full')) threw = true;
+      } finally {
+        (mcpConfig.McpGasConfigManager as any).getConfig = origGetConfig;
+        (mcpConfig.McpGasConfigManager as any).saveConfig = origSaveConfig;
+      }
+
+      // saveConfig throwing should NOT propagate
+      expect(threw).to.be.false;
     });
   });
 });
 
 // ==============================================================
-// VersionDeployTool Tests
+// DeployConfigTool Tests (was VersionDeployTool)
 // ==============================================================
-describe('VersionDeployTool', () => {
-  let tool: VersionDeployTool;
+describe('DeployConfigTool', () => {
+  let tool: DeployConfigTool;
 
   beforeEach(() => {
-    tool = new VersionDeployTool(new SessionAuthManager());
+    tool = new DeployConfigTool(new SessionAuthManager());
   });
 
   describe('schema', () => {
     it('should have correct tool name', () => {
-      expect(tool.name).to.equal('version_deploy');
+      expect(tool.name).to.equal('deploy_config');
     });
 
     it('should have inputSchema with required fields', () => {
@@ -263,14 +929,16 @@ describe('VersionDeployTool', () => {
       expect(tool.inputSchema.required).to.include('scriptId');
     });
 
-    it('should have operation enum with 4 values', () => {
+    it('should have operation enum with status and reset only', () => {
       const opProp = tool.inputSchema.properties.operation;
-      expect(opProp.enum).to.deep.equal(['promote', 'rollback', 'status', 'reset']);
+      expect(opProp.enum).to.deep.equal(['status', 'reset']);
     });
 
-    it('should have dryRun in inputSchema', () => {
-      expect(tool.inputSchema.properties).to.have.property('dryRun');
-      expect(tool.inputSchema.properties.dryRun.type).to.equal('boolean');
+    it('should NOT have promote/rollback-specific params', () => {
+      expect(tool.inputSchema.properties).to.not.have.property('environment');
+      expect(tool.inputSchema.properties).to.not.have.property('description');
+      expect(tool.inputSchema.properties).to.not.have.property('toVersion');
+      expect(tool.inputSchema.properties).to.not.have.property('dryRun');
     });
 
     it('should have outputSchema with expected fields', () => {
@@ -282,21 +950,26 @@ describe('VersionDeployTool', () => {
     });
 
     it('should have correct annotations', () => {
-      expect(tool.annotations.title).to.equal('Version Deploy (Advanced)');
+      expect(tool.annotations.title).to.equal('Deploy Config');
       expect(tool.annotations.readOnlyHint).to.be.false;
       expect(tool.annotations.destructiveHint).to.be.true;
     });
 
-    it('should have llmGuidance preferring deploy()', () => {
+    it('should have llmGuidance pointing to deploy()', () => {
       const guidance = (tool.inputSchema as any).llmGuidance;
       expect(guidance).to.exist;
-      expect(guidance.preference).to.include('deploy()');
+      expect(guidance.note).to.include('deploy()');
     });
 
-    it('should have description positioning as low-level', () => {
-      expect(tool.description).to.include('[VERSION_DEPLOY]');
-      expect(tool.description).to.include('Low-level');
+    it('should have description positioning as infrastructure', () => {
+      expect(tool.description).to.include('infrastructure');
       expect(tool.description).to.include('deploy()');
+    });
+
+    it('should NOT have promote-related params (status/reset only)', () => {
+      expect(tool.inputSchema.properties).to.not.have.property('to');
+      expect(tool.inputSchema.properties).to.not.have.property('description');
+      expect(tool.inputSchema.properties).to.not.have.property('syncSheets');
     });
 
     it('should have configWarning in outputSchema', () => {

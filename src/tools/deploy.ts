@@ -30,7 +30,7 @@ import { LockManager } from '../utils/lockManager.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 import { generateLibraryDeployHints, generateLibraryDeployErrorHints } from '../utils/deployHints.js';
 import { mcpLogger } from '../utils/mcpLogger.js';
-import { LibraryEnvironment, SOURCE_CONFIG_KEYS } from '../utils/deployConstants.js';
+import { LibraryEnvironment, SOURCE_CONFIG_KEYS, MANAGED_PROPERTY_KEYS } from '../utils/deployConstants.js';
 import { ExecTool } from './execution.js';
 
 /**
@@ -82,6 +82,7 @@ export class LibraryDeployTool extends BaseTool {
       discrepancies:  { type: 'array',  description: 'Consumer manifest issues detected (status)' },
       shimValidation: { type: 'object', description: 'Shim validation result (promote): { valid, updated, issue? }' },
       sheetSync:      { type: 'object', description: 'Sheet sync results (promote): { source, target, synced[], added[], skipped[] }. Sheets are synced via copyTo() — copies structure + template data only. Application or user data not present in the source spreadsheet is NOT migrated.' },
+      propertySync:   { type: 'object', description: 'Property sync results (promote, when syncProperties:true): { source, target, synced[], skipped[], errors[]? }. synced = keys copied; skipped = infra keys excluded; errors = keys that failed to write.' },
       configWarning:  { type: 'string', description: 'Non-fatal ConfigManager write failures (deployment still succeeded)' },
       hints:          { type: 'object', description: 'Context-aware next-step hints' },
     },
@@ -116,6 +117,16 @@ export class LibraryDeployTool extends BaseTool {
           + 'separately via exec() or manual copy.',
         default: true,
       },
+      syncProperties: {
+        type: 'boolean',
+        description: 'Sync ConfigManager-managed properties (script + doc scopes) from source to target during promote. '
+          + 'Default: true. Copies user-set config (feature flags, API keys, default settings) stored '
+          + 'via ConfigManager.setScript() or ConfigManager.setDocument(). User-scoped properties '
+          + '(setUser, setUserDoc) are never synced — they are per-user and not portable across environments. '
+          + 'Infrastructure keys managed by the deploy tool (URLs, script IDs, deployment IDs) are automatically excluded. '
+          + 'Set to false if environments need distinct secrets that should not travel with the deploy.',
+        default: true,
+      },
       userSymbol: {
         type: 'string',
         description: 'Library namespace symbol in consumer scripts (e.g., "SheetsChat"). Defaults to project-specific config.',
@@ -138,11 +149,12 @@ export class LibraryDeployTool extends BaseTool {
         'spreadsheetUrl always returned — share with user to access the environment',
       ],
       self_contained: 'deploy handles all environment setup automatically — no prerequisite tool calls needed',
-      defaults: 'dryRun:false | syncSheets:true | userSymbol: derived from project name',
+      defaults: 'dryRun:false | syncSheets:true | syncProperties:true | userSymbol: derived from project name',
       limitations: [
         'syncSheets copies sheet tabs via copyTo() — only data already in the source template spreadsheet travels with the deploy',
         'Application data, user records, and reference tables not present in the source spreadsheet must be seeded/copied separately',
         'To seed data post-deploy: use exec() with SpreadsheetApp to write to the target spreadsheet, or open the spreadsheetUrl and edit manually',
+        'syncProperties (default true) syncs ConfigManager script + doc scopes only (never user/userDoc scopes); infrastructure keys are always excluded — set false to keep environment properties isolated',
       ],
     },
   };
@@ -323,6 +335,17 @@ export class LibraryDeployTool extends BaseTool {
       }
     }
 
+    // Property sync: dev → staging (opt-in)
+    let propertySync: any = undefined;
+    if (params.syncProperties !== false) {
+      try {
+        propertySync = await this.doSyncProperties(scriptId, stagingSourceScriptId!, accessToken);
+      } catch (syncError: any) {
+        console.error(`⚠️  Property sync failed: ${syncError.message}`);
+        propertySync = { error: syncError.message };
+      }
+    }
+
     const stagingSpreadsheetUrl = stagingSpreadsheetId
       ? `https://docs.google.com/spreadsheets/d/${stagingSpreadsheetId}`
       : null;
@@ -337,6 +360,7 @@ export class LibraryDeployTool extends BaseTool {
       ...(stagingSpreadsheetUrl ? { spreadsheetUrl: stagingSpreadsheetUrl } : {}),
       shimValidation: shimValidation ?? { valid: null, updated: false, issue: 'shim validation not performed' },
       ...(sheetSync ? { sheetSync } : {}),
+      ...(propertySync ? { propertySync } : {}),
       ...(storeResult.failures.length > 0 ? {
         configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
       } : {}),
@@ -427,6 +451,17 @@ export class LibraryDeployTool extends BaseTool {
       }
     }
 
+    // Property sync: staging-source → prod-source (opt-in)
+    let propertySync: any = undefined;
+    if (params.syncProperties !== false) {
+      try {
+        propertySync = await this.doSyncProperties(stagingSourceScriptId, prodSourceScriptId!, accessToken);
+      } catch (syncError: any) {
+        console.error(`⚠️  Property sync failed: ${syncError.message}`);
+        propertySync = { error: syncError.message };
+      }
+    }
+
     const prodSpreadsheetUrl = prodSpreadsheetId
       ? `https://docs.google.com/spreadsheets/d/${prodSpreadsheetId}`
       : null;
@@ -442,6 +477,7 @@ export class LibraryDeployTool extends BaseTool {
       note: 'Prod-source now has same code as staging-source',
       shimValidation: shimValidation ?? { valid: null, updated: false, issue: 'shim validation not performed' },
       ...(sheetSync ? { sheetSync } : {}),
+      ...(propertySync ? { propertySync } : {}),
       ...(storeResult.failures.length > 0 ? {
         configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
       } : {}),
@@ -1008,6 +1044,92 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   }
 
   // ---------------------------------------------------------------------------
+  // Property Sync
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Sync ConfigManager-managed properties (script + doc scopes) from source to target.
+   *
+   * Reads only PropertiesService.getScriptProperties() and getDocumentProperties()
+   * — the two backing stores for ConfigManager's non-user scopes. User properties
+   * (getUserProperties, which backs ConfigManager's 'user' and 'userDoc' scopes) are
+   * intentionally excluded: they are per-user and should never travel with a deployment.
+   *
+   * Infrastructure keys in MANAGED_PROPERTY_KEYS are excluded to avoid overwriting
+   * environment-specific config in the target.
+   *
+   * Non-fatal: per-key failures are collected and returned, never thrown.
+   */
+  private async doSyncProperties(
+    sourceScriptId: string,
+    targetScriptId: string,
+    accessToken?: string
+  ): Promise<any> {
+    // Read script-scope and doc-scope properties from source.
+    // Explicitly excludes getUserProperties (user + userDoc scopes) — per-user, not portable.
+    const readResult = await this.execTool.execute({
+      scriptId: sourceScriptId,
+      js_statement: `
+        var scriptProps = PropertiesService.getScriptProperties().getProperties() || {};
+        var docPropsService = PropertiesService.getDocumentProperties();
+        var docProps = docPropsService ? (docPropsService.getProperties() || {}) : {};
+        Logger.log(JSON.stringify({ script: scriptProps, doc: docProps }));
+      `,
+      autoRedeploy: false,
+      accessToken,
+    });
+
+    let scriptProps: Record<string, string> = {};
+    let docProps: Record<string, string> = {};
+    try {
+      if (readResult?.logger_output) {
+        const parsed = JSON.parse(readResult.logger_output);
+        scriptProps = parsed.script || {};
+        docProps = parsed.doc || {};
+      }
+    } catch { /* best-effort */ }
+
+    const scriptEntries = Object.entries(scriptProps).filter(([k]) => !MANAGED_PROPERTY_KEYS.has(k));
+    const docEntries    = Object.entries(docProps).filter(([k]) => !MANAGED_PROPERTY_KEYS.has(k));
+    const skipped = [
+      ...Object.keys(scriptProps).filter(k => MANAGED_PROPERTY_KEYS.has(k)),
+      ...Object.keys(docProps).filter(k => MANAGED_PROPERTY_KEYS.has(k)),
+    ];
+
+    if (scriptEntries.length === 0 && docEntries.length === 0) {
+      return { source: sourceScriptId, target: targetScriptId, synced: [], skipped };
+    }
+
+    const synced: string[] = [];
+    const errors: string[] = [];
+
+    // Write script-scope properties via ConfigManager.setScript
+    for (const [key, value] of scriptEntries) {
+      try {
+        await this.setConfigManagerValue(targetScriptId, key, value, accessToken);
+        synced.push(key);
+      } catch (err: any) {
+        console.error(`⚠️  syncProperties: failed to copy script.${key}: ${err.message}`);
+        errors.push(key);
+      }
+    }
+
+    // Write doc-scope properties via ConfigManager.setDocument
+    for (const [key, value] of docEntries) {
+      try {
+        await this.setDocConfigManagerValue(targetScriptId, key, value, accessToken);
+        synced.push(`doc:${key}`);
+      } catch (err: any) {
+        console.error(`⚠️  syncProperties: failed to copy doc.${key}: ${err.message}`);
+        errors.push(`doc:${key}`);
+      }
+    }
+
+    console.error(`✅ Property sync: ${synced.length} copied, ${skipped.length} skipped (managed), ${errors.length} errors`);
+    return { source: sourceScriptId, target: targetScriptId, synced, skipped, ...(errors.length ? { errors } : {}) };
+  }
+
+  // ---------------------------------------------------------------------------
   // ConfigManager operations (via GAS exec)
   // ---------------------------------------------------------------------------
 
@@ -1045,6 +1167,23 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     );
     if (result.error) {
       throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${result.error}`);
+    }
+  }
+
+  private async setDocConfigManagerValue(
+    scriptId: string,
+    key: string,
+    value: string,
+    accessToken?: string
+  ): Promise<void> {
+    const result = await this.gasClient.executeFunction(
+      scriptId,
+      'exec_api',
+      [null, 'ConfigManager', 'setDocument', key, value],
+      accessToken
+    );
+    if (result.error) {
+      throw new GASApiError(`ConfigManager.setDocument('${key}') failed: ${result.error}`);
     }
   }
 
