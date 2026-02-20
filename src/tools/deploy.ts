@@ -1202,6 +1202,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
 
       if (scriptExtras.length > 0) {
         try {
+          // Double-encode: outer JSON.stringify makes this a safe JS string literal
+          // embedded in source code; GAS does JSON.parse twice to recover the array.
           const keysJson = JSON.stringify(JSON.stringify(scriptExtras));
           await this.execTool.execute({
             scriptId: targetScriptId,
