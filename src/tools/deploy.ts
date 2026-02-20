@@ -82,7 +82,7 @@ export class LibraryDeployTool extends BaseTool {
       discrepancies:  { type: 'array',  description: 'Consumer manifest issues detected (status)' },
       shimValidation: { type: 'object', description: 'Shim validation result (promote): { valid, updated, issue? }' },
       sheetSync:      { type: 'object', description: 'Sheet sync results (promote): { source, target, synced[], added[], skipped[] }. Sheets are synced via copyTo() — copies structure + template data only. Application or user data not present in the source spreadsheet is NOT migrated.' },
-      propertySync:   { type: 'object', description: 'Property sync results (promote, when syncProperties:true): { source, target, synced[], skipped[], deleted[]?, errors[]? }. synced = keys copied; skipped = infra keys excluded; deleted = keys removed from target absent in source (reconcileProperties:true only); errors = keys that failed.' },
+      propertySync:   { type: 'object', description: 'Property sync results (promote, when syncProperties:true): { source, target, synced[], skipped[], deleted[]?, errors[]?, consumerSync? }. synced = keys copied; skipped = infra keys excluded; deleted = keys removed from target absent in source (reconcileProperties:true only); errors = keys that failed. consumerSync = same result shape for the consumer shim script (written via direct PropertiesService, not ConfigManager).' },
       configWarning:  { type: 'string', description: 'Non-fatal ConfigManager write failures (deployment still succeeded)' },
       hints:          { type: 'object', description: 'Context-aware next-step hints' },
     },
@@ -362,7 +362,8 @@ export class LibraryDeployTool extends BaseTool {
       try {
         propertySync = await this.doSyncProperties(
           scriptId, stagingSourceScriptId!, accessToken,
-          params.reconcileProperties === true
+          params.reconcileProperties === true,
+          stagingConsumerScriptId ?? undefined
         );
       } catch (syncError: any) {
         console.error(`⚠️  Property sync failed: ${syncError.message}`);
@@ -489,7 +490,8 @@ export class LibraryDeployTool extends BaseTool {
       try {
         propertySync = await this.doSyncProperties(
           stagingSourceScriptId, prodSourceScriptId!, accessToken,
-          params.reconcileProperties === true
+          params.reconcileProperties === true,
+          prodConsumerScriptId ?? undefined
         );
       } catch (syncError: any) {
         console.error(`⚠️  Property sync failed: ${syncError.message}`);
@@ -1128,8 +1130,13 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     sourceScriptId: string,
     targetScriptId: string,
     accessToken?: string,
-    reconcile: boolean = false
-  ): Promise<{ source: string; target: string; synced: string[]; skipped: string[]; deleted?: string[]; errors?: string[] }> {
+    reconcile: boolean = false,
+    consumerScriptId?: string
+  ): Promise<{
+    source: string; target: string;
+    synced: string[]; skipped: string[]; deleted?: string[]; errors?: string[];
+    consumerSync?: { synced: string[]; skipped: string[]; deleted?: string[]; errors?: string[] };
+  }> {
     // Read script-scope and doc-scope properties from source.
     // Explicitly excludes getUserProperties (user + userDoc scopes) — per-user, not portable.
     const readResult = await this.execTool.execute({
@@ -1164,6 +1171,10 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     const synced: string[] = [];
     const errors: string[] = [];
     const deleted: string[] = [];
+    // Consumer sync tracking (populated by reconcile block + write block below)
+    const consumerSynced: string[] = [];
+    const consumerDeleted: string[] = [];
+    const consumerErrors: string[] = [];
 
     // Reconcile: delete target-only keys not present in source and not managed infrastructure.
     // Makes target an exact mirror of source for user-managed properties.
@@ -1241,14 +1252,101 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
           errors.push(...docExtras.map(k => `delete:doc:${k}`));
         }
       }
+
+      // Consumer reconcile — delete consumer-only extras not present in source (non-fatal)
+      if (consumerScriptId) {
+        try {
+          const consumerReadResult = await this.execTool.execute({
+            scriptId: consumerScriptId,
+            js_statement: `
+              var scriptProps = PropertiesService.getScriptProperties().getProperties() || {};
+              var docPropsService = PropertiesService.getDocumentProperties();
+              var docProps = docPropsService ? (docPropsService.getProperties() || {}) : {};
+              Logger.log(JSON.stringify({ script: scriptProps, doc: docProps }));
+            `,
+            autoRedeploy: false,
+            accessToken,
+          });
+
+          let consumerScriptProps: Record<string, string> = {};
+          let consumerDocProps: Record<string, string> = {};
+          try {
+            if (consumerReadResult?.logger_output) {
+              const parsed = JSON.parse(consumerReadResult.logger_output);
+              consumerScriptProps = parsed.script || {};
+              consumerDocProps = parsed.doc || {};
+            }
+          } catch { /* best-effort */ }
+
+          const sourceScriptKeys = new Set(Object.keys(scriptProps));
+          const sourceDocKeys = new Set(Object.keys(docProps));
+
+          const consumerScriptExtras = Object.keys(consumerScriptProps).filter(
+            k => !sourceScriptKeys.has(k) && !MANAGED_PROPERTY_KEYS.has(k)
+          );
+          const consumerDocExtras = Object.keys(consumerDocProps).filter(
+            k => !sourceDocKeys.has(k) && !MANAGED_PROPERTY_KEYS.has(k)
+          );
+
+          if (consumerScriptExtras.length > 0) {
+            try {
+              const keysJson = JSON.stringify(JSON.stringify(consumerScriptExtras));
+              await this.execTool.execute({
+                scriptId: consumerScriptId,
+                js_statement: `
+                  var keys = JSON.parse(JSON.parse(${keysJson}));
+                  var sp = PropertiesService.getScriptProperties();
+                  keys.forEach(function(k) { sp.deleteProperty(k); });
+                `,
+                autoRedeploy: false,
+                accessToken,
+              });
+              consumerDeleted.push(...consumerScriptExtras);
+            } catch (err: any) {
+              console.error(`⚠️  consumer syncProperties reconcile: failed to delete script extras: ${err.message}`);
+              consumerErrors.push(...consumerScriptExtras.map(k => `delete:${k}`));
+            }
+          }
+
+          if (consumerDocExtras.length > 0) {
+            try {
+              const keysJson = JSON.stringify(JSON.stringify(consumerDocExtras));
+              await this.execTool.execute({
+                scriptId: consumerScriptId,
+                js_statement: `
+                  var keys = JSON.parse(JSON.parse(${keysJson}));
+                  var dp = PropertiesService.getDocumentProperties();
+                  if (dp) { keys.forEach(function(k) { dp.deleteProperty(k); }); }
+                `,
+                autoRedeploy: false,
+                accessToken,
+              });
+              consumerDeleted.push(...consumerDocExtras.map(k => `doc:${k}`));
+            } catch (err: any) {
+              console.error(`⚠️  consumer syncProperties reconcile: failed to delete doc extras: ${err.message}`);
+              consumerErrors.push(...consumerDocExtras.map(k => `delete:doc:${k}`));
+            }
+          }
+        } catch (err: any) {
+          console.error(`⚠️  consumer syncProperties reconcile: failed to read consumer props: ${err.message}`);
+          consumerErrors.push('reconcile:read-failed');
+        }
+      }
     }
 
     if (scriptEntries.length === 0 && docEntries.length === 0) {
       console.error(`✅ Property sync: 0 copied, ${skipped.length} skipped (managed), ${deleted.length} deleted, ${errors.length} errors`);
+      const earlyConsumerSync = consumerScriptId ? {
+        synced: consumerSynced,
+        skipped: [...skipped],
+        ...(consumerDeleted.length ? { deleted: consumerDeleted } : {}),
+        ...(consumerErrors.length ? { errors: consumerErrors } : {}),
+      } : undefined;
       return {
         source: sourceScriptId, target: targetScriptId, synced: [], skipped,
         ...(deleted.length ? { deleted } : {}),
         ...(errors.length ? { errors } : {}),
+        ...(earlyConsumerSync ? { consumerSync: earlyConsumerSync } : {}),
       };
     }
 
@@ -1274,11 +1372,67 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       }
     }
 
+    // Sync to consumer (direct PropertiesService — consumer has no ConfigManager installed)
+    if (consumerScriptId) {
+      // Write script-scope properties to consumer in a single batch
+      if (scriptEntries.length > 0) {
+        try {
+          const propsToSet = Object.fromEntries(scriptEntries);
+          const propsJson = JSON.stringify(JSON.stringify(propsToSet));
+          await this.execTool.execute({
+            scriptId: consumerScriptId,
+            js_statement: `
+              var props = JSON.parse(JSON.parse(${propsJson}));
+              PropertiesService.getScriptProperties().setProperties(props, false);
+            `,
+            autoRedeploy: false,
+            accessToken,
+          });
+          consumerSynced.push(...scriptEntries.map(([k]) => k));
+        } catch (err: any) {
+          console.error(`⚠️  consumer syncProperties: failed to write script props: ${err.message}`);
+          consumerErrors.push(...scriptEntries.map(([k]) => k));
+        }
+      }
+
+      // Write doc-scope properties to consumer
+      if (docEntries.length > 0) {
+        try {
+          const docPropsToSet = Object.fromEntries(docEntries);
+          const docPropsJson = JSON.stringify(JSON.stringify(docPropsToSet));
+          await this.execTool.execute({
+            scriptId: consumerScriptId,
+            js_statement: `
+              var dp = PropertiesService.getDocumentProperties();
+              if (dp) {
+                var props = JSON.parse(JSON.parse(${docPropsJson}));
+                dp.setProperties(props, false);
+              }
+            `,
+            autoRedeploy: false,
+            accessToken,
+          });
+          consumerSynced.push(...docEntries.map(([k]) => `doc:${k}`));
+        } catch (err: any) {
+          console.error(`⚠️  consumer syncProperties: failed to write doc props: ${err.message}`);
+          consumerErrors.push(...docEntries.map(([k]) => `doc:${k}`));
+        }
+      }
+    }
+
+    const finalConsumerSync = consumerScriptId ? {
+      synced: consumerSynced,
+      skipped: [...skipped],
+      ...(consumerDeleted.length ? { deleted: consumerDeleted } : {}),
+      ...(consumerErrors.length ? { errors: consumerErrors } : {}),
+    } : undefined;
+
     console.error(`✅ Property sync: ${synced.length} copied, ${skipped.length} skipped (managed), ${deleted.length} deleted, ${errors.length} errors`);
     return {
       source: sourceScriptId, target: targetScriptId, synced, skipped,
       ...(deleted.length ? { deleted } : {}),
       ...(errors.length ? { errors } : {}),
+      ...(finalConsumerSync ? { consumerSync: finalConsumerSync } : {}),
     };
   }
 

@@ -942,6 +942,81 @@ describe('LibraryDeployTool', () => {
       expect(result.synced).to.include('A');
     });
 
+    // ------ consumer sync ------
+
+    it('test D: should sync source props to consumer via direct PropertiesService when consumerScriptId provided', async () => {
+      const CONSUMER_ID = 'consumer-script-id';
+      const execCalls: any[] = [];
+
+      (tool as any).execTool = {
+        execute: async (params: any) => {
+          execCalls.push(params);
+          if (params.scriptId === SOURCE_ID) return makeExecResult({ A: '1' }, {});
+          return {};
+        },
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'token', false, CONSUMER_ID);
+
+      expect(result.consumerSync).to.exist;
+      expect(result.consumerSync.synced).to.include('A');
+
+      // Verify exec was called with CONSUMER_ID for the setProperties write
+      const consumerWrite = execCalls.find(
+        (c: any) => c.scriptId === CONSUMER_ID && c.js_statement.includes('setProperties')
+      );
+      expect(consumerWrite).to.exist;
+    });
+
+    it('test E: should have no consumerSync field when consumerScriptId is omitted', async () => {
+      (tool as any).execTool = {
+        execute: async () => makeExecResult({ A: '1' }, {}),
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'token');
+
+      expect(result).to.not.have.property('consumerSync');
+    });
+
+    it('test F: consumer reconcile should delete consumer extras when reconcile:true', async () => {
+      const CONSUMER_ID = 'consumer-script-id';
+      const consumerDeleteStatements: string[] = [];
+
+      (tool as any).execTool = {
+        execute: async ({ scriptId, js_statement }: any) => {
+          // Source read
+          if (scriptId === SOURCE_ID) return makeExecResult({ A: '1' }, {});
+          // Target (-source) read for reconcile — same as source, no extras
+          if (scriptId === TARGET_ID && js_statement.includes('Logger.log')) return makeExecResult({ A: '1' }, {});
+          // Target (-source) delete — should not be called (no extras)
+          if (scriptId === TARGET_ID && js_statement.includes('deleteProperty')) return {};
+          // Consumer read for reconcile — has extra key C
+          if (scriptId === CONSUMER_ID && js_statement.includes('Logger.log')) return makeExecResult({ A: '1', C: 'extra' }, {});
+          // Consumer delete — C should be deleted
+          if (scriptId === CONSUMER_ID && js_statement.includes('deleteProperty')) {
+            consumerDeleteStatements.push(js_statement);
+            return {};
+          }
+          // Consumer write (setProperties)
+          if (scriptId === CONSUMER_ID && js_statement.includes('setProperties')) return {};
+          return {};
+        },
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'tok', true, CONSUMER_ID);
+
+      expect(result.consumerSync).to.exist;
+      expect(result.consumerSync.deleted).to.include('C');
+      expect(consumerDeleteStatements).to.have.length(1);
+      expect(consumerDeleteStatements[0]).to.include('deleteProperty');
+    });
+
     it('reconcile:true should never delete MANAGED_PROPERTY_KEYS from target', async () => {
       // Source has {A}; target has {A, DEV_URL} where DEV_URL is a managed key.
       let callCount = 0;
