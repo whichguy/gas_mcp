@@ -612,6 +612,80 @@ describe('LibraryDeployTool', () => {
   });
 
   // ============================================================
+  // autoCreateConsumer ConfigManager recovery Tests
+  // ============================================================
+  describe('autoCreateConsumer ConfigManager recovery', () => {
+    it('should recover IDs from ConfigManager when manifest is empty and skip resource creation', async () => {
+      // Manifest re-check returns no mcp_environments (simulates failed step 8 on prior run)
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify({}) }
+        ],
+        updateProjectContent: async () => [],
+      };
+
+      // ConfigManager has the IDs from a prior step 7
+      (tool as any).getConfigManagerValue = async (_scriptId: string, key: string) => {
+        const values: Record<string, string> = {
+          'STAGING_SOURCE_SCRIPT_ID': 'recovered-source',
+          'STAGING_SCRIPT_ID': 'recovered-consumer',
+          'STAGING_SPREADSHEET_URL': 'recovered-sheet',
+        };
+        return values[key] || null;
+      };
+
+      // Manifest heal succeeds
+      let manifestHealCalled = false;
+      (tool as any).updateDevManifestWithEnvironmentIds = async () => { manifestHealCalled = true; };
+
+      // Creation functions should NOT be called
+      let createCalled = false;
+      (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-id'; };
+
+      const result = await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
+
+      expect(result.sourceScriptId).to.equal('recovered-source');
+      expect(result.consumerScriptId).to.equal('recovered-consumer');
+      expect(result.spreadsheetId).to.equal('recovered-sheet');
+      expect(result.manifestPersisted).to.be.true;
+      expect(createCalled).to.be.false;
+      expect(manifestHealCalled).to.be.true;
+    });
+
+    it('should recover IDs from ConfigManager but report manifestPersisted:false when heal fails', async () => {
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify({}) }
+        ],
+        updateProjectContent: async () => [],
+      };
+
+      (tool as any).getConfigManagerValue = async (_scriptId: string, key: string) => {
+        const values: Record<string, string> = {
+          'STAGING_SOURCE_SCRIPT_ID': 'recovered-source',
+          'STAGING_SCRIPT_ID': 'recovered-consumer',
+          'STAGING_SPREADSHEET_URL': 'recovered-sheet',
+        };
+        return values[key] || null;
+      };
+
+      // Manifest heal fails
+      (tool as any).updateDevManifestWithEnvironmentIds = async () => { throw new Error('API rate limit'); };
+
+      let createCalled = false;
+      (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-id'; };
+
+      const result = await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
+
+      expect(result.sourceScriptId).to.equal('recovered-source');
+      expect(result.consumerScriptId).to.equal('recovered-consumer');
+      expect(result.spreadsheetId).to.equal('recovered-sheet');
+      expect(result.manifestPersisted).to.be.false;
+      expect(createCalled).to.be.false;
+    });
+  });
+
+  // ============================================================
   // validateAndRepairConsumerShim Tests
   // ============================================================
   describe('validateAndRepairConsumerShim', () => {
@@ -815,6 +889,81 @@ describe('LibraryDeployTool', () => {
 
       expect(execScriptId).to.equal(SOURCE_ID);
       expect(writeTargetId).to.equal(TARGET_ID);
+    });
+
+    // ------ reconcile mode ------
+
+    it('reconcile:true should delete target-only keys absent from source', async () => {
+      // Source has {A, B}; target has {A, B, C} — C is an extra that should be deleted.
+      let callCount = 0;
+      const deleteStatements: string[] = [];
+
+      (tool as any).execTool = {
+        execute: async ({ scriptId, js_statement }: any) => {
+          callCount++;
+          if (callCount === 1) return makeExecResult({ A: '1', B: '2' }, {}); // source read
+          if (callCount === 2) return makeExecResult({ A: '1', B: '2', C: 'extra' }, {}); // target read
+          // call 3 = batch delete for script extras
+          deleteStatements.push(js_statement);
+          return {};
+        },
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'tok', true);
+
+      expect(result.deleted).to.deep.equal(['C']);
+      expect(result.synced).to.include('A');
+      expect(result.synced).to.include('B');
+      expect(deleteStatements).to.have.length(1);
+      expect(deleteStatements[0]).to.include('deleteProperty');
+    });
+
+    it('reconcile:false (default) should NOT delete target extras', async () => {
+      let callCount = 0;
+      let deleteCallMade = false;
+
+      (tool as any).execTool = {
+        execute: async (_params: any) => {
+          callCount++;
+          if (callCount === 1) return makeExecResult({ A: '1' }, {}); // source read only
+          deleteCallMade = true; // any second exec would be unexpected
+          return {};
+        },
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'tok', false);
+
+      expect(deleteCallMade).to.be.false;
+      expect(result).to.not.have.property('deleted');
+    });
+
+    it('reconcile:true should never delete MANAGED_PROPERTY_KEYS from target', async () => {
+      // Source has {A}; target has {A, DEV_URL} where DEV_URL is a managed key.
+      let callCount = 0;
+      const deleteStatements: string[] = [];
+
+      (tool as any).execTool = {
+        execute: async ({ js_statement }: any) => {
+          callCount++;
+          if (callCount === 1) return makeExecResult({ A: '1' }, {}); // source read
+          if (callCount === 2) return makeExecResult({ A: '1', DEV_URL: 'https://...' }, {}); // target read
+          deleteStatements.push(js_statement); // any delete call
+          return {};
+        },
+      };
+      (tool as any).setConfigManagerValue = async () => {};
+      (tool as any).setDocConfigManagerValue = async () => {};
+
+      const result = await (tool as any).doSyncProperties(SOURCE_ID, TARGET_ID, 'tok', true);
+
+      // DEV_URL is MANAGED — must not appear in deleted
+      expect(result.deleted ?? []).to.not.include('DEV_URL');
+      // No delete exec should have been called (only extra was managed)
+      expect(deleteStatements).to.have.length(0);
     });
   });
 
