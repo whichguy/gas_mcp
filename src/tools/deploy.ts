@@ -82,7 +82,7 @@ export class LibraryDeployTool extends BaseTool {
       discrepancies:  { type: 'array',  description: 'Consumer manifest issues detected (status)' },
       shimValidation: { type: 'object', description: 'Shim validation result (promote): { valid, updated, issue? }' },
       sheetSync:      { type: 'object', description: 'Sheet sync results (promote): { source, target, synced[], added[], skipped[] }. Sheets are synced via copyTo() — copies structure + template data only. Application or user data not present in the source spreadsheet is NOT migrated.' },
-      propertySync:   { type: 'object', description: 'Property sync results (promote, when syncProperties:true): { source, target, synced[], skipped[], errors[]? }. synced = keys copied; skipped = infra keys excluded; errors = keys that failed to write.' },
+      propertySync:   { type: 'object', description: 'Property sync results (promote, when syncProperties:true): { source, target, synced[], skipped[], deleted[]?, errors[]? }. synced = keys copied; skipped = infra keys excluded; deleted = keys removed from target absent in source (reconcileProperties:true only); errors = keys that failed.' },
       configWarning:  { type: 'string', description: 'Non-fatal ConfigManager write failures (deployment still succeeded)' },
       hints:          { type: 'object', description: 'Context-aware next-step hints' },
     },
@@ -127,6 +127,15 @@ export class LibraryDeployTool extends BaseTool {
           + 'Set to false if environments need distinct secrets that should not travel with the deploy.',
         default: true,
       },
+      reconcileProperties: {
+        type: 'boolean',
+        description: 'Delete properties from the target that do not exist in source (reconcile mode). '
+          + 'Default: false. When true, the target becomes an exact mirror of the source for '
+          + 'user-managed properties — extras in the target that are absent from the source are removed. '
+          + 'MANAGED_PROPERTY_KEYS (infrastructure: URLs, IDs, timestamps) and user/userDoc scopes are never deleted. '
+          + 'Only applies when syncProperties is not false. Safe to enable — infrastructure keys are always protected.',
+        default: false,
+      },
       userSymbol: {
         type: 'string',
         description: 'Library namespace symbol in consumer scripts (e.g., "SheetsChat"). Defaults to project-specific config.',
@@ -134,6 +143,16 @@ export class LibraryDeployTool extends BaseTool {
       templateScriptId: {
         type: 'string',
         description: 'Container-bound script ID of the dev/template spreadsheet (for setup operation).',
+      },
+      stagingSourceScriptId: {
+        type: 'string',
+        pattern: '^[a-zA-Z0-9_-]{25,60}$',
+        minLength: 25,
+        maxLength: 60,
+        description: 'Staging-source script ID override for prod promote. '
+          + 'Use when staging was deployed but mcp_environments was not persisted to dev manifest '
+          + '(deploy status shows staging: {configured: false}). '
+          + 'Value: sourceScriptId from the prior staging promote response.',
       },
       ...SchemaFragments.dryRun,
       ...SchemaFragments.scriptId,
@@ -149,7 +168,7 @@ export class LibraryDeployTool extends BaseTool {
         'spreadsheetUrl always returned — share with user to access the environment',
       ],
       self_contained: 'deploy handles all environment setup automatically — no prerequisite tool calls needed',
-      defaults: 'dryRun:false | syncSheets:true | syncProperties:true | userSymbol: derived from project name',
+      defaults: 'dryRun:false | syncSheets:true | syncProperties:true | reconcileProperties:false | userSymbol: derived from project name',
       limitations: [
         'syncSheets copies sheet tabs via copyTo() — only data already in the source template spreadsheet travels with the deploy',
         'Application data, user records, and reference tables not present in the source spreadsheet must be seeded/copied separately',
@@ -261,6 +280,7 @@ export class LibraryDeployTool extends BaseTool {
     let stagingSourceScriptId = envConfig?.staging?.sourceScriptId;
     let stagingConsumerScriptId = envConfig?.staging?.consumerScriptId;
     let stagingSpreadsheetId = envConfig?.staging?.spreadsheetId;
+    let stagingManifestWriteFailed = false;
 
     // Auto-create environment if missing
     if (!stagingSourceScriptId || !stagingConsumerScriptId) {
@@ -278,6 +298,7 @@ export class LibraryDeployTool extends BaseTool {
       stagingSourceScriptId = consumer.sourceScriptId;
       stagingConsumerScriptId = consumer.consumerScriptId;
       stagingSpreadsheetId = consumer.spreadsheetId;
+      if (!consumer.manifestPersisted) stagingManifestWriteFailed = true;
       console.error(`✅ Created staging: source=${stagingSourceScriptId}, consumer=${stagingConsumerScriptId}`);
     }
 
@@ -339,7 +360,10 @@ export class LibraryDeployTool extends BaseTool {
     let propertySync: any = undefined;
     if (params.syncProperties !== false) {
       try {
-        propertySync = await this.doSyncProperties(scriptId, stagingSourceScriptId!, accessToken);
+        propertySync = await this.doSyncProperties(
+          scriptId, stagingSourceScriptId!, accessToken,
+          params.reconcileProperties === true
+        );
       } catch (syncError: any) {
         console.error(`⚠️  Property sync failed: ${syncError.message}`);
         propertySync = { error: syncError.message };
@@ -361,7 +385,10 @@ export class LibraryDeployTool extends BaseTool {
       shimValidation: shimValidation ?? { valid: null, updated: false, issue: 'shim validation not performed' },
       ...(sheetSync ? { sheetSync } : {}),
       ...(propertySync ? { propertySync } : {}),
-      ...(storeResult.failures.length > 0 ? {
+      ...(stagingManifestWriteFailed ? {
+        configWarning: `Staging environment IDs not persisted to dev manifest — prod promote will fail without override. `
+          + `To promote to prod: deploy({to:"prod", scriptId, stagingSourceScriptId:"${stagingSourceScriptId}"})`
+      } : storeResult.failures.length > 0 ? {
         configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
       } : {}),
     };
@@ -371,15 +398,19 @@ export class LibraryDeployTool extends BaseTool {
     const dryRun = !!params.dryRun;
     const envConfig = await this.getEnvironmentConfig(scriptId, accessToken);
 
-    // Need staging source to read from
-    const stagingSourceScriptId = envConfig?.staging?.sourceScriptId;
+    // Need staging source to read from — accept override for when manifest write failed
+    const stagingSourceScriptId = params.stagingSourceScriptId || envConfig?.staging?.sourceScriptId;
     if (!stagingSourceScriptId) {
-      throw new ValidationError('staging_source', 'not configured', 'existing staging-source library — promote to staging first');
+      throw new ValidationError('staging_source', 'not configured',
+        'existing staging-source library — promote to staging first, '
+        + 'or pass stagingSourceScriptId=<sourceScriptId from prior staging promote response>');
     }
+    const usingOverride = !!params.stagingSourceScriptId && !envConfig?.staging?.sourceScriptId;
 
     let prodSourceScriptId = envConfig?.prod?.sourceScriptId;
     let prodConsumerScriptId = envConfig?.prod?.consumerScriptId;
     let prodSpreadsheetId = envConfig?.prod?.spreadsheetId;
+    let prodManifestWriteFailed = false;
 
     // Auto-create prod environment if missing
     if (!prodSourceScriptId || !prodConsumerScriptId) {
@@ -397,6 +428,7 @@ export class LibraryDeployTool extends BaseTool {
       prodSourceScriptId = consumer.sourceScriptId;
       prodConsumerScriptId = consumer.consumerScriptId;
       prodSpreadsheetId = consumer.spreadsheetId;
+      if (!consumer.manifestPersisted) prodManifestWriteFailed = true;
       console.error(`✅ Created prod: source=${prodSourceScriptId}, consumer=${prodConsumerScriptId}`);
     }
 
@@ -455,7 +487,10 @@ export class LibraryDeployTool extends BaseTool {
     let propertySync: any = undefined;
     if (params.syncProperties !== false) {
       try {
-        propertySync = await this.doSyncProperties(stagingSourceScriptId, prodSourceScriptId!, accessToken);
+        propertySync = await this.doSyncProperties(
+          stagingSourceScriptId, prodSourceScriptId!, accessToken,
+          params.reconcileProperties === true
+        );
       } catch (syncError: any) {
         console.error(`⚠️  Property sync failed: ${syncError.message}`);
         propertySync = { error: syncError.message };
@@ -478,7 +513,11 @@ export class LibraryDeployTool extends BaseTool {
       shimValidation: shimValidation ?? { valid: null, updated: false, issue: 'shim validation not performed' },
       ...(sheetSync ? { sheetSync } : {}),
       ...(propertySync ? { propertySync } : {}),
-      ...(storeResult.failures.length > 0 ? {
+      ...(usingOverride && !sheetSync ? { sheetSyncSkipped: 'staging spreadsheet ID unknown (override mode)' } : {}),
+      ...(prodManifestWriteFailed ? {
+        configWarning: `Prod environment IDs not persisted to dev manifest. `
+          + `Run deploy({operation:"status", scriptId}) to verify environment state.`
+      } : storeResult.failures.length > 0 ? {
         configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
       } : {}),
     };
@@ -695,7 +734,7 @@ export class LibraryDeployTool extends BaseTool {
     environment: LibraryEnvironment,
     envConfig: any,
     accessToken?: string
-  ): Promise<{ consumerScriptId: string; spreadsheetId: string; sourceScriptId: string }> {
+  ): Promise<{ consumerScriptId: string; spreadsheetId: string; sourceScriptId: string; manifestPersisted: boolean }> {
     // Re-check manifest in case IDs were written between config read and this call
     const latestConfig = await this.getEnvironmentConfig(libraryScriptId, accessToken);
     const existing = latestConfig?.[environment];
@@ -705,7 +744,30 @@ export class LibraryDeployTool extends BaseTool {
         sourceScriptId: existing.sourceScriptId,
         consumerScriptId: existing.consumerScriptId,
         spreadsheetId: existing.spreadsheetId,
+        manifestPersisted: true,
       };
+    }
+
+    // ConfigManager fallback — IDs may have been stored there despite manifest write failing
+    const cmSourceId = await this.getConfigManagerValue(
+      libraryScriptId, CONFIG_KEYS[environment].sourceScriptId, accessToken);
+    const cmConsumerId = await this.getConfigManagerValue(
+      libraryScriptId, CONFIG_KEYS[environment].scriptId, accessToken);
+    const cmSpreadsheetId = await this.getConfigManagerValue(
+      libraryScriptId, CONFIG_KEYS[environment].spreadsheetUrl, accessToken);
+
+    if (cmSourceId && cmConsumerId) {
+      console.error(`ℹ️  [autoCreateConsumer] Recovering ${environment} IDs from ConfigManager (skipping new creation)`);
+      const recoveredIds = { sourceScriptId: cmSourceId, consumerScriptId: cmConsumerId, spreadsheetId: cmSpreadsheetId || '' };
+      let manifestPersisted = false;
+      try {
+        await this.updateDevManifestWithEnvironmentIds(libraryScriptId, environment, recoveredIds, accessToken);
+        console.error(`✅ Healed mcp_environments.${environment} in dev manifest from ConfigManager`);
+        manifestPersisted = true;
+      } catch (e: any) {
+        console.error(`⚠️  Could not heal manifest from ConfigManager: ${e.message}`);
+      }
+      return { ...recoveredIds, manifestPersisted };
     }
 
     // manifest-primary path stores userSymbol at template.userSymbol; gas-config.json path at top-level
@@ -774,16 +836,18 @@ export class LibraryDeployTool extends BaseTool {
     }
 
     // 8. Persist IDs to dev project's appsscript.json (sole source of truth for environment IDs)
+    let manifestPersisted = false;
     try {
       await this.updateDevManifestWithEnvironmentIds(
         libraryScriptId, environment, { sourceScriptId, consumerScriptId, spreadsheetId }, accessToken
       );
       console.error(`✅ Written mcp_environments.${environment} to dev project manifest`);
+      manifestPersisted = true;
     } catch (e: any) {
       console.error(`⚠️  Failed to write mcp_environments to dev manifest: ${e.message}`);
     }
 
-    return { consumerScriptId, spreadsheetId, sourceScriptId };
+    return { consumerScriptId, spreadsheetId, sourceScriptId, manifestPersisted };
   }
 
   private async createStandaloneProject(
@@ -1063,8 +1127,9 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   private async doSyncProperties(
     sourceScriptId: string,
     targetScriptId: string,
-    accessToken?: string
-  ): Promise<any> {
+    accessToken?: string,
+    reconcile: boolean = false
+  ): Promise<{ source: string; target: string; synced: string[]; skipped: string[]; deleted?: string[]; errors?: string[] }> {
     // Read script-scope and doc-scope properties from source.
     // Explicitly excludes getUserProperties (user + userDoc scopes) — per-user, not portable.
     const readResult = await this.execTool.execute({
@@ -1096,12 +1161,94 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       ...Object.keys(docProps).filter(k => MANAGED_PROPERTY_KEYS.has(k)),
     ];
 
-    if (scriptEntries.length === 0 && docEntries.length === 0) {
-      return { source: sourceScriptId, target: targetScriptId, synced: [], skipped };
-    }
-
     const synced: string[] = [];
     const errors: string[] = [];
+    const deleted: string[] = [];
+
+    // Reconcile: delete target-only keys not present in source and not managed infrastructure.
+    // Makes target an exact mirror of source for user-managed properties.
+    if (reconcile) {
+      const targetReadResult = await this.execTool.execute({
+        scriptId: targetScriptId,
+        js_statement: `
+          var scriptProps = PropertiesService.getScriptProperties().getProperties() || {};
+          var docPropsService = PropertiesService.getDocumentProperties();
+          var docProps = docPropsService ? (docPropsService.getProperties() || {}) : {};
+          Logger.log(JSON.stringify({ script: scriptProps, doc: docProps }));
+        `,
+        autoRedeploy: false,
+        accessToken,
+      });
+
+      let targetScriptProps: Record<string, string> = {};
+      let targetDocProps: Record<string, string> = {};
+      try {
+        if (targetReadResult?.logger_output) {
+          const parsed = JSON.parse(targetReadResult.logger_output);
+          targetScriptProps = parsed.script || {};
+          targetDocProps = parsed.doc || {};
+        }
+      } catch { /* best-effort */ }
+
+      const sourceScriptKeys = new Set(Object.keys(scriptProps));
+      const sourceDocKeys = new Set(Object.keys(docProps));
+
+      const scriptExtras = Object.keys(targetScriptProps).filter(
+        k => !sourceScriptKeys.has(k) && !MANAGED_PROPERTY_KEYS.has(k)
+      );
+      const docExtras = Object.keys(targetDocProps).filter(
+        k => !sourceDocKeys.has(k) && !MANAGED_PROPERTY_KEYS.has(k)
+      );
+
+      if (scriptExtras.length > 0) {
+        try {
+          const keysJson = JSON.stringify(JSON.stringify(scriptExtras));
+          await this.execTool.execute({
+            scriptId: targetScriptId,
+            js_statement: `
+              var keys = JSON.parse(JSON.parse(${keysJson}));
+              var sp = PropertiesService.getScriptProperties();
+              keys.forEach(function(k) { sp.deleteProperty(k); });
+            `,
+            autoRedeploy: false,
+            accessToken,
+          });
+          deleted.push(...scriptExtras);
+        } catch (err: any) {
+          console.error(`⚠️  syncProperties reconcile: failed to delete script extras: ${err.message}`);
+          errors.push(...scriptExtras.map(k => `delete:${k}`));
+        }
+      }
+
+      if (docExtras.length > 0) {
+        try {
+          const keysJson = JSON.stringify(JSON.stringify(docExtras));
+          await this.execTool.execute({
+            scriptId: targetScriptId,
+            js_statement: `
+              var keys = JSON.parse(JSON.parse(${keysJson}));
+              var dp = PropertiesService.getDocumentProperties();
+              if (dp) { keys.forEach(function(k) { dp.deleteProperty(k); }); }
+            `,
+            autoRedeploy: false,
+            accessToken,
+          });
+          deleted.push(...docExtras.map(k => `doc:${k}`));
+        } catch (err: any) {
+          console.error(`⚠️  syncProperties reconcile: failed to delete doc extras: ${err.message}`);
+          errors.push(...docExtras.map(k => `delete:doc:${k}`));
+        }
+      }
+    }
+
+    if (scriptEntries.length === 0 && docEntries.length === 0) {
+      console.error(`✅ Property sync: 0 copied, ${skipped.length} skipped (managed), ${deleted.length} deleted, ${errors.length} errors`);
+      return {
+        source: sourceScriptId, target: targetScriptId, synced: [], skipped,
+        ...(deleted.length ? { deleted } : {}),
+        ...(errors.length ? { errors } : {}),
+      };
+    }
 
     // Write script-scope properties via ConfigManager.setScript
     for (const [key, value] of scriptEntries) {
@@ -1125,8 +1272,12 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       }
     }
 
-    console.error(`✅ Property sync: ${synced.length} copied, ${skipped.length} skipped (managed), ${errors.length} errors`);
-    return { source: sourceScriptId, target: targetScriptId, synced, skipped, ...(errors.length ? { errors } : {}) };
+    console.error(`✅ Property sync: ${synced.length} copied, ${skipped.length} skipped (managed), ${deleted.length} deleted, ${errors.length} errors`);
+    return {
+      source: sourceScriptId, target: targetScriptId, synced, skipped,
+      ...(deleted.length ? { deleted } : {}),
+      ...(errors.length ? { errors } : {}),
+    };
   }
 
   // ---------------------------------------------------------------------------
