@@ -895,16 +895,19 @@ describe('LibraryDeployTool', () => {
 
     it('reconcile:true should delete target-only keys absent from source', async () => {
       // Source has {A, B}; target has {A, B, C} — C is an extra that should be deleted.
-      let callCount = 0;
       const deleteStatements: string[] = [];
 
       (tool as any).execTool = {
         execute: async ({ scriptId, js_statement }: any) => {
-          callCount++;
-          if (callCount === 1) return makeExecResult({ A: '1', B: '2' }, {}); // source read
-          if (callCount === 2) return makeExecResult({ A: '1', B: '2', C: 'extra' }, {}); // target read
-          // call 3 = batch delete for script extras
-          deleteStatements.push(js_statement);
+          // Source read
+          if (scriptId === SOURCE_ID) return makeExecResult({ A: '1', B: '2' }, {});
+          // Target read (reconcile) — has extra key C
+          if (scriptId === TARGET_ID && js_statement.includes('Logger.log')) return makeExecResult({ A: '1', B: '2', C: 'extra' }, {});
+          // Target delete — C should be removed
+          if (scriptId === TARGET_ID && js_statement.includes('deleteProperty')) {
+            deleteStatements.push(js_statement);
+            return {};
+          }
           return {};
         },
       };
@@ -968,6 +971,9 @@ describe('LibraryDeployTool', () => {
         (c: any) => c.scriptId === CONSUMER_ID && c.js_statement.includes('setProperties')
       );
       expect(consumerWrite).to.exist;
+      // Data-correctness: double-stringify encoding produces \"A\":\"1\" in the embedded literal
+      expect(consumerWrite.js_statement).to.include('\\"A\\"');
+      expect(consumerWrite.js_statement).to.include('\\"1\\"');
     });
 
     it('test E: should have no consumerSync field when consumerScriptId is omitted', async () => {
@@ -1019,15 +1025,16 @@ describe('LibraryDeployTool', () => {
 
     it('reconcile:true should never delete MANAGED_PROPERTY_KEYS from target', async () => {
       // Source has {A}; target has {A, DEV_URL} where DEV_URL is a managed key.
-      let callCount = 0;
       const deleteStatements: string[] = [];
 
       (tool as any).execTool = {
-        execute: async ({ js_statement }: any) => {
-          callCount++;
-          if (callCount === 1) return makeExecResult({ A: '1' }, {}); // source read
-          if (callCount === 2) return makeExecResult({ A: '1', DEV_URL: 'https://...' }, {}); // target read
-          deleteStatements.push(js_statement); // any delete call
+        execute: async ({ scriptId, js_statement }: any) => {
+          // Source read
+          if (scriptId === SOURCE_ID) return makeExecResult({ A: '1' }, {});
+          // Target read (reconcile) — has managed key DEV_URL which must not be deleted
+          if (scriptId === TARGET_ID && js_statement.includes('Logger.log')) return makeExecResult({ A: '1', DEV_URL: 'https://...' }, {});
+          // Any delete call — should never happen since only extra is managed
+          if (js_statement.includes('deleteProperty')) deleteStatements.push(js_statement);
           return {};
         },
       };
