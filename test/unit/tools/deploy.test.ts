@@ -928,7 +928,7 @@ describe('LibraryDeployTool', () => {
         execute: async (_params: any) => {
           callCount++;
           if (callCount === 1) return makeExecResult({ A: '1' }, {}); // source read only
-          deleteCallMade = true; // any second exec would be unexpected
+          deleteCallMade = true; // any second exec in reconcile=false mode would be a delete (unexpected)
           return {};
         },
       };
@@ -939,6 +939,7 @@ describe('LibraryDeployTool', () => {
 
       expect(deleteCallMade).to.be.false;
       expect(result).to.not.have.property('deleted');
+      expect(result.synced).to.include('A');
     });
 
     it('reconcile:true should never delete MANAGED_PROPERTY_KEYS from target', async () => {
@@ -964,6 +965,8 @@ describe('LibraryDeployTool', () => {
       expect(result.deleted ?? []).to.not.include('DEV_URL');
       // No delete exec should have been called (only extra was managed)
       expect(deleteStatements).to.have.length(0);
+      // Copy path still runs — A is non-managed and should be synced
+      expect(result.synced).to.include('A');
     });
   });
 
