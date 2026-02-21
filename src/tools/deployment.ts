@@ -1,52 +1,50 @@
 /**
- * Version-based deployment management tool for Google Apps Script
- * Manages web app deployments across dev/staging/prod environments with version control
+ * Deployment configuration tool for Google Apps Script
  *
- * Note: For library version pinning (consumer spreadsheets), see LibraryDeployTool in deploy.ts
+ * Infrastructure-level tool for inspecting raw deployment state or resetting
+ * deployment slots. For deploying code to environments, use deploy() instead.
  */
 
 import { BaseTool } from './base.js';
-import { GASClient, EntryPointType, WebAppAccess, GASDeployment } from '../api/gasClient.js';
+import { GASClient, EntryPointType } from '../api/gasClient.js';
 import { ValidationError, GASApiError } from '../errors/mcpErrors.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { LockManager } from '../utils/lockManager.js';
 import { ExecTool } from './execution.js';
-import { generateDeployHints, generateDeployErrorHints, DeployHints } from '../utils/deployHints.js';
+import { generateDeployHints, generateDeployErrorHints } from '../utils/deployHints.js';
 import { mcpLogger } from '../utils/mcpLogger.js';
 import { ENV_TAGS } from '../utils/deployConstants.js';
+import {
+  findEnvironmentDeployments,
+  extractWebAppUrl,
+  setDeploymentInConfigManager,
+  generateVersionWarnings,
+} from '../utils/deployUtils.js';
 
 /**
- * Version-based deployment tool with environment-aware web app management
+ * Deployment infrastructure tool — inspect raw state or reset deployment slots
  */
-export class VersionDeployTool extends BaseTool {
-  public name = 'version_deploy';
-  public description = '[VERSION_DEPLOY] Low-level web app deployment API — direct control over dev/staging/prod web app deployments (versioned deployment IDs, URLs). Rarely needed: prefer deploy() for standard library version management. Use only for: resetting deployment infrastructure, inspecting raw deployment state, or managing web app URLs directly. Example: version_deploy({scriptId, operation: "status"})';
+export class DeployConfigTool extends BaseTool {
+  public name = 'deploy_config';
+  public description = 'Deployment infrastructure — inspect raw deployment state or reset deployment slots. For deploying code, use deploy().';
 
   public outputSchema = {
     type: 'object' as const,
     properties: {
-      operation: { type: 'string', description: 'Operation performed: promote, rollback, status, or reset' },
-      // promote fields
-      from: { type: 'string', description: 'Source environment (promote: "dev" or "staging")' },
-      to: { type: 'string', description: 'Target environment (promote: "staging" or "prod")' },
-      version: { type: 'object', description: 'Version info (promote/rollback): {versionNumber, description, createTime}' },
-      deployment: { type: 'object', description: 'Deployment info (promote/rollback): {deploymentId, versionNumber, url}' },
-      note: { type: 'string', description: 'Additional context (promote staging→prod)' },
-      // rollback fields
-      environment: { type: 'string', description: 'Target environment (rollback only)' },
+      operation: { type: 'string', description: 'Operation performed: status or reset' },
       // status fields
-      environments: { type: 'object', description: 'Environment details (status only): {dev, staging, prod} each with deploymentId, versionNumber, url, updateTime' },
-      versionManagement: { type: 'object', description: 'Version stats (status only): {totalVersions, highestVersion, prodVersions, warnings}' },
+      environments: { type: 'object', description: 'Environment details (status): {dev, staging, prod} each with deploymentId, versionNumber, url, updateTime' },
+      versionManagement: { type: 'object', description: 'Version stats (status): {totalVersions, highestVersion, prodVersions, warnings}' },
       // reset fields
       status: { type: 'string', description: 'Reset outcome: "success" or "partial"' },
-      deployments: { type: 'object', description: 'New deployments (reset only): {dev, staging, prod} each with deploymentId, url, versionNumber' },
-      message: { type: 'string', description: 'Summary message (reset only)' },
+      deployments: { type: 'object', description: 'New deployments (reset): {dev, staging, prod} each with deploymentId, url, versionNumber' },
+      message: { type: 'string', description: 'Summary message (reset)' },
       warnings: { type: 'array', description: 'Warning messages (reset partial failures)' },
       configWarning: { type: 'string', description: 'Warning when ConfigManager writes failed (deployment still succeeded)' },
       // common
-      hints: { type: 'object', description: 'Context-aware next-step hints' }
-    }
+      hints: { type: 'object', description: 'Context-aware next-step hints' },
+    },
   };
 
   public inputSchema = {
@@ -54,40 +52,23 @@ export class VersionDeployTool extends BaseTool {
     properties: {
       operation: {
         type: 'string',
-        enum: ['promote', 'rollback', 'status', 'reset'],
-        description: 'promote: dev→staging (version) or staging→prod | rollback: revert to previous version | status: view all 3 envs | reset: recreate deployments'
+        enum: ['status', 'reset'],
+        description: 'status: view raw deployment state for all 3 envs | reset: recreate deployment slots',
       },
-      environment: {
-        type: 'string',
-        enum: ['staging', 'prod'],
-        description: 'Target env for promote/rollback. staging: HEAD→version, prod: staging→prod.'
-      },
-      description: {
-        type: 'string',
-        description: 'Version description (required for promote to staging). Auto-tagged [STAGING].'
-      },
-      toVersion: {
-        type: 'number',
-        description: 'Version for rollback (optional). If omitted, auto-finds previous tagged version.',
-        minimum: 1
-      },
-      ...SchemaFragments.dryRun,
       ...SchemaFragments.scriptId,
-      ...SchemaFragments.accessToken
+      ...SchemaFragments.accessToken,
     },
     required: ['operation', 'scriptId'],
     llmGuidance: {
-      preference: 'PREFER deploy() for standard deployment workflows. version_deploy is low-level — use only for direct web app deployment control or infrastructure reset.',
-      workflow: 'dev (HEAD) → promote → staging (versioned) → promote → prod (versioned)',
-      environments: 'dev: HEAD | staging: snapshot | prod: stable'
-    }
+      note: 'Infrastructure only. Use deploy() for all promotion/rollback.',
+    },
   };
 
   public annotations = {
-    title: 'Version Deploy (Advanced)',
+    title: 'Deploy Config',
     readOnlyHint: false,
     destructiveHint: true,
-    openWorldHint: true
+    openWorldHint: true,
   };
 
   private gasClient: GASClient;
@@ -101,25 +82,19 @@ export class VersionDeployTool extends BaseTool {
 
   async execute(params: any): Promise<any> {
     const accessToken = await this.getAuthToken(params);
-    const scriptId = this.validate.scriptId(params.scriptId, 'deployment operation');
+    const scriptId = this.validate.scriptId(params.scriptId, 'deploy_config');
     const operation = this.validate.enum(
       params.operation,
       'operation',
-      ['promote', 'rollback', 'status', 'reset'],
-      'deployment operation'
+      ['status', 'reset'],
+      'deploy_config'
     );
 
-    mcpLogger.info('version_deploy', { event: 'operation_start', operation, scriptId, environment: params.environment });
+    mcpLogger.info('deploy_config', { event: 'operation_start', operation, scriptId });
 
     try {
       let result: any;
       switch (operation) {
-        case 'promote':
-          result = await this.handlePromote(scriptId, params, accessToken);
-          break;
-        case 'rollback':
-          result = await this.handleRollback(scriptId, params, accessToken);
-          break;
         case 'status':
           result = await this.handleStatus(scriptId, accessToken);
           break;
@@ -127,32 +102,25 @@ export class VersionDeployTool extends BaseTool {
           result = await this.handleReset(scriptId, accessToken);
           break;
         default:
-          throw new ValidationError('operation', operation, 'one of: promote, rollback, status, reset');
+          throw new ValidationError('operation', operation, 'one of: status, reset');
       }
 
-      // Generate context-aware hints for the response
+      // Generate context-aware hints
       const hints = generateDeployHints(
-        operation as 'promote' | 'rollback' | 'status' | 'reset',
-        params.environment,
+        operation as 'status' | 'reset',
         result
       );
-
-      // Add hints to result if any were generated
       if (Object.keys(hints).length > 0) {
         result.hints = hints;
       }
 
-      mcpLogger.info('version_deploy', { event: 'operation_complete', operation, scriptId });
-
+      mcpLogger.info('deploy_config', { event: 'operation_complete', operation, scriptId });
       return result;
     } catch (error: any) {
-      mcpLogger.error('version_deploy', { event: 'operation_error', operation, scriptId, error: error.message });
+      mcpLogger.error('deploy_config', { event: 'operation_error', operation, scriptId, error: error.message });
 
-      // Generate error-specific hints
       const errorHints = generateDeployErrorHints(operation, error.message);
-
-      // Wrap error with hints if available
-      const wrappedError = new GASApiError(`Deployment operation failed: ${error.message}`);
+      const wrappedError = new GASApiError(`Deploy config operation failed: ${error.message}`);
       if (Object.keys(errorHints).length > 0) {
         (wrappedError as any).hints = errorHints;
       }
@@ -161,344 +129,10 @@ export class VersionDeployTool extends BaseTool {
   }
 
   /**
-   * Handle promote operation (dev→staging or staging→prod)
-   */
-  private async handlePromote(scriptId: string, params: any, accessToken?: string): Promise<any> {
-    const environment = this.validate.enum(
-      params.environment,
-      'environment',
-      ['staging', 'prod'],
-      'promote operation'
-    );
-
-    const lockManager = LockManager.getInstance();
-    await lockManager.acquireLock(scriptId, `version-deploy-promote-${environment}`);
-
-    try {
-    const dryRun = !!params.dryRun;
-    const deployments = await this.findEnvironmentDeployments(scriptId, accessToken);
-
-    if (environment === 'staging') {
-      // Promote dev→staging: Create version from HEAD and update staging deployment
-      if (!params.description) {
-        throw new ValidationError('description', undefined, 'non-empty string when promoting to staging');
-      }
-
-      const description = this.validate.string(params.description, 'description', 'promote operation');
-      const taggedDescription = `${ENV_TAGS.staging} ${description}`;
-
-      if (!deployments.staging) {
-        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run version_deploy({operation: "reset"}) to create deployments');
-      }
-
-      if (dryRun) {
-        // Preview: determine next version number without creating
-        const versionsResponse = await this.gasClient.listVersions(scriptId, 1, undefined, accessToken);
-        const highestVersion = versionsResponse.versions?.length > 0
-          ? Math.max(...versionsResponse.versions.map((v: any) => v.versionNumber))
-          : 0;
-        return {
-          operation: 'promote',
-          dryRun: true,
-          from: 'dev',
-          to: 'staging',
-          wouldCreateVersion: highestVersion + 1,
-          wouldUpdateDeployment: deployments.staging.deploymentId,
-          currentStagingVersion: deployments.staging.versionNumber,
-          description: taggedDescription,
-        };
-      }
-
-      // Step 1: Create version from HEAD
-      const version = await this.gasClient.createVersion(scriptId, taggedDescription, accessToken);
-      console.error(`✅ Created version ${version.versionNumber}: ${taggedDescription}`);
-
-      // Step 2: Update staging deployment to new version
-      await this.gasClient.updateDeployment(
-        scriptId,
-        deployments.staging.deploymentId,
-        {
-          versionNumber: version.versionNumber,
-          description: `${ENV_TAGS.staging} ${description} (v${version.versionNumber})`
-        },
-        accessToken
-      );
-
-      console.error(`✅ Deployment update requested for staging → v${version.versionNumber}`);
-
-      // Verify deployment update propagated with polling
-      const updatedStaging = await this.verifyDeploymentUpdate(
-        scriptId,
-        deployments.staging.deploymentId,
-        version.versionNumber,
-        'staging',
-        accessToken
-      );
-      const stagingUrl = this.extractWebAppUrl(updatedStaging);
-
-      // Store in ConfigManager
-      let configWarning: string | undefined;
-      if (stagingUrl) {
-        try {
-          await this.setDeploymentInConfigManager(
-            scriptId,
-            'staging',
-            deployments.staging.deploymentId,
-            stagingUrl,
-            accessToken
-          );
-          console.error('✅ Updated staging URL in ConfigManager');
-        } catch (configError: any) {
-          console.error(`⚠️  Failed to update ConfigManager: ${configError.message}`);
-          configWarning = `ConfigManager write failed: ${configError.message}`;
-        }
-      }
-
-      return {
-        operation: 'promote',
-        from: 'dev',
-        to: 'staging',
-        version: {
-          versionNumber: version.versionNumber,
-          description: taggedDescription,
-          createTime: version.createTime
-        },
-        deployment: {
-          deploymentId: deployments.staging.deploymentId,
-          versionNumber: version.versionNumber,
-          url: stagingUrl
-        },
-        ...(configWarning ? { configWarning } : {}),
-      };
-
-    } else {
-      // Promote staging→prod: Update prod to staging version
-      if (!deployments.staging) {
-        throw new ValidationError('staging_deployment', 'not found', 'existing staging deployment - run version_deploy({operation: "reset"}) to create deployments');
-      }
-
-      if (!deployments.prod) {
-        throw new ValidationError('prod_deployment', 'not found', 'existing prod deployment - run version_deploy({operation: "reset"}) to create deployments');
-      }
-
-      // Get staging version
-      const stagingVersion = deployments.staging.versionNumber;
-      if (!stagingVersion) {
-        throw new ValidationError('staging_version', 'HEAD (null)', 'versioned deployment - promote dev→staging first to create a version');
-      }
-
-      if (dryRun) {
-        return {
-          operation: 'promote',
-          dryRun: true,
-          from: 'staging',
-          to: 'prod',
-          wouldPinVersion: stagingVersion,
-          wouldUpdateDeployment: deployments.prod.deploymentId,
-          currentProdVersion: deployments.prod.versionNumber,
-        };
-      }
-
-      // Update prod deployment to staging version
-      await this.gasClient.updateDeployment(
-        scriptId,
-        deployments.prod.deploymentId,
-        {
-          versionNumber: stagingVersion,
-          description: `${ENV_TAGS.prod} v${stagingVersion} (promoted from staging)`
-        },
-        accessToken
-      );
-
-      console.error(`✅ Deployment update requested for prod → v${stagingVersion}`);
-
-      // Verify deployment update propagated with polling
-      const updatedProd = await this.verifyDeploymentUpdate(
-        scriptId,
-        deployments.prod.deploymentId,
-        stagingVersion,
-        'prod',
-        accessToken
-      );
-      const prodUrl = this.extractWebAppUrl(updatedProd);
-
-      // Store in ConfigManager
-      let configWarning: string | undefined;
-      if (prodUrl) {
-        try {
-          await this.setDeploymentInConfigManager(
-            scriptId,
-            'prod',
-            deployments.prod.deploymentId,
-            prodUrl,
-            accessToken
-          );
-          console.error('✅ Updated prod URL in ConfigManager');
-        } catch (configError: any) {
-          console.error(`⚠️  Failed to update ConfigManager: ${configError.message}`);
-          configWarning = `ConfigManager write failed: ${configError.message}`;
-        }
-      }
-
-      // Get version details
-      const version = await this.gasClient.getVersion(scriptId, stagingVersion, accessToken);
-
-      return {
-        operation: 'promote',
-        from: 'staging',
-        to: 'prod',
-        version: {
-          versionNumber: stagingVersion,
-          description: version.description,
-          createTime: version.createTime
-        },
-        deployment: {
-          deploymentId: deployments.prod.deploymentId,
-          versionNumber: stagingVersion,
-          url: prodUrl
-        },
-        note: 'Staging and prod now serve the same version',
-        ...(configWarning ? { configWarning } : {}),
-      };
-    }
-    } finally {
-      await lockManager.releaseLock(scriptId);
-    }
-  }
-
-  /**
-   * Handle rollback operation (staging or prod)
-   * Rolls back to previous tagged version (cannot rollback FROM HEAD)
-   */
-  private async handleRollback(scriptId: string, params: any, accessToken?: string): Promise<any> {
-    // Validate environment is provided
-    if (!params.environment) {
-      throw new ValidationError('environment', undefined, '"staging" or "prod" (rollback requires environment)');
-    }
-
-    const environment = this.validate.enum(
-      params.environment,
-      'environment',
-      ['staging', 'prod'],
-      'rollback operation'
-    );
-
-    const lockManager = LockManager.getInstance();
-    await lockManager.acquireLock(scriptId, `version-deploy-rollback-${environment}`);
-
-    try {
-    const deployments = await this.findEnvironmentDeployments(scriptId, accessToken);
-    const envTag = environment === 'staging' ? ENV_TAGS.staging : ENV_TAGS.prod;
-    const deployment = deployments[environment];
-
-    // Validate deployment exists
-    if (!deployment) {
-      throw new ValidationError(
-        `${environment}_deployment`,
-        'not found',
-        `existing ${environment} deployment - run version_deploy({operation: "reset"}) to create deployments`
-      );
-    }
-
-    // Validate not at HEAD (cannot rollback from HEAD)
-    const currentVersion = deployment.versionNumber;
-    if (!currentVersion) {
-      throw new ValidationError(
-        `${environment}_version`,
-        'HEAD (null)',
-        `versioned ${environment} deployment - cannot rollback from HEAD`
-      );
-    }
-
-    let targetVersion: number;
-
-    if (params.toVersion) {
-      // Manual version specification
-      targetVersion = this.validate.number(params.toVersion, 'toVersion', 'rollback operation', 1);
-    } else {
-      // Auto-find previous tagged version for this environment
-      const response = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
-      const versions = response.versions;
-      const envVersions = versions
-        .filter((v: any) => v.description?.includes(envTag))
-        .sort((a: any, b: any) => b.versionNumber - a.versionNumber);
-
-      const currentIndex = envVersions.findIndex((v: any) => v.versionNumber === currentVersion);
-
-      // Check if current version is in the tagged history
-      if (currentIndex === -1) {
-        throw new ValidationError(
-          `current_${environment}_version`,
-          `v${currentVersion}`,
-          `${envTag} tagged version (current v${currentVersion} not found in ${environment} version history - may have been manually changed)`
-        );
-      }
-
-      // Check if there's a previous version to roll back to
-      if (currentIndex === envVersions.length - 1) {
-        throw new ValidationError(
-          `previous_${environment}_version`,
-          'none available',
-          `at least 2 ${envTag} tagged versions to enable rollback (only found v${currentVersion})`
-        );
-      }
-
-      targetVersion = envVersions[currentIndex + 1].versionNumber;
-    }
-
-    if (params.dryRun) {
-      return {
-        operation: 'rollback',
-        dryRun: true,
-        environment,
-        wouldRollbackTo: targetVersion,
-        currentVersion,
-        deploymentId: deployment.deploymentId,
-      };
-    }
-
-    // Update deployment to target version
-    await this.gasClient.updateDeployment(
-      scriptId,
-      deployment.deploymentId,
-      {
-        versionNumber: targetVersion,
-        description: `${envTag} v${targetVersion} (rolled back from v${currentVersion})`
-      },
-      accessToken
-    );
-
-    console.error(`✅ Rolled back ${environment} from v${currentVersion} to v${targetVersion}`);
-
-    const version = await this.gasClient.getVersion(scriptId, targetVersion, accessToken);
-
-    return {
-      operation: 'rollback',
-      environment: environment,
-      from: {
-        versionNumber: currentVersion
-      },
-      to: {
-        versionNumber: targetVersion,
-        description: version.description,
-        createTime: version.createTime
-      },
-      deployment: {
-        deploymentId: deployment.deploymentId,
-        versionNumber: targetVersion,
-        url: this.extractWebAppUrl(deployment)
-      }
-    };
-    } finally {
-      await lockManager.releaseLock(scriptId);
-    }
-  }
-
-  /**
-   * Handle status operation
+   * Handle status operation — raw deployment state
    */
   private async handleStatus(scriptId: string, accessToken?: string): Promise<any> {
-    const deployments = await this.findEnvironmentDeployments(scriptId, accessToken);
+    const deployments = await findEnvironmentDeployments(this.gasClient, scriptId, accessToken);
     const response = await this.gasClient.listVersions(scriptId, 200, undefined, accessToken);
     const versions = response.versions;
 
@@ -513,34 +147,30 @@ export class VersionDeployTool extends BaseTool {
           deploymentId: deployments.dev.deploymentId,
           versionNumber: null,
           description: 'HEAD (latest code)',
-          url: this.extractWebAppUrl(deployments.dev),
-          updateTime: deployments.dev.updateTime
+          url: extractWebAppUrl(deployments.dev),
+          updateTime: deployments.dev.updateTime,
         } : null,
         staging: deployments.staging ? {
           deploymentId: deployments.staging.deploymentId,
           versionNumber: deployments.staging.versionNumber,
           description: deployments.staging.description,
-          url: this.extractWebAppUrl(deployments.staging),
+          url: extractWebAppUrl(deployments.staging),
           updateTime: deployments.staging.updateTime,
-          canPromoteToProd: deployments.staging.versionNumber !== null &&
-            deployments.staging.versionNumber !== deployments.prod?.versionNumber
         } : null,
         prod: deployments.prod ? {
           deploymentId: deployments.prod.deploymentId,
           versionNumber: deployments.prod.versionNumber,
           description: deployments.prod.description,
-          url: this.extractWebAppUrl(deployments.prod),
+          url: extractWebAppUrl(deployments.prod),
           updateTime: deployments.prod.updateTime,
-          isSynced: deployments.prod.versionNumber === highestVersion,
-          stagingAvailable: deployments.staging?.versionNumber !== deployments.prod.versionNumber
-        } : null
+        } : null,
       },
       versionManagement: {
         totalVersions: versions.length,
         highestVersion,
         prodVersions: versions.filter((v: any) => v.description?.includes(ENV_TAGS.prod)).length,
-        warnings: this.generateVersionWarnings(versions.length)
-      }
+        warnings: generateVersionWarnings(versions.length),
+      },
     };
   }
 
@@ -549,304 +179,166 @@ export class VersionDeployTool extends BaseTool {
    */
   private async handleReset(scriptId: string, accessToken?: string): Promise<any> {
     const lockManager = LockManager.getInstance();
-    await lockManager.acquireLock(scriptId, 'version-deploy-reset');
+    await lockManager.acquireLock(scriptId, 'deploy-config-reset');
 
     try {
-    console.error('🔄 Resetting deployments...');
+      console.error('🔄 Resetting deployments...');
 
-    // Step 1: List existing deployments (for cleanup later)
-    const existingDeployments = await this.gasClient.listDeployments(scriptId, accessToken);
+      // Step 1: List existing deployments (for cleanup later)
+      const existingDeployments = await this.gasClient.listDeployments(scriptId, accessToken);
 
-    // Step 2: Create 3 new standard deployments FIRST (before deleting old ones)
-    // This ensures the project is never left without deployments if creation fails
-    const created: string[] = [];
-    const configFailures: string[] = [];
-    let devDeployment, stagingDeployment, prodDeployment;
-    let devUrl = '', stagingUrl = '', prodUrl = '';
+      // Step 2: Create 3 new standard deployments FIRST (before deleting old ones)
+      const created: string[] = [];
+      const configFailures: string[] = [];
+      let devDeployment: any, stagingDeployment: any, prodDeployment: any;
+      let devUrl = '', stagingUrl = '', prodUrl = '';
 
-    try {
-      devDeployment = await this.gasClient.createDeployment(
-        scriptId,
-        `${ENV_TAGS.dev} Development environment`,
-        { entryPointType: 'WEB_APP' as EntryPointType },
-        undefined,
-        accessToken
-      );
-      created.push(devDeployment.deploymentId);
-      console.error(`✅ Created dev deployment: ${devDeployment.deploymentId}`);
-
-      stagingDeployment = await this.gasClient.createDeployment(
-        scriptId,
-        `${ENV_TAGS.staging} Staging environment`,
-        { entryPointType: 'WEB_APP' as EntryPointType },
-        undefined,
-        accessToken
-      );
-      created.push(stagingDeployment.deploymentId);
-      console.error(`✅ Created staging deployment: ${stagingDeployment.deploymentId}`);
-
-      prodDeployment = await this.gasClient.createDeployment(
-        scriptId,
-        `${ENV_TAGS.prod} Production environment`,
-        { entryPointType: 'WEB_APP' as EntryPointType },
-        undefined,
-        accessToken
-      );
-      created.push(prodDeployment.deploymentId);
-      console.error(`✅ Created prod deployment: ${prodDeployment.deploymentId}`);
-
-      console.error('✅ All 3 standard deployments created successfully');
-
-      // Step 2.5: Fetch deployment details to get URLs (GAS API needs time to propagate entry points)
-      console.error('🔍 Fetching deployment details to extract URLs (with retry for propagation)...');
       try {
-        // Helper function to retry URL fetching with delays
-        const fetchUrlWithRetry = async (deploymentId: string, envName: string, maxRetries = 3): Promise<string> => {
-          for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-              if (attempt > 1) {
-                const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff: 2s, 4s, 5s
-                console.error(`  Retry ${attempt}/${maxRetries} for ${envName} (waiting ${delay}ms)...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              }
+        devDeployment = await this.gasClient.createDeployment(
+          scriptId,
+          `${ENV_TAGS.dev} Development environment`,
+          { entryPointType: 'WEB_APP' as EntryPointType },
+          undefined,
+          accessToken
+        );
+        created.push(devDeployment.deploymentId);
+        console.error(`✅ Created dev deployment: ${devDeployment.deploymentId}`);
 
-              const details = await this.gasClient.getDeployment(scriptId, deploymentId, accessToken);
-              const url = this.extractWebAppUrl(details);
+        stagingDeployment = await this.gasClient.createDeployment(
+          scriptId,
+          `${ENV_TAGS.staging} Staging environment`,
+          { entryPointType: 'WEB_APP' as EntryPointType },
+          undefined,
+          accessToken
+        );
+        created.push(stagingDeployment.deploymentId);
+        console.error(`✅ Created staging deployment: ${stagingDeployment.deploymentId}`);
 
-              if (url) {
-                console.error(`  ✅ ${envName} URL: ${url}`);
-                return url;
-              }
+        prodDeployment = await this.gasClient.createDeployment(
+          scriptId,
+          `${ENV_TAGS.prod} Production environment`,
+          { entryPointType: 'WEB_APP' as EntryPointType },
+          undefined,
+          accessToken
+        );
+        created.push(prodDeployment.deploymentId);
+        console.error(`✅ Created prod deployment: ${prodDeployment.deploymentId}`);
 
-              if (attempt < maxRetries) {
-                console.error(`  ⏳ ${envName} URL not ready yet, will retry...`);
+        console.error('✅ All 3 standard deployments created successfully');
+
+        // Fetch deployment details to get URLs (with retry for propagation)
+        console.error('🔍 Fetching deployment details to extract URLs...');
+        try {
+          const fetchUrlWithRetry = async (deploymentId: string, envName: string, maxRetries = 3): Promise<string> => {
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              try {
+                if (attempt > 1) {
+                  const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                  console.error(`  Retry ${attempt}/${maxRetries} for ${envName} (waiting ${delay}ms)...`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                }
+                const details = await this.gasClient.getDeployment(scriptId, deploymentId, accessToken);
+                const url = extractWebAppUrl(details);
+                if (url) {
+                  console.error(`  ✅ ${envName} URL: ${url}`);
+                  return url;
+                }
+                if (attempt < maxRetries) {
+                  console.error(`  ⏳ ${envName} URL not ready yet, will retry...`);
+                }
+              } catch (err: any) {
+                console.error(`  ⚠️  Error fetching ${envName} deployment: ${err.message}`);
               }
-            } catch (err: any) {
-              console.error(`  ⚠️  Error fetching ${envName} deployment: ${err.message}`);
             }
+            console.error(`  ⚠️  ${envName} URL not available after ${maxRetries} attempts`);
+            return '';
+          };
+
+          devUrl = await fetchUrlWithRetry(devDeployment.deploymentId, 'Dev');
+          stagingUrl = await fetchUrlWithRetry(stagingDeployment.deploymentId, 'Staging');
+          prodUrl = await fetchUrlWithRetry(prodDeployment.deploymentId, 'Prod');
+        } catch (urlError: any) {
+          console.error(`⚠️  Failed to fetch deployment URLs: ${urlError.message}`);
+        }
+
+        // Store deployment info in ConfigManager
+        console.error('💾 Storing deployment info in ConfigManager...');
+        for (const [env, deplId, url] of [
+          ['dev', devDeployment.deploymentId, devUrl],
+          ['staging', stagingDeployment.deploymentId, stagingUrl],
+          ['prod', prodDeployment.deploymentId, prodUrl],
+        ] as const) {
+          try {
+            await setDeploymentInConfigManager(this.execTool, scriptId, env, deplId, url, accessToken);
+          } catch (configError: any) {
+            console.error(`⚠️  Failed to store ${env} deployment info: ${configError.message}`);
+            configFailures.push(env);
           }
-          console.error(`  ⚠️  ${envName} URL not available after ${maxRetries} attempts`);
-          return '';
-        };
+        }
+        if (configFailures.length === 0) {
+          console.error('✅ Deployment info stored in ConfigManager');
+        }
+      } catch (error: any) {
+        // Rollback: Delete any deployments we created
+        console.error(`❌ Failed to create all deployments: ${error.message}`);
+        console.error('🔄 Rolling back newly created deployments...');
 
-        // Fetch all deployment URLs with retry
-        devUrl = await fetchUrlWithRetry(devDeployment.deploymentId, 'Dev');
-        stagingUrl = await fetchUrlWithRetry(stagingDeployment.deploymentId, 'Staging');
-        prodUrl = await fetchUrlWithRetry(prodDeployment.deploymentId, 'Prod');
+        for (const deploymentId of created) {
+          try {
+            await this.gasClient.deleteDeployment(scriptId, deploymentId, accessToken);
+            console.error(`🗑️  Rolled back deployment: ${deploymentId}`);
+          } catch (cleanupError: any) {
+            console.error(`⚠️  Failed to cleanup deployment ${deploymentId}: ${cleanupError.message}`);
+          }
+        }
 
-      } catch (urlError: any) {
-        console.error(`⚠️  Failed to fetch deployment URLs: ${urlError.message}`);
+        throw new GASApiError(`Failed to create new deployments: ${error.message}. Rollback completed - project left in original state.`);
       }
 
-      // Step 2.6: Store all deployment URLs and IDs in ConfigManager
-      console.error('💾 Storing deployment info in ConfigManager...');
-      for (const [env, deplId, url] of [
-        ['dev', devDeployment.deploymentId, devUrl],
-        ['staging', stagingDeployment.deploymentId, stagingUrl],
-        ['prod', prodDeployment.deploymentId, prodUrl],
-      ] as const) {
+      // Step 3: Delete old deployments
+      console.error('🗑️  Cleaning up old deployments...');
+      const deletionFailures: string[] = [];
+
+      for (const deployment of existingDeployments) {
         try {
-          await this.setDeploymentInConfigManager(scriptId, env, deplId, url, accessToken);
-        } catch (configError: any) {
-          console.error(`⚠️  Failed to store ${env} deployment info: ${configError.message}`);
-          configFailures.push(env);
-        }
-      }
-      if (configFailures.length === 0) {
-        console.error('✅ Deployment info stored in ConfigManager');
-      }
-
-    } catch (error: any) {
-      // Rollback: Delete any deployments we created
-      console.error(`❌ Failed to create all deployments: ${error.message}`);
-      console.error('🔄 Rolling back newly created deployments...');
-
-      for (const deploymentId of created) {
-        try {
-          await this.gasClient.deleteDeployment(scriptId, deploymentId, accessToken);
-          console.error(`🗑️  Rolled back deployment: ${deploymentId}`);
-        } catch (cleanupError: any) {
-          console.error(`⚠️  Failed to cleanup deployment ${deploymentId}: ${cleanupError.message}`);
+          await this.gasClient.deleteDeployment(scriptId, deployment.deploymentId, accessToken);
+          console.error(`🗑️  Deleted old deployment: ${deployment.deploymentId}`);
+        } catch (deleteError: any) {
+          deletionFailures.push(deployment.deploymentId);
+          console.error(`⚠️  Failed to delete old deployment ${deployment.deploymentId}: ${deleteError.message}`);
         }
       }
 
-      throw new GASApiError(`Failed to create new deployments: ${error.message}. Rollback completed - project left in original state.`);
-    }
+      const resetStatus = deletionFailures.length > 0 ? 'partial' : 'success';
+      console.error(resetStatus === 'success'
+        ? '✅ Reset complete - 3 standard deployments active'
+        : `⚠️  Reset partially complete - ${deletionFailures.length} old deployment(s) could not be deleted`);
 
-    // Step 3: Now that new deployments are created successfully, delete old ones
-    console.error('🗑️  Cleaning up old deployments...');
-    const deletionFailures: string[] = [];
-
-    for (const deployment of existingDeployments) {
-      try {
-        await this.gasClient.deleteDeployment(scriptId, deployment.deploymentId, accessToken);
-        console.error(`🗑️  Deleted old deployment: ${deployment.deploymentId}`);
-      } catch (deleteError: any) {
-        // Track failures - new deployments are already created so we don't fail the operation
-        deletionFailures.push(deployment.deploymentId);
-        console.error(`⚠️  Failed to delete old deployment ${deployment.deploymentId}: ${deleteError.message}`);
-      }
-    }
-
-    const resetStatus = deletionFailures.length > 0 ? 'partial' : 'success';
-    console.error(resetStatus === 'success'
-      ? '✅ Reset complete - 3 standard deployments active'
-      : `⚠️  Reset partially complete - ${deletionFailures.length} old deployment(s) could not be deleted`);
-
-    const response: any = {
-      operation: 'reset',
-      status: resetStatus,
-      deployments: {
-        dev: {
-          deploymentId: devDeployment.deploymentId,
-          url: devUrl,
-          versionNumber: null
+      const result: any = {
+        operation: 'reset',
+        status: resetStatus,
+        deployments: {
+          dev: { deploymentId: devDeployment.deploymentId, url: devUrl, versionNumber: null },
+          staging: { deploymentId: stagingDeployment.deploymentId, url: stagingUrl, versionNumber: null },
+          prod: { deploymentId: prodDeployment.deploymentId, url: prodUrl, versionNumber: null },
         },
-        staging: {
-          deploymentId: stagingDeployment.deploymentId,
-          url: stagingUrl,
-          versionNumber: null
-        },
-        prod: {
-          deploymentId: prodDeployment.deploymentId,
-          url: prodUrl,
-          versionNumber: null
-        }
-      },
-      message: 'All deployments reset. Three standard deployments created (dev/staging/prod), all pointing to HEAD.',
-      ...(configFailures.length > 0 ? {
-        configWarning: `ConfigManager write failed for: ${configFailures.join(', ')}. URLs may not be stored.`
-      } : {}),
-    };
+        message: 'All deployments reset. Three standard deployments created (dev/staging/prod), all pointing to HEAD.',
+        ...(configFailures.length > 0 ? {
+          configWarning: `ConfigManager write failed for: ${configFailures.join(', ')}. URLs may not be stored.`,
+        } : {}),
+      };
 
-    // Add warnings if deletion failed
-    if (deletionFailures.length > 0) {
-      response.warnings = [
-        `Failed to delete ${deletionFailures.length} old deployment(s). Manual cleanup may be required.`,
-        `Failed deployment IDs: ${deletionFailures.join(', ')}`,
-        `Run version_deploy({operation: "status", scriptId: "${scriptId}"}) to see all deployments`
-      ];
-    }
+      if (deletionFailures.length > 0) {
+        result.warnings = [
+          `Failed to delete ${deletionFailures.length} old deployment(s). Manual cleanup may be required.`,
+          `Failed deployment IDs: ${deletionFailures.join(', ')}`,
+          `Run deploy_config({operation: "status", scriptId: "${scriptId}"}) to see all deployments`,
+        ];
+      }
 
-    return response;
+      return result;
     } finally {
       await lockManager.releaseLock(scriptId);
     }
-  }
-
-  /**
-   * Find environment deployments by description tags
-   * Uses startsWith to prevent tag collision (e.g., "[STAGING]" should not match "OLD[STAGING]")
-   */
-  private async findEnvironmentDeployments(scriptId: string, accessToken?: string): Promise<any> {
-    const deployments = await this.gasClient.listDeployments(scriptId, accessToken);
-
-    return {
-      dev: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.dev)),
-      staging: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.staging)),
-      prod: deployments.find((d: any) => d.description?.startsWith(ENV_TAGS.prod))
-    };
-  }
-
-  /**
-   * Verify deployment update by polling until version matches expected
-   * Ensures deployment updates actually propagate before proceeding
-   * @private
-   */
-  private async verifyDeploymentUpdate(
-    scriptId: string,
-    deploymentId: string,
-    expectedVersion: number,
-    environment: string,
-    accessToken?: string,
-    maxAttempts: number = 5,
-    delayMs: number = 1000
-  ): Promise<GASDeployment> {
-    console.error(`🔍 Verifying ${environment} deployment updated to v${expectedVersion}...`);
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const deployment = await this.gasClient.getDeployment(scriptId, deploymentId, accessToken);
-
-        if (deployment.versionNumber === expectedVersion) {
-          console.error(`✅ ${environment} deployment verified at v${expectedVersion}`);
-          return deployment;
-        }
-
-        if (attempt < maxAttempts) {
-          console.error(`  ⏳ Attempt ${attempt}/${maxAttempts}: v${deployment.versionNumber || 'HEAD'}, expected v${expectedVersion}, retrying...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        }
-      } catch (err: any) {
-        console.error(`  ⚠️  Attempt ${attempt}/${maxAttempts} failed: ${err.message}`);
-        if (attempt === maxAttempts) {
-          throw err;
-        }
-        // Delay before retry after API failure
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-    }
-
-    throw new ValidationError(
-      'deployment_verification',
-      'timeout',
-      `Deployment update verification failed after ${maxAttempts} attempts (${maxAttempts * delayMs}ms). Expected v${expectedVersion}.`
-    );
-  }
-
-  /**
-   * Store deployment URL and ID in ConfigManager (script scope)
-   * @private
-   */
-  private async setDeploymentInConfigManager(
-    scriptId: string,
-    environment: 'dev' | 'staging' | 'prod',
-    deploymentId: string,
-    url: string,
-    accessToken?: string
-  ): Promise<void> {
-    const envUpper = environment.toUpperCase();
-
-    const js_statement = `
-      const ConfigManager = require('common-js/ConfigManager');
-      const config = new ConfigManager('DEPLOY');
-      config.setScript('${envUpper}_URL', '${url}');
-      config.setScript('${envUpper}_DEPLOYMENT_ID', '${deploymentId}');
-      Logger.log('[Deploy] Stored ${environment}: ${url}');
-    `;
-
-    await this.execTool.execute({
-      scriptId,
-      js_statement,
-      autoRedeploy: false,
-      accessToken
-    });
-  }
-
-  /**
-   * Extract web app URL from deployment
-   */
-  private extractWebAppUrl(deployment: any): string | null {
-    if (!deployment.entryPoints) return null;
-
-    const webAppEntry = deployment.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-    return webAppEntry?.webApp?.url || null;
-  }
-
-  /**
-   * Generate version management warnings
-   */
-  private generateVersionWarnings(versionCount: number): any[] {
-    const warnings = [];
-
-    if (versionCount >= 150) {
-      warnings.push({
-        level: versionCount >= 190 ? 'CRITICAL' : 'WARNING',
-        message: `${versionCount}/200 versions used${versionCount >= 190 ? ' - LIMIT APPROACHING!' : ''}`,
-        action: 'Delete old versions manually via GAS UI (Manage Versions)'
-      });
-    }
-
-    return warnings;
   }
 }
