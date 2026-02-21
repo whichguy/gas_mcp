@@ -44,23 +44,6 @@ export function generateExecHints(hadError: boolean): ResponseHint {
   return hints;
 }
 
-export function generateDeployHints(environment: string): ResponseHint {
-  const hints: ResponseHint = {};
-  switch (environment) {
-    case 'dev':
-      hints.next = 'version_deploy({operation: "promote", environment: "staging"}) to promote';
-      break;
-    case 'staging':
-      hints.next = 'version_deploy({operation: "promote", environment: "prod"}) to promote';
-      break;
-    case 'prod':
-      hints.next = 'version_deploy({operation: "status"}) to verify';
-      break;
-  }
-  hints.related = ['version_deploy({operation: "status"}) for current state'];
-  return hints;
-}
-
 export function generateLsHints(itemCount: number, hasScriptId: boolean): ResponseHint {
   const hints: ResponseHint = {};
   if (!hasScriptId) {
