@@ -89,6 +89,7 @@ interface RsyncExecuteResponse {
   };
   git?: RsyncGitHint;
   warnings?: string[];
+  contentAnalysis?: { file: string; hints: string[] }[];  // per-file analyzer output (pull only)
 }
 
 interface RsyncNoChangesResponse {
@@ -149,7 +150,8 @@ export class RsyncTool extends BaseTool {
       // error response fields
       error: { type: 'object', description: 'Error details (on failure): {code, message, details}' },
       // common
-      warnings: { type: 'array', description: 'Warning messages' }
+      warnings: { type: 'array', description: 'Warning messages' },
+      contentAnalysis: { type: 'array', description: 'Per-file content analysis hints (pull only): [{file: string, hints: string[]}]' }
     }
   };
 
@@ -335,6 +337,10 @@ export class RsyncTool extends BaseTool {
 
       if (gitHint) {
         response.git = gitHint;
+      }
+
+      if (result.contentAnalysis && result.contentAnalysis.length > 0) {
+        response.contentAnalysis = result.contentAnalysis;
       }
 
       mcpLogger.info('rsync', {

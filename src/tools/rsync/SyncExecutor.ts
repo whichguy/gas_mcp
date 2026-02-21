@@ -30,6 +30,7 @@ import {
 } from '../../utils/moduleWrapper.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { updateCachedContentHash, clearGASMetadata, cacheGASMetadata } from '../../utils/gasMetadataCache.js';
+import { analyzeContent } from '../../utils/contentAnalyzer.js';
 
 /**
  * Error codes for execution phase
@@ -84,6 +85,7 @@ export interface SyncResult {
     method: string;
     command: string;
   };
+  contentAnalysis?: { file: string; hints: string[] }[];
 }
 
 /**
@@ -140,8 +142,9 @@ export class SyncExecutor {
 
       // Execute based on direction
       let postPushFiles: GASFile[] | undefined;
+      let pullContentAnalysis: { file: string; hints: string[] }[] | undefined;
       if (direction === 'pull') {
-        await this.executePull(operations, localPath);
+        pullContentAnalysis = await this.executePull(operations, localPath);
       } else {
         postPushFiles = await this.executePush(operations, scriptId, accessToken, prefetchedGasFiles);
       }
@@ -173,6 +176,11 @@ export class SyncExecutor {
             }
       };
 
+      // Attach content analysis hints (pull only — non-empty entries)
+      if (pullContentAnalysis && pullContentAnalysis.length > 0) {
+        result.contentAnalysis = pullContentAnalysis;
+      }
+
       log.info(`[EXECUTOR] Sync complete: +${result.filesAdded} ~${result.filesUpdated} -${result.filesDeleted}`);
 
       return result;
@@ -201,12 +209,18 @@ export class SyncExecutor {
    *
    * CRITICAL: After writing, we cache the WRAPPED content hash in xattr so that
    * sync status checks (which compare local hash vs remote WRAPPED hash) work correctly.
+   *
+   * @returns Per-file content analysis hints (non-empty entries only)
    */
-  private async executePull(operations: SyncDiffResult, localPath: string): Promise<void> {
+  private async executePull(
+    operations: SyncDiffResult,
+    localPath: string
+  ): Promise<{ file: string; hints: string[] }[]> {
     log.info(`[EXECUTOR] Executing PULL: ${operations.totalOperations} operations`);
 
     // Write files directly to repo root (not src/ subdirectory)
     const targetDir = localPath;
+    const analysisMap = new Map<string, string[]>();
 
     // Process ADD operations
     for (const op of operations.add) {
@@ -223,6 +237,12 @@ export class SyncExecutor {
       const contentHash = computeGitSha1(contentToWrite);
       await updateCachedContentHash(filePath, contentHash).catch(() => {});
 
+      // Analyze content for LLM hints
+      const analysis = analyzeContent(op.filename, contentToWrite);
+      if (analysis.hints.length > 0) {
+        analysisMap.set(op.filename, analysis.hints);
+      }
+
       log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${fileType})`);
     }
 
@@ -238,6 +258,12 @@ export class SyncExecutor {
 
       const contentHash = computeGitSha1(contentToWrite);
       await updateCachedContentHash(filePath, contentHash).catch(() => {});
+
+      // Analyze content for LLM hints
+      const analysis = analyzeContent(op.filename, contentToWrite);
+      if (analysis.hints.length > 0) {
+        analysisMap.set(op.filename, analysis.hints);
+      }
 
       log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${fileType})`);
     }
@@ -263,6 +289,9 @@ export class SyncExecutor {
       localPath,
       `rsync pull from GAS at ${new Date().toISOString()}`
     );
+
+    // Return accumulated analysis (non-empty only)
+    return Array.from(analysisMap.entries()).map(([file, hints]) => ({ file, hints }));
   }
 
   /**

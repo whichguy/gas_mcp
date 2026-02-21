@@ -17,6 +17,7 @@ import * as os from 'os';
 // Import modules under test
 import { SyncManifest, SyncManifestData } from '../../../src/tools/rsync/SyncManifest.js';
 import { SyncDiff, DiffFileInfo, SyncDiffResult } from '../../../src/tools/rsync/SyncDiff.js';
+import { SyncExecutor } from '../../../src/tools/rsync/SyncExecutor.js';
 import { computeGitSha1 } from '../../../src/utils/hashUtils.js';
 
 describe('rsync modules', () => {
@@ -367,6 +368,94 @@ describe('rsync modules', () => {
         expect(summary).to.include('-1');
         expect(summary).to.include('3 total');
       });
+    });
+  });
+
+  // ============================================================
+  // SyncExecutor.executePull — contentAnalysis integration
+  // ============================================================
+  describe('SyncExecutor contentAnalysis', () => {
+    /**
+     * Helper: build a minimal SyncDiffResult for pull tests
+     */
+    function makePullOps(ops: { add?: Array<{ filename: string; content: string; fileType?: string }>; update?: Array<{ filename: string; content: string; fileType?: string }> }): SyncDiffResult {
+      const add = (ops.add || []).map(o => ({ filename: o.filename, content: o.content, fileType: o.fileType || 'SERVER_JS', action: 'add' as const }));
+      const update = (ops.update || []).map(o => ({ filename: o.filename, content: o.content, fileType: o.fileType || 'SERVER_JS', action: 'update' as const }));
+      return {
+        add,
+        update,
+        delete: [],
+        totalOperations: add.length + update.length,
+        hasChanges: add.length + update.length > 0,
+        hasDestructiveChanges: false,
+      };
+    }
+
+    it('should populate contentAnalysis when pulled file uses PropertiesService', async () => {
+      // Set up a temp git repo so executor can commit
+      const gitDir = path.join(tempDir, '.git');
+      await fs.mkdir(gitDir, { recursive: true });
+      // Init git repo
+      const { execSync } = await import('child_process');
+      try {
+        execSync(`git -C ${tempDir} init && git -C ${tempDir} config user.email test@test.com && git -C ${tempDir} config user.name Test && git -C ${tempDir} commit --allow-empty -m "init"`, { stdio: 'ignore' });
+      } catch {
+        // git not available — skip this test
+        return;
+      }
+
+      const executor = new SyncExecutor();
+      const ops = makePullOps({
+        add: [{
+          filename: 'utils',
+          content: 'function getConfig() { return PropertiesService.getScriptProperties().getProperty("KEY"); }'
+        }]
+      });
+
+      const result = await executor.apply({
+        direction: 'pull',
+        scriptId: 'test-script-id-12345678901234',
+        operations: ops,
+        localPath: tempDir,
+        isBootstrap: true,
+        accessToken: 'ya29.fake-token',
+      });
+
+      expect(result.success).to.be.true;
+      expect(result.contentAnalysis).to.be.an('array').with.length.at.least(1);
+      const entry = result.contentAnalysis!.find(e => e.file === 'utils');
+      expect(entry).to.exist;
+      expect(entry!.hints.some(h => h.includes('gas-properties/ConfigManager'))).to.be.true;
+    });
+
+    it('should NOT include contentAnalysis when pulled files are clean', async () => {
+      const { execSync } = await import('child_process');
+      try {
+        execSync(`git -C ${tempDir} init && git -C ${tempDir} config user.email test@test.com && git -C ${tempDir} config user.name Test && git -C ${tempDir} commit --allow-empty -m "init"`, { stdio: 'ignore' });
+      } catch {
+        return; // git not available
+      }
+
+      const executor = new SyncExecutor();
+      const ops = makePullOps({
+        add: [{
+          filename: 'clean',
+          content: 'function add(a, b) { return a + b; }'
+        }]
+      });
+
+      const result = await executor.apply({
+        direction: 'pull',
+        scriptId: 'test-script-id-12345678901234',
+        operations: ops,
+        localPath: tempDir,
+        isBootstrap: true,
+        accessToken: 'ya29.fake-token',
+      });
+
+      expect(result.success).to.be.true;
+      // No hints → contentAnalysis should be absent
+      expect(result.contentAnalysis).to.be.undefined;
     });
   });
 });
