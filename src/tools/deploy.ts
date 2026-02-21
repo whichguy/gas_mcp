@@ -150,7 +150,7 @@ export class LibraryDeployTool extends BaseTool {
         minLength: 25,
         maxLength: 60,
         description: 'Staging-source script ID override for prod promote. '
-          + 'Use when staging was deployed but mcp_environments was not persisted to dev manifest '
+          + 'Emergency escape hatch when ConfigManager write failed during staging promote '
           + '(deploy status shows staging: {configured: false}). '
           + 'Value: sourceScriptId from the prior staging promote response.',
       },
@@ -240,11 +240,12 @@ export class LibraryDeployTool extends BaseTool {
 
       mcpLogger.info('deploy', { event: 'operation_complete', operation, scriptId });
       return result;
-    } catch (error: any) {
-      mcpLogger.error('deploy', { event: 'operation_error', operation, scriptId, error: error.message });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      mcpLogger.error('deploy', { event: 'operation_error', operation, scriptId, error: msg });
 
-      const errorHints = generateLibraryDeployErrorHints(operation, error.message);
-      const wrappedError = new GASApiError(`Library deploy failed: ${error.message}`);
+      const errorHints = generateLibraryDeployErrorHints(operation, msg);
+      const wrappedError = new GASApiError(`Library deploy failed: ${msg}`);
       if (Object.keys(errorHints).length > 0) {
         (wrappedError as any).hints = errorHints;
       }
@@ -280,7 +281,6 @@ export class LibraryDeployTool extends BaseTool {
     let stagingSourceScriptId = envConfig?.staging?.sourceScriptId;
     let stagingConsumerScriptId = envConfig?.staging?.consumerScriptId;
     let stagingSpreadsheetId = envConfig?.staging?.spreadsheetId;
-    let stagingManifestWriteFailed = false;
 
     // Auto-create environment if missing
     if (!stagingSourceScriptId || !stagingConsumerScriptId) {
@@ -298,7 +298,6 @@ export class LibraryDeployTool extends BaseTool {
       stagingSourceScriptId = consumer.sourceScriptId;
       stagingConsumerScriptId = consumer.consumerScriptId;
       stagingSpreadsheetId = consumer.spreadsheetId;
-      if (!consumer.manifestPersisted) stagingManifestWriteFailed = true;
       console.error(`✅ Created staging: source=${stagingSourceScriptId}, consumer=${stagingConsumerScriptId}`);
     }
 
@@ -349,9 +348,10 @@ export class LibraryDeployTool extends BaseTool {
       if (sourceSpreadsheetId && targetSpreadsheetId) {
         try {
           sheetSync = await this.syncSheets(sourceSpreadsheetId, targetSpreadsheetId, scriptId, accessToken);
-        } catch (syncError: any) {
-          console.error(`⚠️  Sheet sync failed: ${syncError.message}`);
-          sheetSync = { error: syncError.message };
+        } catch (syncError: unknown) {
+          const syncMsg = syncError instanceof Error ? syncError.message : String(syncError);
+          console.error(`⚠️  Sheet sync failed: ${syncMsg}`);
+          sheetSync = { error: syncMsg };
         }
       }
     }
@@ -365,9 +365,10 @@ export class LibraryDeployTool extends BaseTool {
           params.reconcileProperties === true,
           stagingConsumerScriptId ?? undefined
         );
-      } catch (syncError: any) {
-        console.error(`⚠️  Property sync failed: ${syncError.message}`);
-        propertySync = { error: syncError.message };
+      } catch (syncError: unknown) {
+        const syncMsg = syncError instanceof Error ? syncError.message : String(syncError);
+        console.error(`⚠️  Property sync failed: ${syncMsg}`);
+        propertySync = { error: syncMsg };
       }
     }
 
@@ -386,10 +387,7 @@ export class LibraryDeployTool extends BaseTool {
       shimValidation: shimValidation ?? { valid: null, updated: false, issue: 'shim validation not performed' },
       ...(sheetSync ? { sheetSync } : {}),
       ...(propertySync ? { propertySync } : {}),
-      ...(stagingManifestWriteFailed ? {
-        configWarning: `Staging environment IDs not persisted to dev manifest — prod promote will fail without override. `
-          + `To promote to prod: deploy({to:"prod", scriptId, stagingSourceScriptId:"${stagingSourceScriptId}"})`
-      } : storeResult.failures.length > 0 ? {
+      ...(storeResult.failures.length > 0 ? {
         configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
       } : {}),
     };
@@ -411,7 +409,6 @@ export class LibraryDeployTool extends BaseTool {
     let prodSourceScriptId = envConfig?.prod?.sourceScriptId;
     let prodConsumerScriptId = envConfig?.prod?.consumerScriptId;
     let prodSpreadsheetId = envConfig?.prod?.spreadsheetId;
-    let prodManifestWriteFailed = false;
 
     // Auto-create prod environment if missing
     if (!prodSourceScriptId || !prodConsumerScriptId) {
@@ -429,7 +426,6 @@ export class LibraryDeployTool extends BaseTool {
       prodSourceScriptId = consumer.sourceScriptId;
       prodConsumerScriptId = consumer.consumerScriptId;
       prodSpreadsheetId = consumer.spreadsheetId;
-      if (!consumer.manifestPersisted) prodManifestWriteFailed = true;
       console.error(`✅ Created prod: source=${prodSourceScriptId}, consumer=${prodConsumerScriptId}`);
     }
 
@@ -477,9 +473,10 @@ export class LibraryDeployTool extends BaseTool {
       if (stagingSpreadsheetId && prodSpreadsheetId) {
         try {
           sheetSync = await this.syncSheets(stagingSpreadsheetId, prodSpreadsheetId, scriptId, accessToken);
-        } catch (syncError: any) {
-          console.error(`⚠️  Sheet sync failed: ${syncError.message}`);
-          sheetSync = { error: syncError.message };
+        } catch (syncError: unknown) {
+          const syncMsg = syncError instanceof Error ? syncError.message : String(syncError);
+          console.error(`⚠️  Sheet sync failed: ${syncMsg}`);
+          sheetSync = { error: syncMsg };
         }
       }
     }
@@ -493,9 +490,10 @@ export class LibraryDeployTool extends BaseTool {
           params.reconcileProperties === true,
           prodConsumerScriptId ?? undefined
         );
-      } catch (syncError: any) {
-        console.error(`⚠️  Property sync failed: ${syncError.message}`);
-        propertySync = { error: syncError.message };
+      } catch (syncError: unknown) {
+        const syncMsg = syncError instanceof Error ? syncError.message : String(syncError);
+        console.error(`⚠️  Property sync failed: ${syncMsg}`);
+        propertySync = { error: syncMsg };
       }
     }
 
@@ -516,10 +514,7 @@ export class LibraryDeployTool extends BaseTool {
       ...(sheetSync ? { sheetSync } : {}),
       ...(propertySync ? { propertySync } : {}),
       ...(usingOverride && !sheetSync ? { sheetSyncSkipped: 'staging spreadsheet ID unknown (override mode)' } : {}),
-      ...(prodManifestWriteFailed ? {
-        configWarning: `Prod environment IDs not persisted to dev manifest. `
-          + `Run deploy({operation:"status", scriptId}) to verify environment state.`
-      } : storeResult.failures.length > 0 ? {
+      ...(storeResult.failures.length > 0 ? {
         configWarning: `ConfigManager failed for: ${storeResult.failures.join(', ')}.`
       } : {}),
     };
@@ -557,8 +552,8 @@ export class LibraryDeployTool extends BaseTool {
               discrepancies.push(`${env}: consumer library reference missing developmentMode: true`);
             }
           }
-        } catch (error: any) {
-          console.error(`⚠️  Could not verify ${env} consumer: ${error.message}`);
+        } catch (error: unknown) {
+          console.error(`⚠️  Could not verify ${env} consumer: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -672,41 +667,23 @@ export class LibraryDeployTool extends BaseTool {
       try {
         await McpGasConfigManager.saveConfig(config);
         console.error('✅ Saved template config to gas-config.json');
-      } catch (saveError: any) {
-        console.error(`⚠️  [handleSetup] Failed to save to gas-config.json: ${saveError.message} — continuing (mcp_environments manifest write is authoritative)`);
+      } catch (saveError: unknown) {
+        console.error(`⚠️  [handleSetup] Failed to save to gas-config.json: ${saveError instanceof Error ? saveError.message : String(saveError)} — continuing (ConfigManager is authoritative)`);
       }
-    }
-
-    // Persist template info to dev project's appsscript.json under mcp_environments.template
-    try {
-      const devFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-      const devManifest = devFiles.find((f: GASFile) => f.name === 'appsscript');
-      if (devManifest?.source) {
-        const devJson = JSON.parse(devManifest.source);
-        if (!devJson.mcp_environments) devJson.mcp_environments = {};
-        devJson.mcp_environments.template = { scriptId: templateScriptId, userSymbol };
-        const updatedDevFiles = devFiles.map((f: GASFile) =>
-          f.name === 'appsscript' ? { ...f, source: JSON.stringify(devJson, null, 2) } : f
-        );
-        await this.gasClient.updateProjectContent(scriptId, updatedDevFiles, accessToken);
-        console.error(`✅ Written mcp_environments.template to dev project manifest`);
-      }
-    } catch (e: any) {
-      console.error(`⚠️  Failed to write mcp_environments.template to dev manifest: ${e.message}`);
     }
 
     // Store in ConfigManager (non-fatal — setup succeeded even if this fails)
     const configFailures: string[] = [];
     try {
       await this.setConfigManagerValue(scriptId, 'TEMPLATE_SCRIPT_ID', templateScriptId, accessToken);
-    } catch (error: any) {
-      console.error(`⚠️  Failed to store TEMPLATE_SCRIPT_ID: ${error.message}`);
+    } catch (error: unknown) {
+      console.error(`⚠️  Failed to store TEMPLATE_SCRIPT_ID: ${error instanceof Error ? error.message : String(error)}`);
       configFailures.push('TEMPLATE_SCRIPT_ID');
     }
     try {
       await this.setConfigManagerValue(scriptId, 'USER_SYMBOL', userSymbol, accessToken);
-    } catch (error: any) {
-      console.error(`⚠️  Failed to store USER_SYMBOL: ${error.message}`);
+    } catch (error: unknown) {
+      console.error(`⚠️  Failed to store USER_SYMBOL: ${error instanceof Error ? error.message : String(error)}`);
       configFailures.push('USER_SYMBOL');
     }
 
@@ -736,43 +713,21 @@ export class LibraryDeployTool extends BaseTool {
     environment: LibraryEnvironment,
     envConfig: any,
     accessToken?: string
-  ): Promise<{ consumerScriptId: string; spreadsheetId: string; sourceScriptId: string; manifestPersisted: boolean }> {
-    // Re-check manifest in case IDs were written between config read and this call
+  ): Promise<{ consumerScriptId: string; spreadsheetId: string; sourceScriptId: string }> {
+    // Re-check ConfigManager in case IDs were written between config read and this call
     const latestConfig = await this.getEnvironmentConfig(libraryScriptId, accessToken);
     const existing = latestConfig?.[environment];
     if (existing?.sourceScriptId && existing?.consumerScriptId && existing?.spreadsheetId) {
-      console.error(`✅ ${environment} environment already exists in manifest — skipping creation`);
+      console.error(`✅ ${environment} environment already exists in ConfigManager — skipping creation`);
       return {
         sourceScriptId: existing.sourceScriptId,
         consumerScriptId: existing.consumerScriptId,
         spreadsheetId: existing.spreadsheetId,
-        manifestPersisted: true,
       };
     }
 
-    // ConfigManager fallback — IDs may have been stored there despite manifest write failing
-    const cmSourceId = await this.getConfigManagerValue(
-      libraryScriptId, CONFIG_KEYS[environment].sourceScriptId, accessToken);
-    const cmConsumerId = await this.getConfigManagerValue(
-      libraryScriptId, CONFIG_KEYS[environment].scriptId, accessToken);
-    const cmSpreadsheetId = await this.getConfigManagerValue(
-      libraryScriptId, CONFIG_KEYS[environment].spreadsheetUrl, accessToken);
-
-    if (cmSourceId && cmConsumerId) {
-      console.error(`ℹ️  [autoCreateConsumer] Recovering ${environment} IDs from ConfigManager (skipping new creation)`);
-      const recoveredIds = { sourceScriptId: cmSourceId, consumerScriptId: cmConsumerId, spreadsheetId: cmSpreadsheetId || '' };
-      let manifestPersisted = false;
-      try {
-        await this.updateDevManifestWithEnvironmentIds(libraryScriptId, environment, recoveredIds, accessToken);
-        console.error(`✅ Healed mcp_environments.${environment} in dev manifest from ConfigManager`);
-        manifestPersisted = true;
-      } catch (e: any) {
-        console.error(`⚠️  Could not heal manifest from ConfigManager: ${e.message}`);
-      }
-      return { ...recoveredIds, manifestPersisted };
-    }
-
-    // manifest-primary path stores userSymbol at template.userSymbol; gas-config.json path at top-level
+    // ConfigManager is the source of truth — any existing IDs are already in latestConfig above.
+    // If we reach here, the environment truly doesn't exist yet and needs to be created.
     const userSymbol = envConfig?.template?.userSymbol || envConfig?.userSymbol
       || latestConfig?.template?.userSymbol || latestConfig?.userSymbol
       || await this.deriveUserSymbol(libraryScriptId);
@@ -802,28 +757,7 @@ export class LibraryDeployTool extends BaseTool {
     await this.writeConsumerShim(consumerScriptId, sourceScriptId, userSymbol, libraryManifestJson, accessToken);
     console.error(`✅ Consumer shim written for ${environment}`);
 
-    // 6. Save to local config (migration bridge + no-token fallback)
-    //    The authoritative store is the dev project's appsscript.json (step 8 below).
-    //    This write keeps gas-config.json usable as a local cache for the legacy fallback
-    //    path in getEnvironmentConfig() when no accessToken is available.
-    const config = await McpGasConfigManager.getConfig();
-    const projectEntry = this.findProjectByScriptId(config, libraryScriptId);
-    if (projectEntry) {
-      if (!projectEntry.environments) projectEntry.environments = {};
-      projectEntry.environments[environment] = {
-        consumerScriptId,
-        spreadsheetId,
-        sourceScriptId,
-      };
-      try {
-        await McpGasConfigManager.saveConfig(config);
-      } catch (saveError: any) {
-        // Non-fatal: manifest is the authoritative store (step 8); gas-config.json is a local cache
-        console.error(`⚠️  [autoCreateConsumer] Failed to save environment to gas-config.json: ${saveError.message} — continuing (manifest write at step 8 is authoritative)`);
-      }
-    }
-
-    // 7. Store in ConfigManager (non-fatal — environment already created)
+    // 6. Store in ConfigManager on dev project (authoritative source of truth for environment IDs)
     const configKeys: Array<[string, string]> = [
       [CONFIG_KEYS[environment].scriptId, consumerScriptId],
       [CONFIG_KEYS[environment].sourceScriptId, sourceScriptId],
@@ -832,24 +766,12 @@ export class LibraryDeployTool extends BaseTool {
     for (const [key, value] of configKeys) {
       try {
         await this.setConfigManagerValue(libraryScriptId, key, value, accessToken);
-      } catch (error: any) {
-        console.error(`⚠️  Failed to store ${key} in ConfigManager: ${error.message}`);
+      } catch (error: unknown) {
+        console.error(`⚠️  Failed to store ${key} in ConfigManager: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 
-    // 8. Persist IDs to dev project's appsscript.json (sole source of truth for environment IDs)
-    let manifestPersisted = false;
-    try {
-      await this.updateDevManifestWithEnvironmentIds(
-        libraryScriptId, environment, { sourceScriptId, consumerScriptId, spreadsheetId }, accessToken
-      );
-      console.error(`✅ Written mcp_environments.${environment} to dev project manifest`);
-      manifestPersisted = true;
-    } catch (e: any) {
-      console.error(`⚠️  Failed to write mcp_environments to dev manifest: ${e.message}`);
-    }
-
-    return { consumerScriptId, spreadsheetId, sourceScriptId, manifestPersisted };
+    return { consumerScriptId, spreadsheetId, sourceScriptId };
   }
 
   private async createStandaloneProject(
@@ -1227,8 +1149,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
             accessToken,
           });
           deleted.push(...scriptExtras);
-        } catch (err: any) {
-          console.error(`⚠️  syncProperties reconcile: failed to delete script extras: ${err.message}`);
+        } catch (err: unknown) {
+          console.error(`⚠️  syncProperties reconcile: failed to delete script extras: ${err instanceof Error ? err.message : String(err)}`);
           errors.push(...scriptExtras.map(k => `delete:${k}`));
         }
       }
@@ -1247,8 +1169,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
             accessToken,
           });
           deleted.push(...docExtras.map(k => `doc:${k}`));
-        } catch (err: any) {
-          console.error(`⚠️  syncProperties reconcile: failed to delete doc extras: ${err.message}`);
+        } catch (err: unknown) {
+          console.error(`⚠️  syncProperties reconcile: failed to delete doc extras: ${err instanceof Error ? err.message : String(err)}`);
           errors.push(...docExtras.map(k => `delete:doc:${k}`));
         }
       }
@@ -1278,9 +1200,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
             }
           } catch { /* best-effort */ }
 
-          const sourceScriptKeys = new Set(Object.keys(scriptProps));
-          const sourceDocKeys = new Set(Object.keys(docProps));
-
+          // sourceScriptKeys and sourceDocKeys are already in scope from the enclosing
+          // reconcile block (lines above) — no need to re-declare them here.
           const consumerScriptExtras = Object.keys(consumerScriptProps).filter(
             k => !sourceScriptKeys.has(k) && !MANAGED_PROPERTY_KEYS.has(k)
           );
@@ -1302,8 +1223,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
                 accessToken,
               });
               consumerDeleted.push(...consumerScriptExtras);
-            } catch (err: any) {
-              console.error(`⚠️  consumer syncProperties reconcile: failed to delete script extras: ${err.message}`);
+            } catch (err: unknown) {
+              console.error(`⚠️  consumer syncProperties reconcile: failed to delete script extras: ${err instanceof Error ? err.message : String(err)}`);
               consumerErrors.push(...consumerScriptExtras.map(k => `delete:${k}`));
             }
           }
@@ -1322,13 +1243,13 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
                 accessToken,
               });
               consumerDeleted.push(...consumerDocExtras.map(k => `doc:${k}`));
-            } catch (err: any) {
-              console.error(`⚠️  consumer syncProperties reconcile: failed to delete doc extras: ${err.message}`);
+            } catch (err: unknown) {
+              console.error(`⚠️  consumer syncProperties reconcile: failed to delete doc extras: ${err instanceof Error ? err.message : String(err)}`);
               consumerErrors.push(...consumerDocExtras.map(k => `delete:doc:${k}`));
             }
           }
-        } catch (err: any) {
-          console.error(`⚠️  consumer syncProperties reconcile: failed to read consumer props: ${err.message}`);
+        } catch (err: unknown) {
+          console.error(`⚠️  consumer syncProperties reconcile: failed to read consumer props: ${err instanceof Error ? err.message : String(err)}`);
           consumerErrors.push('reconcile:read-failed');
         }
       }
@@ -1355,8 +1276,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       try {
         await this.setConfigManagerValue(targetScriptId, key, value, accessToken);
         synced.push(key);
-      } catch (err: any) {
-        console.error(`⚠️  syncProperties: failed to copy script.${key}: ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`⚠️  syncProperties: failed to copy script.${key}: ${err instanceof Error ? err.message : String(err)}`);
         errors.push(key);
       }
     }
@@ -1366,8 +1287,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       try {
         await this.setDocConfigManagerValue(targetScriptId, key, value, accessToken);
         synced.push(`doc:${key}`);
-      } catch (err: any) {
-        console.error(`⚠️  syncProperties: failed to copy doc.${key}: ${err.message}`);
+      } catch (err: unknown) {
+        console.error(`⚠️  syncProperties: failed to copy doc.${key}: ${err instanceof Error ? err.message : String(err)}`);
         errors.push(`doc:${key}`);
       }
     }
@@ -1389,8 +1310,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
             accessToken,
           });
           consumerSynced.push(...scriptEntries.map(([k]) => k));
-        } catch (err: any) {
-          console.error(`⚠️  consumer syncProperties: failed to write script props: ${err.message}`);
+        } catch (err: unknown) {
+          console.error(`⚠️  consumer syncProperties: failed to write script props: ${err instanceof Error ? err.message : String(err)}`);
           consumerErrors.push(...scriptEntries.map(([k]) => k));
         }
       }
@@ -1413,8 +1334,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
             accessToken,
           });
           consumerSynced.push(...docEntries.map(([k]) => `doc:${k}`));
-        } catch (err: any) {
-          console.error(`⚠️  consumer syncProperties: failed to write doc props: ${err.message}`);
+        } catch (err: unknown) {
+          console.error(`⚠️  consumer syncProperties: failed to write doc props: ${err instanceof Error ? err.message : String(err)}`);
           consumerErrors.push(...docEntries.map(([k]) => `doc:${k}`));
         }
       }
@@ -1504,8 +1425,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
 
     try {
       await this.setConfigManagerValue(scriptId, keys.promotedAt, new Date().toISOString(), accessToken);
-    } catch (error: any) {
-      console.error(`⚠️  Failed to store ${keys.promotedAt}: ${error.message}`);
+    } catch (error: unknown) {
+      console.error(`⚠️  Failed to store ${keys.promotedAt}: ${error instanceof Error ? error.message : String(error)}`);
       failures.push(keys.promotedAt);
     }
 
@@ -1515,32 +1436,6 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   // ---------------------------------------------------------------------------
   // Config helpers
   // ---------------------------------------------------------------------------
-
-  /**
-   * Write environment IDs into the dev project's appsscript.json under mcp_environments.
-   * This is the sole source of truth for environment IDs — portable across machines/git clones.
-   */
-  private async updateDevManifestWithEnvironmentIds(
-    devScriptId: string,
-    environment: LibraryEnvironment,
-    ids: { sourceScriptId: string; consumerScriptId: string; spreadsheetId: string },
-    accessToken?: string
-  ): Promise<void> {
-    const files = await this.gasClient.getProjectContent(devScriptId, accessToken);
-    const manifest = files.find((f: GASFile) => f.name === 'appsscript');
-    if (!manifest?.source) {
-      throw new Error('dev project appsscript.json not found — cannot persist environment IDs');
-    }
-
-    const json = JSON.parse(manifest.source);
-    if (!json.mcp_environments) json.mcp_environments = {};
-    json.mcp_environments[environment] = ids;
-
-    const updated = files.map((f: GASFile) =>
-      f.name === 'appsscript' ? { ...f, source: JSON.stringify(json, null, 2) } : f
-    );
-    await this.gasClient.updateProjectContent(devScriptId, updated, accessToken);
-  }
 
   /**
    * Strip mcp_environments from appsscript.json before pushing to -source libraries.
@@ -1589,44 +1484,83 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
         ? `library reference missing (expected ${sourceScriptId})`
         : 'developmentMode was not true';
       return { valid: false, updated: true, issue };
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Distinguish 404 (consumer deleted) from transient errors — both are non-fatal but
       // a deleted consumer means files are being pushed to a -source with no active consumer
-      const is404 = e.message?.includes('404') || e.status === 404 || e.code === 404;
+      const is404 = (e instanceof Error && e.message.includes('404'))
+        || (typeof e === 'object' && e !== null && (e as Record<string, unknown>).status === 404)
+        || (typeof e === 'object' && e !== null && (e as Record<string, unknown>).code === 404);
+      const msg = e instanceof Error ? e.message : String(e);
       const issue = is404
         ? `consumer project not found (404) — run deploy setup to recreate it`
-        : `validation error: ${e.message}`;
+        : `validation error: ${msg}`;
       return { valid: false, updated: false, issue };
     }
   }
 
   private async getEnvironmentConfig(scriptId: string, accessToken?: string): Promise<any> {
-    // Primary: read mcp_environments from dev project's appsscript.json
-    if (!accessToken) {
-      console.error('⚠️  [getEnvironmentConfig] No accessToken provided — skipping manifest read, using gas-config.json fallback');
-    }
+    // Primary: read environment IDs from ConfigManager on dev project (PropertiesService script scope)
     if (accessToken) {
       try {
-        const files = await this.gasClient.getProjectContent(scriptId, accessToken);
-        const manifest = files.find((f: GASFile) => f.name === 'appsscript');
-        if (manifest?.source) {
-          const json = JSON.parse(manifest.source);
-          if (json.mcp_environments) {
-            return json.mcp_environments;
+        const [
+          stagingSourceId, stagingConsumerId, stagingSpreadsheetId,
+          prodSourceId, prodConsumerId, prodSpreadsheetId,
+          templateScriptId, userSymbol,
+        ] = await Promise.all([
+          this.getConfigManagerValue(scriptId, CONFIG_KEYS.staging.sourceScriptId, accessToken),
+          this.getConfigManagerValue(scriptId, CONFIG_KEYS.staging.scriptId, accessToken),
+          this.getConfigManagerValue(scriptId, CONFIG_KEYS.staging.spreadsheetUrl, accessToken),
+          this.getConfigManagerValue(scriptId, CONFIG_KEYS.prod.sourceScriptId, accessToken),
+          this.getConfigManagerValue(scriptId, CONFIG_KEYS.prod.scriptId, accessToken),
+          this.getConfigManagerValue(scriptId, CONFIG_KEYS.prod.spreadsheetUrl, accessToken),
+          this.getConfigManagerValue(scriptId, 'TEMPLATE_SCRIPT_ID', accessToken),
+          this.getConfigManagerValue(scriptId, 'USER_SYMBOL', accessToken),
+        ]);
+
+        const hasData = stagingSourceId || stagingConsumerId || prodSourceId || prodConsumerId || templateScriptId;
+        if (hasData) {
+          const config: any = {};
+
+          if (stagingSourceId || stagingConsumerId) {
+            config.staging = {
+              sourceScriptId: stagingSourceId || undefined,
+              consumerScriptId: stagingConsumerId || undefined,
+              spreadsheetId: stagingSpreadsheetId || undefined,
+            };
           }
+
+          if (prodSourceId || prodConsumerId) {
+            config.prod = {
+              sourceScriptId: prodSourceId || undefined,
+              consumerScriptId: prodConsumerId || undefined,
+              spreadsheetId: prodSpreadsheetId || undefined,
+            };
+          }
+
+          if (templateScriptId || userSymbol) {
+            config.template = {
+              scriptId: templateScriptId || undefined,
+              userSymbol: userSymbol || undefined,
+            };
+            if (userSymbol) config.userSymbol = userSymbol;
+          }
+
+          return config;
         }
-      } catch (e: any) {
-        console.error(`⚠️  [getEnvironmentConfig] Could not read mcp_environments from dev manifest: ${e.message} — falling back to gas-config.json`);
+      } catch (e: unknown) {
+        console.error(`⚠️  [getEnvironmentConfig] Could not read from ConfigManager: ${e instanceof Error ? e.message : String(e)}`);
       }
+    } else {
+      console.error('⚠️  [getEnvironmentConfig] No accessToken — skipping ConfigManager read, using gas-config.json fallback');
     }
 
-    // Legacy fallback: gas-config.json (for projects not yet migrated to manifest-based tracking,
+    // Legacy fallback: gas-config.json (for projects not yet migrated to ConfigManager,
     // or when accessToken is unavailable)
     try {
       const config = await McpGasConfigManager.getConfig();
       const project = this.findProjectByScriptId(config, scriptId);
       if (project?.environments?.staging?.sourceScriptId) {
-        console.error(`ℹ️  [getEnvironmentConfig] Using gas-config.json fallback for environment config (mcp_environments not found in dev manifest)`);
+        console.error(`ℹ️  [getEnvironmentConfig] Using gas-config.json fallback for environment config`);
         return project.environments;
       }
     } catch { /* fall through */ }
