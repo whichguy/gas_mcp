@@ -66,7 +66,7 @@ export function transformHTMLToMarkdown(content: string, filename: string): { co
     replacement: function (content: string, node: any) {
       const codeNode = node.firstChild as HTMLElement;
       const lang = codeNode.className.replace('language-', '') || '';
-      return '\n```' + lang + '\n' + codeNode.textContent + '\n```\n';
+      return `\n\`\`\`${lang}\n${codeNode.textContent}\n\`\`\`\n`;
     }
   });
 

@@ -825,7 +825,7 @@ Or use force:true to overwrite (destructive).`;
           contentAnalysis = { warnings: [], hints: [] };
         }
         contentAnalysis.hints.push(
-          'Tip: Use log() (3rd param in _main) for debugging. Enable with: setModuleLogging("' + filename + '", true)'
+          `Tip: Use log() (3rd param in _main) for debugging. Enable with: setModuleLogging("${filename}", true)`
         );
       }
     } else if (detectedFileType === 'JSON' && isManifestFile(filename)) {
