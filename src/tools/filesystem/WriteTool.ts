@@ -20,6 +20,7 @@ import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { writeLocalAndValidateHooksOnly } from '../../utils/hookIntegration.js';
 import { getUncommittedStatus, buildCompactGitHint } from '../../utils/gitStatus.js';
+import { buildWriteWorkflowHints } from '../../utils/writeHints.js';
 // Note: localGitDetection imports removed - CompactGitHint replaces verbose git detection in responses
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
 import { log } from '../../utils/logger.js';
@@ -870,6 +871,9 @@ Or use force:true to overwrite (destructive).`;
         const { getCurrentBranchName } = await import('../../utils/gitStatus.js');
         const branch = await getCurrentBranchName(projectPathForGit);
         result.git = buildCompactGitHint(branch, uncommittedStatus);
+        if (result.git && result.git.blocked) {
+          result.git = { ...result.git, workflow: buildWriteWorkflowHints(result.git, scriptId) };
+        }
       } catch (hintError) {
         console.error(`⚠️ [GIT] Could not build git hints: ${hintError}`);
       }
@@ -1245,6 +1249,9 @@ Or use force:true to overwrite (destructive).`;
 
     // Add compact git hints
     result.git = buildCompactGitHint(currentBranch, uncommittedStatus);
+    if (result.git && result.git.blocked) {
+      result.git = { ...result.git, workflow: buildWriteWorkflowHints(result.git, scriptId) };
+    }
 
     // Add git breadcrumb hint for .git/* files
     const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);

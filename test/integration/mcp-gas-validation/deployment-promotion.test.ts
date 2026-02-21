@@ -196,7 +196,7 @@ describe('Deployment Promotion & Environment Execution', function() {
 
       console.log('\n🚀 Initializing deployment infrastructure...');
 
-      const result = await client.callTool('version_deploy', {
+      const result = await client.callTool('deploy_config', {
         operation: 'reset',
         scriptId: testScriptId
       });
@@ -215,7 +215,7 @@ describe('Deployment Promotion & Environment Execution', function() {
 
       console.log('\n🔍 Verifying deployment status...');
 
-      const result = await client.callTool('version_deploy', {
+      const result = await client.callTool('deploy_config', {
         operation: 'status',
         scriptId: testScriptId
       });
@@ -282,9 +282,9 @@ function getVersionInfo() {
 
       console.log('\n⬆️  Promoting dev→staging...');
 
-      const result = await client.callTool('version_deploy', {
+      const result = await client.callTool('deploy', {
         operation: 'promote',
-        environment: 'staging',
+        to: 'staging',
         description: 'Version 1 - Initial Release',
         scriptId: testScriptId
       });
@@ -303,7 +303,7 @@ function getVersionInfo() {
 
       console.log('\n🔍 Verifying staging deployment...');
 
-      const result = await client.callTool('version_deploy', {
+      const result = await client.callTool('deploy_config', {
         operation: 'status',
         scriptId: testScriptId
       });
@@ -421,9 +421,9 @@ function getVersionInfo() {
 
       console.log('\n⬆️  Promoting staging→prod...');
 
-      const result = await client.callTool('version_deploy', {
+      const result = await client.callTool('deploy', {
         operation: 'promote',
-        environment: 'prod',
+        to: 'prod',
         scriptId: testScriptId
       });
 
@@ -463,9 +463,9 @@ function getVersionInfo() {
 
       console.log('\n⬆️  Promoting dev→staging (2nd time)...');
 
-      const result = await client.callTool('version_deploy', {
+      const result = await client.callTool('deploy', {
         operation: 'promote',
-        environment: 'staging',
+        to: 'staging',
         description: 'Version 2 - Second Release',
         scriptId: testScriptId
       });

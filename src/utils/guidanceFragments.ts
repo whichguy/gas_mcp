@@ -81,9 +81,9 @@ export class GuidanceFragments {
       note: 'Virtual names (.gitignore) differ from GAS names (.gitignore.gs)'
     },
     commonJsLoadError: {
-      cause: 'Module not loading at startup when needed',
+      cause: 'Module not loading at startup — __events__ or __global__ missing loadNow',
       check: 'Look for "[WARN] No X handlers found" in logs',
-      solution: 'Add moduleOptions: { loadNow: true } for event handlers'
+      solution: 'Add moduleOptions: { loadNow: true } AND call mcp__gas__reorder to move file last'
     },
     quotaExceeded: {
       cause: 'Google API rate limit hit',
@@ -143,7 +143,7 @@ export class GuidanceFragments {
    */
   static readonly moduleOptions = {
     loadNow: 'true=eager startup (required for handlers), false=lazy on require(), omit=preserve existing',
-    eventHandlerPattern: 'If code has module.exports.__events__, MUST use loadNow:true',
+    eventHandlerPattern: '__events__ or __global__ without loadNow:true → handlers won\'t register / globalThis functions missing → fix: loadNow:true + move file to last position via mcp__gas__reorder',
     troubleshooting: 'Log "[WARN] No X handlers found" means missing loadNow:true',
     hoistedFunctions: '[{name,params,jsdoc}] for Sheets custom function autocomplete'
   };

@@ -46,7 +46,7 @@ import {
   ProjectInitTool
 } from '../tools/deployments.js';
 
-import { VersionDeployTool } from '../tools/deployment.js';
+import { DeployConfigTool } from '../tools/deployment.js';
 import { LibraryDeployTool } from '../tools/deploy.js';
 
 import {
@@ -319,7 +319,7 @@ export class MCPGasServer {
       ExecTool, ExecApiTool,
 
       // 🚀 Deployment
-      LibraryDeployTool, VersionDeployTool,
+      LibraryDeployTool, DeployConfigTool,
 
       // 📁 Drive & Scripts
       FindDriveScriptTool, CreateScriptTool,

@@ -293,7 +293,7 @@ describe('MCP Server Authentication Tests', () => {
           // Test that we can make authenticated requests to Google APIs
           const tools = await client.listTools();
           const gasTools = tools.filter(tool =>
-            ['ls', 'cat', 'write', 'exec', 'version_deploy', 'deploy', 'project_list', 'project_create'].includes(tool.name)
+            ['ls', 'cat', 'write', 'exec', 'deploy_config', 'deploy', 'project_list', 'project_create'].includes(tool.name)
           );
           expect(gasTools.length).to.be.greaterThan(5);
 

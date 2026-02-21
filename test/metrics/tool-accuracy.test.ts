@@ -82,7 +82,7 @@ const selectionTests: SelectionTestCase[] = [
   { task: 'Delete the old utils.gs file', expectedTool: 'rm', category: 'file-delete' },
   { task: 'Create a new GAS project with deployment infrastructure', expectedTool: 'project_create', category: 'project' },
   { task: 'Execute a quick calculation on the GAS server', expectedTool: 'exec', category: 'execution' },
-  { task: 'Deploy my web app to staging', expectedTool: 'version_deploy', category: 'deployment' },
+  { task: 'Deploy my web app to staging', expectedTool: 'deploy', category: 'deployment' },
   { task: 'Pin my library version for staging consumers', expectedTool: 'deploy', category: 'deployment' },
   { task: 'Check my authentication status', expectedTool: 'auth', category: 'auth' },
   { task: 'Find files matching *.test.gs pattern', expectedTool: 'find', category: 'search' },
@@ -183,7 +183,7 @@ const usageTests: UsageTestCase[] = [
     expectedRequired: ['scriptId', 'pattern', 'replacement'],
   },
   {
-    tool: 'version_deploy',
+    tool: 'deploy_config',
     validParams: { scriptId: 'test123', operation: 'status' },
     invalidParams: {},
     expectedRequired: ['scriptId', 'operation'],
@@ -192,7 +192,7 @@ const usageTests: UsageTestCase[] = [
     tool: 'deploy',
     validParams: { scriptId: 'test123', operation: 'status' },
     invalidParams: {},
-    expectedRequired: ['scriptId', 'operation'],
+    expectedRequired: ['scriptId'],
   },
   {
     tool: 'rsync',
@@ -229,8 +229,8 @@ const responseTests: ResponseTestCase[] = [
   { tool: 'ls', expectedFields: ['items', 'total'] },
   { tool: 'file_status', expectedFields: ['path', 'type', 'size'] },
   { tool: 'exec', expectedFields: ['success', 'result', 'logger_output'] },
-  { tool: 'deploy', expectedFields: ['operation', 'version', 'environment', 'hints'] },
-  { tool: 'version_deploy', expectedFields: ['operation', 'deployment', 'environments', 'hints'] },
+  { tool: 'deploy', expectedFields: ['operation', 'version', 'environment', 'sheetSync', 'hints'] },
+  { tool: 'deploy_config', expectedFields: ['operation', 'environments', 'hints'] },
 ];
 
 // ──────────────────────────────────────────────────────────────────────────────

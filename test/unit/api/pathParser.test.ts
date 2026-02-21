@@ -8,6 +8,7 @@ import {
   joinPath,
   matchesDirectory,
   sortFilesForExecution,
+  fileNameMatches,
   FILE_TYPE_MAP
 } from '../../../src/api/pathParser.js';
 import { ValidationError } from '../../../src/errors/mcpErrors.js';
@@ -310,6 +311,21 @@ describe('Path Parser', () => {
       const filename101 = 'a'.repeat(98) + '.gs'; // 101 chars
       expect(() => parsePath(`1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/${filename101}`)).to.throw(ValidationError);
     });
+  });
+
+  describe('fileNameMatches', () => {
+    it('direct match', () => expect(fileNameMatches('UISupport', 'UISupport')).to.be.true);
+    it('actual has extension, base does not', () => expect(fileNameMatches('UISupport.gs', 'UISupport')).to.be.true);
+    it('actual has no extension, base has .gs — GAS-native file', () =>
+      expect(fileNameMatches('UISupport', 'UISupport.gs')).to.be.true);
+    it('actual has no extension, base has .html', () =>
+      expect(fileNameMatches('Sidebar', 'Sidebar.html')).to.be.true);
+    it('with directory prefix — GAS-native', () =>
+      expect(fileNameMatches('common-js/UISupport', 'common-js/UISupport.gs')).to.be.true);
+    it('different names → false', () =>
+      expect(fileNameMatches('Foo', 'Bar.gs')).to.be.false);
+    it('partial match not accepted', () =>
+      expect(fileNameMatches('UISupport', 'UISupport2.gs')).to.be.false);
   });
 
   describe('files with directory-like prefixes (with extensions)', () => {

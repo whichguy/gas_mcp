@@ -306,7 +306,9 @@ export function fileNameMatches(actualName: string, baseName: string): boolean {
   // Direct match
   if (actualName === baseName) return true;
   // Match after stripping extension
-  return stripExtension(actualName) === baseName;
+  if (stripExtension(actualName) === baseName) return true;
+  // GAS-native file (no extension), user provided extension in baseName
+  return actualName === stripExtension(baseName);
 }
 
 /**
