@@ -200,6 +200,31 @@ git -C ~/gas-repos/project-{scriptId} commit -m "feat: {description}" && \
 git -C ~/gas-repos/project-{scriptId} push origin main
 ```
 
+### Deploy Workflow Hints
+
+After `git_feature commit` or `git_feature finish`, the response includes a `deploy` envelope that nudges the LLM to promote to staging:
+
+```typescript
+// Response with deploy hint (commit → LOW, finish → MEDIUM):
+{
+  "deploy": {
+    "staging": "stale",
+    "hint": "Commit ready — deploy to staging to test",
+    "urgency": "LOW"   // LOW (after commit) | MEDIUM (after finish)
+  }
+}
+```
+
+**Escalation Rules:**
+- After `git_feature commit` → `urgency: "LOW"`, hint: "Commit ready — deploy to staging to test"
+- After `git_feature finish` → `urgency: "MEDIUM"`, hint: "Changes merged — deploy to staging before prod"
+- After `deploy({to:'staging'})` succeeds → hint **suppressed** on next commit (staging is current)
+- While uncommitted changes exist → hint **absent** (git hint takes priority)
+
+**Expected LLM behavior:** When `deploy.urgency` is present, the task is NOT complete until staging is deployed. Run `deploy({to: "staging", scriptId})` before reporting the task done.
+
+**Implementation:** `CompactDeployHint` in `src/utils/gitStatus.ts` | `deployState` Map (session-scoped, resets on restart) | `updateDeployState()` called by `deploy` tool after successful staging promote.
+
 ### git_feature Operations
 
 **Tool:** `git_feature` — 7 operations: start, commit, push, finish, rollback, list, switch

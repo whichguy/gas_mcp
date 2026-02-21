@@ -238,6 +238,11 @@ export class RsyncTool extends BaseTool {
    * Execute rsync operation
    */
   async execute(params: RsyncInput): Promise<RsyncResponse> {
+    // Strip progress callback before validation (injected by mcpServer.ts for long ops)
+    const sendProgress = (params as any)._sendProgress as
+      ((progress: number, total: number, message: string) => Promise<void>) | undefined;
+    delete (params as any)._sendProgress;
+
     const { operation, scriptId } = params;
 
     mcpLogger.info('rsync', { event: 'sync_start', operation, scriptId, dryrun: !!params.dryrun });
@@ -256,6 +261,7 @@ export class RsyncTool extends BaseTool {
 
     try {
       // Step 1: Compute diff (read-only)
+      if (operation === 'push') await sendProgress?.(1, 3, 'Computing diff...');
       const diffResult = await this.planner.computeDiff({
         scriptId,
         direction: operation,
@@ -303,6 +309,8 @@ export class RsyncTool extends BaseTool {
       }
 
       // Step 5: Apply changes (pass pre-fetched GAS files to avoid redundant API calls)
+      const totalFiles = diffResult.operations.add.length + diffResult.operations.update.length + diffResult.operations.delete.length;
+      if (operation === 'push') await sendProgress?.(2, 3, `Pushing ${totalFiles} file${totalFiles !== 1 ? 's' : ''}...`);
       const result = await this.executor.apply({
         direction: operation,
         scriptId,
@@ -315,6 +323,7 @@ export class RsyncTool extends BaseTool {
       });
 
       // Step 6: Build git workflow hint
+      if (operation === 'push') await sendProgress?.(3, 3, 'Finalizing sync...');
       const gitHint = await this.buildPostSyncGitHint(scriptId, diffResult.localPath, operation);
 
       const response: RsyncExecuteResponse = {

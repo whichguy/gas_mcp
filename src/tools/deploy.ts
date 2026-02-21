@@ -32,6 +32,8 @@ import { generateLibraryDeployHints, generateLibraryDeployErrorHints } from '../
 import { mcpLogger } from '../utils/mcpLogger.js';
 import { LibraryEnvironment, SOURCE_CONFIG_KEYS, MANAGED_PROPERTY_KEYS } from '../utils/deployConstants.js';
 import { ExecTool } from './execution.js';
+import { getGitHead, updateDeployState } from '../utils/gitStatus.js';
+import { LocalFileManager } from '../utils/localFileManager.js';
 
 /**
  * ConfigManager property keys per environment
@@ -195,6 +197,11 @@ export class LibraryDeployTool extends BaseTool {
   }
 
   async execute(params: any): Promise<any> {
+    // Strip progress callback before validation (injected by mcpServer.ts for long ops)
+    const sendProgress = params._sendProgress as
+      ((progress: number, total: number, message: string) => Promise<void>) | undefined;
+    delete params._sendProgress;
+
     const accessToken = await this.getAuthToken(params);
     const scriptId = this.validate.scriptId(params.scriptId, 'deploy');
 
@@ -217,7 +224,7 @@ export class LibraryDeployTool extends BaseTool {
       let result: any;
       switch (operation) {
         case 'promote':
-          result = await this.handlePromote(scriptId, params, accessToken);
+          result = await this.handlePromote(scriptId, params, accessToken, sendProgress);
           break;
         case 'status':
           result = await this.handleStatus(scriptId, params, accessToken);
@@ -257,7 +264,12 @@ export class LibraryDeployTool extends BaseTool {
   // Promote
   // ---------------------------------------------------------------------------
 
-  private async handlePromote(scriptId: string, params: any, accessToken?: string): Promise<any> {
+  private async handlePromote(
+    scriptId: string,
+    params: any,
+    accessToken?: string,
+    sendProgress?: (progress: number, total: number, message: string) => Promise<void>
+  ): Promise<any> {
     const to = this.validate.enum(params.to, 'to', ['staging', 'prod'], 'promote operation') as LibraryEnvironment;
 
     const lockManager = LockManager.getInstance();
@@ -265,16 +277,21 @@ export class LibraryDeployTool extends BaseTool {
 
     try {
       if (to === 'staging') {
-        return await this.promoteToStaging(scriptId, params, accessToken);
+        return await this.promoteToStaging(scriptId, params, accessToken, sendProgress);
       } else {
-        return await this.promoteToProd(scriptId, params, accessToken);
+        return await this.promoteToProd(scriptId, params, accessToken, sendProgress);
       }
     } finally {
       await lockManager.releaseLock(scriptId);
     }
   }
 
-  private async promoteToStaging(scriptId: string, params: any, accessToken?: string): Promise<any> {
+  private async promoteToStaging(
+    scriptId: string,
+    params: any,
+    accessToken?: string,
+    sendProgress?: (progress: number, total: number, message: string) => Promise<void>
+  ): Promise<any> {
     const dryRun = !!params.dryRun;
     const envConfig = await this.getEnvironmentConfig(scriptId, accessToken);
 
@@ -301,6 +318,9 @@ export class LibraryDeployTool extends BaseTool {
       console.error(`✅ Created staging: source=${stagingSourceScriptId}, consumer=${stagingConsumerScriptId}`);
     }
 
+    // Step 1: Reading source files
+    await sendProgress?.(1, 4, 'Reading main library files...');
+
     // Read all files from main library
     const libraryFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
@@ -314,6 +334,9 @@ export class LibraryDeployTool extends BaseTool {
         description: params.description || null,
       };
     }
+
+    // Step 2: Pushing files to staging-source
+    await sendProgress?.(2, 4, 'Pushing files to staging-source library...');
 
     // Push all files to staging-source (strip mcp_environments — that's dev-only tracking metadata)
     const filesToPush = this.stripMcpEnvironments(libraryFiles);
@@ -333,12 +356,18 @@ export class LibraryDeployTool extends BaseTool {
     if (!params.userSymbol && !envConfig?.template?.userSymbol && !envConfig?.userSymbol) {
       console.error(`⚠️  [shim validation] userSymbol not found in config — derived "${userSymbol}" from project name. Verify this matches the library's intended namespace.`);
     }
+    // Step 3: Validating consumer shim
+    await sendProgress?.(3, 4, 'Validating consumer shim...');
+
     let shimValidation: any;
     if (stagingConsumerScriptId) {
       shimValidation = await this.validateAndRepairConsumerShim(
         stagingConsumerScriptId, stagingSourceScriptId!, userSymbol, devManifestJsonForShim, accessToken
       );
     }
+
+    // Step 4: Syncing sheets and properties
+    await sendProgress?.(4, 4, 'Syncing sheets and properties...');
 
     // Sheet sync: template → staging
     let sheetSync: any = undefined;
@@ -376,6 +405,15 @@ export class LibraryDeployTool extends BaseTool {
       ? `https://docs.google.com/spreadsheets/d/${stagingSpreadsheetId}`
       : null;
 
+    // P7: Record this deploy so deploy hints are suppressed until the next commit
+    try {
+      const projectDir = await LocalFileManager.getProjectDirectory(scriptId);
+      const head = await getGitHead(projectDir);
+      if (head) updateDeployState(scriptId, head);
+    } catch (err: unknown) {
+      console.error(`⚠️  [deploy] Failed to update deploy state (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     return {
       operation: 'promote',
       environment: 'staging',
@@ -393,7 +431,12 @@ export class LibraryDeployTool extends BaseTool {
     };
   }
 
-  private async promoteToProd(scriptId: string, params: any, accessToken?: string): Promise<any> {
+  private async promoteToProd(
+    scriptId: string,
+    params: any,
+    accessToken?: string,
+    sendProgress?: (progress: number, total: number, message: string) => Promise<void>
+  ): Promise<any> {
     const dryRun = !!params.dryRun;
     const envConfig = await this.getEnvironmentConfig(scriptId, accessToken);
 
@@ -429,6 +472,9 @@ export class LibraryDeployTool extends BaseTool {
       console.error(`✅ Created prod: source=${prodSourceScriptId}, consumer=${prodConsumerScriptId}`);
     }
 
+    // Step 1: Reading source files
+    await sendProgress?.(1, 4, 'Reading staging-source files...');
+
     // Read all files from staging-source
     const stagingFiles = await this.gasClient.getProjectContent(stagingSourceScriptId, accessToken);
 
@@ -441,6 +487,9 @@ export class LibraryDeployTool extends BaseTool {
         wouldPush: `${stagingFiles.length} files from staging-source → prod-source`,
       };
     }
+
+    // Step 2: Pushing files to prod-source
+    await sendProgress?.(2, 4, 'Pushing files to prod-source library...');
 
     // Push all files to prod-source (strip mcp_environments defensively — staging-source should not have it, but guard anyway)
     const prodFilesToPush = this.stripMcpEnvironments(stagingFiles);
@@ -459,12 +508,18 @@ export class LibraryDeployTool extends BaseTool {
     if (!params.userSymbol && !envConfig?.template?.userSymbol && !envConfig?.userSymbol) {
       console.error(`⚠️  [shim validation] userSymbol not found in config — derived "${prodUserSymbol}" from project name. Verify this matches the library's intended namespace.`);
     }
+    // Step 3: Validating consumer shim
+    await sendProgress?.(3, 4, 'Validating consumer shim...');
+
     let shimValidation: any;
     if (prodConsumerScriptId) {
       shimValidation = await this.validateAndRepairConsumerShim(
         prodConsumerScriptId, prodSourceScriptId!, prodUserSymbol, stagingSourceManifestJsonForShim, accessToken
       );
     }
+
+    // Step 4: Syncing sheets and properties
+    await sendProgress?.(4, 4, 'Syncing sheets and properties...');
 
     // Sheet sync: staging → prod
     let sheetSync: any = undefined;

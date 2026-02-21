@@ -279,6 +279,77 @@ export async function buildReadHint(repoPath: string): Promise<CompactGitHint> {
 }
 
 /**
+ * Compact deploy hint emitted on git_feature commit/finish.
+ * Nudges the LLM to promote to staging after committing code changes.
+ */
+export interface CompactDeployHint {
+  staging: 'stale';
+  hint: string;
+  urgency: 'LOW' | 'MEDIUM';
+}
+
+// Session-scoped Map: tracks the last deployed git HEAD per scriptId.
+// Cleared on server restart → conservative first-commit hint fires correctly.
+const deployStateMap = new Map<string, { lastDeployedHash: string | null }>();
+
+export function getDeployState(scriptId: string): { lastDeployedHash: string | null } {
+  return deployStateMap.get(scriptId) ?? { lastDeployedHash: null };
+}
+
+export function updateDeployState(scriptId: string, hash: string): void {
+  deployStateMap.set(scriptId, { lastDeployedHash: hash });
+}
+
+/**
+ * Get the current git HEAD commit hash for a repository.
+ */
+export async function getGitHead(repoPath: string): Promise<string | null> {
+  try {
+    const head = await execGitCommand(['rev-parse', 'HEAD'], repoPath);
+    return head.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a compact deploy hint for commit/finish responses.
+ * Returns null when we know staging is current (suppresses hint after a successful deploy).
+ *
+ * Urgency:
+ *   commit → LOW  ("Commit ready — deploy to staging to test")
+ *   finish → MEDIUM ("Changes merged — deploy to staging before prod")
+ *
+ * @param scriptId - GAS script ID
+ * @param gitRoot  - Local git repository path
+ * @param operation - 'commit' or 'finish'
+ */
+export async function buildCompactDeployHint(
+  scriptId: string,
+  gitRoot: string,
+  operation: 'commit' | 'finish'
+): Promise<CompactDeployHint | null> {
+  try {
+    const currentHead = await getGitHead(gitRoot);
+    const { lastDeployedHash } = getDeployState(scriptId);
+
+    // Suppress hint only when we positively know staging is current
+    if (currentHead && lastDeployedHash === currentHead) {
+      return null;
+    }
+
+    const urgency = operation === 'finish' ? 'MEDIUM' : 'LOW';
+    const hint = operation === 'finish'
+      ? 'Changes merged — deploy to staging before prod'
+      : 'Commit ready — deploy to staging to test';
+
+    return { staging: 'stale', hint, urgency };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Check if any GAS repos have uncommitted changes (for startup check)
  *
  * @returns Array of projects with uncommitted changes

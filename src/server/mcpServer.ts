@@ -1,7 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { randomUUID } from 'crypto';
 
 // Import session manager instead of singleton
 import { SessionAuthManager } from '../auth/sessionManager.js';
@@ -382,7 +381,7 @@ export class MCPGasServer {
     });
 
     // Execute tool calls
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const { name, arguments: args } = request.params;
 
       // Extract sessionId from args BEFORE creating SessionAuthManager
@@ -414,6 +413,18 @@ export class MCPGasServer {
         // Remove sessionId from args before passing to tool (already used in constructor)
         const toolArgs = { ...args };
         delete toolArgs.sessionId;
+
+        // Thread progress callback for long-running ops (P4: deploy + rsync push)
+        // Client signals support by including _meta.progressToken in the request.
+        const progressToken = request.params._meta?.progressToken;
+        if (progressToken !== undefined) {
+          toolArgs._sendProgress = async (progress: number, total: number, message: string) => {
+            await extra.sendNotification({
+              method: 'notifications/progress',
+              params: { progressToken, progress, total, message }
+            });
+          };
+        }
 
         const result = await tool.execute(toolArgs || {});
 
