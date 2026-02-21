@@ -44,7 +44,7 @@ import { ExecTool, ExecApiTool } from '../tools/execution.js';
 import {
   ProjectCreateTool,
   ProjectInitTool
-} from '../tools/deployments.js';
+} from '../tools/project-lifecycle.js';
 
 import { DeployConfigTool } from '../tools/deployment.js';
 import { LibraryDeployTool } from '../tools/deploy.js';
