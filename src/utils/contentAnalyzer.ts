@@ -314,8 +314,6 @@ export function analyzeCommonJsContent(
     const funcDecl = new RegExp(`\\bfunction\\s+${name}\\s*\\(`);
     // Variable assignment: const/let/var doGet = (handles no space before =)
     const varAssign = new RegExp(`\\b(?:const|let|var)\\s+${name}\\s*=`);
-    // ES6 method shorthand in exports: doGet( or doGet (
-    const methodShort = new RegExp(`(?<!\\.)\\b${name}\\s*\\(`);
 
     if (funcDecl.test(cleanContent) || varAssign.test(cleanContent)) {
       detectedHandlers.push(name);

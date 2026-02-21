@@ -85,7 +85,7 @@ export interface SyncResult {
     method: string;
     command: string;
   };
-  contentAnalysis?: { file: string; hints: string[] }[];
+  contentAnalysis?: { file: string; warnings: string[]; hints: string[] }[];
 }
 
 /**
@@ -142,7 +142,7 @@ export class SyncExecutor {
 
       // Execute based on direction
       let postPushFiles: GASFile[] | undefined;
-      let pullContentAnalysis: { file: string; hints: string[] }[] | undefined;
+      let pullContentAnalysis: { file: string; warnings: string[]; hints: string[] }[] | undefined;
       if (direction === 'pull') {
         pullContentAnalysis = await this.executePull(operations, localPath);
       } else {
@@ -215,12 +215,12 @@ export class SyncExecutor {
   private async executePull(
     operations: SyncDiffResult,
     localPath: string
-  ): Promise<{ file: string; hints: string[] }[]> {
+  ): Promise<{ file: string; warnings: string[]; hints: string[] }[]> {
     log.info(`[EXECUTOR] Executing PULL: ${operations.totalOperations} operations`);
 
     // Write files directly to repo root (not src/ subdirectory)
     const targetDir = localPath;
-    const analysisMap = new Map<string, string[]>();
+    const analysisMap = new Map<string, { warnings: string[]; hints: string[] }>();
 
     // Process ADD operations
     for (const op of operations.add) {
@@ -239,8 +239,8 @@ export class SyncExecutor {
 
       // Analyze content for LLM hints
       const analysis = analyzeContent(op.filename, contentToWrite);
-      if (analysis.hints.length > 0) {
-        analysisMap.set(op.filename, analysis.hints);
+      if (analysis.warnings.length > 0 || analysis.hints.length > 0) {
+        analysisMap.set(op.filename, { warnings: analysis.warnings, hints: analysis.hints });
       }
 
       log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${fileType})`);
@@ -261,8 +261,8 @@ export class SyncExecutor {
 
       // Analyze content for LLM hints
       const analysis = analyzeContent(op.filename, contentToWrite);
-      if (analysis.hints.length > 0) {
-        analysisMap.set(op.filename, analysis.hints);
+      if (analysis.warnings.length > 0 || analysis.hints.length > 0) {
+        analysisMap.set(op.filename, { warnings: analysis.warnings, hints: analysis.hints });
       }
 
       log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${fileType})`);
@@ -291,7 +291,11 @@ export class SyncExecutor {
     );
 
     // Return accumulated analysis (non-empty only)
-    return Array.from(analysisMap.entries()).map(([file, hints]) => ({ file, hints }));
+    return Array.from(analysisMap.entries()).map(([file, analysis]) => ({
+      file,
+      warnings: analysis.warnings,
+      hints: analysis.hints
+    }));
   }
 
   /**

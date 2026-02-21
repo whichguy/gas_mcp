@@ -13,6 +13,7 @@ import * as sinon from 'sinon';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as os from 'os';
+import { execSync } from 'child_process';
 
 // Import modules under test
 import { SyncManifest, SyncManifestData } from '../../../src/tools/rsync/SyncManifest.js';
@@ -396,7 +397,6 @@ describe('rsync modules', () => {
       const gitDir = path.join(tempDir, '.git');
       await fs.mkdir(gitDir, { recursive: true });
       // Init git repo
-      const { execSync } = await import('child_process');
       try {
         execSync(`git -C ${tempDir} init && git -C ${tempDir} config user.email test@test.com && git -C ${tempDir} config user.name Test && git -C ${tempDir} commit --allow-empty -m "init"`, { stdio: 'ignore' });
       } catch {
@@ -425,11 +425,11 @@ describe('rsync modules', () => {
       expect(result.contentAnalysis).to.be.an('array').with.length.at.least(1);
       const entry = result.contentAnalysis!.find(e => e.file === 'utils');
       expect(entry).to.exist;
+      expect(entry!.warnings).to.be.an('array');
       expect(entry!.hints.some(h => h.includes('gas-properties/ConfigManager'))).to.be.true;
     });
 
     it('should NOT include contentAnalysis when pulled files are clean', async () => {
-      const { execSync } = await import('child_process');
       try {
         execSync(`git -C ${tempDir} init && git -C ${tempDir} config user.email test@test.com && git -C ${tempDir} config user.name Test && git -C ${tempDir} commit --allow-empty -m "init"`, { stdio: 'ignore' });
       } catch {
