@@ -11,15 +11,19 @@
  * - gasFileOperations.ts: File management operations
  * - gasDeployOperations.ts: Deployment and version management
  * - gasScriptOperations.ts: Script execution operations
+ * - gasProcessOperations.ts: Process monitoring and metrics
  *
  * This file maintains 100% backward compatibility with the original API.
  */
+
+// Facade delegates to *Operations modules — see gasDeployOperations, gasProcessOperations, etc.
 
 import { GASAuthOperations } from './gasAuthOperations.js';
 import { GASProjectOperations } from './gasProjectOperations.js';
 import { GASFileOperations } from './gasFileOperations.js';
 import { GASDeployOperations } from './gasDeployOperations.js';
 import { GASScriptOperations } from './gasScriptOperations.js';
+import { GASProcessOperations } from './gasProcessOperations.js';
 import { GASAuthClient } from '../auth/oauthClient.js';
 import { loadOAuthConfigFromJson } from '../tools/authConfig.js';
 import type { AuthConfig } from '../auth/oauthClient.js';
@@ -57,6 +61,7 @@ export class GASClient {
   private fileOps: GASFileOperations;
   private deployOps: GASDeployOperations;
   private scriptOps: GASScriptOperations;
+  private processOps: GASProcessOperations;
 
   constructor() {
     // Initialize auth client
@@ -81,6 +86,7 @@ export class GASClient {
     this.fileOps = new GASFileOperations(this.authOps);
     this.deployOps = new GASDeployOperations(this.authOps);
     this.scriptOps = new GASScriptOperations(this.authOps);
+    this.processOps = new GASProcessOperations(this.authOps);
   }
 
   // ============================================================================
@@ -260,17 +266,7 @@ export class GASClient {
    * Delete a deployment
    */
   async deleteDeployment(scriptId: string, deploymentId: string, accessToken?: string): Promise<any> {
-    // TODO: Extract to gasDeployOperations when created
-    await this.authOps.initializeClient(accessToken);
-
-    const scriptApi = (this.authOps as any).scriptApi;
-    await scriptApi.projects.deployments.delete({
-      scriptId,
-      deploymentId
-    });
-
-    console.error(`✅ Deployment ${deploymentId} deleted successfully`);
-    return { success: true, deploymentId };
+    return this.deployOps.deleteDeployment(scriptId, deploymentId, accessToken);
   }
 
   /**
@@ -282,71 +278,14 @@ export class GASClient {
     updates: any,
     accessToken?: string
   ): Promise<GASDeployment> {
-    // TODO: Extract to gasDeployOperations when created
-    await this.authOps.initializeClient(accessToken);
-
-    console.error(`🔄 Updating deployment ${deploymentId} in script ${scriptId}`);
-    console.error(`   Updates:`, JSON.stringify(updates, null, 2));
-
-    // Build the update request body — GAS REST API expects UpdateDeploymentRequest
-    const deploymentConfig: any = {
-      manifestFileName: 'appsscript',
-    };
-
-    if (updates.versionNumber != null) {
-      deploymentConfig.versionNumber = updates.versionNumber;
-    }
-
-    if (updates.description) {
-      deploymentConfig.description = updates.description;
-    }
-
-    const requestBody: any = { deploymentConfig };
-
-    const scriptApi = (this.authOps as any).scriptApi;
-    const response = await scriptApi.projects.deployments.update({
-      scriptId,
-      deploymentId,
-      requestBody
-    });
-
-    // Extract web app URL if present
-    let webAppUrl: string | undefined;
-    if (response.data.entryPoints) {
-      const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-      if (webAppEntry?.webApp?.url) {
-        webAppUrl = webAppEntry.webApp.url;
-      }
-    }
-
-    console.error(`✅ Deployment updated successfully`);
-
-    return {
-      deploymentId: response.data.deploymentId,
-      versionNumber: response.data.versionNumber,
-      description: response.data.description,
-      updateTime: response.data.updateTime,
-      webAppUrl
-    };
+    return this.deployOps.updateDeployment(scriptId, deploymentId, updates, accessToken);
   }
 
   /**
    * Get details for a specific version
    */
   async getVersion(scriptId: string, versionNumber: number, accessToken?: string): Promise<any> {
-    // TODO: Extract to gasDeployOperations when created
-    await this.authOps.initializeClient(accessToken);
-
-    console.error(`📋 Getting version ${versionNumber} details for script ${scriptId}`);
-
-    const scriptApi = (this.authOps as any).scriptApi;
-    const response = await scriptApi.projects.versions.get({
-      scriptId,
-      versionNumber
-    });
-
-    console.error(`✅ Retrieved version ${versionNumber} details`);
-    return response.data;
+    return this.deployOps.getVersion(scriptId, versionNumber, accessToken);
   }
 
   /**
@@ -358,29 +297,7 @@ export class GASClient {
     pageToken?: string,
     accessToken?: string
   ): Promise<any> {
-    // TODO: Extract to gasDeployOperations when created
-    await this.authOps.initializeClient(accessToken);
-
-    const params: any = {
-      scriptId,
-      pageSize
-    };
-
-    if (pageToken) {
-      params.pageToken = pageToken;
-    }
-
-    console.error(`📋 Listing versions for script ${scriptId}`);
-
-    const scriptApi = (this.authOps as any).scriptApi;
-    const response = await scriptApi.projects.versions.list(params);
-
-    console.error(`✅ Found ${response.data.versions?.length || 0} versions`);
-
-    return {
-      versions: response.data.versions || [],
-      nextPageToken: response.data.nextPageToken
-    };
+    return this.deployOps.listVersions(scriptId, pageSize, pageToken, accessToken);
   }
 
   // ============================================================================
@@ -469,8 +386,6 @@ export class GASClient {
   // ============================================================================
   // Process and Logging Operations
   // ============================================================================
-  // NOTE: These methods are still in gasClient.ts and haven't been extracted yet
-  // They will be delegated once gasLoggingOperations.ts is created
 
   /**
    * List processes made by or on behalf of a user
@@ -481,32 +396,7 @@ export class GASClient {
     userProcessFilter?: ListUserProcessesFilter,
     accessToken?: string
   ): Promise<ProcessListResponse> {
-    // TODO: Extract to gasLoggingOperations when created
-    // For now, delegate to authOps which has the makeApiCall infrastructure
-    await this.authOps.initializeClient(accessToken);
-
-    const params: any = { pageSize };
-    if (pageToken) params.pageToken = pageToken;
-
-    if (userProcessFilter) {
-      if (userProcessFilter.scriptId) params['userProcessFilter.scriptId'] = userProcessFilter.scriptId;
-      if (userProcessFilter.deploymentId) params['userProcessFilter.deploymentId'] = userProcessFilter.deploymentId;
-      if (userProcessFilter.projectName) params['userProcessFilter.projectName'] = userProcessFilter.projectName;
-      if (userProcessFilter.functionName) params['userProcessFilter.functionName'] = userProcessFilter.functionName;
-      if (userProcessFilter.startTime) params['userProcessFilter.startTime'] = userProcessFilter.startTime;
-      if (userProcessFilter.endTime) params['userProcessFilter.endTime'] = userProcessFilter.endTime;
-      if (userProcessFilter.types) params['userProcessFilter.types'] = userProcessFilter.types;
-      if (userProcessFilter.statuses) params['userProcessFilter.statuses'] = userProcessFilter.statuses;
-      if (userProcessFilter.userAccessLevels) params['userProcessFilter.userAccessLevels'] = userProcessFilter.userAccessLevels;
-    }
-
-    const scriptApi = (this.authOps as any).scriptApi;
-    const response = await scriptApi.processes.list(params);
-
-    return {
-      processes: response.data.processes || [],
-      nextPageToken: response.data.nextPageToken
-    };
+    return this.processOps.listProcesses(pageSize, pageToken, userProcessFilter, accessToken);
   }
 
   /**
@@ -519,25 +409,7 @@ export class GASClient {
     scriptProcessFilter?: ListScriptProcessesFilter,
     accessToken?: string
   ): Promise<ProcessListResponse & { scriptId: string }> {
-    // TODO: Extract to gasLoggingOperations when created
-    await this.authOps.initializeClient(accessToken);
-
-    const params: any = {
-      scriptId,
-      pageSize
-    };
-
-    if (pageToken) params.pageToken = pageToken;
-    if (scriptProcessFilter) params.scriptProcessFilter = scriptProcessFilter;
-
-    const scriptApi = (this.authOps as any).scriptApi;
-    const response = await scriptApi.processes.listScriptProcesses(params);
-
-    return {
-      scriptId,
-      processes: response.data.processes || [],
-      nextPageToken: response.data.nextPageToken
-    };
+    return this.processOps.listScriptProcesses(scriptId, pageSize, pageToken, scriptProcessFilter, accessToken);
   }
 
   /**
@@ -549,28 +421,7 @@ export class GASClient {
     metricsFilter?: MetricsFilter,
     accessToken?: string
   ): Promise<ProjectMetrics & { scriptId: string; metricsGranularity: MetricsGranularity }> {
-    // TODO: Extract to gasLoggingOperations when created
-    await this.authOps.initializeClient(accessToken);
-
-    const params: any = {
-      scriptId,
-      metricsGranularity
-    };
-
-    if (metricsFilter?.deploymentId) {
-      params['metricsFilter.deploymentId'] = metricsFilter.deploymentId;
-    }
-
-    const scriptApi = (this.authOps as any).scriptApi;
-    const response = await scriptApi.projects.getMetrics(params);
-
-    return {
-      scriptId,
-      metricsGranularity,
-      activeUsers: response.data.activeUsers || [],
-      totalExecutions: response.data.totalExecutions || [],
-      failedExecutions: response.data.failedExecutions || []
-    };
+    return this.processOps.getProjectMetrics(scriptId, metricsGranularity, metricsFilter, accessToken);
   }
 
   /**
@@ -593,232 +444,7 @@ export class GASClient {
     },
     accessToken?: string
   ): Promise<any> {
-    // Build filter for Processes API
-    const userProcessFilter: ListUserProcessesFilter = {
-      scriptId,
-      startTime: options.startTime,
-      endTime: options.endTime,
-    };
-
-    if (options.functionName) {
-      userProcessFilter.functionName = options.functionName;
-    }
-
-    if (options.statusFilter && options.statusFilter !== 'ALL') {
-      userProcessFilter.statuses = [options.statusFilter as any];
-    }
-
-    // Call existing listProcesses method
-    const result = await this.listProcesses(
-      options.pageSize || 10,
-      options.pageToken,
-      userProcessFilter,
-      accessToken
-    );
-
-    // Build LLM-optimized response
-    return this.buildLogResponse(result, options);
-  }
-
-  /**
-   * Build LLM-optimized response from process list
-   */
-  private buildLogResponse(result: ProcessListResponse, options: any): any {
-    // Normalize function names and build process list
-    const processes = (result.processes || []).map((p: any) => ({
-      processId: p.processId || `${p.functionName}-${p.startTime}`,
-      functionName: this.normalizeFunctionName(p.functionName),
-      status: p.processStatus,
-      duration: p.duration,
-      startTime: p.startTime,
-      ...(p.processStatus === 'FAILED' ? { errorPreview: this.formatErrorPreview(p.error) } : {})
-    }));
-
-    const statusCounts = {
-      completed: processes.filter((p: any) => p.status === 'COMPLETED').length,
-      failed: processes.filter((p: any) => p.status === 'FAILED').length,
-      timedOut: processes.filter((p: any) => p.status === 'TIMED_OUT').length,
-      running: processes.filter((p: any) => p.status === 'RUNNING').length
-    };
-
-    const response: any = {
-      summary: {
-        total: processes.length,
-        statusCounts,
-        truncated: !!result.nextPageToken
-      },
-      processes,
-      limitations: 'Detailed logs require exec() - this provides execution metadata only'
-    };
-
-    // Add recommendations (max 3, prioritized by urgency)
-    const recommendations = this.generateRecommendations(processes, statusCounts, result, options);
-    if (recommendations.length > 0) {
-      response.recommendations = recommendations;
-    }
-
-    // Add pagination if more results
-    if (result.nextPageToken) {
-      response.pagination = {
-        hasMore: true,
-        nextPageToken: result.nextPageToken
-      };
-    }
-
-    return response;
-  }
-
-  /**
-   * Normalize function names for readability
-   */
-  private normalizeFunctionName(name: string | undefined): string {
-    if (!name) return '[unknown]';
-    if (name.startsWith('__GS_INTERNAL_')) return `[internal] ${name.replace('__GS_INTERNAL_', '')}`;
-    return name;
-  }
-
-  /**
-   * Format error preview (80 chars, newlines stripped)
-   */
-  private formatErrorPreview(error: any): string | undefined {
-    if (!error) return undefined;
-    const msg = String(error.message || error)
-      .replace(/\n/g, ' ')
-      .slice(0, 80)
-      .trim();
-    return msg.length < String(error.message || error).length ? msg + '...' : msg;
-  }
-
-  /**
-   * Generate contextual recommendations for debugging
-   */
-  private generateRecommendations(
-    processes: any[],
-    statusCounts: any,
-    result: ProcessListResponse,
-    options: any
-  ): any[] {
-    const recommendations: any[] = [];
-    const total = statusCounts.completed + statusCounts.failed + statusCounts.timedOut + statusCounts.running;
-    const minutes = options.minutes || 10;
-
-    // SCENARIO 1: Recent Failure Detection (most common debugging use case)
-    if (statusCounts.failed > 0 && !options.statusFilter) {
-      // Find most recent failure for get_failure_details
-      const recentFailure = processes.find((p: any) => p.status === 'FAILED');
-      if (recentFailure) {
-        recommendations.push({
-          urgency: 'CRITICAL',
-          action: 'get_failure_details',
-          reason: `${statusCounts.failed} failed execution(s) - get error details`,
-          params: { operation: 'get', processId: recentFailure.processId },
-          context: `Function: ${recentFailure.functionName}`
-        });
-      }
-
-      // If multiple failures from same function, suggest filtering
-      const failedFunctions = processes
-        .filter((p: any) => p.status === 'FAILED')
-        .map((p: any) => p.functionName);
-      const dominantFailure = this.findDominantFunction(failedFunctions);
-      if (dominantFailure && statusCounts.failed > 1) {
-        recommendations.push({
-          urgency: 'HIGH',
-          action: 'filter_by_function',
-          reason: `${dominantFailure.count} failures from same function`,
-          params: { functionName: dominantFailure.name, statusFilter: 'FAILED' }
-        });
-      }
-    }
-
-    // SCENARIO 2: No Results - Progressive widening
-    if (total === 0) {
-      const nextMinutes = this.getNextTimeRange(minutes);
-      recommendations.push({
-        urgency: minutes <= 10 ? 'HIGH' : 'NORMAL',
-        action: 'widen_timerange',
-        reason: `No executions in last ${minutes} minutes`,
-        params: { minutes: nextMinutes },
-        context: nextMinutes > 60 ? 'Consider checking trigger configuration' : undefined
-      });
-    }
-
-    // SCENARIO 3: All Running
-    if (statusCounts.running === total && total > 0) {
-      recommendations.push({
-        urgency: 'NORMAL',
-        action: 'wait_and_retry',
-        reason: 'All processes currently running',
-        params: { delaySeconds: 30 }
-      });
-    }
-
-    // SCENARIO 4: Pagination (lower priority than failures)
-    if (result.nextPageToken) {
-      recommendations.push({
-        urgency: statusCounts.failed > 0 ? 'INFO' : 'NORMAL',
-        action: 'paginate',
-        reason: 'More results available',
-        params: { pageToken: result.nextPageToken },
-        context: 'Warning: Results may become stale across pages'
-      });
-    }
-
-    // SCENARIO 5: Duration analysis (for performance debugging)
-    const slowProcess = processes.find((p: any) => this.parseDuration(p.duration) > 30);
-    if (slowProcess && !statusCounts.failed) {
-      recommendations.push({
-        urgency: 'HIGH',
-        action: 'investigate_slow',
-        reason: `Slow execution detected (${slowProcess.duration})`,
-        params: { operation: 'get', processId: slowProcess.processId },
-        context: `Function: ${slowProcess.functionName}`
-      });
-    }
-
-    // Return max 3 recommendations, sorted by urgency
-    return this.selectTopRecommendations(recommendations, 3);
-  }
-
-  /**
-   * Get next time range for progressive widening
-   */
-  private getNextTimeRange(current: number): number {
-    // Progressive widening: 10 → 60 → 240 → 1440 → 10080
-    if (current <= 10) return 60;
-    if (current <= 60) return 240;
-    if (current <= 240) return 1440;
-    return 10080;
-  }
-
-  /**
-   * Find dominant function in a list (for filter recommendations)
-   */
-  private findDominantFunction(functions: string[]): { name: string; count: number } | null {
-    const counts: Record<string, number> = {};
-    functions.forEach(f => counts[f] = (counts[f] || 0) + 1);
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    return sorted.length > 0 && sorted[0][1] > 1
-      ? { name: sorted[0][0], count: sorted[0][1] }
-      : null;
-  }
-
-  /**
-   * Parse duration string (e.g., "12.345s" → 12.345)
-   */
-  private parseDuration(duration: string): number {
-    const match = duration?.match(/^([\d.]+)s$/);
-    return match ? parseFloat(match[1]) : 0;
-  }
-
-  /**
-   * Select top N recommendations by urgency
-   */
-  private selectTopRecommendations(all: any[], max: number): any[] {
-    const urgencyOrder: Record<string, number> = { CRITICAL: 0, HIGH: 1, NORMAL: 2, INFO: 3 };
-    return all
-      .sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency])
-      .slice(0, max);
+    return this.processOps.listLogsWithCloudLogging(scriptId, options, accessToken);
   }
 
   /**

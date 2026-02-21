@@ -650,7 +650,7 @@ export class InProcessGASTestHelper {
     const projectName = name || `Test Project ${Date.now()}`;
 
     // Import ProjectCreateTool which sets up CommonJS automatically
-    const { ProjectCreateTool } = await import('../../src/tools/deployments.js');
+    const { ProjectCreateTool } = await import('../../src/tools/project-lifecycle.js');
     const projectCreateTool = new ProjectCreateTool(this.client.sessionManager);
 
     // Create project with CommonJS infrastructure

@@ -263,7 +263,7 @@ export function appendHoistedSection(
   ].join('\n');
 
   // Reconstruct: content + hoisted section + __defineModule__
-  const result = contentBeforeDefine + hoistedSection + '\n' + defineModuleCall;
+  const result = `${contentBeforeDefine}${hoistedSection}\n${defineModuleCall}`;
 
   console.error(`✅ [HOISTED] Generated ${functions.length} hoisted bridge function(s) for ${moduleName}`);
 

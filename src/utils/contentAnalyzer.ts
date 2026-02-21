@@ -359,7 +359,7 @@ export function analyzeCommonJsContent(
   const mainMatches = cleanContent.match(/function\s+_main\s*\(/g);
   if (mainMatches && mainMatches.length > 1) {
     warnings.push(
-      'CRITICAL: Multiple _main() functions detected (' + mainMatches.length + ' occurrences). ' +
+      `CRITICAL: Multiple _main() functions detected (${mainMatches.length} occurrences). ` +
       'Only the outer _main() executes; inner code never runs. ' +
       'This usually happens when code is double-wrapped. Remove the extra wrapper.'
     );

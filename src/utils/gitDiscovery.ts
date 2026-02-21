@@ -14,6 +14,16 @@ import { expandTilde } from './pathExpansion.js';
 import { validateScriptId } from './localGitDetection.js';
 import { LocalFileManager } from './localFileManager.js';
 
+// Re-export localGitDetection utilities so callers can import from gitDiscovery.ts directly
+export {
+  detectLocalGit,
+  checkBreadcrumbExists,
+  buildRecommendation,
+  type GitDetection,
+  type SyncRecommendation,
+  type GitHints
+} from './localGitDetection.js';
+
 /**
  * Result of git discovery process
  */

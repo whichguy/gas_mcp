@@ -11,7 +11,7 @@
 import { GASClient, GASFile } from '../../../api/gasClient.js';
 import { SessionAuthManager } from '../../../auth/sessionManager.js';
 import { CodeGenerator } from '../../../utils/codeGeneration.js';
-import { getSuccessHtmlTemplate, getErrorHtmlTemplate, verifyInfrastructureFile } from '../../deployments.js';
+import { getSuccessHtmlTemplate, getErrorHtmlTemplate, verifyInfrastructureFile } from '../../project-lifecycle.js';
 import { ensureManifestEntryPoints } from '../utilities/manifest-config.js';
 import { fileNameMatches } from '../../../api/pathParser.js';
 import { InfrastructureStatus, buildInfrastructureStatus } from '../../../types/infrastructureTypes.js';

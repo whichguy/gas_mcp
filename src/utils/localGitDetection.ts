@@ -3,6 +3,14 @@
  *
  * Provides functionality for write operations to discover local git setups
  * and recommend sync configuration when appropriate.
+ *
+ * @deprecated This module is a backward-compatibility wrapper. New code should import
+ * directly from `gitDiscovery.ts`, which re-exports all public symbols from this module
+ * and provides the canonical two-phase git discovery API via `discoverGit()`.
+ *
+ * Migration:
+ *   Before: import { detectLocalGit, checkBreadcrumbExists } from './localGitDetection.js'
+ *   After:  import { detectLocalGit, checkBreadcrumbExists } from './gitDiscovery.js'
  */
 
 import { access, stat, constants } from 'fs/promises';
