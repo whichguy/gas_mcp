@@ -1,3 +1,5 @@
+// Branch utilities — delegates to gitStatus.ts for branch/uncommitted state
+
 /**
  * gitAutoCommit - Feature branch management and auto-commit utilities
  *
@@ -7,12 +9,9 @@
  * - Feature workflow support
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { log } from './logger.js';
 import { execGitCommand } from './gitCommands.js';
-
-const execAsync = promisify(exec);
+import { getCurrentBranchName, getUncommittedStatus } from './gitStatus.js';
 
 /**
  * Result of ensuring feature branch exists
@@ -25,29 +24,28 @@ export interface FeatureBranchResult {
 /**
  * Get current git branch name
  *
+ * @deprecated Delegates to getCurrentBranchName() from gitStatus.ts.
+ * Returns null when in detached HEAD state (getCurrentBranchName returns 'HEAD').
+ *
  * @param projectPath - Path to git repository
  * @returns Current branch name, or null if not in a git repo or detached HEAD
  */
 export async function getCurrentBranch(projectPath: string): Promise<string | null> {
-  try {
-    const result = await execAsync('git rev-parse --abbrev-ref HEAD', {
-      cwd: projectPath
-    });
+  const branch = await getCurrentBranchName(projectPath);
+  return branch === 'HEAD' ? null : branch;
+}
 
-    const branch = result.stdout.trim();
-
-    // Check for detached HEAD state
-    if (branch === 'HEAD') {
-      log.debug('[GIT-AUTO-COMMIT] In detached HEAD state');
-      return null;
-    }
-
-    return branch || null;
-  } catch (error) {
-    // Not in a git repository or git command failed
-    log.debug('[GIT-AUTO-COMMIT] Could not determine current branch:', error instanceof Error ? error.message : String(error));
-    return null;
-  }
+/**
+ * Check if there are uncommitted changes in the repository
+ *
+ * @deprecated Delegates to getUncommittedStatus() from gitStatus.ts.
+ *
+ * @param projectPath - Path to git repository root
+ * @returns true if there are uncommitted changes
+ */
+export async function hasUncommittedChanges(projectPath: string): Promise<boolean> {
+  const status = await getUncommittedStatus(projectPath);
+  return status.count > 0;
 }
 
 /**
@@ -155,27 +153,6 @@ export async function ensureFeatureBranch(projectPath: string): Promise<FeatureB
 }
 
 /**
- * Check if there are uncommitted changes in the repository
- *
- * @param projectPath - Path to git repository root
- * @returns true if there are uncommitted changes
- * @throws Error if git command fails
- */
-export async function hasUncommittedChanges(projectPath: string): Promise<boolean> {
-  try {
-    const result = await execAsync('git status --porcelain', {
-      cwd: projectPath
-    });
-
-    return !!result.stdout.trim();
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    log.error('[GIT-AUTO-COMMIT] Error checking git status:', errorMsg);
-    throw new Error(`Failed to check git status: ${errorMsg}`);
-  }
-}
-
-/**
  * Get list of all branches in repository
  *
  * @param projectPath - Path to git repository root
@@ -184,13 +161,11 @@ export async function hasUncommittedChanges(projectPath: string): Promise<boolea
  */
 export async function getAllBranches(projectPath: string): Promise<string[]> {
   try {
-    const result = await execAsync('git branch', {
-      cwd: projectPath
-    });
+    const result = await execGitCommand(['branch'], projectPath);
 
-    return result.stdout
+    return result
       .split('\n')
-      .map(line => line.trim().replace(/^[*+]\s+/, ''))  // Remove * (current) and + (worktree) markers
+      .map((line: string) => line.trim().replace(/^[*+]\s+/, ''))  // Remove * (current) and + (worktree) markers
       .filter(Boolean);  // Remove empty lines
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);

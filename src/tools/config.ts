@@ -16,6 +16,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { GitProjectManager } from '../utils/GitProjectManager.js';
 import { serializeINI } from '../utils/iniParser.js';
+import { getCurrentBranchName } from '../utils/gitStatus.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -166,7 +167,7 @@ export class ConfigTool extends BaseTool {
       if (response.exists && await this.isGitRepo(syncFolder)) {
         response.isGitRepo = true;
 
-        const branch = await this.getCurrentBranch(syncFolder);
+        const branch = await getCurrentBranchName(syncFolder);
         const status = await execFileAsync('git', ['status', '--porcelain'], { cwd: syncFolder });
         const statusLines = status.stdout.trim().split('\n').filter(line => line.trim());
         const clean = statusLines.length === 0;
@@ -345,12 +346,4 @@ export class ConfigTool extends BaseTool {
     }
   }
 
-  private async getCurrentBranch(syncFolder: string): Promise<string> {
-    try {
-      const result = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: syncFolder });
-      return result.stdout.trim();
-    } catch {
-      return 'unknown';
-    }
-  }
 }
