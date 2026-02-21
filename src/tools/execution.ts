@@ -12,7 +12,7 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { CodeGenerator } from '../utils/codeGeneration.js';
 import { GASFile } from '../api/gasClient.js';
 import { ProjectResolver, ProjectParam } from '../utils/projectResolver.js';
-import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './deployments.js';
+import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from './project-lifecycle.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { buildFunctionCall } from '../utils/parameterSerializer.js';
 import { checkSyncStatus, type DriftDetails, type FileSyncStatus } from '../utils/syncStatusChecker.js';

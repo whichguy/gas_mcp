@@ -2,7 +2,7 @@ import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
 import { checkSyncOrThrowByHash, setFileMtimeToRemote, isManifestFile } from '../../utils/fileHelpers.js';
-import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/localGitDetection.js';
+import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/gitDiscovery.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../../utils/hashUtils.js';
 import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMetadataCache.js';

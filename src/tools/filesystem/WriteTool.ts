@@ -227,7 +227,7 @@ export class WriteTool extends BaseFileSystemTool {
 
         if (!hasCommonJS) {
           console.error(`🔧 [AUTO-INIT] CommonJS not found in project ${scriptId}, initializing...`);
-          const { ProjectInitTool } = await import('../deployments.js');
+          const { ProjectInitTool } = await import('../project-lifecycle.js');
           const initTool = new ProjectInitTool(this.sessionAuthManager);
           await initTool.execute({
             scriptId,
