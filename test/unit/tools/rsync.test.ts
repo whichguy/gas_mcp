@@ -13,7 +13,7 @@ import * as sinon from 'sinon';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as os from 'os';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 
 // Import modules under test
 import { SyncManifest, SyncManifestData } from '../../../src/tools/rsync/SyncManifest.js';
@@ -379,6 +379,20 @@ describe('rsync modules', () => {
     /**
      * Helper: build a minimal SyncDiffResult for pull tests
      */
+    function initGitRepo(dir: string): boolean {
+      const steps: Array<[string, string[]]> = [
+        ['git', ['-C', dir, 'init']],
+        ['git', ['-C', dir, 'config', 'user.email', 'test@test.com']],
+        ['git', ['-C', dir, 'config', 'user.name', 'Test']],
+        ['git', ['-C', dir, 'commit', '--allow-empty', '-m', 'init']],
+      ];
+      for (const [cmd, args] of steps) {
+        const r = spawnSync(cmd, args, { stdio: 'ignore' });
+        if (r.error || r.status !== 0) return false;
+      }
+      return true;
+    }
+
     function makePullOps(ops: { add?: Array<{ filename: string; content: string; fileType?: string }>; update?: Array<{ filename: string; content: string; fileType?: string }> }): SyncDiffResult {
       const add = (ops.add || []).map(o => ({ filename: o.filename, content: o.content, fileType: o.fileType || 'SERVER_JS', action: 'add' as const }));
       const update = (ops.update || []).map(o => ({ filename: o.filename, content: o.content, fileType: o.fileType || 'SERVER_JS', action: 'update' as const }));
@@ -397,12 +411,7 @@ describe('rsync modules', () => {
       const gitDir = path.join(tempDir, '.git');
       await fs.mkdir(gitDir, { recursive: true });
       // Init git repo
-      try {
-        execSync(`git -C ${tempDir} init && git -C ${tempDir} config user.email test@test.com && git -C ${tempDir} config user.name Test && git -C ${tempDir} commit --allow-empty -m "init"`, { stdio: 'ignore' });
-      } catch {
-        // git not available — skip this test
-        return;
-      }
+      if (!initGitRepo(tempDir)) return; // git not available — skip this test
 
       const executor = new SyncExecutor();
       const ops = makePullOps({
@@ -430,11 +439,7 @@ describe('rsync modules', () => {
     });
 
     it('should NOT include contentAnalysis when pulled files are clean', async () => {
-      try {
-        execSync(`git -C ${tempDir} init && git -C ${tempDir} config user.email test@test.com && git -C ${tempDir} config user.name Test && git -C ${tempDir} commit --allow-empty -m "init"`, { stdio: 'ignore' });
-      } catch {
-        return; // git not available
-      }
+      if (!initGitRepo(tempDir)) return; // git not available
 
       const executor = new SyncExecutor();
       const ops = makePullOps({
