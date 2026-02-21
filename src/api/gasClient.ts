@@ -288,28 +288,20 @@ export class GASClient {
     console.error(`🔄 Updating deployment ${deploymentId} in script ${scriptId}`);
     console.error(`   Updates:`, JSON.stringify(updates, null, 2));
 
-    // Build the update request body
-    const requestBody: any = {
-      deploymentId
+    // Build the update request body — GAS REST API expects UpdateDeploymentRequest
+    const deploymentConfig: any = {
+      manifestFileName: 'appsscript',
     };
 
-    if (updates.description) {
-      requestBody.description = updates.description;
+    if (updates.versionNumber != null) {
+      deploymentConfig.versionNumber = updates.versionNumber;
     }
 
-    if (updates.entryPointType) {
-      if (updates.entryPointType === 'WEB_APP') {
-        requestBody.deploymentConfig = {
-          entryPoints: [{
-            entryPointType: 'WEB_APP',
-            webApp: {
-              access: updates.accessLevel || 'MYSELF',
-              executeAs: 'USER_DEPLOYING'
-            }
-          }]
-        };
-      }
+    if (updates.description) {
+      deploymentConfig.description = updates.description;
     }
+
+    const requestBody: any = { deploymentConfig };
 
     const scriptApi = (this.authOps as any).scriptApi;
     const response = await scriptApi.projects.deployments.update({

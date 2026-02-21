@@ -26,6 +26,7 @@ import { analyzeContent } from '../utils/contentAnalyzer.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 import type { CompactGitHint } from '../utils/gitStatus.js';
+import { buildWriteWorkflowHints } from '../utils/writeHints.js';
 
 interface AiderOperation {
   searchText: string;
@@ -399,17 +400,30 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
     const wrappedStr = wrappedMap?.get(filename);
     const editedHash = wrappedStr ? computeGitSha1(wrappedStr) : readHash;
 
+    // Merge tool-level analysis with strategy-level analysis (strategy runs on hook-validated written content)
+    const strategyWarnings = gitResult.result.warnings ?? [];
+    const strategyHints = gitResult.result.hints ?? [];
+    const allWarnings = [...new Set([...analysis.warnings, ...strategyWarnings])];
+    const allHints = [...new Set([...analysis.hints, ...strategyHints])];
+
     // Return response with compact git hints for LLM guidance
     const result: AiderResult = {
       success: true,
       editsApplied,
       filePath: params.path,
       hash: editedHash,  // Git SHA-1 of WRAPPED content. Use for expectedHash on subsequent edits.
-      // Compact git hint from GitOperationManager
-      git: gitResult.git?.hint,
-      // Include content analysis warnings and hints
-      ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
-      ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
+      // Compact git hint from GitOperationManager, with workflow steps when blocked
+      git: gitResult.git?.hint
+        ? {
+            ...gitResult.git.hint,
+            ...(gitResult.git.hint.blocked
+              ? { workflow: buildWriteWorkflowHints(gitResult.git.hint, scriptId) }
+              : {}),
+          }
+        : undefined,
+      // Include content analysis warnings and hints (merged from tool + strategy)
+      ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
+      ...(allHints.length > 0 ? { hints: allHints } : {})
     };
 
     // Add git breadcrumb hint for .git/* files

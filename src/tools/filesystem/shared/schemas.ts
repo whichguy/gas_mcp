@@ -33,7 +33,7 @@ export const MODULE_OPTIONS_SCHEMA = {
   properties: {
     loadNow: {
       type: 'boolean',
-      description: 'Module loading strategy:\n  • true: Execute at script startup (REQUIRED for event handlers: doGet, doPost, onOpen, onEdit, and __events__ registration)\n  • false: Execute on first require() call (for utility modules)\n  • omit: Preserve existing setting (~200ms API overhead)\n\n⚠️ Common error: Event handlers fail silently without loadNow: true',
+      description: 'Module loading strategy:\n  • true: Execute at script startup — REQUIRED when module exports __global__ (menu/trigger handlers) OR __events__ (onOpen, doGet, etc.). Without loadNow these will silently fail at runtime.\n  ⚠️ ORDER RULE: loadNow modules MUST be positioned LAST in file order. If dependencies appear after this file, require() will throw "Module not found". Use mcp__gas__reorder after setting loadNow: true.\n  • false: Execute on first require() call (for utility modules)\n  • omit: Preserve existing setting (~200ms API overhead)',
       examples: [true, false]
     },
     hoistedFunctions: {

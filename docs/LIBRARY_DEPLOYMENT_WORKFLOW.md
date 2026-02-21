@@ -1,9 +1,9 @@
 # Library Deployment Workflow Guide
 
-> **Recommended deployment tool.** This document covers the `deploy` tool (library version pinning).
-> For low-level web app deployment management, see [DEPLOYMENT_WORKFLOW.md](DEPLOYMENT_WORKFLOW.md).
+> **Unified deployment tool.** This document covers the `deploy` tool (file-push to per-environment -source libraries).
+> For deployment infrastructure (reset/status of deployment slots), see [DEPLOYMENT_WORKFLOW.md](DEPLOYMENT_WORKFLOW.md).
 
-Complete guide to managing Google Apps Script library deployments across development, staging, and production environments using consumer spreadsheet version pinning.
+Complete guide to managing Google Apps Script library deployments across development, staging, and production environments using per-environment -source libraries with file push.
 
 ---
 
@@ -12,49 +12,60 @@ Complete guide to managing Google Apps Script library deployments across develop
 1. [Architecture](#architecture)
 2. [Setup](#setup)
 3. [Promote](#promote)
-4. [Rollback](#rollback)
-5. [Status & Reconciliation](#status--reconciliation)
-6. [Dry-Run Preview](#dry-run-preview)
-7. [Audit Trail](#audit-trail)
-8. [Auto-Consumer Creation](#auto-consumer-creation)
-9. [Troubleshooting](#troubleshooting)
+4. [Status](#status)
+5. [Dry-Run Preview](#dry-run-preview)
+6. [Auto-Environment Creation](#auto-environment-creation)
+7. [Sheet Sync](#sheet-sync)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Architecture
 
-### Library + Consumer Model
+### Per-Environment -Source Library Model
 
 ```
-Library Project (standalone, edit via MCP GAS)
-  ├── HEAD (current dev code)
-  ├── v3 ← staging pins here
-  └── v2 ← prod pins here
+Main Library = dev-source (standalone, all source + CommonJS infra)
+  └── Dev consumers (thin shim → main library @ HEAD, developmentMode: true)
 
-Template Sheet (container-bound thin shim → library @ HEAD, developmentMode: true)
-Staging Sheet  (container-bound thin shim → library @ v3)
-Prod Sheet     (container-bound thin shim → library @ v2)
+stage-source (standalone library) ← files pushed from main library
+  └── Stage consumers (thin shim → stage-source @ HEAD, developmentMode: true)
+
+prod-source (standalone library) ← files pushed from stage-source
+  └── Prod consumers (thin shim → prod-source @ HEAD, developmentMode: true)
 ```
 
 ### Key Concepts
 
-- **Library project**: Your main GAS codebase (standalone script). All code lives here.
-- **Consumer spreadsheets**: Container-bound scripts that reference the library via `appsscript.json`. Each contains only a thin shim that delegates all calls to the library.
-- **Version pinning**: Consumer manifests specify which library version to use (e.g., `"version": "3"`). Changing the pin instantly switches which code the consumer runs.
+- **Main library**: Your primary GAS codebase (standalone script). All development happens here.
+- **-source libraries**: Standalone GAS projects per environment that receive file pushes. Staging-source gets files from the main library; prod-source gets files from staging-source.
+- **Consumer spreadsheets**: Container-bound scripts that reference their environment's -source library via `appsscript.json` with `developmentMode: true`. Each contains only a thin shim.
+- **File push**: Promotion reads all files from the source project and writes them to the target -source library. No versioning involved.
+- **developmentMode: true**: All consumers use this mode, which resolves to the library's current HEAD code. When files are pushed to a -source library, all consumers automatically see the new code.
 - **Thin shim**: A minimal `Code.gs` in each consumer that forwards events (`onOpen`, `onEdit`, `exec_api`) to the library via its `userSymbol`.
 
 ### Why This Pattern?
 
-- **Single source of truth**: All code lives in the library project. No duplication.
-- **Instant rollback**: Change one number in a manifest to revert.
-- **Environment isolation**: Staging and prod run different versions simultaneously.
-- **No redeployment**: Version pins update immediately — no deployment propagation delay.
+- **Copy-safe**: When users copy a consumer spreadsheet, the copy references the same -source library at HEAD. New promotions automatically propagate to all copies.
+- **Single source of truth**: All code lives in the main library. -source libraries are mirrors.
+- **No versioning overhead**: No version creation, no pin management, no 200-version GAS limit.
+- **Fix-forward**: If something breaks in production, fix the code and re-promote. No rollback complexity.
+- **Environment isolation**: Staging and prod run different code snapshots until explicitly promoted.
+
+### No Rollback
+
+This model intentionally has no rollback mechanism. If production has issues:
+
+1. Fix the issue in the main library
+2. Promote to staging: `deploy({to:"staging", scriptId})`
+3. Test staging
+4. Promote to prod: `deploy({to:"prod", scriptId})`
 
 ---
 
 ## Setup
 
-Wire a template/dev spreadsheet to your library at HEAD:
+Wire a template/dev spreadsheet to your main library at HEAD:
 
 ```typescript
 deploy({
@@ -78,100 +89,46 @@ deploy({
 
 ### Promote to Staging
 
-Creates a version from HEAD and pins the staging consumer to it.
+Pushes all files from the main library to the staging-source library.
 
 ```typescript
 deploy({
-  operation: "promote",
   to: "staging",
   scriptId: "LIBRARY_SCRIPT_ID",
-  description: "v1.0 Add sidebar feature"
+  description: "Add sidebar feature"  // optional contextual note
 })
 ```
 
 **What happens:**
-1. Creates immutable library version (auto-increments: v1, v2, v3...)
-2. Updates staging consumer's `appsscript.json` library pin to new version
-3. Stores version state in ConfigManager (for rollback)
-4. Appends to deployment audit log
+1. Reads all files from the main library
+2. Writes all files to the staging-source library (full replacement)
+3. Stores promote timestamp in ConfigManager
+4. All staging consumers automatically see the new code (via `developmentMode: true`)
 
-**If staging consumer doesn't exist:** Auto-creates a new spreadsheet + container-bound script.
+**If staging environment doesn't exist:** Auto-creates a staging-source library, spreadsheet, and consumer.
 
 ### Promote to Production
 
-Copies staging's version pin to the prod consumer.
+Pushes all files from staging-source to prod-source.
 
 ```typescript
 deploy({
-  operation: "promote",
   to: "prod",
   scriptId: "LIBRARY_SCRIPT_ID"
 })
 ```
 
 **What happens:**
-1. Reads staging consumer's current version pin (source of truth)
-2. Updates prod consumer's `appsscript.json` to match
-3. Stores version state in ConfigManager
+1. Reads all files from the staging-source library (source of truth)
+2. Writes all files to the prod-source library
+3. Stores promote timestamp in ConfigManager
+4. All prod consumers automatically see the new code
 
-**No new version is created** — prod always gets the same version that was tested in staging.
-
-### Retry After Partial Failure
-
-If version creation succeeds but pin update fails, the response includes recovery info:
-
-```typescript
-// Response includes:
-{
-  createdVersion: 5,
-  retryWith: 'deploy({operation:"promote", to:"staging", scriptId:"...", useVersion:5})'
-}
-
-// Retry using the already-created version:
-deploy({
-  operation: "promote",
-  to: "staging",
-  scriptId: "LIBRARY_SCRIPT_ID",
-  useVersion: 5
-})
-```
+**No code comes from the main library directly** — prod always gets the exact code that was tested in staging.
 
 ---
 
-## Rollback
-
-Toggles between current and previous version. A second rollback undoes the first.
-
-```typescript
-deploy({
-  operation: "rollback",
-  to: "staging",  // or "prod"
-  scriptId: "LIBRARY_SCRIPT_ID"
-})
-```
-
-### Manual Rollback to Specific Version
-
-```typescript
-deploy({
-  operation: "rollback",
-  to: "prod",
-  scriptId: "LIBRARY_SCRIPT_ID",
-  toVersion: 3  // Pin prod to v3
-})
-```
-
-### When ConfigManager Has No Previous Version
-
-If ConfigManager state was lost (e.g., after a failed write), the error message includes the current pin to help you specify `toVersion`:
-
-```
-no previous version in ConfigManager. Current prod pin is v5. Use toVersion to specify rollback target.
-```
-
----
-
-## Status & Reconciliation
+## Status
 
 ### Check Environment State
 
@@ -183,93 +140,85 @@ deploy({
 ```
 
 **Returns:**
-- Dev: always HEAD
-- Staging/Prod: current version pin, consumer scriptId, spreadsheet ID
-- Version gap between staging and prod
-- Cleanup candidates (versions not pinned by any environment)
-- Discrepancies between local config, ConfigManager, and consumer manifests
-
-### Auto-Fix Discrepancies
-
-When status detects mismatches, use `reconcile` to auto-fix:
-
-```typescript
-deploy({
-  operation: "status",
-  scriptId: "LIBRARY_SCRIPT_ID",
-  reconcile: true
-})
-```
-
-**Source of truth:** Consumer manifest (the actual `appsscript.json` library pin).
-
-**What gets fixed:**
-- ConfigManager stored versions updated to match consumer manifest
-- Local `gas-config.json` updated to match consumer manifest
-
-**Response includes:** `reconciled` array listing what was corrected.
+- Dev: main library scriptId
+- Staging/Prod: sourceScriptId, consumerScriptId, spreadsheetId, lastPromotedAt
+- Discrepancies: consumer manifest issues (wrong library reference, missing developmentMode)
 
 ---
 
 ## Dry-Run Preview
 
-Preview what a promote or rollback would do without making changes:
+Preview what a promote would do without making changes:
 
 ```typescript
-// Preview promote
 deploy({
-  operation: "promote",
   to: "staging",
   scriptId: "LIBRARY_SCRIPT_ID",
-  description: "v2.0 Major update",
   dryRun: true
 })
-// Returns: wouldCreateVersion, wouldPin (from → to), description
-
-// Preview rollback
-deploy({
-  operation: "rollback",
-  to: "prod",
-  scriptId: "LIBRARY_SCRIPT_ID",
-  dryRun: true
-})
-// Returns: wouldRollbackTo, currentVersion, consumer
+// Returns: sourceScriptId, wouldPush (file count)
 ```
 
 ---
 
-## Audit Trail
+## Auto-Environment Creation
 
-Every promote and rollback appends to a per-environment deployment log stored in ConfigManager. The log keeps the last 20 entries per environment.
+When promoting to an environment that doesn't exist yet, the deploy tool automatically:
 
-The audit trail is automatic — no configuration needed. View it via ConfigManager:
+1. Creates a standalone -source library (named `{ProjectName} [STAGING-SOURCE]` or `[PROD-SOURCE]`)
+2. Pushes all files from the main library to the -source library
+3. Creates a new Google Spreadsheet (named `{ProjectName} [STAGING]` or `[PROD]`)
+4. Creates a container-bound script in that spreadsheet
+5. Writes thin shim `Code.gs` + manifest with library reference to -source @ HEAD
+6. Saves all script IDs to local config and ConfigManager
 
-```typescript
-exec({
-  scriptId: "LIBRARY_SCRIPT_ID",
-  js_statement: "JSON.stringify(new (require('common-js/ConfigManager'))('DEPLOY').getScript('STAGING_DEPLOY_LOG'))"
-})
-```
-
-Each entry records: version, previous version, and timestamp.
-
----
-
-## Auto-Consumer Creation
-
-When promoting to an environment that has no consumer configured, the deploy tool automatically:
-
-1. Creates a new Google Spreadsheet (named `{ProjectName} [STAGING]` or `[PROD]`)
-2. Creates a container-bound script in that spreadsheet
-3. Writes thin shim `Code.gs` + manifest with library reference
-4. Saves consumer scriptId to local config and ConfigManager
+**No CommonJS infrastructure is installed in consumers** — they are pure thin shims. All module resolution happens in the -source library.
 
 This means you can go from setup to production with just:
 
 ```typescript
 deploy({operation: "setup", scriptId: "...", templateScriptId: "..."})
-deploy({operation: "promote", to: "staging", scriptId: "...", description: "v1.0"})
-deploy({operation: "promote", to: "prod", scriptId: "..."})
+deploy({to: "staging", scriptId: "..."})
+deploy({to: "prod", scriptId: "..."})
+```
+
+---
+
+## Sheet Sync
+
+When promoting, spreadsheet sheets are automatically synced from source to target environment:
+
+- **dev→staging:** template spreadsheet → staging spreadsheet
+- **staging→prod:** staging spreadsheet → prod spreadsheet
+
+### Sync Strategy (by sheet name)
+
+1. **Matching names** → replace (copy fresh, delete old, rename)
+2. **New in source** → copy to target
+3. **Only in target** → left untouched
+
+### Disable Sheet Sync
+
+```typescript
+deploy({
+  to: "staging",
+  scriptId: "LIBRARY_SCRIPT_ID",
+  syncSheets: false
+})
+```
+
+### Response
+
+```typescript
+{
+  sheetSync: {
+    source: "spreadsheetId",
+    target: "spreadsheetId",
+    synced: ["Sheet1", "Config"],
+    added: ["NewSheet"],
+    skipped: ["TargetOnly"]
+  }
+}
 ```
 
 ---
@@ -280,45 +229,47 @@ deploy({operation: "promote", to: "prod", scriptId: "..."})
 
 **Symptom:** Response includes `configWarning` field.
 
-**Impact:** Deployment succeeded (consumer is pinned correctly), but ConfigManager state may be stale. Rollback without `toVersion` may fail.
+**Impact:** Deployment succeeded (files were pushed), but ConfigManager timestamp may not be stored.
 
-**Resolution:**
-1. Run `deploy({operation: "status", scriptId: "...", reconcile: true})` to auto-fix
-2. Or manually specify `toVersion` for rollback
+**Resolution:** Non-critical — the promote timestamp is for informational purposes only.
 
-### "staging_consumer not configured"
+### "staging_source not configured"
 
-**Cause:** No staging consumer exists and no template is set up.
+**Cause:** No staging environment exists yet.
 
-**Solution:** Either run `setup` first, or just promote to staging — auto-consumer creation will handle it.
+**Solution:** Just promote to staging — auto-environment creation will handle it:
+```typescript
+deploy({to: "staging", scriptId: "..."})
+```
 
-### "staging_version not pinned"
+### Consumer Manifest Discrepancies
 
-**Cause:** Staging consumer exists but is in development mode (HEAD).
+**Cause:** Consumer's `appsscript.json` doesn't reference the correct -source library or is missing `developmentMode: true`.
 
-**Solution:** Promote to staging to create a version and pin it.
+**Detection:** Run `deploy({operation: "status", scriptId: "..."})` — discrepancies appear in the response.
 
-### Discrepancies in Status
+**Solution:** Re-run the promote to the affected environment, or manually update the consumer manifest.
 
-**Cause:** ConfigManager writes failed during a previous promote, or someone manually edited a consumer manifest.
+### Copied Consumer Not Updating
 
-**Solution:** Run status with `reconcile: true` to auto-fix using consumer manifests as source of truth.
+**Symptom:** A copy of a consumer spreadsheet doesn't get updates.
 
-### Version Limit Approaching
+**This should not happen with the file-push model.** All consumers (including copies) reference the -source library at HEAD with `developmentMode: true`. When files are pushed to the -source library, all consumers see the new code.
 
-GAS projects have a 200-version limit. Status shows warnings at 150+ versions.
-
-**Resolution:** Delete old versions manually via Apps Script UI > Project History. The status `keepSet` tells you which versions are still in use.
+If a copied consumer is not updating:
+1. Check its `appsscript.json` — verify `libraryId` points to the correct -source library
+2. Verify `developmentMode: true` is set
+3. Open the Apps Script editor in the copy to trigger a cache refresh
 
 ---
 
 ## Related Documentation
 
-- **[DEPLOYMENT_WORKFLOW.md](DEPLOYMENT_WORKFLOW.md)**: Low-level web app deployments (`version_deploy`)
+- **[DEPLOYMENT_WORKFLOW.md](DEPLOYMENT_WORKFLOW.md)**: Deployment infrastructure (`deploy_config`)
 - **[CLAUDE.md](../CLAUDE.md)**: Quick reference for AI assistants
 - **Tool source**: `src/tools/deploy.ts` (LibraryDeployTool)
 
 ---
 
 **Last Updated**: 2026-02-16
-**Version**: 1.0
+**Version**: 2.0 (file-push model)

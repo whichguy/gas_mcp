@@ -21,6 +21,7 @@ import { ValidationError, FileOperationError } from '../../../errors/mcpErrors.j
 import { parsePath, resolveHybridScriptId, fileNameMatches } from '../../../api/pathParser.js';
 import { unwrapModuleContent, wrapModuleContent, shouldWrapContent, type ModuleOptions } from '../../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../../utils/virtualFileTranslation.js';
+import { analyzeCommonJsContent } from '../../../utils/contentAnalyzer.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
 interface EditOperation {
@@ -43,6 +44,8 @@ interface EditResult {
   editsApplied: number;
   filePath: string;
   wrappedContent?: Map<string, string>;
+  warnings?: string[];
+  hints?: string[];
 }
 
 /**
@@ -102,6 +105,7 @@ export class EditOperationStrategy implements FileOperationStrategy<EditResult> 
     if (!fileContent) {
       throw new ValidationError('filename', this.filename, 'existing file in the project');
     }
+    this.filename = fileContent.name; // Normalize to canonical GAS name (preserve, don't rename)
 
     this.fileType = fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON';
 
@@ -211,12 +215,19 @@ export class EditOperationStrategy implements FileOperationStrategy<EditResult> 
       this.fileType
     );
 
+    // Analyze content for warnings/hints (unwrapped content, SERVER_JS only)
+    const analysis = this.fileType === 'SERVER_JS'
+      ? analyzeCommonJsContent(content, this.existingOptions ?? undefined, this.filename!)
+      : undefined;
+
     // Return result with wrapped content for local file sync
     return {
       success: true,
       editsApplied: this.editsApplied,
       filePath: this.params.path,
-      wrappedContent: new Map([[this.filename!, finalContent]])
+      wrappedContent: new Map([[this.filename!, finalContent]]),
+      ...(analysis?.warnings?.length ? { warnings: analysis.warnings } : {}),
+      ...(analysis?.hints?.length ? { hints: analysis.hints } : {})
     };
   }
 

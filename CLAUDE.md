@@ -100,12 +100,13 @@ These systems are **independent** — choose based on whether you need Sheets cu
 **Metadata Caching:** 85-95% faster (5-50ms vs 800-1200ms) via extended attributes. See [docs/METADATA_CACHING.md](docs/METADATA_CACHING.md)
 
 ### 5. Deployment
-**Tools:** `deploy` (recommended — library version pinning) | `version_deploy` (advanced — raw web app deployments)
-**Library workflow:** `deploy({operation: "promote", to: "staging", scriptId, description: "v1.0"})` → test → `deploy({operation: "promote", to: "prod", scriptId})`
+**Tools:** `deploy` (unified — version snapshot + consumer pin + sheet sync) | `deploy_config` (infrastructure — reset/status only)
+**Workflow:** `deploy({to: "staging", scriptId, description: "v1.0"})` → test → `deploy({to: "prod", scriptId})`
 **Safety:** Both tools use LockManager for concurrent write protection. `dryRun: true` previews changes without applying.
+**Sheet Sync:** Promotes copy spreadsheet sheets from source to target env (disable with `syncSheets: false`).
 **Resilience:** ConfigManager write failures produce `configWarning` (deployment still succeeds). Rollback with missing state gives helpful error with current pin.
 **Auto-Storage:** URLs and deployment IDs stored in PropertiesService via ConfigManager
-**See:** [docs/LIBRARY_DEPLOYMENT_WORKFLOW.md](docs/LIBRARY_DEPLOYMENT_WORKFLOW.md) for library deploy guide | [docs/DEPLOYMENT_WORKFLOW.md](docs/DEPLOYMENT_WORKFLOW.md) for web app deploy guide
+**See:** [docs/LIBRARY_DEPLOYMENT_WORKFLOW.md](docs/LIBRARY_DEPLOYMENT_WORKFLOW.md) for deploy guide | [docs/DEPLOYMENT_WORKFLOW.md](docs/DEPLOYMENT_WORKFLOW.md) for deploy_config guide
 
 ### 6. Write Locking
 **Protection:** Filesystem-based per-project write locks prevent concurrent modification (GAS API has no server-side concurrency control)
@@ -228,7 +229,7 @@ git_feature({operation: 'finish', scriptId, pushToRemote: true})
 | **File (Raw)** | 9 | raw_cat, raw_write, raw_cp, raw_grep, raw_find, raw_ripgrep, raw_sed, raw_edit, raw_aider |
 | **Analysis** | 1 | deps (dependency graphs) |
 | **Execution** | 2 | exec, exec_api |
-| **Deployment** | 12 | deploy, version_deploy, project_create, project_init, deploy_create, deploy_delete, deploy_get_details, deploy_list, deploy_update, version_create, version_get, version_list |
+| **Deployment** | 12 | deploy, deploy_config, project_create, project_init, deploy_create, deploy_delete, deploy_get_details, deploy_list, deploy_update, version_create, version_get, version_list |
 | **Management** | 4 | auth, project_list, reorder, process_list |
 | **Logging** | 2 | cloud_logs (list + get operations), executions (execution history) |
 | **Triggers** | 1 | trigger (list + create + delete operations) |

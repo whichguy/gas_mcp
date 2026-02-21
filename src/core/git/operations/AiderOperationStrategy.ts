@@ -23,6 +23,7 @@ import { parsePath, resolveHybridScriptId, fileNameMatches } from '../../../api/
 import { unwrapModuleContent, wrapModuleContent, shouldWrapContent, type ModuleOptions } from '../../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../../utils/virtualFileTranslation.js';
 import { FuzzyMatcher, type EditOperation } from '../../../utils/fuzzyMatcher.js';
+import { analyzeCommonJsContent } from '../../../utils/contentAnalyzer.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
 interface AiderOperation {
@@ -44,6 +45,8 @@ interface AiderResult {
   editsApplied: number;
   filePath: string;
   wrappedContent?: Map<string, string>;
+  warnings?: string[];
+  hints?: string[];
 }
 
 /**
@@ -206,12 +209,19 @@ export class AiderOperationStrategy implements FileOperationStrategy<AiderResult
       this.fileType
     );
 
+    // Analyze content for warnings/hints (unwrapped content, SERVER_JS only)
+    const analysis = this.fileType === 'SERVER_JS'
+      ? analyzeCommonJsContent(content, this.existingOptions ?? undefined, this.filename!)
+      : undefined;
+
     // Return result with wrapped content for local file sync
     return {
       success: true,
       editsApplied: this.editsApplied,
       filePath: this.params.path,
-      wrappedContent: new Map([[this.filename!, finalContent]])
+      wrappedContent: new Map([[this.filename!, finalContent]]),
+      ...(analysis?.warnings?.length ? { warnings: analysis.warnings } : {}),
+      ...(analysis?.hints?.length ? { hints: analysis.hints } : {})
     };
   }
 

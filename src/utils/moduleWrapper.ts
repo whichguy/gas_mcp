@@ -68,7 +68,7 @@ export interface HoistedFunction {
  * Module options that can be passed to __defineModule__
  */
 export interface ModuleOptions {
-  loadNow?: boolean;
+  loadNow?: boolean | null;
   hoistedFunctions?: HoistedFunction[];  // Functions to hoist for Sheets autocomplete
 }
 

@@ -145,6 +145,29 @@ export class ReorderTool extends BaseTool {
     // Rebuild: critical files first, then others
     reorderedFiles = [...extractedCriticalFiles, ...nonCriticalFiles];
 
+    // Validate loadNow module positioning: loadNow modules must be at the end
+    // Matches all emitted formats:
+    //   new:  __defineModule__(_main, true)
+    //   obj:  __defineModule__(_main, { loadNow: true })
+    const loadNowFileList = reorderedFiles.filter((f: any) => {
+      const src = f.source || '';
+      return /__defineModule__\s*\(\s*_main\s*,\s*true\s*\)/.test(src) ||
+             /__defineModule__\s*\(\s*_main\s*,\s*\{[^}]*loadNow\s*:\s*true[^}]*\}\s*\)/.test(src);
+    });
+    const reorderWarnings: string[] = [];
+    if (loadNowFileList.length > 0) {
+      const lastValidPos = reorderedFiles.length - loadNowFileList.length;
+      const misplacedLoadNow = loadNowFileList.filter((f: any) =>
+        reorderedFiles.indexOf(f) < lastValidPos
+      );
+      if (misplacedLoadNow.length > 0) {
+        reorderWarnings.push(
+          `loadNow modules not last: [${misplacedLoadNow.map((f: any) => f.name).join(', ')}]. ` +
+          `These must be at the end of the file list. Their dependencies must parse first.`
+        );
+      }
+    }
+
     // Update the project with new file order
     const updatedFiles = await this.gasClient.updateProjectContent(scriptId, reorderedFiles, accessToken);
 
@@ -185,7 +208,7 @@ export class ReorderTool extends BaseTool {
       console.error(`⚠️ [SYNC] Failed to update local cache after reorder: ${syncError}`);
     }
 
-    return {
+    const result: any = {
       status: 'reordered',
       scriptId,
       fileName,
@@ -194,6 +217,10 @@ export class ReorderTool extends BaseTool {
       totalFiles: files.length,
       message: `Moved ${fileName} from position ${currentIndex} to ${newPosition}. Critical files enforced: require(0), ConfigManager(1), __mcp_exec(2).`
     };
+    if (reorderWarnings.length > 0) {
+      result.warnings = reorderWarnings;
+    }
+    return result;
   }
 }
 

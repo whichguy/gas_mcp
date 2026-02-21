@@ -9,7 +9,8 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError } from '../../errors/mcpErrors.js';
-import { unwrapModuleContent, shouldWrapContent } from '../../utils/moduleWrapper.js';
+import { unwrapModuleContent, shouldWrapContent, type ModuleOptions } from '../../utils/moduleWrapper.js';
+import { analyzeContent } from '../../utils/contentAnalyzer.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { setFileMtimeToRemote, isFileInSyncWithCacheByHash } from '../../utils/fileHelpers.js';
 import { getCachedGASMetadata, cacheGASMetadata, updateCachedContentHash, getCachedContentHash, clearGASMetadata } from '../../utils/gasMetadataCache.js';
@@ -41,7 +42,9 @@ export class CatTool extends BaseFileSystemTool {
       path: { type: 'string', description: 'Resolved file path' },
       type: { type: 'string', enum: ['server_js', 'html', 'json'], description: 'GAS file type' },
       moduleOptions: { type: 'object', description: 'CommonJS module options (loadNow, hoistedFunctions, etc.)' },
-      size: { type: 'number', description: 'Content size in bytes' }
+      size: { type: 'number', description: 'Content size in bytes' },
+      warnings: { type: 'array', items: { type: 'string' }, description: 'Critical issues detected in file content (e.g., __global__ or __events__ without loadNow: true)' },
+      analysisHints: { type: 'array', items: { type: 'string' }, description: 'Suggestions for improvement detected in file content (e.g., loadNow ordering, ConfigManager usage)' }
     }
   };
 
@@ -176,8 +179,11 @@ export class CatTool extends BaseFileSystemTool {
                     let finalContent = result.content;
                     let commonJsInfo: any = null;
 
+                    let existingModuleOptions: ModuleOptions | null = null;
+
                     if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
-                      const { unwrappedContent } = unwrapModuleContent(finalContent);
+                      const { unwrappedContent, existingOptions } = unwrapModuleContent(finalContent);
+                      existingModuleOptions = existingOptions;
 
                       if (unwrappedContent !== finalContent) {
                         finalContent = unwrappedContent;
@@ -213,6 +219,9 @@ export class CatTool extends BaseFileSystemTool {
                       };
                     }
 
+                    // Analyze content for warnings and hints (catches issues missed at write time)
+                    const contentAnalysis = analyzeContent(filename, finalContent, existingModuleOptions ?? undefined);
+
                     result.content = finalContent;
                     result.commonJsInfo = commonJsInfo;
                     result.hash = cachedHash;  // Use verified cached hash
@@ -222,6 +231,19 @@ export class CatTool extends BaseFileSystemTool {
                       currentHash: cachedHash,
                       source: 'fast_path_cache'
                     };
+
+                    // Populate moduleOptions (fixes bug: was always undefined in generateReadHints)
+                    if (existingModuleOptions) {
+                      result.moduleOptions = existingModuleOptions;
+                    }
+
+                    // Surface content analysis warnings and hints
+                    if (contentAnalysis.warnings.length > 0) {
+                      result.warnings = contentAnalysis.warnings;
+                    }
+                    if (contentAnalysis.hints.length > 0) {
+                      result.analysisHints = contentAnalysis.hints;
+                    }
 
                     // Add git breadcrumb hint for .git/* files
                     const gitHint = getGitBreadcrumbHint(filename);
@@ -237,7 +259,7 @@ export class CatTool extends BaseFileSystemTool {
                       result.savedTo = localPath;
                     }
 
-                    // Add response hints
+                    // Add response hints (moduleOptions now populated above)
                     const fastPathHints = generateReadHints(filename, result.moduleOptions);
                     result.hints = fastPathHints;
 
@@ -440,8 +462,11 @@ export class CatTool extends BaseFileSystemTool {
     let finalContent = result.content;
     let commonJsInfo: any = null;
 
+    let existingModuleOptions: ModuleOptions | null = null;
+
     if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
-      const { unwrappedContent } = unwrapModuleContent(finalContent);
+      const { unwrappedContent, existingOptions } = unwrapModuleContent(finalContent);
+      existingModuleOptions = existingOptions;
 
       if (unwrappedContent !== finalContent) {
         finalContent = unwrappedContent;
@@ -477,8 +502,24 @@ export class CatTool extends BaseFileSystemTool {
       };
     }
 
+    // Analyze content for warnings and hints (catches issues missed at write time)
+    const contentAnalysis = analyzeContent(filename, finalContent, existingModuleOptions ?? undefined);
+
     result.content = finalContent;
     result.commonJsInfo = commonJsInfo;
+
+    // Populate moduleOptions (fixes bug: was always undefined in generateReadHints)
+    if (existingModuleOptions) {
+      result.moduleOptions = existingModuleOptions;
+    }
+
+    // Surface content analysis warnings and hints
+    if (contentAnalysis.warnings.length > 0) {
+      result.warnings = contentAnalysis.warnings;
+    }
+    if (contentAnalysis.hints.length > 0) {
+      result.analysisHints = contentAnalysis.hints;
+    }
 
     // Compute hash on WRAPPED content (full file as stored in GAS)
     // This ensures hash matches `git hash-object <file>` on local synced files

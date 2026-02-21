@@ -219,6 +219,7 @@ export interface CompactGitHint {
   blocked: boolean;
   urgency?: 'CRITICAL' | 'HIGH';      // omit for NORMAL
   action?: 'start' | 'commit' | 'finish'; // LLM-efficient alias for next-best-action
+  workflow?: string[];                 // step-by-step guidance when blocked
 }
 
 /**

@@ -73,9 +73,9 @@
       "description": "Created: 7/17/2025"
     },
     "module-test": {
-      "scriptId": "1-U2jdeDB5eOYW1_z4pQCiXqFmklx4dMs4JU93jVTBZQu47m9IKsc6IJQ",
+      "scriptId": "14IrlEDo7AGBzhz4-6oxsv7Mug6IDdHej5NzSpKzYqDh5tKPZzIVsdfzF",
       "name": "module-test",
-      "description": "Created: 2/16/2026"
+      "description": "Created: 2/21/2026"
     },
     "module-validation": {
       "scriptId": "1cm2Zl0iT4zRYmn5COgVCfZYuQuJYkKGWfNiLfmY-bpdD1iGRGBlMmEfb",
@@ -508,9 +508,9 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "1YIg0OlY6IKBGNoKfNVhY0zTvSnc51EYiQ44KJqdqwOxs1rJo1tYlIbrj",
+      "scriptId": "19Ttr7oWROBqt0g5IEKB7o2ynDSlk5h0zyGatuWoCEA2EEySbGTg1fDmI",
       "name": "consolidated-test-project",
-      "description": "Created: 2/16/2026"
+      "description": "Created: 2/21/2026"
     },
     "exec-test": {
       "scriptId": "1YNN8VJBBYqaOVT0VeSl0YDdEHKt9EJ7alY9hVr84wurbEG7hHlum-eKY",
@@ -528,9 +528,9 @@
       "description": "Created: 2/14/2026"
     },
     "file-ops-test": {
-      "scriptId": "1-9s7KtRQTAeekjyJGU5TF49ddwEKZCFuRvSteehytvbgOzmyOdszooZl",
+      "scriptId": "1JtAiIPpxPGEFjlKvmmOS2Te8zoLowipdI98WNbsgJPSiGHjmXtWkl9J4",
       "name": "file-ops-test",
-      "description": "Created: 2/16/2026"
+      "description": "Created: 2/21/2026"
     },
     "real-gas-e2e-test-176021807938": {
       "scriptId": "1jhIP5JveC9MOJRuCyDnD_nPb2zQZNfq0mXvoH7PARjD9NipyZ9CQI6vx",
@@ -748,9 +748,9 @@
       "description": "Created: 2/14/2026"
     },
     "shared-exec-test": {
-      "scriptId": "1nmayJIkGB7NfMvEtZu4sErl6w3WngoZm1CAeV1NhJM1e-Vf9f2bum0f6",
+      "scriptId": "1ZSKUoXEkZG9e6_kzDz6biL0SmvRddTRLt52N2ATNHDNZXaydaBmm73S7",
       "name": "shared-exec-test",
-      "description": "Created: 2/16/2026"
+      "description": "Created: 2/21/2026"
     },
     "sheet-chat-update-service": {
       "scriptId": "15VJZHj3vzVsHTu7qXJOQ_r4-RoL3IybtdnDItKX94fmdRPM8AYAyoj1p",
@@ -770,7 +770,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-02-17T01:58:41.905Z"
+    "lastModified": "2026-02-21T20:31:50.212Z"
   },
   "debug": true,
   "currentProject": {

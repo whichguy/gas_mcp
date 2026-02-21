@@ -20,6 +20,7 @@ import { ValidationError, FileOperationError } from '../../../errors/mcpErrors.j
 import { resolveHybridScriptId, fileNameMatches } from '../../../api/pathParser.js';
 import { translatePathForOperation } from '../../../utils/virtualFileTranslation.js';
 import { shouldWrapContent, unwrapModuleContent, wrapModuleContent, getModuleName, type ModuleOptions } from '../../../utils/moduleWrapper.js';
+import { analyzeCommonJsContent } from '../../../utils/contentAnalyzer.js';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
 interface CopyStrategyParams {
@@ -38,6 +39,8 @@ interface CopyResult {
   toProjectId: string;
   isCrossProject: boolean;
   wrappedContent: Map<string, string>;
+  warnings?: string[];
+  hints?: string[];
 }
 
 /**
@@ -152,6 +155,11 @@ export class CopyOperationStrategy implements FileOperationStrategy<CopyResult> 
       this.fileType as 'SERVER_JS' | 'HTML' | 'JSON'
     );
 
+    // Analyze content for warnings/hints (unwrapped content, SERVER_JS only)
+    const analysis = shouldWrapContent(this.fileType, this.toFilename!)
+      ? analyzeCommonJsContent(content, this.existingOptions ?? undefined, this.toFilename!)
+      : undefined;
+
     return {
       status: 'copied',
       from: this.params.from,
@@ -159,7 +167,9 @@ export class CopyOperationStrategy implements FileOperationStrategy<CopyResult> 
       fromProjectId: this.fromProjectId,
       toProjectId: this.toProjectId,
       isCrossProject: this.isCrossProject,
-      wrappedContent: new Map([[this.toFilename!, finalContent]])
+      wrappedContent: new Map([[this.toFilename!, finalContent]]),
+      ...(analysis?.warnings?.length ? { warnings: analysis.warnings } : {}),
+      ...(analysis?.hints?.length ? { hints: analysis.hints } : {})
     };
   }
 

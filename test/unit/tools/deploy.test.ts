@@ -441,99 +441,28 @@ describe('LibraryDeployTool', () => {
     });
   });
 
-  // ============================================================
-  // updateDevManifestWithEnvironmentIds Tests (13b)
-  // ============================================================
-  describe('updateDevManifestWithEnvironmentIds', () => {
-    it('should merge new environment key without disturbing existing mcp_environments keys', async () => {
-      const currentManifest = {
-        timeZone: 'America/New_York',
-        mcp_environments: {
-          template: { scriptId: 'tmpl123', userSymbol: 'MyLib' }
-        }
-      };
-      const writtenFiles: any[] = [];
-
-      (tool as any).gasClient = {
-        getProjectContent: async () => [
-          { name: 'Code', type: 'SERVER_JS', source: 'function main() {}' },
-          { name: 'appsscript', type: 'JSON', source: JSON.stringify(currentManifest) }
-        ],
-        updateProjectContent: async (_id: string, files: any[]) => { writtenFiles.push(...files); return files; }
-      };
-
-      await (tool as any).updateDevManifestWithEnvironmentIds(
-        'devId', 'staging',
-        { sourceScriptId: 'src123', consumerScriptId: 'cons123', spreadsheetId: 'sheet123' }
-      );
-
-      const appsscript = writtenFiles.find((f: any) => f.name === 'appsscript');
-      const json = JSON.parse(appsscript.source);
-      expect(json.mcp_environments.staging).to.deep.equal({
-        sourceScriptId: 'src123', consumerScriptId: 'cons123', spreadsheetId: 'sheet123'
-      });
-      // Existing template key preserved
-      expect(json.mcp_environments.template).to.deep.equal({ scriptId: 'tmpl123', userSymbol: 'MyLib' });
-      // Non-mcp properties preserved
-      expect(json.timeZone).to.equal('America/New_York');
-    });
-
-    it('should create mcp_environments key if not present', async () => {
-      const writtenFiles: any[] = [];
-      (tool as any).gasClient = {
-        getProjectContent: async () => [
-          { name: 'appsscript', type: 'JSON', source: JSON.stringify({ timeZone: 'UTC' }) }
-        ],
-        updateProjectContent: async (_id: string, files: any[]) => { writtenFiles.push(...files); return files; }
-      };
-
-      await (tool as any).updateDevManifestWithEnvironmentIds(
-        'devId', 'prod',
-        { sourceScriptId: 'psrc', consumerScriptId: 'pcons', spreadsheetId: 'psheet' }
-      );
-
-      const json = JSON.parse(writtenFiles.find((f: any) => f.name === 'appsscript').source);
-      expect(json.mcp_environments.prod.sourceScriptId).to.equal('psrc');
-    });
-
-    it('should throw if appsscript is missing (prevents silent ID loss)', async () => {
-      (tool as any).gasClient = {
-        getProjectContent: async () => [{ name: 'Code', type: 'SERVER_JS', source: '' }],
-        updateProjectContent: async () => []
-      };
-
-      let threw = false;
-      try {
-        await (tool as any).updateDevManifestWithEnvironmentIds(
-          'devId', 'staging', { sourceScriptId: 'x', consumerScriptId: 'y', spreadsheetId: 'z' }
-        );
-      } catch (e: any) {
-        threw = true;
-        expect(e.message).to.include('appsscript.json not found');
-      }
-      expect(threw).to.be.true;
-    });
-  });
+  // updateDevManifestWithEnvironmentIds was removed — ConfigManager is now the sole
+  // source of truth for environment IDs (GAS API rejects unknown manifest fields).
 
   // ============================================================
   // autoCreateConsumer double-create guard Tests (13d)
   // ============================================================
   describe('autoCreateConsumer double-create guard', () => {
-    it('should return existing IDs from manifest without calling createStandaloneProject', async () => {
+    it('should return existing IDs from ConfigManager without calling createStandaloneProject', async () => {
       const existingIds = {
         sourceScriptId: 'existing-source',
         consumerScriptId: 'existing-consumer',
         spreadsheetId: 'existing-sheet'
       };
 
-      (tool as any).gasClient = {
-        getProjectContent: async () => [
-          {
-            name: 'appsscript', type: 'JSON',
-            source: JSON.stringify({ mcp_environments: { staging: existingIds } })
-          }
-        ],
-        updateProjectContent: async () => []
+      // ConfigManager has the IDs (getEnvironmentConfig reads from CM)
+      (tool as any).getConfigManagerValue = async (_scriptId: string, key: string) => {
+        const values: Record<string, string> = {
+          'STAGING_SOURCE_SCRIPT_ID': existingIds.sourceScriptId,
+          'STAGING_SCRIPT_ID': existingIds.consumerScriptId,
+          'STAGING_SPREADSHEET_URL': existingIds.spreadsheetId,
+        };
+        return values[key] || null;
       };
 
       let createCalled = false;
@@ -547,16 +476,23 @@ describe('LibraryDeployTool', () => {
       expect(createCalled).to.be.false;
     });
 
-    it('should proceed with creation when manifest entry is missing spreadsheetId (partial entry falls through)', async () => {
-      // Legacy entries without spreadsheetId must not early-return undefined for spreadsheetId
+    it('should proceed with creation when ConfigManager has partial entry (missing spreadsheetId)', async () => {
+      // CM has source + consumer but no spreadsheet — existing check requires all 3 → falls through
+      (tool as any).getConfigManagerValue = async (_scriptId: string, key: string) => {
+        const values: Record<string, string> = {
+          'STAGING_SOURCE_SCRIPT_ID': 'src',
+          'STAGING_SCRIPT_ID': 'cons',
+          // STAGING_SPREADSHEET_URL intentionally missing
+        };
+        return values[key] || null;
+      };
+
+      const libManifest = { timeZone: 'America/New_York', oauthScopes: ['scope1'] };
       (tool as any).gasClient = {
         getProjectContent: async () => [
-          {
-            name: 'appsscript', type: 'JSON',
-            source: JSON.stringify({ mcp_environments: { staging: { sourceScriptId: 'src', consumerScriptId: 'cons' /* no spreadsheetId */ } } })
-          }
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify(libManifest) }
         ],
-        updateProjectContent: async () => []
+        updateProjectContent: async () => [],
       };
 
       let createCalled = false;
@@ -565,66 +501,44 @@ describe('LibraryDeployTool', () => {
       (tool as any).createContainerBoundScript = async () => 'new-consumer';
       (tool as any).writeConsumerShim = async () => {};
       (tool as any).setConfigManagerValue = async () => {};
-      (tool as any).updateDevManifestWithEnvironmentIds = async () => {};
-      try {
-        await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
-      } catch {
-        // May throw on config save — that's OK
-      }
+      await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
       expect(createCalled).to.be.true;
     });
 
-    it('should proceed with creation when manifest has no matching environment', async () => {
+    it('should proceed with creation when ConfigManager has no staging environment', async () => {
+      // Only prod IDs in CM, staging missing
+      (tool as any).getConfigManagerValue = async (_scriptId: string, key: string) => {
+        const values: Record<string, string> = {
+          'PROD_SOURCE_SCRIPT_ID': 'prod-src',
+        };
+        return values[key] || null;
+      };
+
+      const libManifest = { timeZone: 'America/New_York', oauthScopes: ['scope1'] };
       (tool as any).gasClient = {
         getProjectContent: async () => [
-          {
-            name: 'appsscript', type: 'JSON',
-            source: JSON.stringify({ mcp_environments: { prod: { sourceScriptId: 'prod-src' } } })
-          }
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify(libManifest) }
         ],
-        updateProjectContent: async () => []
+        updateProjectContent: async () => [],
       };
 
       let createCalled = false;
       (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-src'; };
-      // Stub out the rest of the create path to avoid real API calls
       (tool as any).createBlankSpreadsheet = async () => 'new-sheet';
       (tool as any).createContainerBoundScript = async () => 'new-consumer';
       (tool as any).writeConsumerShim = async () => {};
       (tool as any).setConfigManagerValue = async () => {};
-      (tool as any).updateDevManifestWithEnvironmentIds = async () => {};
-      const origConfig = (tool as any).gasClient.getProjectContent;
-      let callCount = 0;
-      (tool as any).gasClient.getProjectContent = async (id: string) => {
-        callCount++;
-        // Return manifest with project name for getProjectName path
-        return origConfig(id);
-      };
-      // Don't need full stub — just verify createCalled
-      try {
-        await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
-      } catch {
-        // May throw on config read — that's OK, we only care createCalled is true
-      }
-
+      await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
       expect(createCalled).to.be.true;
     });
   });
 
   // ============================================================
-  // autoCreateConsumer ConfigManager recovery Tests
+  // autoCreateConsumer ConfigManager as source of truth Tests
   // ============================================================
-  describe('autoCreateConsumer ConfigManager recovery', () => {
-    it('should recover IDs from ConfigManager when manifest is empty and skip resource creation', async () => {
-      // Manifest re-check returns no mcp_environments (simulates failed step 8 on prior run)
-      (tool as any).gasClient = {
-        getProjectContent: async () => [
-          { name: 'appsscript', type: 'JSON', source: JSON.stringify({}) }
-        ],
-        updateProjectContent: async () => [],
-      };
-
-      // ConfigManager has the IDs from a prior step 7
+  describe('autoCreateConsumer ConfigManager as source of truth', () => {
+    it('should find existing IDs in ConfigManager (via getEnvironmentConfig) and skip resource creation', async () => {
+      // ConfigManager is now the primary store — IDs are found via getEnvironmentConfig
       (tool as any).getConfigManagerValue = async (_scriptId: string, key: string) => {
         const values: Record<string, string> = {
           'STAGING_SOURCE_SCRIPT_ID': 'recovered-source',
@@ -634,11 +548,6 @@ describe('LibraryDeployTool', () => {
         return values[key] || null;
       };
 
-      // Manifest heal succeeds
-      let manifestHealCalled = false;
-      (tool as any).updateDevManifestWithEnvironmentIds = async () => { manifestHealCalled = true; };
-
-      // Creation functions should NOT be called
       let createCalled = false;
       (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-id'; };
 
@@ -647,41 +556,39 @@ describe('LibraryDeployTool', () => {
       expect(result.sourceScriptId).to.equal('recovered-source');
       expect(result.consumerScriptId).to.equal('recovered-consumer');
       expect(result.spreadsheetId).to.equal('recovered-sheet');
-      expect(result.manifestPersisted).to.be.true;
+      // No manifestPersisted field — ConfigManager is the sole source of truth
+      expect(result).to.not.have.property('manifestPersisted');
       expect(createCalled).to.be.false;
-      expect(manifestHealCalled).to.be.true;
     });
 
-    it('should recover IDs from ConfigManager but report manifestPersisted:false when heal fails', async () => {
+    it('should create new environment and write IDs to ConfigManager when CM has no data', async () => {
+      // No IDs in ConfigManager
+      (tool as any).getConfigManagerValue = async () => null;
+
+      const libManifest = { timeZone: 'America/New_York', oauthScopes: ['scope1'] };
       (tool as any).gasClient = {
         getProjectContent: async () => [
-          { name: 'appsscript', type: 'JSON', source: JSON.stringify({}) }
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify(libManifest) }
         ],
         updateProjectContent: async () => [],
       };
 
-      (tool as any).getConfigManagerValue = async (_scriptId: string, key: string) => {
-        const values: Record<string, string> = {
-          'STAGING_SOURCE_SCRIPT_ID': 'recovered-source',
-          'STAGING_SCRIPT_ID': 'recovered-consumer',
-          'STAGING_SPREADSHEET_URL': 'recovered-sheet',
-        };
-        return values[key] || null;
-      };
-
-      // Manifest heal fails
-      (tool as any).updateDevManifestWithEnvironmentIds = async () => { throw new Error('API rate limit'); };
-
-      let createCalled = false;
-      (tool as any).createStandaloneProject = async () => { createCalled = true; return 'new-id'; };
+      const writtenKeys: string[] = [];
+      (tool as any).setConfigManagerValue = async (_id: string, key: string) => { writtenKeys.push(key); };
+      (tool as any).createStandaloneProject = async () => 'new-source';
+      (tool as any).createBlankSpreadsheet = async () => 'new-sheet';
+      (tool as any).createContainerBoundScript = async () => 'new-consumer';
+      (tool as any).writeConsumerShim = async () => {};
 
       const result = await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
 
-      expect(result.sourceScriptId).to.equal('recovered-source');
-      expect(result.consumerScriptId).to.equal('recovered-consumer');
-      expect(result.spreadsheetId).to.equal('recovered-sheet');
-      expect(result.manifestPersisted).to.be.false;
-      expect(createCalled).to.be.false;
+      expect(result.sourceScriptId).to.equal('new-source');
+      expect(result.consumerScriptId).to.equal('new-consumer');
+      expect(result.spreadsheetId).to.equal('new-sheet');
+      // Verify ConfigManager was written
+      expect(writtenKeys).to.include('STAGING_SOURCE_SCRIPT_ID');
+      expect(writtenKeys).to.include('STAGING_SCRIPT_ID');
+      expect(writtenKeys).to.include('STAGING_SPREADSHEET_URL');
     });
   });
 
@@ -1106,15 +1013,15 @@ describe('LibraryDeployTool', () => {
         getProject: async () => ({ title: 'MyLib Project' }),
       };
       (tool as any).addLibraryToProject = async () => {};
-      (tool as any).updateDevManifestWithEnvironmentIds = async () => {};
       (tool as any).deriveUserSymbol = async () => 'MyLib';
+      (tool as any).setConfigManagerValue = async () => {};
 
       // Dynamically override McpGasConfigManager for this test
       const mcpConfig = await import('../../../src/config/mcpGasConfig.js');
       const origGetConfig = mcpConfig.McpGasConfigManager.getConfig;
       const origSaveConfig = mcpConfig.McpGasConfigManager.saveConfig;
       (mcpConfig.McpGasConfigManager as any).getConfig = async () => ({
-        projects: [{ scriptId: 'dev-id', name: 'MyLib', environments: {} }]
+        projects: { 'MyLib': { scriptId: 'dev-id', name: 'MyLib', environments: {} } }
       });
       (mcpConfig.McpGasConfigManager as any).saveConfig = async () => {
         throw new Error('disk full');

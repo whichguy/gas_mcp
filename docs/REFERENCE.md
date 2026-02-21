@@ -386,8 +386,8 @@ log({operation: "get", scriptId: "...", processId: "..."})
 ### Deployments (12 tools)
 
 **Deployment Workflow:**
-- `deploy` - Library version pinning (recommended) — promote/rollback/status/setup
-- `version_deploy` - Web app deployment management (advanced) — promote/rollback/status/reset
+- `deploy` - Unified environment promotion — promote/rollback/status/setup with sheet sync
+- `deploy_config` - Deployment infrastructure — status/reset
 
 **Version Management:**
 - `version_create` - ✅ Works for both types
