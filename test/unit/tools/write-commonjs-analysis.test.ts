@@ -12,6 +12,7 @@
  * - JSON.parse without try-catch
  * - ConfigManager sensitive keys in script-wide scope
  * - Direct PropertiesService usage (suggest ConfigManager)
+ * - Logger.log() usage (bypasses module-level logging controls)
  */
 
 import { expect } from 'chai';
@@ -678,7 +679,8 @@ function _main(module, exports, log) {
       const analysis = analyze(content, undefined, 'utils');
 
       expect(analysis.hints.some((h: string) => h.includes('PropertiesService'))).to.be.true;
-      expect(analysis.hints.some((h: string) => h.includes('ConfigManager'))).to.be.true;
+      // Should reference the corrected require() path
+      expect(analysis.hints.some((h: string) => h.includes('gas-properties/ConfigManager'))).to.be.true;
     });
 
     it('should hint about PropertiesService.getUserProperties() in regular files', () => {
@@ -764,6 +766,92 @@ function _main(module, exports, log) {
 
       const propsHints = analysis.hints.filter((h: string) => h.includes('PropertiesService'));
       expect(propsHints).to.have.length(0);
+    });
+  });
+
+  describe('Logger.log() Detection', () => {
+    it('should hint when Logger.log() is used', () => {
+      const analyze = getAnalyzeCommonJsContent();
+      const content = `
+        function myFunc() {
+          Logger.log('debug message');
+          return 42;
+        }
+      `;
+      const analysis = analyze(content, undefined, 'utils');
+
+      const loggerHints = analysis.hints.filter((h: string) => h.includes('Logger.log()'));
+      expect(loggerHints).to.have.length(1);
+      expect(loggerHints[0]).to.include('log" parameter');
+    });
+
+    it('should hint for Logger.warning()', () => {
+      const analyze = getAnalyzeCommonJsContent();
+      const content = `
+        Logger.warning('something went wrong');
+      `;
+      const analysis = analyze(content, undefined, 'utils');
+
+      expect(analysis.hints.some((h: string) => h.includes('Logger.log()'))).to.be.true;
+    });
+
+    it('should hint for Logger.severe()', () => {
+      const analyze = getAnalyzeCommonJsContent();
+      const content = `
+        Logger.severe('fatal error');
+      `;
+      const analysis = analyze(content, undefined, 'utils');
+
+      expect(analysis.hints.some((h: string) => h.includes('Logger.log()'))).to.be.true;
+    });
+
+    it('should NOT hint when Logger.log is in a comment', () => {
+      const analyze = getAnalyzeCommonJsContent();
+      const content = `
+        // Use Logger.log('msg') for debugging
+        function myFunc() { return 42; }
+      `;
+      const analysis = analyze(content, undefined, 'utils');
+
+      const loggerHints = analysis.hints.filter((h: string) => h.includes('Logger.log()'));
+      expect(loggerHints).to.have.length(0);
+    });
+
+    it('should NOT hint for infrastructure files (isInfrastructureFile = true)', () => {
+      const analyze = getAnalyzeCommonJsContent();
+      const content = `
+        Logger.log('module loaded: ' + moduleName);
+      `;
+      // common-js/ prefix → isInfrastructureFile = true
+      const analysis = analyze(content, undefined, 'common-js/require');
+
+      const loggerHints = analysis.hints.filter((h: string) => h.includes('Logger.log()'));
+      expect(loggerHints).to.have.length(0);
+    });
+
+    it('should NOT hint for ConfigManager infrastructure files', () => {
+      const analyze = getAnalyzeCommonJsContent();
+      const content = `
+        Logger.log('ConfigManager initialized');
+      `;
+      const analysis = analyze(content, undefined, 'ConfigManager');
+
+      const loggerHints = analysis.hints.filter((h: string) => h.includes('Logger.log()'));
+      expect(loggerHints).to.have.length(0);
+    });
+
+    it('clean module with no Logger usage produces no Logger hint', () => {
+      const analyze = getAnalyzeCommonJsContent();
+      const content = `
+        function _main(module, exports, log) {
+          function add(a, b) { return a + b; }
+          module.exports = { add };
+        }
+      `;
+      const analysis = analyze(content, undefined, 'utils');
+
+      const loggerHints = analysis.hints.filter((h: string) => h.includes('Logger.log()'));
+      expect(loggerHints).to.have.length(0);
     });
   });
 });

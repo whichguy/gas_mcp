@@ -8,6 +8,8 @@
  */
 
 import { isManifestFile } from './fileHelpers.js';
+import { type ModuleOptions } from './moduleWrapper.js';
+export type { ModuleOptions };
 
 /**
  * Analysis result containing warnings (critical issues) and hints (suggestions)
@@ -15,14 +17,6 @@ import { isManifestFile } from './fileHelpers.js';
 export interface AnalysisResult {
   warnings: string[];
   hints: string[];
-}
-
-/**
- * Module options that affect analysis (e.g., loadNow setting)
- */
-export interface ModuleOptions {
-  loadNow?: boolean | null;
-  hoistedFunctions?: any[];
 }
 
 /**
@@ -267,6 +261,7 @@ export function analyzeHtmlContent(content: string): AnalysisResult {
  * 8. JSON.parse without try-catch
  * 9. ConfigManager sensitive keys with wrong scope
  * 10. Direct PropertiesService usage (suggest ConfigManager)
+ * 11. Logger.log() usage (bypasses module-level logging controls)
  *
  * **Limitations:**
  * - Comments are stripped before analysis (may lose context)
@@ -329,16 +324,28 @@ export function analyzeCommonJsContent(
 
   const hasEventHandler = detectedHandlers.length > 0;
 
-  // Check 1: Event handlers without loadNow: true
-  if (hasEventHandler || hasEventsExport) {
-    const loadNowSet = moduleOptions?.loadNow === true;
-    if (!loadNowSet) {
-      warnings.push(
-        'CRITICAL: Event handlers detected (doGet/doPost/onOpen/onEdit/onInstall or __events__) ' +
-        'but loadNow is not set to true. Event handlers will silently fail to register. ' +
-        'Add: moduleOptions: { loadNow: true } to your write call.'
-      );
-    }
+  // Check 1: Event handlers / __global__ without loadNow: true
+  const hasGlobalExports =
+    /module\.exports\.__global__\s*=/.test(cleanContent) ||
+    /__global__\s*:/.test(cleanContent);
+
+  const loadNowSet = moduleOptions?.loadNow === true;
+
+  if ((hasEventHandler || hasEventsExport || hasGlobalExports) && !loadNowSet) {
+    warnings.push(
+      'CRITICAL: `__global__` or `__events__` detected without `loadNow: true`. ' +
+      'Menu handlers and event dispatchers will silently fail at runtime. ' +
+      'Add `loadNow: true` to your write call AND ensure this file is ' +
+      'positioned LAST in the project file order.'
+    );
+  }
+
+  if (loadNowSet) {
+    hints.push(
+      'This module uses `loadNow: true`. It must be positioned LAST in the GAS ' +
+      'file order — all dependencies must parse before this module executes. ' +
+      'Use `mcp__gas__reorder` to move it to the last position if not already there.'
+    );
   }
 
   // Check 2: Event handler functions defined but not registered in __events__
@@ -444,9 +451,18 @@ export function analyzeCommonJsContent(
   // Skip infrastructure files where PropertiesService is appropriate
   if (!isInfrastructureFile && /PropertiesService\.(getScriptProperties|getUserProperties|getDocumentProperties)\s*\(\s*\)/.test(cleanContent)) {
     hints.push(
-      'Direct PropertiesService usage detected. For CommonJS modules, consider ConfigManager ' +
-      '(common-js/ConfigManager) which provides hierarchical scope priority, caching, and namespace ' +
-      'management. For standalone scripts or templates without CommonJS, PropertiesService is appropriate.'
+      'Direct PropertiesService usage detected. Use require(\'gas-properties/ConfigManager\') instead — ' +
+      'provides hierarchical scope priority, caching, and namespace management. ' +
+      'PropertiesService is only appropriate in standalone scripts without CommonJS.'
+    );
+  }
+
+  // Check 11: Logger.log() usage (bypasses module-level logging controls)
+  // Skip infrastructure files where Logger is used directly in the runtime
+  if (!isInfrastructureFile && /\bLogger\.(log|info|warning|severe)\s*\(/.test(cleanContent)) {
+    hints.push(
+      'Logger.log() bypasses module-level logging controls. Use the injected "log" parameter instead: ' +
+      '_main(module, exports, log) { log("message"); } — enables setModuleLogging() per-module control.'
     );
   }
 
