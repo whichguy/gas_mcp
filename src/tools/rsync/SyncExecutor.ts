@@ -276,8 +276,8 @@ export class SyncExecutor {
         log.debug(`[EXECUTOR] Deleted: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
 
         await clearGASMetadata(filePath).catch(() => {});
-      } catch (error: any) {
-        if (error.code !== 'ENOENT') {
+      } catch (error: unknown) {
+        if (error instanceof Error && (error as NodeJS.ErrnoException).code !== 'ENOENT') {
           throw error;
         }
         // File already doesn't exist - that's fine
