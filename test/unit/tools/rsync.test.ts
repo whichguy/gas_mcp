@@ -407,10 +407,7 @@ describe('rsync modules', () => {
     }
 
     it('should populate contentAnalysis when pulled file uses PropertiesService', async () => {
-      // Set up a temp git repo so executor can commit
-      const gitDir = path.join(tempDir, '.git');
-      await fs.mkdir(gitDir, { recursive: true });
-      // Init git repo
+      // Init git repo (creates .git directory automatically)
       if (!initGitRepo(tempDir)) return; // git not available — skip this test
 
       const executor = new SyncExecutor();
