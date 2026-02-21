@@ -52,7 +52,7 @@ let _shimTemplate: string | null = null;
 function getCommonJSTemplate(): string {
   if (_shimTemplate === null) {
     // Lazy load to avoid circular dependency
-    const { SHIM_TEMPLATE } = require('./deployments.js');
+    const { SHIM_TEMPLATE } = require('./project-lifecycle.js');
     _shimTemplate = SHIM_TEMPLATE;
   }
   return _shimTemplate!;
@@ -67,7 +67,7 @@ let _getExecutionTemplate: (() => string) | null = null;
 
 function getExecutionInfraTemplate(): string {
   if (_getExecutionTemplate === null) {
-    const { getExecutionTemplate } = require('./deployments.js');
+    const { getExecutionTemplate } = require('./project-lifecycle.js');
     _getExecutionTemplate = getExecutionTemplate;
   }
   return _getExecutionTemplate!();
@@ -80,7 +80,7 @@ let _getSuccessHtmlTemplate: (() => string) | null = null;
 
 function getSuccessHtmlTemplate(): string {
   if (_getSuccessHtmlTemplate === null) {
-    const { getSuccessHtmlTemplate } = require('./deployments.js');
+    const { getSuccessHtmlTemplate } = require('./project-lifecycle.js');
     _getSuccessHtmlTemplate = getSuccessHtmlTemplate;
   }
   return _getSuccessHtmlTemplate!();
@@ -93,7 +93,7 @@ let _getErrorHtmlTemplate: (() => string) | null = null;
 
 function getErrorHtmlTemplate(): string {
   if (_getErrorHtmlTemplate === null) {
-    const { getErrorHtmlTemplate } = require('./deployments.js');
+    const { getErrorHtmlTemplate } = require('./project-lifecycle.js');
     _getErrorHtmlTemplate = getErrorHtmlTemplate;
   }
   return _getErrorHtmlTemplate!();

@@ -129,7 +129,7 @@ export class GASAuthOperations {
 
       console.error(`📡 [GOOGLE API REQUEST] Starting: ${operationName}`);
       console.error(`   ⏰ Timestamp: ${new Date().toISOString()}`);
-      console.error(`   🔑 Auth: ${accessToken ? 'Token present (' + accessToken.substring(0, 10) + '...)' : 'No token'}`);
+      console.error(`   🔑 Auth: ${accessToken ? `Token present (${accessToken.substring(0, 10)}...)` : 'No token'}`);
 
       const result = await apiCall();
 

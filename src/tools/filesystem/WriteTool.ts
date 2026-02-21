@@ -5,6 +5,9 @@
  * KEY: force=true bypasses conflict | expectedHash for optimistic locking | moduleOptions for loadNow/hoisting
  * HASH: Computed on WRAPPED content | returns hash for subsequent edits
  * NO AUTO-COMMIT: Must call git_feature({operation:'commit'}) after writes
+ *
+ * Git path delegates remote write to WriteOperationStrategy (two-phase: compute → apply).
+ * Non-git path retains inline remote write for backward compatibility.
  */
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
@@ -33,6 +36,7 @@ import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA, EXPECTED_HASH_SCHEMA } from './shared/schemas.js';
 import { GuidanceFragments } from '../../utils/guidanceFragments.js';
 import type { WriteParams, WriteResult } from './shared/types.js';
+import { WriteOperationStrategy } from '../../core/git/operations/WriteOperationStrategy.js';
 
 /**
  * Write file contents with automatic CommonJS processing and git hook validation
@@ -227,7 +231,7 @@ export class WriteTool extends BaseFileSystemTool {
 
         if (!hasCommonJS) {
           console.error(`🔧 [AUTO-INIT] CommonJS not found in project ${scriptId}, initializing...`);
-          const { ProjectInitTool } = await import('../deployments.js');
+          const { ProjectInitTool } = await import('../project-lifecycle.js');
           const initTool = new ProjectInitTool(this.sessionAuthManager);
           await initTool.execute({
             scriptId,
@@ -825,7 +829,7 @@ Or use force:true to overwrite (destructive).`;
           contentAnalysis = { warnings: [], hints: [] };
         }
         contentAnalysis.hints.push(
-          'Tip: Use log() (3rd param in _main) for debugging. Enable with: setModuleLogging("' + filename + '", true)'
+          `Tip: Use log() (3rd param in _main) for debugging. Enable with: setModuleLogging("${filename}", true)`
         );
       }
     } else if (detectedFileType === 'JSON' && isManifestFile(filename)) {
@@ -953,7 +957,7 @@ Or use force:true to overwrite (destructive).`;
 
     const finalContent = hookResult.contentAfterHooks || content;
 
-    // PHASE 2: Remote synchronization
+    // PHASE 2: Remote synchronization via WriteOperationStrategy
     let results: any = {
       hookValidation: {
         success: true,
@@ -961,140 +965,43 @@ Or use force:true to overwrite (destructive).`;
         // No commitHash - we don't auto-commit
       }
     };
-    let fetchedFilesHook: any[] | undefined; // Reused by detectGitInfoAndBreadcrumb
 
     if (!localOnly) {
+      // Determine file type for the strategy (check existing remote file first)
+      const accessTokenForStrategy = accessToken;
+      const currentFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessTokenForStrategy);
+      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
+      const resolvedFileType = (existingFile?.type || determineFileTypeUtil(filename, finalContent)) as 'SERVER_JS' | 'HTML' | 'JSON';
+
+      // Session worktree conflict detection (check if remote changed since session start)
+      let sessionConflictWarning: string | null = null;
+      if (existingFile) {
+        sessionConflictWarning = worktreeManager.checkConflict(scriptId, filename, existingFile.source || '');
+        if (sessionConflictWarning) {
+          console.error(`⚠️ [CONFLICT] ${sessionConflictWarning}`);
+        }
+      }
+
+      // Delegate conflict detection + remote write + xattr/mtime to WriteOperationStrategy
+      const writeStrategy = new WriteOperationStrategy({
+        scriptId,
+        filename,
+        processedContent: finalContent,
+        fileType: resolvedFileType,
+        force: params.force,
+        expectedHash: params.expectedHash,
+        localFilePath: filePath,
+        accessToken: accessTokenForStrategy,
+        gasClient: this.gasClient,
+        prefetchedFiles: currentFiles
+      });
+
       try {
-        const accessToken = await this.getAuthToken(params);
+        // applyChanges: conflict detection → updateProjectContent → mtime → xattr
+        const validatedMap = new Map([[filename, finalContent]]);
+        const strategyResult = await writeStrategy.applyChanges(validatedMap);
 
-        const currentFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
-        fetchedFilesHook = currentFiles;
-        const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
-        const fileType = existingFile?.type || determineFileTypeUtil(filename, finalContent);
-
-        // === HASH-BASED CONFLICT DETECTION (Git Path) ===
-        if (existingFile && params.force) {
-          // Log when force bypasses conflict detection
-          const currentRemoteHash = computeGitSha1(existingFile.source || '');
-          log.warn(`[WRITE] force=true: bypassing conflict detection for ${filename} (remote hash: ${currentRemoteHash.slice(0, 8)}...)`);
-        }
-
-        if (existingFile && !params.force) {
-          // Compute current remote hash on WRAPPED content (full file as stored in GAS)
-          // This ensures hash matches `git hash-object <file>` on local synced files
-          const currentRemoteHash = computeGitSha1(existingFile.source || '');
-
-          // Determine expected hash (priority: param > xattr cache)
-          let expectedHash: string | undefined = params.expectedHash;
-          let hashSource: 'param' | 'xattr' | 'computed' = 'param';
-
-          if (!expectedHash) {
-            // Try to get cached hash from xattr
-            try {
-              expectedHash = await getCachedContentHash(filePath) || undefined;
-              if (expectedHash) {
-                hashSource = 'xattr';
-              }
-            } catch {
-              // xattr cache not available - continue without
-            }
-          }
-
-          // Validate hash if we have one
-          if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
-            // UNWRAP for diff display (hash comparison uses WRAPPED, diff uses UNWRAPPED)
-            // This ensures the diff shows what the LLM actually sees in cat output
-            const remoteWrappedContent = existingFile.source || '';
-            const { unwrappedContent: remoteUnwrapped } = unwrapModuleContent(remoteWrappedContent);
-
-            // Try to read local file to get expected content for unified diff
-            let expectedUnwrapped = '';
-            let diffFormat: 'unified' | 'info' = 'info';
-            let diffContent = '';
-            let diffStats: { linesAdded: number; linesRemoved: number } | undefined;
-
-            try {
-              // filePath is already available in this context
-              const localWrapped = await readFile(filePath, 'utf-8');
-              const { unwrappedContent } = unwrapModuleContent(localWrapped);
-              expectedUnwrapped = unwrappedContent;
-
-              // Generate unified diff showing actual content changes
-              diffContent = generateFileDiff(filename, expectedUnwrapped, remoteUnwrapped);
-              diffStats = getDiffStats(expectedUnwrapped, remoteUnwrapped);
-              diffFormat = 'unified';
-            } catch {
-              // Local file not available - fall back to info format
-            }
-
-            // Fall back to info format if unified diff not available
-            if (diffFormat === 'info') {
-              const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
-              diffContent = `File was modified externally since your last read.
-  Expected hash: ${expectedHash.slice(0, 8)}... (from ${hashSourceLabel})
-  Current hash:  ${currentRemoteHash.slice(0, 8)}...
-  Size:          ${remoteUnwrapped.length} bytes (unwrapped)
-
-To resolve: Use cat() to fetch current content, then re-apply your changes.
-Or use force:true to overwrite (destructive).`;
-            }
-
-            const conflict: ConflictDetails = {
-              scriptId,
-              filename,
-              operation: 'write',
-              expectedHash,
-              currentHash: currentRemoteHash,
-              hashSource,
-              changeDetails: {
-                sizeChange: `${remoteUnwrapped.length} bytes (unwrapped)`
-              },
-              diff: {
-                format: diffFormat,
-                content: diffContent,
-                linesAdded: diffStats?.linesAdded,
-                linesRemoved: diffStats?.linesRemoved,
-                truncated: diffContent.length > 10000
-              }
-            };
-
-            throw new ConflictError(conflict);
-          }
-        }
-        // === END HASH-BASED CONFLICT DETECTION ===
-
-        // Session worktree conflict detection (check if remote changed since session start)
-        let sessionConflictWarning: string | null = null;
-        if (existingFile) {
-          sessionConflictWarning = worktreeManager.checkConflict(scriptId, filename, existingFile.source || '');
-          if (sessionConflictWarning) {
-            console.error(`⚠️ [CONFLICT] ${sessionConflictWarning}`);
-          }
-        }
-
-        const newFile = {
-          name: filename,
-          type: fileType as any,
-          source: finalContent
-        };
-
-        const isNewFileRemoteOnly = !existingFile;
-        const updatedFiles = existingFile
-          ? currentFiles.map((f: any) => fileNameMatches(f.name, filename) ? newFile : f)
-          : [...currentFiles, newFile];
-
-        const remoteResult = await this.gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
-        const updatedFile = remoteResult.find((f: any) => fileNameMatches(f.name, filename));
-
-        // ✅ Fetch authoritative remote updateTime (with fallback to metadata)
-        const authoritativeUpdateTime = await this.fetchRemoteUpdateTime(
-          scriptId,
-          filename,
-          updatedFile,
-          accessToken
-        );
-
-        // ✅ Verify local file matches what we sent to remote
+        // Verify local file matches what was sent to remote
         const { readFile: fsReadFile } = await import('fs/promises');
         const currentLocalContent = await fsReadFile(filePath, 'utf-8');
 
@@ -1102,31 +1009,8 @@ Or use force:true to overwrite (destructive).`;
           console.error(`⚠️ [SYNC] Local file changed after hooks - re-writing with remote content`);
           console.error(`   Expected: ${finalContent.length} bytes`);
           console.error(`   Found: ${currentLocalContent.length} bytes`);
-
-          // Re-write with the content that's on the server
           const { writeFile: fsWriteFile } = await import('fs/promises');
           await fsWriteFile(filePath, finalContent, 'utf-8');
-        }
-
-        // ✅ Now set mtime to match remote (local file verified to match)
-        if (authoritativeUpdateTime) {
-          await setFileMtimeToRemote(filePath, authoritativeUpdateTime, fileType);
-          console.error(`⏰ [SYNC] Set mtime after verifying local matches remote: ${authoritativeUpdateTime}`);
-        } else {
-          console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
-        }
-
-        // Compute hash of written content on WRAPPED content (full file as stored in GAS)
-        // This ensures hash matches `git hash-object <file>` on local synced files
-        const writtenHash = computeGitSha1(finalContent);
-
-        // Update xattr cache with new hash for future conflict detection
-        try {
-          await updateCachedContentHash(filePath, writtenHash);
-          console.error(`🔒 [HASH] Updated xattr cache with hash: ${writtenHash.slice(0, 8)}...`);
-        } catch (cacheError) {
-          // Non-fatal: xattr not supported on filesystem
-          console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
         }
 
         // Update session worktree base hash after successful write
@@ -1135,16 +1019,13 @@ Or use force:true to overwrite (destructive).`;
         results.remoteFile = {
           scriptId,
           filename,
-          type: fileType,
-          size: finalContent.length,
+          type: resolvedFileType,
+          size: strategyResult.size,
           updated: true,
-          updateTime: authoritativeUpdateTime
+          updateTime: strategyResult.updateTime
         };
+        results.hash = strategyResult.hash;
 
-        // Store written hash for response
-        results.hash = writtenHash;
-
-        // Store session conflict warning for response
         if (sessionConflictWarning) {
           results.sessionConflictWarning = sessionConflictWarning;
         }
@@ -1164,35 +1045,20 @@ Or use force:true to overwrite (destructive).`;
           });
 
           if (hasCommits) {
-            // Normal case: unstage with reset HEAD
             await new Promise<void>((resolve, reject) => {
               const git = spawn('git', ['reset', 'HEAD', fullFilename], { cwd: projectPath });
-              git.on('close', (code) => {
-                if (code === 0) {
-                  resolve();
-                } else {
-                  reject(new Error(`git reset failed with exit code ${code}`));
-                }
-              });
+              git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git reset failed with exit code ${code}`)));
               git.on('error', reject);
             });
           } else {
-            // Empty repo: use rm --cached instead
             await new Promise<void>((resolve, reject) => {
               const git = spawn('git', ['rm', '--cached', fullFilename], { cwd: projectPath });
-              git.on('close', (code) => {
-                if (code === 0) {
-                  resolve();
-                } else {
-                  reject(new Error(`git rm --cached failed with exit code ${code}`));
-                }
-              });
+              git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git rm --cached failed with exit code ${code}`)));
               git.on('error', reject);
             });
           }
           log.info(`[WRITE] Unstaged ${fullFilename} after remote failure`);
         } catch (unstageError) {
-          // Best effort - unstaging is not critical but log the actual error
           log.warn(`[WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
         }
 

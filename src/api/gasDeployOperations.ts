@@ -647,6 +647,137 @@ export class GASDeployOperations {
   }
 
   /**
+   * Delete a deployment
+   */
+  async deleteDeployment(scriptId: string, deploymentId: string, accessToken?: string): Promise<any> {
+    await this.authOps.initializeClient(accessToken);
+
+    return this.authOps.makeApiCall(async () => {
+      const scriptApi = this.authOps.getScriptApi();
+      await scriptApi.projects.deployments.delete({
+        scriptId,
+        deploymentId
+      });
+
+      console.error(`✅ Deployment ${deploymentId} deleted successfully`);
+      return { success: true, deploymentId };
+    }, accessToken);
+  }
+
+  /**
+   * Update an existing deployment
+   */
+  async updateDeployment(
+    scriptId: string,
+    deploymentId: string,
+    updates: any,
+    accessToken?: string
+  ): Promise<GASDeployment> {
+    await this.authOps.initializeClient(accessToken);
+
+    console.error(`🔄 Updating deployment ${deploymentId} in script ${scriptId}`);
+    console.error(`   Updates:`, JSON.stringify(updates, null, 2));
+
+    return this.authOps.makeApiCall(async () => {
+      // Build the update request body — GAS REST API expects UpdateDeploymentRequest
+      const deploymentConfig: any = {
+        manifestFileName: 'appsscript',
+      };
+
+      if (updates.versionNumber != null) {
+        deploymentConfig.versionNumber = updates.versionNumber;
+      }
+
+      if (updates.description != null) {
+        deploymentConfig.description = updates.description;
+      }
+
+      const requestBody: any = { deploymentConfig };
+
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.projects.deployments.update({
+        scriptId,
+        deploymentId,
+        requestBody
+      });
+
+      // Extract web app URL if present
+      let webAppUrl: string | undefined;
+      if (response.data.entryPoints) {
+        const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+        if (webAppEntry?.webApp?.url) {
+          webAppUrl = webAppEntry.webApp.url;
+        }
+      }
+
+      console.error(`✅ Deployment updated successfully`);
+
+      return {
+        deploymentId: response.data.deploymentId,
+        versionNumber: response.data.versionNumber,
+        description: response.data.description,
+        updateTime: response.data.updateTime,
+        webAppUrl
+      };
+    }, accessToken);
+  }
+
+  /**
+   * Get details for a specific version
+   */
+  async getVersion(scriptId: string, versionNumber: number, accessToken?: string): Promise<any> {
+    await this.authOps.initializeClient(accessToken);
+
+    console.error(`📋 Getting version ${versionNumber} details for script ${scriptId}`);
+
+    return this.authOps.makeApiCall(async () => {
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.projects.versions.get({
+        scriptId,
+        versionNumber
+      });
+
+      console.error(`✅ Retrieved version ${versionNumber} details`);
+      return response.data;
+    }, accessToken);
+  }
+
+  /**
+   * List all versions for a project
+   */
+  async listVersions(
+    scriptId: string,
+    pageSize: number = 50,
+    pageToken?: string,
+    accessToken?: string
+  ): Promise<any> {
+    await this.authOps.initializeClient(accessToken);
+
+    return this.authOps.makeApiCall(async () => {
+      const params: any = {
+        scriptId,
+        pageSize
+      };
+
+      if (pageToken) {
+        params.pageToken = pageToken;
+      }
+
+      console.error(`📋 Listing versions for script ${scriptId}`);
+
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.projects.versions.list(params);
+
+      console.error(`✅ Found ${response.data.versions?.length || 0} versions`);
+
+      return {
+        versions: response.data.versions || [],
+        nextPageToken: response.data.nextPageToken
+      };
+    }, accessToken);
+  }
+
+  /**
    * Update script content for HEAD deployment
    * This is optimized for frequent updates during development
    */
