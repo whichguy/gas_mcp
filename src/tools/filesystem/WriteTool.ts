@@ -968,7 +968,7 @@ Or use force:true to overwrite (destructive).`;
 
     if (!localOnly) {
       // Determine file type for the strategy (check existing remote file first)
-      const accessTokenForStrategy = await this.getAuthToken(params);
+      const accessTokenForStrategy = accessToken;
       const currentFiles = prefetchedFiles || await this.gasClient.getProjectContent(scriptId, accessTokenForStrategy);
       const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
       const resolvedFileType = (existingFile?.type || determineFileTypeUtil(filename, finalContent)) as 'SERVER_JS' | 'HTML' | 'JSON';

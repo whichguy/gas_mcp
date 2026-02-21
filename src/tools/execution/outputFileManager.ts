@@ -113,8 +113,10 @@ export function wrapLargeResponse(response: any, scriptId: string): any {
   try {
     content = JSON.stringify(response, null, 2);
   } catch {
-    // Non-serializable response, return as-is
-    return response;
+    // Non-serializable response (circular ref, BigInt, etc.) — return with warning annotation
+    return typeof response === 'object' && response !== null
+      ? { ...response, _fileWriteWarning: 'Response could not be serialized; file write skipped' }
+      : response;
   }
 
   // Check if within threshold - return original response
