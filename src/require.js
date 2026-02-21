@@ -203,16 +203,16 @@ function require(moduleName) {
   if (norm !== moduleName) candidates.push(norm);
   // 3. Add .js and .gs if not present (GAS files may register with either extension)
   if (!norm.endsWith('.js') && !norm.endsWith('.gs')) {
-    candidates.push(norm + '.gs');  // Try .gs first (native GAS extension)
-    candidates.push(norm + '.js');  // Fallback to .js
+    candidates.push(`${norm}.gs`);  // Try .gs first (native GAS extension)
+    candidates.push(`${norm}.js`);  // Fallback to .js
   }
   // 4. Remove directory if present (try just the basename)
   const base = norm.split('/').pop();
   if (base && base !== norm) {
     candidates.push(base);
     if (!base.endsWith('.js') && !base.endsWith('.gs')) {
-      candidates.push(base + '.gs');
-      candidates.push(base + '.js');
+      candidates.push(`${base}.gs`);
+      candidates.push(`${base}.js`);
     }
   }
 
@@ -1093,7 +1093,7 @@ function setModuleLogging(pattern, enabled, scope, explicitDisable) {
     config.set('__Logging', JSON.stringify(loggingMap), scope);
     return true;
   } catch (e) {
-    Logger.log('[ERROR] setModuleLogging failed: ' + e.message);
+    Logger.log(`[ERROR] setModuleLogging failed: ${e.message}`);
     return false;
   }
 }
@@ -1131,7 +1131,7 @@ function getModuleLogging(pattern) {
 
     return { [pattern]: loggingMap[pattern] };
   } catch (e) {
-    Logger.log('[ERROR] getModuleLogging failed: ' + e.message);
+    Logger.log(`[ERROR] getModuleLogging failed: ${e.message}`);
     return {};
   }
 }
@@ -1154,7 +1154,7 @@ function listLoggingEnabled() {
 
     return Object.keys(loggingMap).filter(key => loggingMap[key] === true);
   } catch (e) {
-    Logger.log('[ERROR] listLoggingEnabled failed: ' + e.message);
+    Logger.log(`[ERROR] listLoggingEnabled failed: ${e.message}`);
     return [];
   }
 }
@@ -1180,7 +1180,7 @@ function clearModuleLogging(scope) {
     config.delete('__Logging', scope);
     return true;
   } catch (e) {
-    Logger.log('[ERROR] clearModuleLogging failed: ' + e.message);
+    Logger.log(`[ERROR] clearModuleLogging failed: ${e.message}`);
     return false;
   }
 }
