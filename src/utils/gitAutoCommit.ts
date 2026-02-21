@@ -25,14 +25,15 @@ export interface FeatureBranchResult {
  * Get current git branch name
  *
  * @deprecated Delegates to getCurrentBranchName() from gitStatus.ts.
- * Returns null when in detached HEAD state (getCurrentBranchName returns 'HEAD').
+ * Returns null for detached HEAD ('HEAD') or any error state ('unknown').
  *
  * @param projectPath - Path to git repository
- * @returns Current branch name, or null if not in a git repo or detached HEAD
+ * @returns Current branch name, or null if not in a git repo, detached HEAD, or error
  */
 export async function getCurrentBranch(projectPath: string): Promise<string | null> {
   const branch = await getCurrentBranchName(projectPath);
-  return branch === 'HEAD' ? null : branch;
+  // Map sentinel values to null: 'HEAD' = detached HEAD, 'unknown' = error/not a repo
+  return (branch === 'HEAD' || branch === 'unknown') ? null : branch;
 }
 
 /**

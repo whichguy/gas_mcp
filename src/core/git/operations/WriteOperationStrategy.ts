@@ -242,9 +242,11 @@ Or use force:true to overwrite (destructive).`;
     const { scriptId, filename, fileType, accessToken, gasClient, prefetchedFiles } = this.params;
 
     if (this.originalRemoteSource === null) {
-      // New file (did not exist before) - delete it from remote
+      // New file (did not exist before) - delete it from remote.
+      // Always fetch current state; prefetchedFiles predates applyChanges() and would not
+      // contain the newly written file, making the filter a no-op.
       try {
-        const currentFiles = prefetchedFiles || await gasClient.getProjectContent(scriptId, accessToken);
+        const currentFiles = await gasClient.getProjectContent(scriptId, accessToken);
         const withoutFile = currentFiles.filter((f: any) => !fileNameMatches(f.name, filename));
         await gasClient.updateProjectContent(scriptId, withoutFile, accessToken);
         log.info(`[WRITE-STRATEGY] Rollback: removed new file ${filename} from remote`);
