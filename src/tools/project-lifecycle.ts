@@ -1,3 +1,4 @@
+// Project scaffolding — ProjectCreateTool + ProjectInitTool (NOT deployment promotion)
 import { BaseTool } from './base.js';
 import { GASClient } from '../api/gasClient.js';
 import { GASApiError } from '../errors/mcpErrors.js';
