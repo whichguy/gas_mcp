@@ -14,6 +14,7 @@ import { SCRIPT_ID_SCHEMA } from '../filesystem/shared/schemas.js';
 import { ValidationError } from '../../errors/mcpErrors.js';
 import { LocalFileManager } from '../../utils/localFileManager.js';
 import { getCurrentBranch, isFeatureBranch, hasUncommittedChanges, getAllBranches } from '../../utils/gitAutoCommit.js';
+import { buildCompactDeployHint } from '../../utils/gitStatus.js';
 import { log } from '../../utils/logger.js';
 import { ensureGitInitialized } from '../../utils/gitInit.js';
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
@@ -159,11 +160,14 @@ export class GitFeatureTool extends BaseFileSystemTool {
     }
 
     // Route to operation handler (all use effectiveGitRoot for session isolation)
+    // commit/finish capture result so P7 deploy hint can be merged in
+    let result: any;
     switch (operation) {
       case 'start':
         return this.executeStart(effectiveGitRoot, params.featureName);
       case 'finish':
-        return this.executeFinish(effectiveGitRoot, params.branch, params.deleteAfterMerge ?? true, params.pushToRemote ?? false, params.remote);
+        result = await this.executeFinish(effectiveGitRoot, params.branch, params.deleteAfterMerge ?? true, params.pushToRemote ?? false, params.remote);
+        break;
       case 'rollback':
         return this.executeRollback(effectiveGitRoot, params.branch);
       case 'list':
@@ -171,12 +175,31 @@ export class GitFeatureTool extends BaseFileSystemTool {
       case 'switch':
         return this.executeSwitch(effectiveGitRoot, params.branch);
       case 'commit':
-        return this.executeCommit(effectiveGitRoot, params.message);
+        result = await this.executeCommit(effectiveGitRoot, params.message);
+        break;
       case 'push':
         return this.executePush(effectiveGitRoot, params.branch, params.remote);
       default:
         throw new ValidationError('operation', operation, 'valid operation (start/finish/rollback/list/switch/commit/push)');
     }
+
+    // P7: Inject deploy hint for commit/finish — nudges LLM to promote to staging
+    if (operation === 'commit' || operation === 'finish') {
+      try {
+        const deployHint = await buildCompactDeployHint(
+          scriptId,
+          effectiveGitRoot,
+          operation as 'commit' | 'finish'
+        );
+        if (deployHint) {
+          result.deploy = deployHint;
+        }
+      } catch (err: unknown) {
+        log.warn(`[GIT_FEATURE] Failed to build deploy hint (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    return result;
   }
 
   /**
