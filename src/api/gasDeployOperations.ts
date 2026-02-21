@@ -652,14 +652,16 @@ export class GASDeployOperations {
   async deleteDeployment(scriptId: string, deploymentId: string, accessToken?: string): Promise<any> {
     await this.authOps.initializeClient(accessToken);
 
-    const scriptApi = this.authOps.getScriptApi();
-    await scriptApi.projects.deployments.delete({
-      scriptId,
-      deploymentId
-    });
+    return this.authOps.makeApiCall(async () => {
+      const scriptApi = this.authOps.getScriptApi();
+      await scriptApi.projects.deployments.delete({
+        scriptId,
+        deploymentId
+      });
 
-    console.error(`✅ Deployment ${deploymentId} deleted successfully`);
-    return { success: true, deploymentId };
+      console.error(`✅ Deployment ${deploymentId} deleted successfully`);
+      return { success: true, deploymentId };
+    }, accessToken);
   }
 
   /**
@@ -676,46 +678,48 @@ export class GASDeployOperations {
     console.error(`🔄 Updating deployment ${deploymentId} in script ${scriptId}`);
     console.error(`   Updates:`, JSON.stringify(updates, null, 2));
 
-    // Build the update request body — GAS REST API expects UpdateDeploymentRequest
-    const deploymentConfig: any = {
-      manifestFileName: 'appsscript',
-    };
+    return this.authOps.makeApiCall(async () => {
+      // Build the update request body — GAS REST API expects UpdateDeploymentRequest
+      const deploymentConfig: any = {
+        manifestFileName: 'appsscript',
+      };
 
-    if (updates.versionNumber != null) {
-      deploymentConfig.versionNumber = updates.versionNumber;
-    }
-
-    if (updates.description) {
-      deploymentConfig.description = updates.description;
-    }
-
-    const requestBody: any = { deploymentConfig };
-
-    const scriptApi = this.authOps.getScriptApi();
-    const response = await scriptApi.projects.deployments.update({
-      scriptId,
-      deploymentId,
-      requestBody
-    });
-
-    // Extract web app URL if present
-    let webAppUrl: string | undefined;
-    if (response.data.entryPoints) {
-      const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
-      if (webAppEntry?.webApp?.url) {
-        webAppUrl = webAppEntry.webApp.url;
+      if (updates.versionNumber != null) {
+        deploymentConfig.versionNumber = updates.versionNumber;
       }
-    }
 
-    console.error(`✅ Deployment updated successfully`);
+      if (updates.description != null) {
+        deploymentConfig.description = updates.description;
+      }
 
-    return {
-      deploymentId: response.data.deploymentId,
-      versionNumber: response.data.versionNumber,
-      description: response.data.description,
-      updateTime: response.data.updateTime,
-      webAppUrl
-    };
+      const requestBody: any = { deploymentConfig };
+
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.projects.deployments.update({
+        scriptId,
+        deploymentId,
+        requestBody
+      });
+
+      // Extract web app URL if present
+      let webAppUrl: string | undefined;
+      if (response.data.entryPoints) {
+        const webAppEntry = response.data.entryPoints.find((ep: any) => ep.entryPointType === 'WEB_APP');
+        if (webAppEntry?.webApp?.url) {
+          webAppUrl = webAppEntry.webApp.url;
+        }
+      }
+
+      console.error(`✅ Deployment updated successfully`);
+
+      return {
+        deploymentId: response.data.deploymentId,
+        versionNumber: response.data.versionNumber,
+        description: response.data.description,
+        updateTime: response.data.updateTime,
+        webAppUrl
+      };
+    }, accessToken);
   }
 
   /**
@@ -726,14 +730,16 @@ export class GASDeployOperations {
 
     console.error(`📋 Getting version ${versionNumber} details for script ${scriptId}`);
 
-    const scriptApi = this.authOps.getScriptApi();
-    const response = await scriptApi.projects.versions.get({
-      scriptId,
-      versionNumber
-    });
+    return this.authOps.makeApiCall(async () => {
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.projects.versions.get({
+        scriptId,
+        versionNumber
+      });
 
-    console.error(`✅ Retrieved version ${versionNumber} details`);
-    return response.data;
+      console.error(`✅ Retrieved version ${versionNumber} details`);
+      return response.data;
+    }, accessToken);
   }
 
   /**
@@ -747,26 +753,28 @@ export class GASDeployOperations {
   ): Promise<any> {
     await this.authOps.initializeClient(accessToken);
 
-    const params: any = {
-      scriptId,
-      pageSize
-    };
+    return this.authOps.makeApiCall(async () => {
+      const params: any = {
+        scriptId,
+        pageSize
+      };
 
-    if (pageToken) {
-      params.pageToken = pageToken;
-    }
+      if (pageToken) {
+        params.pageToken = pageToken;
+      }
 
-    console.error(`📋 Listing versions for script ${scriptId}`);
+      console.error(`📋 Listing versions for script ${scriptId}`);
 
-    const scriptApi = this.authOps.getScriptApi();
-    const response = await scriptApi.projects.versions.list(params);
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.projects.versions.list(params);
 
-    console.error(`✅ Found ${response.data.versions?.length || 0} versions`);
+      console.error(`✅ Found ${response.data.versions?.length || 0} versions`);
 
-    return {
-      versions: response.data.versions || [],
-      nextPageToken: response.data.nextPageToken
-    };
+      return {
+        versions: response.data.versions || [],
+        nextPageToken: response.data.nextPageToken
+      };
+    }, accessToken);
   }
 
   /**

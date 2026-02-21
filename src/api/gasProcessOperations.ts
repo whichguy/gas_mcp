@@ -59,13 +59,15 @@ export class GASProcessOperations {
       if (userProcessFilter.userAccessLevels) params['userProcessFilter.userAccessLevels'] = userProcessFilter.userAccessLevels;
     }
 
-    const scriptApi = this.authOps.getScriptApi();
-    const response = await scriptApi.processes.list(params);
+    return this.authOps.makeApiCall(async () => {
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.processes.list(params);
 
-    return {
-      processes: response.data.processes || [],
-      nextPageToken: response.data.nextPageToken
-    };
+      return {
+        processes: response.data.processes || [],
+        nextPageToken: response.data.nextPageToken
+      };
+    }, accessToken);
   }
 
   /**
@@ -88,14 +90,16 @@ export class GASProcessOperations {
     if (pageToken) params.pageToken = pageToken;
     if (scriptProcessFilter) params.scriptProcessFilter = scriptProcessFilter;
 
-    const scriptApi = this.authOps.getScriptApi();
-    const response = await scriptApi.processes.listScriptProcesses(params);
+    return this.authOps.makeApiCall(async () => {
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.processes.listScriptProcesses(params);
 
-    return {
-      scriptId,
-      processes: response.data.processes || [],
-      nextPageToken: response.data.nextPageToken
-    };
+      return {
+        scriptId,
+        processes: response.data.processes || [],
+        nextPageToken: response.data.nextPageToken
+      };
+    }, accessToken);
   }
 
   /**
@@ -118,16 +122,18 @@ export class GASProcessOperations {
       params['metricsFilter.deploymentId'] = metricsFilter.deploymentId;
     }
 
-    const scriptApi = this.authOps.getScriptApi();
-    const response = await scriptApi.projects.getMetrics(params);
+    return this.authOps.makeApiCall(async () => {
+      const scriptApi = this.authOps.getScriptApi();
+      const response = await scriptApi.projects.getMetrics(params);
 
-    return {
-      scriptId,
-      metricsGranularity,
-      activeUsers: response.data.activeUsers || [],
-      totalExecutions: response.data.totalExecutions || [],
-      failedExecutions: response.data.failedExecutions || []
-    };
+      return {
+        scriptId,
+        metricsGranularity,
+        activeUsers: response.data.activeUsers || [],
+        totalExecutions: response.data.totalExecutions || [],
+        failedExecutions: response.data.failedExecutions || []
+      };
+    }, accessToken);
   }
 
   /**
@@ -180,7 +186,7 @@ export class GASProcessOperations {
   /**
    * Build LLM-optimized response from process list
    */
-  buildLogResponse(result: ProcessListResponse, options: any): any {
+  private buildLogResponse(result: ProcessListResponse, options: any): any {
     // Normalize function names and build process list
     const processes = (result.processes || []).map((p: any) => ({
       processId: p.processId || `${p.functionName}-${p.startTime}`,
@@ -239,11 +245,9 @@ export class GASProcessOperations {
    */
   private formatErrorPreview(error: any): string | undefined {
     if (!error) return undefined;
-    const msg = String(error.message || error)
-      .replace(/\n/g, ' ')
-      .slice(0, 80)
-      .trim();
-    return msg.length < String(error.message || error).length ? msg + '...' : msg;
+    const normalized = String(error.message || error).replace(/\n/g, ' ');
+    const truncated = normalized.length > 80;
+    return truncated ? normalized.slice(0, 80).trim() + '...' : normalized.trim();
   }
 
   /**
