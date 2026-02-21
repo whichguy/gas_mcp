@@ -89,7 +89,7 @@ interface RsyncExecuteResponse {
   };
   git?: RsyncGitHint;
   warnings?: string[];
-  contentAnalysis?: { file: string; hints: string[] }[];  // per-file analyzer output (pull only)
+  contentAnalysis?: { file: string; warnings: string[]; hints: string[] }[];  // per-file analyzer output (pull only)
 }
 
 interface RsyncNoChangesResponse {
@@ -151,7 +151,7 @@ export class RsyncTool extends BaseTool {
       error: { type: 'object', description: 'Error details (on failure): {code, message, details}' },
       // common
       warnings: { type: 'array', description: 'Warning messages' },
-      contentAnalysis: { type: 'array', description: 'Per-file content analysis hints (pull only): [{file: string, hints: string[]}]' }
+      contentAnalysis: { type: 'array', description: 'Per-file content analysis (pull only): [{file: string, warnings: string[], hints: string[]}]' }
     }
   };
 
