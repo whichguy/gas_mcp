@@ -205,23 +205,23 @@ git -C ~/gas-repos/project-{scriptId} push origin main
 After `git_feature commit` or `git_feature finish`, the response includes a `deploy` envelope that nudges the LLM to promote to staging:
 
 ```typescript
-// Response with deploy hint (commit → LOW, finish → MEDIUM):
+// Response with deploy hint (informational — do NOT auto-execute):
 {
   "deploy": {
     "staging": "stale",
-    "hint": "Commit ready — deploy to staging to test",
-    "urgency": "LOW"   // LOW (after commit) | MEDIUM (after finish)
+    "action": "deploy({to:\"staging\",scriptId:\"1Y72...\"})",  // exact call to show user
+    "after": "commit"   // "commit" | "finish" — what triggered the hint
   }
 }
 ```
 
 **Escalation Rules:**
-- After `git_feature commit` → `urgency: "LOW"`, hint: "Commit ready — deploy to staging to test"
-- After `git_feature finish` → `urgency: "MEDIUM"`, hint: "Changes merged — deploy to staging before prod"
+- After `git_feature commit` → `after: "commit"`, action contains `deploy({to:"staging",...})`
+- After `git_feature finish` → `after: "finish"`, action contains `deploy({to:"staging",...})`
 - After `deploy({to:'staging'})` succeeds → hint **suppressed** on next commit (staging is current)
 - While uncommitted changes exist → hint **absent** (git hint takes priority)
 
-**Expected LLM behavior:** When `deploy.urgency` is present, the task is NOT complete until staging is deployed. Run `deploy({to: "staging", scriptId})` before reporting the task done.
+**Expected LLM behavior:** `deploy.action` is informational only — do NOT auto-execute it. Present the `deploy.action` string to the user and wait for explicit confirmation before running it. `deploy.staging: 'stale'` is state context. `deploy.after: 'commit'|'finish'` indicates what triggered the hint.
 
 **Implementation:** `CompactDeployHint` in `src/utils/gitStatus.ts` | `deployState` Map (session-scoped, resets on restart) | `updateDeployState()` called by `deploy` tool after successful staging promote.
 

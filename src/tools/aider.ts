@@ -26,6 +26,7 @@ import { analyzeContent } from '../utils/contentAnalyzer.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 import type { CompactGitHint } from '../utils/gitStatus.js';
+import { buildHtmlTemplateHint } from '../utils/gitStatus.js';
 import { buildWriteWorkflowHints } from '../utils/writeHints.js';
 
 interface AiderOperation {
@@ -65,6 +66,7 @@ interface AiderResult {
   warnings?: string[];
   hints?: string[];
   gitBreadcrumbHint?: GitBreadcrumbEditHint;
+  html_test?: string;
 }
 
 /**
@@ -430,6 +432,16 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
     const gitBreadcrumbHint = getGitBreadcrumbEditHint(filename);
     if (gitBreadcrumbHint) {
       result.gitBreadcrumbHint = gitBreadcrumbHint;
+    }
+
+    // Add HTML template test hint for user HTML files.
+    // GAS API returns HTML filenames without the .html extension, so also check fileContent.type.
+    const htmlFilename = fileContent.type === 'HTML' && !filename.endsWith('.html')
+      ? `${filename}.html`
+      : filename;
+    const htmlTestHint = buildHtmlTemplateHint(htmlFilename, scriptId);
+    if (htmlTestHint) {
+      result.html_test = htmlTestHint;
     }
 
     return result;

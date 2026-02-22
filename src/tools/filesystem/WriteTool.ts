@@ -22,7 +22,7 @@ import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { writeLocalAndValidateHooksOnly } from '../../utils/hookIntegration.js';
-import { getUncommittedStatus, buildCompactGitHint } from '../../utils/gitStatus.js';
+import { getUncommittedStatus, buildCompactGitHint, buildHtmlTemplateHint } from '../../utils/gitStatus.js';
 import { buildWriteWorkflowHints } from '../../utils/writeHints.js';
 // Note: localGitDetection imports removed - CompactGitHint replaces verbose git detection in responses
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
@@ -889,6 +889,12 @@ Or use force:true to overwrite (destructive).`;
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }
 
+    // Add HTML template test hint for user HTML files
+    const htmlTestHint = buildHtmlTemplateHint(filename, scriptId);
+    if (htmlTestHint) {
+      result.html_test = htmlTestHint;
+    }
+
     return result;
   }
 
@@ -1123,6 +1129,12 @@ Or use force:true to overwrite (destructive).`;
     const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);
     if (gitBreadcrumbHint) {
       result.gitBreadcrumbHint = gitBreadcrumbHint;
+    }
+
+    // Add HTML template test hint for user HTML files
+    const htmlTestHint = buildHtmlTemplateHint(filename, scriptId);
+    if (htmlTestHint) {
+      result.html_test = htmlTestHint;
     }
 
     return result;
