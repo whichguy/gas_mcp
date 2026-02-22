@@ -73,7 +73,7 @@
       "description": "Created: 7/17/2025"
     },
     "module-test": {
-      "scriptId": "14IrlEDo7AGBzhz4-6oxsv7Mug6IDdHej5NzSpKzYqDh5tKPZzIVsdfzF",
+      "scriptId": "1qOzqZ7m-FxkzU68hvBUjjghhDfBr8_CRf6o__TEfJT4GkPqApVLRuwcx",
       "name": "module-test",
       "description": "Created: 2/21/2026"
     },
@@ -508,7 +508,7 @@
       "description": "Created: 10/10/2025"
     },
     "consolidated-test-project": {
-      "scriptId": "19Ttr7oWROBqt0g5IEKB7o2ynDSlk5h0zyGatuWoCEA2EEySbGTg1fDmI",
+      "scriptId": "1BzofPz9nPjEGJcQEJX1Hg_tAQ51yEJ7t4_mHMwCF-hnSV42Jo8PgWwrA",
       "name": "consolidated-test-project",
       "description": "Created: 2/21/2026"
     },
@@ -528,7 +528,7 @@
       "description": "Created: 2/14/2026"
     },
     "file-ops-test": {
-      "scriptId": "1JtAiIPpxPGEFjlKvmmOS2Te8zoLowipdI98WNbsgJPSiGHjmXtWkl9J4",
+      "scriptId": "1-BCtyRFOx6FsIX-_yRxP3Cfmc1KM6_ZmzHViarXLzA4uo36Tsea9hGp3",
       "name": "file-ops-test",
       "description": "Created: 2/21/2026"
     },
@@ -748,7 +748,7 @@
       "description": "Created: 2/14/2026"
     },
     "shared-exec-test": {
-      "scriptId": "1ZSKUoXEkZG9e6_kzDz6biL0SmvRddTRLt52N2ATNHDNZXaydaBmm73S7",
+      "scriptId": "1d0XglbZUI_mNILxgLH0OHtZA0gOCU6qtoETOK_Il4Xz55g872pVxoORj",
       "name": "shared-exec-test",
       "description": "Created: 2/21/2026"
     },
@@ -770,7 +770,7 @@
   "server": {
     "defaultWorkingDir": "/tmp/mcp-gas-workspace",
     "configVersion": "1.0.0",
-    "lastModified": "2026-02-21T20:31:50.212Z"
+    "lastModified": "2026-02-22T04:15:54.473Z"
   },
   "debug": true,
   "currentProject": {
