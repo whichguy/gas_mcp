@@ -737,16 +737,21 @@ export class InProcessGASTestHelper {
    * @param code JavaScript code/expression to execute
    * @returns Execution result with status, result, and logger_output
    */
-  async runFunction(projectId: string, code: string): Promise<any> {
+  async runFunction(projectId: string, code: string, skipSyncCheck?: boolean): Promise<any> {
     // Import ExecTool and execute it directly
     const { ExecTool } = await import('../../src/tools/execution.js');
     const execTool = new ExecTool(this.client.sessionManager);
+
+    // Skip sync check when using a pre-existing test project (MCP_TEST_SCRIPT_ID),
+    // since the local git repo won't match the remote project state
+    const shouldSkipSync = skipSyncCheck ?? !!process.env.MCP_TEST_SCRIPT_ID;
 
     // Execute the code with autoRedeploy enabled
     const result = await execTool.execute({
       scriptId: projectId,
       js_statement: code,
-      autoRedeploy: true
+      autoRedeploy: true,
+      skipSyncCheck: shouldSkipSync
     });
 
     // Parse result from string if needed

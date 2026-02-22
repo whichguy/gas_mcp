@@ -362,8 +362,15 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       }
 
       // Create shared project for exec-only tests
+      // Set MCP_TEST_SCRIPT_ID env var to skip project creation and reuse an existing project
       // Wrapped in try/catch so quota/API/domain-auth errors leave sharedExecProjectId null
       // and individual tests skip gracefully instead of crashing the whole block
+      const envExecScriptId = process.env.MCP_TEST_SCRIPT_ID;
+      if (envExecScriptId) {
+        sharedExecProjectId = envExecScriptId;
+        console.log(`✅ Using pre-existing exec project (MCP_TEST_SCRIPT_ID): ${sharedExecProjectId}`);
+        return;
+      }
       try {
         console.log('\n🔧 Creating shared project for exec tests...');
         const project = await globalAuthState.gas!.createTestProject('Shared Exec Test');
@@ -509,8 +516,15 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       }
 
       // Create one shared project for all file operation tests
+      // Set MCP_TEST_SCRIPT_ID env var to skip project creation and reuse an existing project
       // Wrapped in try/catch so quota/API errors leave testProjectId null
       // and individual tests skip gracefully instead of crashing the whole block
+      const envFileScriptId = process.env.MCP_TEST_SCRIPT_ID;
+      if (envFileScriptId) {
+        testProjectId = envFileScriptId;
+        console.log(`✅ Using pre-existing file ops project (MCP_TEST_SCRIPT_ID): ${testProjectId}`);
+        return;
+      }
       try {
         const project = await globalAuthState.gas!.createTestProject('File Ops Test');
         testProjectId = project.scriptId;
@@ -601,8 +615,16 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
       }
 
       // Create one shared project for all module tests
+      // Set MCP_TEST_SCRIPT_ID env var to skip project creation and reuse an existing project
       // Wrapped in try/catch so quota/API/domain-auth errors leave testProjectId null
       // and individual tests skip gracefully instead of crashing the whole block
+      const envModuleScriptId = process.env.MCP_TEST_SCRIPT_ID;
+      if (envModuleScriptId) {
+        testProjectId = envModuleScriptId;
+        console.log(`✅ Using pre-existing module project (MCP_TEST_SCRIPT_ID): ${testProjectId}`);
+        // Skip exec probe since we trust the pre-existing project works
+        return;
+      }
       try {
         const project = await globalAuthState.gas!.createTestProject('Module Test');
         const candidateId = project.scriptId;
