@@ -284,8 +284,8 @@ export async function buildReadHint(repoPath: string): Promise<CompactGitHint> {
  */
 export interface CompactDeployHint {
   staging: 'stale';
-  hint: string;
-  urgency: 'LOW' | 'MEDIUM';
+  action: string;    // exact deploy() call to present to user, e.g. deploy({to:"staging",scriptId:"ABC"})
+  after: 'commit' | 'finish'; // what triggered this hint
 }
 
 // Session-scoped Map: tracks the last deployed git HEAD per scriptId.
@@ -316,10 +316,6 @@ export async function getGitHead(repoPath: string): Promise<string | null> {
  * Build a compact deploy hint for commit/finish responses.
  * Returns null when we know staging is current (suppresses hint after a successful deploy).
  *
- * Urgency:
- *   commit → LOW  ("Commit ready — deploy to staging to test")
- *   finish → MEDIUM ("Changes merged — deploy to staging before prod")
- *
  * @param scriptId - GAS script ID
  * @param gitRoot  - Local git repository path
  * @param operation - 'commit' or 'finish'
@@ -338,15 +334,30 @@ export async function buildCompactDeployHint(
       return null;
     }
 
-    const urgency = operation === 'finish' ? 'MEDIUM' : 'LOW';
-    const hint = operation === 'finish'
-      ? 'Changes merged — deploy to staging before prod'
-      : 'Commit ready — deploy to staging to test';
-
-    return { staging: 'stale', hint, urgency };
+    return {
+      staging: 'stale',
+      action: `deploy({to:"staging",scriptId:"${scriptId}"})`,
+      after: operation,
+    };
   } catch {
     return null;
   }
+}
+
+/**
+ * Build a hint for testing HTML templates immediately after write/edit.
+ * Returns the exact exec() call to test the template output inline.
+ * Returns null for non-HTML files or system files (common-js/ prefix).
+ *
+ * @param fileName - File name (may include path)
+ * @param scriptId - GAS script ID
+ */
+export function buildHtmlTemplateHint(fileName: string, scriptId: string): string | null {
+  const isHtml = /\.html$/i.test(fileName);
+  const isSystemFile = fileName.startsWith('common-js/');
+  if (!isHtml || isSystemFile) return null;
+  const baseName = fileName.split('/').pop()?.replace(/\.html$/i, '') ?? fileName;
+  return `exec({scriptId:"${scriptId}",js_statement:"HtmlService.createTemplateFromFile('${baseName}').evaluate().getContent()"})`;
 }
 
 /**

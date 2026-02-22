@@ -286,19 +286,23 @@ export class ExecTool extends BaseTool {
         const remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
 
         // Background deploy: detect and repair missing HTML templates without blocking exec
-        const hasSuccessHtml = remoteFiles.some((f: GASFile) => fileNameMatches(f.name, 'common-js/__mcp_exec_success'));
-        const hasErrorHtml = remoteFiles.some((f: GASFile) => fileNameMatches(f.name, 'common-js/__mcp_exec_error'));
+        const hasSuccessHtml = remoteFiles.some(f => fileNameMatches(f.name, 'common-js/__mcp_exec_success'));
+        const hasErrorHtml = remoteFiles.some(f => fileNameMatches(f.name, 'common-js/__mcp_exec_error'));
         if (!hasSuccessHtml || !hasErrorHtml) {
           console.error(`[SYNC CHECK] Missing HTML templates (success:${hasSuccessHtml}, error:${hasErrorHtml}) — deploying in background`);
           const bgToken = syncCheckToken;
+          // canUseCache: only when exactly one template is missing. When BOTH are missing, sequential
+          // updateFile calls using the same remoteFiles would cause the 2nd write to overwrite the 1st
+          // (stale cache lacks the file added by the 1st write).
+          const canUseCache = hasSuccessHtml !== hasErrorHtml;
           void Promise.resolve().then(async () => {
             try {
               if (!hasSuccessHtml) {
-                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_success', getSuccessHtmlTemplate(), undefined, bgToken, 'HTML');
+                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_success', getSuccessHtmlTemplate(), undefined, bgToken, 'HTML', canUseCache ? remoteFiles : undefined);
                 console.error(`[BACKGROUND] ✓ Deployed __mcp_exec_success.html`);
               }
               if (!hasErrorHtml) {
-                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_error', getErrorHtmlTemplate(), undefined, bgToken, 'HTML');
+                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_error', getErrorHtmlTemplate(), undefined, bgToken, 'HTML', canUseCache ? remoteFiles : undefined);
                 console.error(`[BACKGROUND] ✓ Deployed __mcp_exec_error.html`);
               }
             } catch (bgErr: any) {

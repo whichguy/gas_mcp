@@ -87,24 +87,24 @@ describe('deployHints - buildCompactDeployHint', () => {
     cleanupRepo(repoDir);
   });
 
-  it('emits a LOW hint after commit when lastDeployedHash is null (fresh session)', async () => {
+  it('emits an action hint after commit when lastDeployedHash is null (fresh session)', async () => {
     const scriptId = uniqueScriptId();
     // No updateDeployState called → lastDeployedHash is null
     const hint = await buildCompactDeployHint(scriptId, repoDir, 'commit');
     expect(hint).to.not.be.null;
     const h = hint as CompactDeployHint;
     expect(h.staging).to.equal('stale');
-    expect(h.urgency).to.equal('LOW');
-    expect(h.hint).to.include('staging');
+    expect(h.action).to.match(/deploy\(\{to:"staging",scriptId:".+"\}\)/);
+    expect(h.after).to.equal('commit');
   });
 
-  it('emits a MEDIUM hint after finish when lastDeployedHash is null', async () => {
+  it('emits an action hint after finish when lastDeployedHash is null', async () => {
     const scriptId = uniqueScriptId();
     const hint = await buildCompactDeployHint(scriptId, repoDir, 'finish');
     expect(hint).to.not.be.null;
     const h = hint as CompactDeployHint;
-    expect(h.urgency).to.equal('MEDIUM');
-    expect(h.hint).to.include('merged');
+    expect(h.action).to.match(/deploy\(\{to:"staging",scriptId:".+"\}\)/);
+    expect(h.after).to.equal('finish');
   });
 
   it('suppresses hint when lastDeployedHash matches current HEAD', async () => {
@@ -121,7 +121,7 @@ describe('deployHints - buildCompactDeployHint', () => {
     updateDeployState(scriptId, 'old-hash-that-is-not-current-head');
     const hint = await buildCompactDeployHint(scriptId, repoDir, 'commit');
     expect(hint).to.not.be.null;
-    expect((hint as CompactDeployHint).urgency).to.equal('LOW');
+    expect((hint as CompactDeployHint).after).to.equal('commit');
   });
 
   it('emits hint for non-existent git repo path (conservative: cannot confirm staging is current)', async () => {

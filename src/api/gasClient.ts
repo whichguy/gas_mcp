@@ -175,8 +175,12 @@ export class GASClient {
     content: string,
     position?: number,
     accessToken?: string,
-    explicitType?: 'SERVER_JS' | 'HTML' | 'JSON'
+    explicitType?: 'SERVER_JS' | 'HTML' | 'JSON',
+    cachedFiles?: GASFile[]
   ): Promise<GASFile[]> {
+    const getContentFn = cachedFiles
+      ? (_sid: string, _tok?: string) => Promise.resolve(cachedFiles)
+      : this.getProjectContent.bind(this);
     return this.fileOps.updateFile(
       scriptId,
       fileName,
@@ -184,7 +188,7 @@ export class GASClient {
       position,
       accessToken,
       explicitType,
-      this.getProjectContent.bind(this)
+      getContentFn
     );
   }
 
