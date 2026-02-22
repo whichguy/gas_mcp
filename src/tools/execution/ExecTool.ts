@@ -285,6 +285,28 @@ export class ExecTool extends BaseTool {
         // Fetch remote files for comparison
         const remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
 
+        // Background deploy: detect and repair missing HTML templates without blocking exec
+        const hasSuccessHtml = remoteFiles.some((f: GASFile) => fileNameMatches(f.name, 'common-js/__mcp_exec_success'));
+        const hasErrorHtml = remoteFiles.some((f: GASFile) => fileNameMatches(f.name, 'common-js/__mcp_exec_error'));
+        if (!hasSuccessHtml || !hasErrorHtml) {
+          console.error(`[SYNC CHECK] Missing HTML templates (success:${hasSuccessHtml}, error:${hasErrorHtml}) — deploying in background`);
+          const bgToken = syncCheckToken;
+          void Promise.resolve().then(async () => {
+            try {
+              if (!hasSuccessHtml) {
+                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_success', getSuccessHtmlTemplate(), undefined, bgToken, 'HTML');
+                console.error(`[BACKGROUND] ✓ Deployed __mcp_exec_success.html`);
+              }
+              if (!hasErrorHtml) {
+                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_error', getErrorHtmlTemplate(), undefined, bgToken, 'HTML');
+                console.error(`[BACKGROUND] ✓ Deployed __mcp_exec_error.html`);
+              }
+            } catch (bgErr: any) {
+              console.error(`[BACKGROUND] HTML template deployment failed (non-blocking): ${bgErr.message}`);
+            }
+          });
+        }
+
         // Check sync status (excludes system files by default)
         // Include content for up to 5 files to generate diffs for LLM assistance
         const { summary, drift } = await checkSyncStatus(scriptId, remoteFiles, {
