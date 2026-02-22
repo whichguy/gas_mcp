@@ -459,7 +459,7 @@ export class ExecTool extends BaseTool {
           statusCode,
           statusText: error.response?.statusText || (statusCode === 401 ? 'Unauthorized' : 'Forbidden'),
           url: error.response?.url || 'Unknown URL',
-          headers: error.response?.headers ? Object.fromEntries(error.response.headers.entries()) : {},
+          headers: error.response?.headers ? (typeof error.response.headers.entries === 'function' ? Object.fromEntries(error.response.headers.entries()) : error.response.headers) : {},
           responseBody: error.response?.text || error.message
         };
 
