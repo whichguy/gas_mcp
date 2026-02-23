@@ -355,29 +355,25 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
 
     before(async function() {
       this.timeout(120000);
-      // Skip entire block if not authenticated
       if (!globalAuthState.isAuthenticated) {
         console.log('⚠️  Authentication required - skipping real GAS operations');
         return;
       }
 
-      // Create shared project for exec-only tests
-      // Set MCP_TEST_SCRIPT_ID env var to skip project creation and reuse an existing project
-      // Wrapped in try/catch so quota/API/domain-auth errors leave sharedExecProjectId null
-      // and individual tests skip gracefully instead of crashing the whole block
-      const envExecScriptId = process.env.MCP_TEST_SCRIPT_ID;
-      if (envExecScriptId) {
-        sharedExecProjectId = envExecScriptId;
-        console.log(`✅ Using pre-existing exec project (MCP_TEST_SCRIPT_ID): ${sharedExecProjectId}`);
+      // Prefer global shared project (created once in globalAuth beforeAll)
+      if (globalAuthState.sharedProjectId) {
+        sharedExecProjectId = globalAuthState.sharedProjectId;
+        console.log(`✅ Reusing shared test project: ${sharedExecProjectId}`);
         return;
       }
+
+      // Fallback: per-suite creation
       try {
         console.log('\n🔧 Creating shared project for exec tests...');
         const project = await globalAuthState.gas!.createTestProject('Shared Exec Test');
         const candidateId = project.scriptId;
         console.log(`✅ Created project: ${candidateId}, verifying exec works...`);
 
-        // Verify exec actually works (domain auth may block newly created projects)
         const probe = await globalAuthState.gas!.runFunction(candidateId, '1+1');
         if (probe.status === 'success') {
           sharedExecProjectId = candidateId;
@@ -387,17 +383,6 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
         }
       } catch (error: any) {
         console.warn(`⚠️  Failed to create/verify shared exec project (tests will skip): ${error.message}`);
-      }
-    });
-
-    after(async function() {
-      // Cleanup shared exec project
-      if (sharedExecProjectId && globalAuthState.gas) {
-        try {
-          await globalAuthState.gas.cleanupTestProject(sharedExecProjectId);
-        } catch (error) {
-          console.warn(`⚠️  Failed to cleanup shared exec project ${sharedExecProjectId}`);
-        }
       }
     });
 
@@ -515,32 +500,20 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
         return;
       }
 
-      // Create one shared project for all file operation tests
-      // Set MCP_TEST_SCRIPT_ID env var to skip project creation and reuse an existing project
-      // Wrapped in try/catch so quota/API errors leave testProjectId null
-      // and individual tests skip gracefully instead of crashing the whole block
-      const envFileScriptId = process.env.MCP_TEST_SCRIPT_ID;
-      if (envFileScriptId) {
-        testProjectId = envFileScriptId;
-        console.log(`✅ Using pre-existing file ops project (MCP_TEST_SCRIPT_ID): ${testProjectId}`);
+      // Prefer global shared project (created once in globalAuth beforeAll)
+      if (globalAuthState.sharedProjectId) {
+        testProjectId = globalAuthState.sharedProjectId;
+        console.log(`✅ Reusing shared test project for file ops: ${testProjectId}`);
         return;
       }
+
+      // Fallback: per-suite creation
       try {
         const project = await globalAuthState.gas!.createTestProject('File Ops Test');
         testProjectId = project.scriptId;
         console.log(`✅ Shared file ops project: ${testProjectId}`);
       } catch (error: any) {
         console.warn(`⚠️  Failed to create file ops test project (tests will skip): ${error.message}`);
-      }
-    });
-
-    after(async function() {
-      if (testProjectId && globalAuthState.gas) {
-        try {
-          await globalAuthState.gas.cleanupTestProject(testProjectId);
-        } catch (error) {
-          console.warn(`⚠️  Failed to cleanup project ${testProjectId}`);
-        }
       }
     });
 
@@ -614,23 +587,19 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
         return;
       }
 
-      // Create one shared project for all module tests
-      // Set MCP_TEST_SCRIPT_ID env var to skip project creation and reuse an existing project
-      // Wrapped in try/catch so quota/API/domain-auth errors leave testProjectId null
-      // and individual tests skip gracefully instead of crashing the whole block
-      const envModuleScriptId = process.env.MCP_TEST_SCRIPT_ID;
-      if (envModuleScriptId) {
-        testProjectId = envModuleScriptId;
-        console.log(`✅ Using pre-existing module project (MCP_TEST_SCRIPT_ID): ${testProjectId}`);
-        // Skip exec probe since we trust the pre-existing project works
+      // Prefer global shared project (created once in globalAuth beforeAll)
+      if (globalAuthState.sharedProjectId) {
+        testProjectId = globalAuthState.sharedProjectId;
+        console.log(`✅ Reusing shared test project for modules: ${testProjectId}`);
         return;
       }
+
+      // Fallback: per-suite creation
       try {
         const project = await globalAuthState.gas!.createTestProject('Module Test');
         const candidateId = project.scriptId;
         console.log(`✅ Created module project: ${candidateId}, verifying exec works...`);
 
-        // Verify exec works (domain auth may block newly created projects)
         const probe = await globalAuthState.gas!.runFunction(candidateId, '1+1');
         if (probe.status === 'success') {
           testProjectId = candidateId;
@@ -640,16 +609,6 @@ describe('Consolidated MCP-GAS Core Functionality Tests', () => {
         }
       } catch (error: any) {
         console.warn(`⚠️  Failed to create/verify module test project (tests will skip): ${error.message}`);
-      }
-    });
-
-    after(async function() {
-      if (testProjectId && globalAuthState.gas) {
-        try {
-          await globalAuthState.gas.cleanupTestProject(testProjectId);
-        } catch (error) {
-          console.warn(`⚠️  Failed to cleanup project ${testProjectId}`);
-        }
       }
     });
 
