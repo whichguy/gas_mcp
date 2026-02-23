@@ -84,10 +84,7 @@ These systems are **independent** — choose based on whether you need Sheets cu
 ### 2. Ad-hoc Execution
 **Interface:** exec({scriptId, js_statement}) → cloud exec → no deploy
 **Scope:** Math/Date + all GAS services (DriveApp/SpreadsheetApp/GmailApp/etc) + require("Module") + Logger capture
-**Examples:**
-- `js_statement: "Math.PI * 2"` → instant math
-- `js_statement: "require('Utils').processData([1,2,3])"` → call your code
-- `js_statement: "SpreadsheetApp.create('Report').getId()"` → multi-step workflow
+**Examples:** `require('Utils').processData([1,2,3])` | `SpreadsheetApp.create('Report').getId()`
 
 ### 3. Unix Interface
 **Commands:** cat ls grep find sed ripgrep → familiar workflow → auto CommonJS handling
@@ -118,19 +115,6 @@ These systems are **independent** — choose based on whether you need Sheets cu
 **Tool:** BaseTool → name + inputSchema → execute (validate → auth → operation) → formatSuccess/handleApiError
 **Virtual Files:** .git/.gitignore/.env ↔ .gs suffix → period prefix handling → MD ↔ HTML transforms
 **Sync:** Local (./src/) → Remote GAS → Git mirror (~/gas-repos/project-[scriptId]/) → local-first auto-sync
-
-### File Operation Strategy Pattern
-
-**Location:** `src/core/git/operations/`
-**Purpose:** Separates file operation logic from git orchestration. Used by edit, aider, mv, cp, rm tools.
-**Two-Phase Workflow:**
-1. `computeChanges()` - Read from remote, compute changes (NO side effects)
-2. `applyChanges(validatedContent)` - Write hook-validated content to remote
-
-**Key Files:** `FileOperationStrategy.ts` (interface), `EditOperationStrategy.ts`, `AiderOperationStrategy.ts`, `CopyOperationStrategy.ts`, `MoveOperationStrategy.ts`, `DeleteOperationStrategy.ts`
-**Orchestrator:** `GitOperationManager` (`src/core/git/GitOperationManager.ts`) — path resolution → branch management → compute → hook validation → apply → git commit → sync
-
-**moduleOptions Preservation:** All strategies preserve `loadNow`, `hoistedFunctions`, `__global__`, `__events__` when unwrapping/rewrapping CommonJS.
 
 ### Worktree System
 
@@ -192,38 +176,13 @@ Git repos auto-initialized when `.git` directory is missing. Uses global git con
 
 **Do NOT leave uncommitted work** — always commit and push before ending the task.
 
-**If git_feature finish fails**, use Bash tool:
-```bash
-git -C ~/gas-repos/project-{scriptId} checkout main && \
-git -C ~/gas-repos/project-{scriptId} merge --squash {feature-branch} && \
-git -C ~/gas-repos/project-{scriptId} commit -m "feat: {description}" && \
-git -C ~/gas-repos/project-{scriptId} push origin main
-```
+**If git_feature finish fails:** `git -C ~/gas-repos/project-{scriptId} checkout main && git -C ~/gas-repos/project-{scriptId} merge --squash {branch} && git -C ~/gas-repos/project-{scriptId} commit -m "feat: {description}" && git -C ~/gas-repos/project-{scriptId} push origin main`
 
 ### Deploy Workflow Hints
 
-After `git_feature commit` or `git_feature finish`, the response includes a `deploy` envelope that nudges the LLM to promote to staging:
+After `git_feature commit/finish`, response includes `deploy` hint: `{staging: "stale", action: "deploy({to:\"staging\",...})", after: "commit"|"finish"}`.
 
-```typescript
-// Response with deploy hint (informational — do NOT auto-execute):
-{
-  "deploy": {
-    "staging": "stale",
-    "action": "deploy({to:\"staging\",scriptId:\"1Y72...\"})",  // exact call to show user
-    "after": "commit"   // "commit" | "finish" — what triggered the hint
-  }
-}
-```
-
-**Escalation Rules:**
-- After `git_feature commit` → `after: "commit"`, action contains `deploy({to:"staging",...})`
-- After `git_feature finish` → `after: "finish"`, action contains `deploy({to:"staging",...})`
-- After `deploy({to:'staging'})` succeeds → hint **suppressed** on next commit (staging is current)
-- While uncommitted changes exist → hint **absent** (git hint takes priority)
-
-**Expected LLM behavior:** `deploy.action` is informational only — do NOT auto-execute it. Present the `deploy.action` string to the user and wait for explicit confirmation before running it. `deploy.staging: 'stale'` is state context. `deploy.after: 'commit'|'finish'` indicates what triggered the hint.
-
-**Implementation:** `CompactDeployHint` in `src/utils/gitStatus.ts` | `deployState` Map (session-scoped, resets on restart) | `updateDeployState()` called by `deploy` tool after successful staging promote.
+**Rules:** Present `deploy.action` to user — do NOT auto-execute. Hint suppressed after successful staging deploy. Absent while uncommitted changes exist (git hint takes priority).
 
 ### git_feature Operations
 
@@ -247,32 +206,11 @@ git_feature({operation: 'finish', scriptId, pushToRemote: true})
 
 ## Config + Tools
 
-**Tools (52 total):**
-| Category | Count | Tools |
-|----------|-------|-------|
-| **File (Smart)** | 14 | cat, write, ls, rm, mv, cp, file_status, grep, find, ripgrep, sed, edit, aider, cache_clear |
-| **File (Raw)** | 9 | raw_cat, raw_write, raw_cp, raw_grep, raw_find, raw_ripgrep, raw_sed, raw_edit, raw_aider |
-| **Analysis** | 1 | deps (dependency graphs) |
-| **Execution** | 2 | exec, exec_api |
-| **Deployment** | 12 | deploy, deploy_config, project_create, project_init, deploy_create, deploy_delete, deploy_get_details, deploy_list, deploy_update, version_create, version_get, version_list |
-| **Management** | 4 | auth, project_list, reorder, process_list |
-| **Logging** | 2 | cloud_logs (list + get operations), executions (execution history) |
-| **Triggers** | 1 | trigger (list + create + delete operations) |
-| **Git** | 3 | rsync, config, git_feature (start/commit/push/finish/rollback/list/switch) |
-| **Worktree** | 1 | worktree (add/claim/release/merge/remove/list/status/sync/batch-add/cleanup) |
-| **Sheets** | 1 | sheet_sql |
-| **Drive** | 2 | create_script, find_drive_script |
-| **Status** | 1 | status (project health + lock diagnostics) |
+**Tools (52):** See [docs/REFERENCE.md](docs/REFERENCE.md) for complete tool reference
+**Categories:** File (14 smart + 9 raw) | Execution (2) | Deployment (12) | Git (3) | Management (4) | Logging (2) | Triggers (1) | Worktree (1) | Sheets (1) | Drive (2) | Status (1) | Analysis (1)
 
 **Config:** gas-config.json (OAuth + projects) | oauth-config.json (GCP creds) | ~/.auth/mcp-gas/tokens/ (persistent auth tokens)
 **Design:** smart (unwrap) vs raw (preserve) | period prefix (.gitignore.gs) | ~/gas-repos/project-[scriptId]/
-
-### Authentication & Token Persistence
-
-**Token Storage:** `~/.auth/mcp-gas/tokens/{email}.json` — persists across server restarts
-**Key Features:** Auto-persistence | auto-refresh | cross-session sharing | 0600 permissions | 30-day cleanup
-**Workflow:** First use → OAuth flow → token cached | Server restart → auto-loaded | Token expiry → auto-refresh
-**Manual Clear:** `rm -rf ~/.auth/mcp-gas/tokens/`
 
 ## Development
 
@@ -288,39 +226,12 @@ git_feature({operation: 'finish', scriptId, pushToRemote: true})
 
 ### Key Patterns
 
-**Tool Development:**
-- All tools in `src/tools/` extend `BaseTool` from `src/tools/base-tool.ts`
-- Input schemas define parameters with TypeScript types + validation
-- Tools must be registered in `src/server/mcpServer.ts`
-
-**File Operations:**
-- **Smart tools** (cat, write, etc.): Auto-handle CommonJS wrapping/unwrapping
-- **Raw tools** (raw_cat, raw_write, etc.): Preserve exact content including system wrappers
-- Virtual files: `.gitignore` ↔ `.gitignore.gs` (but `.git/config` stays as-is, no extension)
-
-**CommonJS Integration:**
-- User writes clean code → `write` wraps with `_main()` function
-- GAS executes wrapped code → `require()` resolves dependencies
-- `cat` unwraps for editing → maintains clean code workflow
-
 **Client-Side HTML:**
 - Always use `createGasServer()` wrapper instead of `google.script.run`
 - Response format: `{success, result, logger_output, execution_type}`
 - See [docs/developer/GAS_CLIENT_PATTERNS.md](docs/developer/GAS_CLIENT_PATTERNS.md) for full patterns
 
-**Testing Strategy:**
-- **Unit tests**: Fast, mocked dependencies, test individual functions
-- **Integration tests**: Real GAS API calls, require authentication, slower
-- **System tests**: Full MCP protocol, end-to-end validation
-
-## MCP Integration
-
-**Server:** MCP protocol → AI assistants (Claude) → 52 GAS tools
-
-**Claude Desktop Config** (`~/.claude_desktop_config.json`):
-```json
-{"mcpServers": {"gas": {"command": "node", "args": ["/path/to/mcp_gas/dist/src/index.js"], "env": {"NODE_ENV": "production"}}}}
-```
+**See also:** `.claude/rules/` for tool development, file operations, CommonJS, and testing patterns (loaded on-demand).
 
 ## Proactive Code Review
 
@@ -333,43 +244,4 @@ After writing or modifying GAS files (.gs/.html/.json), Claude automatically inv
 This catches critical CommonJS pattern violations (missing loadNow, wrong __global__ syntax) before they cause runtime failures.
 
 ## Common Issues
-
-### Build/Restart Required
-**Problem**: Changes to tools, schemas, or CommonJS modules not working
-**Solution**:
-1. `npm run build`
-2. Restart Claude Code (changes don't hot-reload)
-
-### Module Updates Not Appearing in GAS
-**Problem**: Updated CommonJS infrastructure files not syncing
-**Solution**: Update template files in `mcp_gas` repository, rebuild, then update GAS project
-
-### Git Changes Not Being Committed
-**Problem**: Write operations not creating commits (this is expected behavior)
-**Solution**: Write tools do NOT auto-commit. You must explicitly commit:
-1. After writes, call `git_feature({operation: 'commit', scriptId, message: '...'})`
-2. Check response for `git.blocked: true` - this means uncommitted changes exist
-3. Verify git repo exists at `~/gas-repos/project-{scriptId}/`
-4. Check server startup logs for uncommitted changes from previous sessions
-
-### Authentication Tokens Not Persisting
-**Problem**: Server requires re-authentication after every restart
-**Solution**:
-1. Verify token storage location: `ls -la ~/.auth/mcp-gas/tokens/`
-2. Check file permissions: should be 0600 (owner-only)
-3. If tokens exist but still prompting: Check server startup logs for token loading errors
-4. Manual token clear if needed: `rm -rf ~/.auth/mcp-gas/tokens/`
-
-### Integration Tests Failing
-**Problem**: Tests fail with authentication errors
-**Solution**:
-1. First run triggers OAuth flow automatically
-2. Tokens cached at `~/.auth/mcp-gas/tokens/` for future runs
-3. Set `MCP_TEST_MODE=true` to preserve tokens during testing
-
-### "Cannot find module" Errors
-**Problem**: TypeScript imports not resolving
-**Solution**:
-1. Ensure `.js` extensions on all imports (ESM requirement)
-2. Check `tsconfig.json` module resolution settings
-3. Rebuild: `npm run clean && npm run build`
+**Quick fixes:** `npm run build` + restart Claude Code | `npm run clean && npm run build` for import errors | `/troubleshoot` for full guide
