@@ -15,6 +15,8 @@ import { getSuccessHtmlTemplate, getErrorHtmlTemplate, verifyInfrastructureFile 
 import { ensureManifestEntryPoints } from '../utilities/manifest-config.js';
 import { fileNameMatches } from '../../../api/pathParser.js';
 import { InfrastructureStatus, buildInfrastructureStatus } from '../../../types/infrastructureTypes.js';
+import { computeGitSha1 } from '../../../utils/hashUtils.js';
+import { INFRASTRUCTURE_REGISTRY } from '../../infrastructure-registry.js';
 
 /**
  * Sets up execution infrastructure for a Google Apps Script project
@@ -35,7 +37,8 @@ export async function setupInfrastructure(
   gasClient: GASClient,
   scriptId: string,
   accessToken: string,
-  sessionAuthManager?: SessionAuthManager
+  sessionAuthManager?: SessionAuthManager,
+  existingRemoteFiles?: GASFile[]
 ): Promise<InfrastructureStatus> {
   // HANGING FIX: Add timeout wrapper for all Google API calls
   const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number, operationName: string): Promise<T> => {
@@ -58,13 +61,18 @@ export async function setupInfrastructure(
   // Check if shim and HTML templates exist
   let shimExists = false;
   let htmlTemplatesExist = false;
+  let existingFiles: GASFile[] | null = existingRemoteFiles ?? null;
   try {
-    console.error('Checking if execution shim and HTML templates exist...');
-    const existingFiles = await withTimeout(
-      gasClient.getProjectContent(scriptId, accessToken),
-      15000, // 15-second timeout
-      'Get project content'
-    );
+    if (!existingFiles) {
+      console.error('Checking if execution shim and HTML templates exist...');
+      existingFiles = await withTimeout(
+        gasClient.getProjectContent(scriptId, accessToken),
+        15000, // 15-second timeout
+        'Get project content'
+      );
+    } else {
+      console.error('Using pre-fetched remoteFiles for infrastructure check (skipping API call)');
+    }
     shimExists = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec'));
     const hasSuccessHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_success'));
     const hasErrorHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_error'));
@@ -102,6 +110,7 @@ export async function setupInfrastructure(
       );
       console.error('Execution shim created successfully');
       shimWasCreated = true;
+      SessionAuthManager.invalidateInfrastructure(scriptId);
 
       // BEST-EFFORT SHA VERIFICATION: Verify after creation (warn but don't block execution)
       console.error('🔍 [GAS_RUN] Verifying execution infrastructure integrity (best-effort)...');
@@ -139,34 +148,96 @@ export async function setupInfrastructure(
       throw error;
     }
   } else {
-    // BEST-EFFORT SHA VERIFICATION: Verify existing infrastructure (warn but don't block)
-    console.error('🔍 [GAS_RUN] Verifying existing execution infrastructure (best-effort)...');
-    try {
-      const verification = await verifyInfrastructureFile(
-        scriptId,
-        'common-js/__mcp_exec',
-        sessionAuthManager,
-        accessToken
-      );
+    // SHA-GATED VERIFICATION: Use in-memory SHA from remoteFiles when available, avoid API call
+    console.error('🔍 [GAS_RUN] Verifying existing execution infrastructure...');
+    const shimFile = existingFiles?.find((f: GASFile) => fileNameMatches(f.name, 'common-js/__mcp_exec'));
+    const expectedSHA = INFRASTRUCTURE_REGISTRY['common-js/__mcp_exec.gs'].computeSHA();
 
-      // Capture verification result for response
-      infrastructureVerification = verification;
+    if (shimFile && shimFile.source) {
+      const remoteSHA = computeGitSha1(shimFile.source);
+      infrastructureVerification = {
+        verified: remoteSHA === expectedSHA,
+        expectedSHA,
+        actualSHA: remoteSHA
+      };
 
-      if (verification.verified) {
-        console.error(`✅ [GAS_RUN] Execution infrastructure verified (SHA: ${verification.actualSHA})`);
+      if (remoteSHA === expectedSHA) {
+        console.error(`✅ [GAS_RUN] Execution infrastructure verified via in-memory SHA (${remoteSHA.substring(0, 8)}...)`);
+
+        // SHA-gated short-circuit: shim verified + HTML present → skip manifest & HEAD deployment
+        if (htmlTemplatesExist) {
+          console.error(`⚡ [SHA SHORT-CIRCUIT] Shim verified + HTML present — skipping manifest & HEAD deployment`);
+
+          // Cache the deployment URL and return early
+          try {
+            const gasRunUrl = await withTimeout(
+              gasClient.constructGasRunUrl(scriptId, accessToken),
+              10000,
+              'Construct gas run URL'
+            );
+            if (sessionAuthManager && gasRunUrl) {
+              await sessionAuthManager.setCachedDeploymentUrl(scriptId, gasRunUrl);
+            }
+          } catch (urlError: any) {
+            console.warn(`URL construction failed during short-circuit: ${urlError.message}`);
+          }
+
+          // Cache infrastructure as verified
+          SessionAuthManager.setInfrastructureVerified(scriptId, {
+            execShimSHA: remoteSHA,
+            timestamp: Date.now()
+          });
+
+          return buildInfrastructureStatus(infrastructureVerification, shimWasCreated);
+        }
       } else {
-        // WARNING ONLY - don't block execution
-        console.error(`⚠️  [GAS_RUN] Execution infrastructure SHA mismatch (non-blocking warning):`);
-        console.error(`   - Expected SHA: ${verification.expectedSHA}`);
-        console.error(`   - Actual SHA: ${verification.actualSHA}`);
-        console.error(`   - Error: ${verification.error || 'SHA mismatch detected'}`);
-        console.error(`   ℹ️  Execution will continue - this is informational only`);
+        // SHA mismatch — auto-repair: re-deploy the shim with correct content
+        console.error(`⚠️  [GAS_RUN] Execution infrastructure SHA mismatch — auto-repairing:`);
+        console.error(`   - Expected SHA: ${expectedSHA.substring(0, 8)}...`);
+        console.error(`   - Actual SHA: ${remoteSHA.substring(0, 8)}...`);
+
+        const shimCode = CodeGenerator.generateProjectFiles({
+          type: 'head_deployment',
+          timezone: 'America/Los_Angeles',
+          includeTestFunctions: true,
+          mcpVersion: '1.0.0'
+        });
+        const newShimFile = shimCode.files.find((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec'));
+        if (newShimFile?.source) {
+          try {
+            await withTimeout(
+              gasClient.updateFile(scriptId, 'common-js/__mcp_exec', newShimFile.source, 0, accessToken),
+              20000,
+              'Auto-repair stale shim'
+            );
+            console.error('✅ [GAS_RUN] Stale shim auto-repaired successfully');
+            shimWasCreated = true;
+            SessionAuthManager.invalidateInfrastructure(scriptId);
+            infrastructureVerification = { verified: true, expectedSHA, actualSHA: expectedSHA };
+          } catch (repairError: any) {
+            console.warn(`⚠️  [GAS_RUN] Auto-repair failed: ${repairError.message} — continuing with stale shim`);
+          }
+        }
       }
-    } catch (verifyError: any) {
-      // BEST-EFFORT: Log but don't fail
-      console.error(`⚠️  [GAS_RUN] Infrastructure verification failed (non-blocking): ${verifyError.message}`);
-      console.error(`   ℹ️  Execution will continue - verification is best-effort only`);
-      infrastructureVerification = { verified: false, error: verifyError.message };
+    } else {
+      // Fallback to API-based verification if remoteFiles didn't have the shim
+      try {
+        const verification = await verifyInfrastructureFile(
+          scriptId,
+          'common-js/__mcp_exec',
+          sessionAuthManager,
+          accessToken
+        );
+        infrastructureVerification = verification;
+        if (verification.verified) {
+          console.error(`✅ [GAS_RUN] Execution infrastructure verified via API (SHA: ${verification.actualSHA})`);
+        } else {
+          console.error(`⚠️  [GAS_RUN] SHA mismatch via API (non-blocking): expected=${verification.expectedSHA}, actual=${verification.actualSHA}`);
+        }
+      } catch (verifyError: any) {
+        console.error(`⚠️  [GAS_RUN] Infrastructure verification failed (non-blocking): ${verifyError.message}`);
+        infrastructureVerification = { verified: false, error: verifyError.message };
+      }
     }
   }
 

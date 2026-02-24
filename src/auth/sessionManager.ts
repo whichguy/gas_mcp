@@ -12,6 +12,19 @@ const TOKEN_CACHE_DIR = path.join(os.homedir(), '.auth', 'mcp-gas', 'tokens');
 // Prevents unbounded growth in long-running sessions (10+ hours)
 const MAX_DEPLOYMENT_URLS = 100;
 
+// Maximum infrastructure verification entries to cache (LRU eviction)
+const MAX_INFRASTRUCTURE_ENTRIES = 100;
+
+/**
+ * Cached entry for infrastructure verification state.
+ * Transient (in-memory only) — if process restarts, re-verification is cheap
+ * (one in-memory SHA comparison, zero API calls).
+ */
+export interface InfrastructureVerifiedEntry {
+  execShimSHA: string;
+  timestamp: number;
+}
+
 /**
  * OAuth token information
  */
@@ -706,6 +719,47 @@ export class SessionAuthManager {
 
     console.error(` Cleared ${count} sessions from filesystem`);
     return count;
+  }
+
+  // ─── Static in-memory infrastructure verification cache ───
+  // Unlike deployment URLs (persisted to filesystem), infrastructure verification
+  // is transient — if the process restarts, re-verifying is cheap (one in-memory
+  // SHA comparison). Static avoids filesystem I/O overhead per cache write.
+  private static infrastructureCache = new Map<string, InfrastructureVerifiedEntry>();
+
+  /**
+   * Record that infrastructure for a script has been verified with the given exec shim SHA.
+   * Uses LRU eviction at MAX_INFRASTRUCTURE_ENTRIES to prevent unbounded growth.
+   */
+  static setInfrastructureVerified(scriptId: string, entry: InfrastructureVerifiedEntry): void {
+    // LRU eviction: remove oldest if at capacity
+    if (
+      SessionAuthManager.infrastructureCache.size >= MAX_INFRASTRUCTURE_ENTRIES &&
+      !SessionAuthManager.infrastructureCache.has(scriptId)
+    ) {
+      const firstKey = SessionAuthManager.infrastructureCache.keys().next().value;
+      if (firstKey) {
+        SessionAuthManager.infrastructureCache.delete(firstKey);
+      }
+    }
+    // Delete + set for LRU ordering (most recent at end)
+    SessionAuthManager.infrastructureCache.delete(scriptId);
+    SessionAuthManager.infrastructureCache.set(scriptId, entry);
+  }
+
+  /**
+   * Get cached infrastructure verification entry for a script, or null if not cached.
+   */
+  static getInfrastructureVerified(scriptId: string): InfrastructureVerifiedEntry | null {
+    return SessionAuthManager.infrastructureCache.get(scriptId) ?? null;
+  }
+
+  /**
+   * Invalidate cached infrastructure verification for a script.
+   * Called when infrastructure is re-deployed (shim recreated).
+   */
+  static invalidateInfrastructure(scriptId: string): void {
+    SessionAuthManager.infrastructureCache.delete(scriptId);
   }
 
   /**
