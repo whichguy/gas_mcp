@@ -83,7 +83,7 @@ function multiply(a, b) { return a * b; }`
     it('should execute simple addition', async () => {
       const result = await globalAuthState.gas!.runFunction(testProjectId, 'add(15, 27)');
 
-      expect(result.response.result).to.equal(42);
+      expect(result.result).to.equal(42);
 
       console.log('   ✓ Executed: add(15, 27) = 42');
     });
@@ -91,7 +91,7 @@ function multiply(a, b) { return a * b; }`
     it('should execute multiplication', async () => {
       const result = await globalAuthState.gas!.runFunction(testProjectId, 'multiply(6, 7)');
 
-      expect(result.response.result).to.equal(42);
+      expect(result.result).to.equal(42);
 
       console.log('   ✓ Executed: multiply(6, 7) = 42');
     });
@@ -107,7 +107,7 @@ function multiply(a, b) { return a * b; }`
 
       for (const op of operations) {
         const result = await globalAuthState.gas!.runFunction(testProjectId, op.code);
-        expect(result.response.result).to.equal(op.expected);
+        expect(result.result).to.equal(op.expected);
       }
 
       console.log(`   ✓ Executed ${operations.length} operations - no OAuth prompts!`);
