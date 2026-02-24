@@ -143,3 +143,6 @@ debug/
 
 # Shared integration test project ID (auto-created on first run)
 test/.test-project-id
+
+# User-specific config (auto-created on first run from DEFAULT_CONFIG)
+gas-config.json
