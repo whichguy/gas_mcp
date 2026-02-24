@@ -25,6 +25,7 @@
  */
 
 import { globalAuthState, mochaHooks } from './globalAuth.js';
+import { TestProjectManager } from '../helpers/testProjectManager.js';
 
 // Track if setup has been called to prevent multiple initializations
 let setupInProgress = false;
@@ -92,3 +93,24 @@ export function shouldRunIntegrationTests(): boolean {
  * Export global state for test access
  */
 export { globalAuthState };
+
+/**
+ * Get the shared test project scriptId.
+ * Throws if globalAuth setup has not run.
+ */
+export function getSharedProjectId(): string {
+  const id = globalAuthState.sharedProjectId;
+  if (!id) throw new Error('Shared test project not initialized — ensure globalAuth beforeAll ran');
+  return id;
+}
+
+/**
+ * Reset the shared test project to its infrastructure baseline.
+ * Call this at the start of each integration test suite's before() hook.
+ */
+export async function resetSharedProject(): Promise<void> {
+  if (!globalAuthState.client) {
+    throw new Error('No client available — ensure globalAuth beforeAll ran');
+  }
+  await TestProjectManager.getInstance().resetToBaseline(globalAuthState.client);
+}
