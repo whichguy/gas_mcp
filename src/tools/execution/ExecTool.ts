@@ -30,6 +30,8 @@ import {
 import { ensureManifestEntryPoints } from './utilities/manifest-config.js';
 import { setupInfrastructure } from './infrastructure/setup-manager.js';
 import { performDomainAuth } from './auth/domain-auth.js';
+import { computeGitSha1 } from '../../utils/hashUtils.js';
+import { INFRASTRUCTURE_REGISTRY } from '../infrastructure-registry.js';
 
 // Import output file manager
 import { wrapLargeResponse } from './outputFileManager.js';
@@ -274,6 +276,7 @@ export class ExecTool extends BaseTool {
     // This prevents executing stale code when local files have diverged from remote
     // When skipSyncCheck=true, we still check but return collision info instead of throwing
     let collisionInfo: CollisionInfo | undefined;
+    let remoteFiles: GASFile[] | null = null;
 
     try {
       // Get auth token for sync check (best-effort, may be null)
@@ -283,7 +286,7 @@ export class ExecTool extends BaseTool {
         console.error(`[SYNC CHECK] Checking for local/remote drift...`);
 
         // Fetch remote files for comparison
-        const remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
+        remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
 
         // Background deploy: detect and repair missing HTML templates without blocking exec
         const hasSuccessHtml = remoteFiles.some(f => fileNameMatches(f.name, 'common-js/__mcp_exec_success'));
@@ -298,11 +301,11 @@ export class ExecTool extends BaseTool {
           void Promise.resolve().then(async () => {
             try {
               if (!hasSuccessHtml) {
-                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_success', getSuccessHtmlTemplate(), undefined, bgToken, 'HTML', canUseCache ? remoteFiles : undefined);
+                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_success', getSuccessHtmlTemplate(), undefined, bgToken, 'HTML', canUseCache && remoteFiles ? remoteFiles : undefined);
                 console.error(`[BACKGROUND] ✓ Deployed __mcp_exec_success.html`);
               }
               if (!hasErrorHtml) {
-                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_error', getErrorHtmlTemplate(), undefined, bgToken, 'HTML', canUseCache ? remoteFiles : undefined);
+                await this.gasClient.updateFile(scriptId, 'common-js/__mcp_exec_error', getErrorHtmlTemplate(), undefined, bgToken, 'HTML', canUseCache && remoteFiles ? remoteFiles : undefined);
                 console.error(`[BACKGROUND] ✓ Deployed __mcp_exec_error.html`);
               }
             } catch (bgErr: any) {
@@ -428,6 +431,18 @@ export class ExecTool extends BaseTool {
       console.error(`[SYNC CHECK] Warning: Could not verify sync status: ${(error as Error).message}`);
     }
 
+    // PRE-FLIGHT INFRASTRUCTURE CHECK: Verify infra readiness using remoteFiles (zero API calls)
+    if (autoRedeploy && remoteFiles) {
+      try {
+        const preflightToken = params.accessToken || await this.tryGetAuthToken();
+        if (preflightToken) {
+          await this.preflightInfrastructureCheck(scriptId, remoteFiles, preflightToken);
+        }
+      } catch (preflightError: any) {
+        console.error(`[PREFLIGHT] Infrastructure check failed (non-blocking): ${preflightError.message}`);
+      }
+    }
+
     // Try operation first with provided access token (if any) or session auth
     let accessToken: string | null = null;
 
@@ -539,23 +554,40 @@ export class ExecTool extends BaseTool {
           );
         }
 
-        // Check if we have cached deployment URL (indicates infrastructure exists)
+        // Check session infrastructure cache — if pre-flight passed but execution still failed
+        // (e.g., GAS cold start 500), try one optimistic retry before full setup
+        const infraCached = SessionAuthManager.getInfrastructureVerified(scriptId);
         const hasCachedUrl = this.sessionAuthManager ?
           await this.sessionAuthManager.getCachedDeploymentUrl(scriptId) : null;
 
-        if (hasCachedUrl) {
-          console.error(`⚡ [OPTIMISTIC RETRY] Infrastructure exists (cached URL found), retrying without setup...`);
-          // Try one more time before full infrastructure setup
+        if (infraCached && hasCachedUrl) {
+          console.error(`⚡ [OPTIMISTIC RETRY] Infrastructure verified in session cache + URL cached, retrying...`);
           try {
             return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail, environment, null);
           } catch (retryError: any) {
+            const retryStatusCode = retryError.statusCode || retryError.response?.status;
+            if (retryStatusCode === 401 || retryStatusCode === 403) {
+              throw retryError;
+            }
+            console.error(`[OPTIMISTIC RETRY FAILED] Invalidating cache, proceeding with full setup: ${retryError.message}`);
+            SessionAuthManager.invalidateInfrastructure(scriptId);
+          }
+        } else if (hasCachedUrl) {
+          console.error(`⚡ [OPTIMISTIC RETRY] Cached URL found (no infra cache), retrying without setup...`);
+          try {
+            return await this.executeOptimistic(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, autoRedeploy, logFilter, logTail, environment, null);
+          } catch (retryError: any) {
+            const retryStatusCode = retryError.statusCode || retryError.response?.status;
+            if (retryStatusCode === 401 || retryStatusCode === 403) {
+              throw retryError;
+            }
             console.error(`[OPTIMISTIC RETRY FAILED] Proceeding with infrastructure setup: ${retryError.message}`);
           }
         }
 
         // Set up infrastructure and retry
         console.error(`[INFRASTRUCTURE SETUP] Setting up deployment infrastructure...`);
-        const infrastructureStatus = await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager);
+        const infrastructureStatus = await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager, remoteFiles ?? undefined);
 
         // NEW: Retry logic for deployment delays with test function validation
         return await this.executeWithDeploymentRetry(scriptId, js_statement, accessToken, executionTimeout, responseTimeout, logFilter, logTail, environment, infrastructureStatus);
@@ -843,6 +875,60 @@ export class ExecTool extends BaseTool {
     const statusCode = error.statusCode || error.data?.statusCode || error.response?.status;
     const isHtmlError = error.message?.includes('Web app returned HTML error page');
     return [404, 403, 500].includes(statusCode) || isHtmlError;
+  }
+
+  /**
+   * Pre-flight check: verify infrastructure readiness using already-fetched remoteFiles.
+   * Zero API calls on happy path (session cache hit or in-memory SHA match).
+   * Proactively sets up infrastructure when missing or stale, avoiding 404 failure + retry.
+   *
+   * @returns 'verified' if infrastructure is ready, 'setup' if setup was performed
+   */
+  private async preflightInfrastructureCheck(
+    scriptId: string,
+    remoteFiles: GASFile[],
+    accessToken: string
+  ): Promise<'verified' | 'setup'> {
+    // 1. Session cache hit — zero work
+    const cached = SessionAuthManager.getInfrastructureVerified(scriptId);
+    if (cached) {
+      console.error(`[PREFLIGHT] Session cache hit for ${scriptId} (SHA: ${cached.execShimSHA.substring(0, 8)}...)`);
+      return 'verified';
+    }
+
+    // 2. Find __mcp_exec in remoteFiles (in-memory array scan)
+    const shimFile = remoteFiles.find(f => fileNameMatches(f.name, 'common-js/__mcp_exec'));
+
+    // 3. Missing — proactive setup before first call
+    if (!shimFile) {
+      console.error(`[PREFLIGHT] __mcp_exec missing — proactive infrastructure setup`);
+      await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager, remoteFiles);
+      return 'setup';
+    }
+
+    // 4. SHA comparison: remote file vs expected template
+    if (!shimFile.source) {
+      console.error(`[PREFLIGHT] __mcp_exec found but no source content — proactive setup`);
+      await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager, remoteFiles);
+      return 'setup';
+    }
+    const remoteSHA = computeGitSha1(shimFile.source);
+    const expectedSHA = INFRASTRUCTURE_REGISTRY['common-js/__mcp_exec.gs'].computeSHA();
+
+    if (remoteSHA === expectedSHA) {
+      // SHA match — cache as verified, proceed
+      SessionAuthManager.setInfrastructureVerified(scriptId, {
+        execShimSHA: remoteSHA,
+        timestamp: Date.now()
+      });
+      console.error(`[PREFLIGHT] SHA match — infrastructure verified (${remoteSHA.substring(0, 8)}...)`);
+      return 'verified';
+    }
+
+    // 5. SHA mismatch — proactive setup to repair stale shim
+    console.error(`[PREFLIGHT] SHA mismatch (remote: ${remoteSHA.substring(0, 8)}... expected: ${expectedSHA.substring(0, 8)}...) — repairing infrastructure`);
+    await setupInfrastructure(this.gasClient, scriptId, accessToken, this.sessionAuthManager, remoteFiles);
+    return 'setup';
   }
 
   private async executeOptimistic(
