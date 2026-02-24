@@ -6,14 +6,15 @@
  * MULTI-FILE: Processes all matching files | per-file hash validation prevents cascading conflicts
  * VS EDIT: sed=regex patterns across files | edit=exact strings single file
  * NO AUTO-COMMIT: Must call git_feature({operation:'commit'}) after sed
+ * RAW MODE: raw:true → operates on raw content including CommonJS wrappers (former raw_sed)
  */
 
 import { BaseTool } from './base.js';
 import type { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
-import { RipgrepTool, RawRipgrepTool } from './ripgrep.js';
-import { CatTool, RawCatTool } from './filesystem/index.js';
-import { WriteTool, RawWriteTool } from './filesystem/index.js';
+import { RipgrepTool } from './ripgrep.js';
+import { CatTool } from './filesystem/index.js';
+import { WriteTool } from './filesystem/index.js';
 import { RegexProcessor } from '../utils/regexProcessor.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { GuidanceFragments } from '../utils/guidanceFragments.js';
@@ -137,6 +138,11 @@ export class SedTool extends BaseTool {
         description: '⚠️ Force replacements even if files were modified externally. Use only when intentionally overwriting concurrent changes.',
         default: false
       },
+      raw: {
+        type: 'boolean',
+        description: 'When true, operates on raw file content including CommonJS _main() wrappers without unwrapping/rewrapping. Use for modifying module infrastructure. Former raw_sed behavior.',
+        default: false
+      },
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern', 'replacement'],
@@ -190,7 +196,8 @@ export class SedTool extends BaseTool {
         excludeFiles: params.excludeFiles,
         filesWithMatches: true, // Only get files with matches
         maxFiles: params.maxFiles || 50,
-        accessToken: params.accessToken
+        accessToken: params.accessToken,
+        raw: params.raw || false
       };
 
       // Find files with matches using ripgrep
@@ -216,11 +223,12 @@ export class SedTool extends BaseTool {
 
       for (const matchFile of searchResult.matches) {
         try {
-          // Read file content (catTool now returns hash for conflict detection)
+          // Read file content (raw mode reads with wrappers; normal mode unwraps)
           const catResult = await this.catTool.execute({
             scriptId,
             path: matchFile.fileName,
-            accessToken: params.accessToken
+            accessToken: params.accessToken,
+            raw: params.raw || false
           }) as any;  // catResult includes hash
 
           // Capture file hash at read time for conflict detection
@@ -248,7 +256,10 @@ export class SedTool extends BaseTool {
               // Pass hash for conflict detection (catches concurrent modifications)
               expectedHash: fileHash,
               force: params.force === true,  // Allow override if user explicitly requests
-              accessToken: params.accessToken
+              accessToken: params.accessToken,
+              raw: params.raw || false,
+              // When raw: true, pass fileType from the cat result (required by raw write path)
+              ...(params.raw ? { fileType: (catResult.type || catResult.fileType || 'SERVER_JS').toUpperCase() } : {})
             }) as any;  // WriteTool returns extended result with git info
             // Capture git hint from last successful write
             if (writeResult.git) {
@@ -303,278 +314,6 @@ export class SedTool extends BaseTool {
 
   /**
    * Perform find/replace operations on content using RegexProcessor utility
-   */
-  private performReplacements(
-    content: string,
-    patterns: string[],
-    replacement: string,
-    options: { global: boolean; caseSensitive: boolean }
-  ): { newContent: string; replacementCount: number } {
-    let newContent = content;
-    let totalReplacementCount = 0;
-
-    for (const pattern of patterns) {
-      try {
-        // Use RegexProcessor for consistent regex handling
-        const { text, count } = RegexProcessor.replace(
-          pattern,
-          replacement,
-          newContent,
-          {
-            searchMode: 'regex',
-            caseSensitive: options.caseSensitive
-            // Note: global flag handled by RegexProcessor internally
-          }
-        );
-
-        newContent = text;
-        totalReplacementCount += count;
-
-      } catch (error) {
-        // Skip invalid regex patterns
-        console.warn(`Invalid regex pattern: ${pattern}`, error);
-      }
-    }
-
-    return { newContent, replacementCount: totalReplacementCount };
-  }
-}
-
-/**
- * Raw sed tool that preserves exact content including CommonJS wrappers
- * 
- * @example
- * Process system files:
- * raw_sed({
- *   scriptId: "1abc2def...",
- *   pattern: "_main\\\\s*\\\\(",
- *   replacement: "_mainFunction(",
- *   path: "*"
- * })
- */
-export class RawSedTool extends BaseTool {
-  public name = 'raw_sed';
-  public description = '[FILE:RAW:SED] sed-style find/replace on raw content including CommonJS wrappers. WHEN: modifying _main() wrapper code or module infrastructure with regex patterns. AVOID: use sed for normal user code. Example: raw_sed({scriptId, path: "Utils.gs", pattern: "s/loadNow: false/loadNow: true/g"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
-
-  public outputSchema = {
-    type: 'object' as const,
-    properties: {
-      filesProcessed: { type: 'number', description: 'Number of files processed' },
-      totalReplacements: { type: 'number', description: 'Total replacements made across all files' },
-      files: { type: 'array', description: 'Per-file results (path, replacements, success, error)' },
-      gitBreadcrumbHints: { type: 'array', description: 'Git breadcrumb hints for .git/* files' },
-      git: { type: 'object', description: 'Compact git hint (branch, uncommitted count, action)' }
-    }
-  };
-
-  public inputSchema = {
-    type: 'object',
-    properties: {
-      ...SchemaFragments.scriptId,
-      pattern: {
-        description: 'Regex pattern for raw content. Supports capture groups ($1, $2).',
-        type: 'string',
-        minLength: 1,
-        examples: ['_main\\\\s*\\\\(', '__defineModule__\\\\s*\\\\(']
-      },
-      patterns: {
-        description: 'Multiple patterns (OR logic) for raw content.',
-        type: 'array',
-        items: { type: 'string' },
-        examples: [['_main', '__defineModule__']]
-      },
-      replacement: {
-        description: 'Replacement string. Use $1, $2 for capture groups.',
-        type: 'string',
-        examples: ['_mainFunction(', '__defineModuleWrapper__(']
-      },
-      path: {
-        description: 'File pattern to filter operations on raw content',
-        type: 'string',
-        default: '',
-        examples: ['*', '*.gs']
-      },
-      ...SchemaFragments.includeFileTypes,
-      ...SchemaFragments.excludeFiles,
-      global: {
-        description: 'Replace all occurrences in raw content (default: true)',
-        type: 'boolean',
-        default: true
-      },
-      ...SchemaFragments.caseSensitive,
-      ...SchemaFragments.dryRun,
-      maxFiles: {
-        description: 'Maximum files to process in raw mode',
-        type: 'number',
-        default: 50,
-        minimum: 1,
-        maximum: 200
-      },
-      force: {
-        type: 'boolean',
-        description: '⚠️ Force replacements even if files were modified externally. Use only when intentionally overwriting concurrent changes.',
-        default: false
-      },
-      ...SchemaFragments.accessToken
-    },
-    required: ['scriptId', 'pattern', 'replacement'],
-    additionalProperties: false
-  };
-
-  public annotations = {
-    title: 'Find and Replace (Raw)',
-    readOnlyHint: false,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: true
-  };
-
-  private ripgrepTool: RawRipgrepTool;
-  private catTool: RawCatTool;
-  private writeTool: RawWriteTool;
-
-  constructor(authManager: SessionAuthManager) {
-    super(authManager);
-    this.ripgrepTool = new RawRipgrepTool(authManager);
-    this.catTool = new RawCatTool(authManager);
-    this.writeTool = new RawWriteTool(authManager);
-  }
-
-  async execute(params: any): Promise<SedResult> {
-    try {
-      // Validate required parameters
-      const scriptId = this.validate.scriptId(params.scriptId, 'sed find/replace operation');
-      const pattern = this.validate.string(params.pattern, 'pattern', 'find/replace pattern');
-      const replacement = this.validate.string(params.replacement, 'replacement', 'replacement string');
-
-      // Build search patterns (main + additional)
-      const searchPatterns = [pattern];
-      if (params.patterns && Array.isArray(params.patterns)) {
-        searchPatterns.push(...params.patterns);
-      }
-
-      // Configure search parameters for raw content
-      const searchParams = {
-        scriptId,
-        pattern: searchPatterns[0],
-        patterns: searchPatterns.slice(1),
-        path: params.path || '',
-        includeFileTypes: params.includeFileTypes,
-        excludeFiles: params.excludeFiles,
-        filesWithMatches: true,
-        maxFiles: params.maxFiles || 50,
-        accessToken: params.accessToken
-      };
-
-      // Find files with matches using raw ripgrep
-      const searchResult = await this.ripgrepTool.execute(searchParams);
-      
-      if (!searchResult.matches || searchResult.matches.length === 0) {
-        return {
-          filesProcessed: 0,
-          totalReplacements: 0,
-          files: []
-        };
-      }
-
-      // Process each file with matches
-      const result: SedResult = {
-        filesProcessed: 0,
-        totalReplacements: 0,
-        files: []
-      };
-
-      // Track git hint from last successful write
-      let lastGitHint: CompactGitHint | undefined;
-
-      for (const matchFile of searchResult.matches) {
-        try {
-          // Read raw file content (catTool now returns hash for conflict detection)
-          const catResult = await this.catTool.execute({
-            path: `${scriptId}/${matchFile.fileName}`,
-            accessToken: params.accessToken
-          }) as any;  // catResult includes hash
-
-          // Capture file hash at read time for conflict detection
-          const fileHash = catResult.hash;
-
-          // Perform replacements on raw content
-          const { newContent, replacementCount } = this.performReplacements(
-            catResult.content,
-            searchPatterns,
-            replacement,
-            {
-              global: params.global !== false,
-              caseSensitive: params.caseSensitive === true
-            }
-          );
-
-          // Apply changes if not dry run and replacements were made
-          // HASH-BASED CONFLICT DETECTION: Pass hash from cat to write
-          // If file was modified externally between cat and write, ConflictError is thrown
-          if (!params.dryRun && replacementCount > 0) {
-            const writeResult = await this.writeTool.execute({
-              path: `${scriptId}/${matchFile.fileName}`,
-              content: newContent,
-              fileType: 'SERVER_JS', // Default for raw operations
-              // Pass hash for conflict detection (catches concurrent modifications)
-              expectedHash: fileHash,
-              force: params.force === true,  // Allow override if user explicitly requests
-              accessToken: params.accessToken
-            }) as any;
-            // Capture git hint from last successful write
-            if (writeResult.git) {
-              lastGitHint = writeResult.git;
-            }
-          }
-
-          result.files.push({
-            path: matchFile.fileName,
-            replacements: replacementCount,
-            success: true
-          });
-
-          result.filesProcessed++;
-          result.totalReplacements += replacementCount;
-
-        } catch (error) {
-          result.files.push({
-            path: matchFile.fileName,
-            replacements: 0,
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          });
-        }
-      }
-
-      // Collect git breadcrumb hints for any .git/* files processed
-      const gitBreadcrumbHints = result.files
-        .filter(f => f.success && f.path.startsWith('.git/'))
-        .map(f => getGitBreadcrumbEditHint(f.path))
-        .filter(hint => hint !== null);
-
-      if (gitBreadcrumbHints.length > 0) {
-        result.gitBreadcrumbHints = gitBreadcrumbHints;
-      }
-
-      // Propagate git workflow hint from last successful write
-      if (lastGitHint) {
-        result.git = lastGitHint;
-      }
-
-      return result;
-
-    } catch (error) {
-      throw GASErrorHandler.handleApiError(error, {
-        operation: 'raw sed find/replace operation',
-        scriptId: params.scriptId,
-        tool: 'raw_sed'
-      });
-    }
-  }
-
-  /**
-   * Perform find/replace operations on raw content using RegexProcessor utility
    */
   private performReplacements(
     content: string,

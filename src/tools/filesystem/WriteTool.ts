@@ -14,15 +14,16 @@ import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWil
 import { ValidationError, FileOperationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
 import { computeGitSha1, isValidGitSha1, hashesEqual } from '../../utils/hashUtils.js';
 import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
-import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug } from '../../utils/moduleWrapper.js';
+import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug, validateCommonJsIntegrity } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { GitFormatTranslator } from '../../utils/GitFormatTranslator.js';
-import { setFileMtimeToRemote, isManifestFile } from '../../utils/fileHelpers.js';
+import { setFileMtimeToRemote, isManifestFile, checkSyncOrThrowByHash } from '../../utils/fileHelpers.js';
 import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
 import { writeLocalAndValidateHooksOnly } from '../../utils/hookIntegration.js';
 import { getUncommittedStatus, buildCompactGitHint, buildHtmlTemplateHint } from '../../utils/gitStatus.js';
+import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDetection } from '../../utils/gitDiscovery.js';
 import { buildWriteWorkflowHints } from '../../utils/writeHints.js';
 // Note: localGitDetection imports removed - CompactGitHint replaces verbose git detection in responses
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
@@ -31,12 +32,30 @@ import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, analyzeManifestContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
 import { generateFileDiff, getDiffStats } from '../../utils/diffGenerator.js';
 import { join, dirname } from 'path';
-import { mkdir, stat, readFile } from 'fs/promises';
+import { mkdir, stat, readFile, writeFile } from 'fs/promises';
 import { expandAndValidateLocalPath } from '../../utils/pathExpansion.js';
 import { SCRIPT_ID_SCHEMA, PATH_SCHEMA, WORKING_DIR_SCHEMA, ACCESS_TOKEN_SCHEMA, FILE_TYPE_SCHEMA, MODULE_OPTIONS_SCHEMA, CONTENT_SCHEMA, FORCE_SCHEMA, EXPECTED_HASH_SCHEMA } from './shared/schemas.js';
 import { GuidanceFragments } from '../../utils/guidanceFragments.js';
 import type { WriteParams, WriteResult } from './shared/types.js';
 import { WriteOperationStrategy } from '../../core/git/operations/WriteOperationStrategy.js';
+
+/**
+ * Parameters for raw write mode (write({..., raw: true})).
+ * Mirrors former RawWriteTool parameter structure with scriptId + path separate.
+ */
+interface RawWriteParams {
+  scriptId: string;
+  path: string;
+  content: string;
+  fileType: 'SERVER_JS' | 'HTML' | 'JSON';
+  accessToken?: string;
+  expectedHash?: string;
+  force?: boolean;
+  position?: number;
+  skipSyncCheck?: boolean;
+  projectPath?: string;
+  changeReason?: string;
+}
 
 /**
  * Write file contents with automatic CommonJS processing and git hook validation
@@ -129,6 +148,21 @@ export class WriteTool extends BaseFileSystemTool {
         default: '',
         description: 'Optional path to nested git project within GAS (for polyrepo support). Enables independent git repositories within a single GAS project.',
         examples: ['', 'backend', 'frontend', 'libs/shared', 'api/v2']
+      },
+      raw: {
+        type: 'boolean',
+        description: 'When true, writes file content exactly as provided — no CommonJS wrapping applied. REQUIRED when raw:true: fileType, position parameters become available. Use for writing CommonJS infrastructure files. Former raw_write behavior.',
+        default: false
+      },
+      position: {
+        type: 'number',
+        description: 'File execution order position (0-based). Only used when raw: true. Controls order in Apps Script editor.',
+        minimum: 0
+      },
+      skipSyncCheck: {
+        type: 'boolean',
+        description: 'Skip sync validation check. Only used when raw: true.',
+        default: false
       }
     },
     required: ['scriptId', 'path'],  // content OR fromLocal must be provided
@@ -156,6 +190,13 @@ export class WriteTool extends BaseFileSystemTool {
   };
 
   async execute(params: WriteParams): Promise<WriteResult> {
+    if ((params as any).raw) {
+      if (!(params as any).fileType) {
+        throw new ValidationError('fileType', undefined, 'required when raw: true');
+      }
+      return await this.executeRaw(params as unknown as RawWriteParams);
+    }
+
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
     const workingDir = params.workingDir || LocalFileManager.getResolvedWorkingDirectory();
     const localOnly = params.localOnly || false;
@@ -166,7 +207,7 @@ export class WriteTool extends BaseFileSystemTool {
     }
 
     const { scriptId, filename, projectName, fullPath } = validateAndParseFilePath(
-      params,
+      params as { scriptId: string; path: string },
       this.validate.filePath.bind(this.validate),
       'file writing'
     );
@@ -1194,6 +1235,463 @@ Or use force:true to overwrite (destructive).`;
 
     console.error(`✅ [AUTO-PULL] Successfully pulled ${filename} to local cache`);
     return true;
+  }
+
+  /**
+   * Execute raw write (no CommonJS wrapping). Former RawWriteTool behavior.
+   * Activated when write({..., raw: true}) is called.
+   */
+  private async executeRaw(params: RawWriteParams): Promise<any> {
+    // Use validateAndParseFilePath with separate scriptId + path (WriteTool convention)
+    const { scriptId, filename, fullPath: path } = validateAndParseFilePath(
+      { scriptId: params.scriptId, path: params.path },
+      this.validate.filePath.bind(this.validate),
+      'file writing'
+    );
+
+    const position = params.position !== undefined
+      ? this.validate.number(params.position, 'position', 'file writing', 0)
+      : undefined;
+
+    // ⚠️ SPECIAL FILE VALIDATION: appsscript.json must be in root
+    const parsedPath = parsePath(path);
+    let filename2 = filename;
+    if (isManifestFile(filename2)) {
+      if (parsedPath.directory && parsedPath.directory !== '') {
+        throw new ValidationError(
+          'path',
+          path,
+          'appsscript.json must be in project root (scriptId/appsscript), not in subfolders'
+        );
+      }
+    }
+
+    // ✅ SIMPLIFIED FILE TYPE HANDLING - fileType is REQUIRED for raw mode
+    const gasFileType = params.fileType as 'SERVER_JS' | 'HTML' | 'JSON';
+
+    // Strip extensions only if they match the declared file type
+    if (gasFileType === 'SERVER_JS') {
+      if (filename2.toLowerCase().endsWith('.js')) {
+        filename2 = filename2.slice(0, -3);
+      } else if (filename2.toLowerCase().endsWith('.gs')) {
+        filename2 = filename2.slice(0, -3);
+      }
+    } else if (gasFileType === 'HTML') {
+      if (filename2.toLowerCase().endsWith('.html')) {
+        filename2 = filename2.slice(0, -5);
+      } else if (filename2.toLowerCase().endsWith('.htm')) {
+        filename2 = filename2.slice(0, -4);
+      }
+    } else if (gasFileType === 'JSON') {
+      if (filename2.toLowerCase().endsWith('.json')) {
+        filename2 = filename2.slice(0, -5);
+      }
+    }
+
+    const content: string = params.content;
+
+    // Content integrity validation (non-blocking warnings)
+    const contentWarnings = validateCommonJsIntegrity(
+      filename2, content, gasFileType, 'raw-write'
+    );
+
+    // After validation passes, check authentication
+    const accessToken = await this.getAuthToken(params);
+
+    // Two-phase git discovery with projectPath support
+    const projectPath = params.projectPath || '';
+    const { discoverGit } = await import('../../utils/gitDiscovery.js');
+    const gitDiscovery = await discoverGit(scriptId, projectPath, this.gasClient, accessToken);
+
+    // If git discovered, use simplified atomic workflow
+    if (gitDiscovery.gitExists && !params.skipSyncCheck) {
+      return await this.executeRawWithGitWorkflow(
+        params,
+        { scriptId } as any,
+        filename2,
+        content,
+        gasFileType,
+        position,
+        accessToken,
+        projectPath,
+        gitDiscovery,
+        contentWarnings
+      );
+    }
+
+    // Fallback: Write-protection - check sync before writing (unless skipSyncCheck is true)
+    if (!params.skipSyncCheck) {
+      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+      const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
+
+      if (localRoot) {
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename2);
+        const localPath = join(localRoot, filename2 + fileExtension);
+
+        try {
+          const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+          await checkSyncOrThrowByHash(localPath, filename2, remoteFiles, true);
+        } catch (syncError: any) {
+          if (syncError.message && syncError.message.includes('out of sync')) {
+            throw syncError;
+          }
+        }
+      }
+    }
+
+    // === HASH-BASED CONFLICT DETECTION (RAW content) ===
+    let writtenHash: string | undefined;
+
+    if (!params.force) {
+      const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename2));
+
+      if (existingFile) {
+        const currentRemoteHash = computeGitSha1(existingFile.source || '');
+
+        let expectedHash: string | undefined = params.expectedHash;
+        let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+
+        if (!expectedHash) {
+          try {
+            const { LocalFileManager } = await import('../../utils/localFileManager.js');
+            const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
+            if (localRoot) {
+              const fileExtension = LocalFileManager.getFileExtensionFromName(filename2);
+              const localPath = join(localRoot, filename2 + fileExtension);
+              expectedHash = await getCachedContentHash(localPath) || undefined;
+              if (expectedHash) {
+                hashSource = 'xattr';
+              }
+            }
+          } catch {
+            // xattr cache not available
+          }
+        }
+
+        if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
+          const { createTwoFilesPatch } = await import('diff');
+
+          const diffContent = createTwoFilesPatch(
+            `${filename2} (expected)`,
+            `${filename2} (current remote)`,
+            '',
+            existingFile.source || '',
+            'baseline from your last read',
+            'modified by another session'
+          );
+
+          const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
+          const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+
+          const conflict: ConflictDetails = {
+            scriptId,
+            filename: filename2,
+            operation: 'write',
+            expectedHash,
+            currentHash: currentRemoteHash,
+            hashSource,
+            changeDetails: {
+              sizeChange: `${(existingFile.source?.length || 0) - (existingFile.source?.length || 0)} bytes`
+            },
+            diff: {
+              format: 'unified',
+              content: diffContent.length > 20000
+                ? diffContent.slice(0, 20000) + '\n... (truncated)'
+                : diffContent,
+              linesAdded,
+              linesRemoved,
+              truncated: diffContent.length > 20000,
+              truncatedMessage: diffContent.length > 20000
+                ? `Diff truncated (showing first 20000 of ${diffContent.length} chars)`
+                : undefined
+            }
+          };
+
+          throw new ConflictError(conflict);
+        }
+      }
+    }
+    // === END HASH-BASED CONFLICT DETECTION ===
+
+    const updatedFiles = await this.gasClient.updateFile(
+      scriptId,
+      filename2,
+      content,
+      position,
+      accessToken,
+      gasFileType
+    );
+
+    writtenHash = computeGitSha1(content);
+
+    // Sync to local cache with remote mtime (write-through cache)
+    try {
+      const { LocalFileManager } = await import('../../utils/localFileManager.js');
+      const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
+
+      if (localRoot) {
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename2);
+        const localPath = join(localRoot, filename2 + fileExtension);
+        await mkdir(dirname(localPath), { recursive: true });
+        await writeFile(localPath, content, 'utf-8');
+
+        const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, filename2));
+        if (remoteFile?.updateTime) {
+          await setFileMtimeToRemote(localPath, remoteFile.updateTime, remoteFile.type);
+        }
+
+        if (writtenHash) {
+          try {
+            await updateCachedContentHash(localPath, writtenHash);
+            console.error(`🔒 [HASH] Updated xattr cache with hash: ${writtenHash.slice(0, 8)}...`);
+          } catch (cacheError) {
+            console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
+          }
+        }
+      }
+    } catch (syncError) {
+      // Don't fail the operation if local sync fails - remote write succeeded
+    }
+
+    // Detect local git and check for breadcrumb
+    let gitDetection: GitDetection | undefined = undefined;
+    try {
+      const gitPath = await detectLocalGit(scriptId);
+
+      let files: any[] = [];
+      try {
+        files = await this.gasClient.getProjectContent(scriptId, accessToken);
+      } catch (filesError) {
+        console.error('[GIT-DETECTION] Could not fetch files for breadcrumb check:', filesError);
+      }
+
+      const breadcrumbExists = files.length > 0 ? checkBreadcrumbExists(files) : null;
+
+      if (gitPath) {
+        gitDetection = {
+          localGitDetected: true,
+          breadcrumbExists: breadcrumbExists ?? undefined
+        };
+
+        if (breadcrumbExists === false) {
+          gitDetection.recommendation = buildRecommendation(scriptId, gitPath);
+        }
+      } else {
+        gitDetection = {
+          localGitDetected: false
+        };
+      }
+    } catch (detectionError: any) {
+      console.error('[GIT-DETECTION] Error during detection:', detectionError?.message ?? String(detectionError));
+      gitDetection = {
+        localGitDetected: false
+      };
+    }
+
+    const result: any = {
+      status: 'success',
+      path,
+      scriptId,
+      filename: filename2,
+      size: content.length,
+      hash: writtenHash,
+      hashNote: 'Hash computed on raw content (including CommonJS wrappers if present).',
+      position: updatedFiles.findIndex((f: any) => fileNameMatches(f.name, filename2)),
+      totalFiles: updatedFiles.length
+    };
+
+    if (contentWarnings.length > 0) {
+      result.warnings = contentWarnings;
+    }
+
+    if (gitDetection) {
+      result.git = gitDetection;
+    }
+
+    const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename2);
+    if (gitBreadcrumbHint) {
+      result.gitBreadcrumbHint = gitBreadcrumbHint;
+    }
+
+    return result;
+  }
+
+  /**
+   * Execute raw write with git workflow (stage-only, no auto-commit).
+   * Former RawWriteTool.executeWithGitWorkflow() behavior.
+   */
+  private async executeRawWithGitWorkflow(
+    params: RawWriteParams,
+    parsedPath: { scriptId: string },
+    filename: string,
+    content: string,
+    gasFileType: string,
+    position: number | undefined,
+    accessToken: string,
+    projectPath: string,
+    gitDiscovery: any,
+    contentWarnings: string[]
+  ): Promise<any> {
+    const scriptId = parsedPath.scriptId;
+    const { LocalFileManager } = await import('../../utils/localFileManager.js');
+    const { writeLocalAndValidateHooksOnly: writeAndValidate } = await import('../../utils/hookIntegration.js');
+    const { unstageFile } = await import('../../utils/hookIntegration.js');
+    const { getCurrentBranchName, getUncommittedStatus: getUncommittedStatusLocal, buildCompactGitHint: buildCompactGitHintLocal } = await import('../../utils/gitStatus.js');
+
+    const baseProjectPath = await LocalFileManager.getProjectDirectory(scriptId);
+    const projectRoot = projectPath ? join(baseProjectPath, projectPath) : baseProjectPath;
+    const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+    const fullFilename = filename + fileExtension;
+    const filePath = join(projectRoot, fullFilename);
+
+    log.info(`[RAW_WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
+
+    // === HASH-BASED CONFLICT DETECTION (Git Path - RAW content) ===
+    if (!params.force) {
+      const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
+      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename));
+
+      if (existingFile) {
+        const currentRemoteHash = computeGitSha1(existingFile.source || '');
+
+        let expectedHash: string | undefined = params.expectedHash;
+        let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+
+        if (!expectedHash) {
+          try {
+            expectedHash = await getCachedContentHash(filePath) || undefined;
+            if (expectedHash) {
+              hashSource = 'xattr';
+            }
+          } catch {
+            // xattr cache not available
+          }
+        }
+
+        if (expectedHash && !hashesEqual(expectedHash, currentRemoteHash)) {
+          const { createTwoFilesPatch } = await import('diff');
+
+          const diffContent = createTwoFilesPatch(
+            `${filename} (expected)`,
+            `${filename} (current remote)`,
+            '',
+            existingFile.source || '',
+            'baseline from your last read',
+            'modified by another session'
+          );
+
+          const linesAdded = (diffContent.match(/^\+[^+]/gm) || []).length;
+          const linesRemoved = (diffContent.match(/^-[^-]/gm) || []).length;
+
+          const conflict: ConflictDetails = {
+            scriptId,
+            filename,
+            operation: 'write',
+            expectedHash,
+            currentHash: currentRemoteHash,
+            hashSource,
+            changeDetails: {
+              sizeChange: `${(existingFile.source?.length || 0)} bytes`
+            },
+            diff: {
+              format: 'unified',
+              content: diffContent.length > 20000
+                ? diffContent.slice(0, 20000) + '\n... (truncated)'
+                : diffContent,
+              linesAdded,
+              linesRemoved,
+              truncated: diffContent.length > 20000,
+              truncatedMessage: diffContent.length > 20000
+                ? `Diff truncated (showing first 20000 of ${diffContent.length} chars)`
+                : undefined
+            }
+          };
+
+          throw new ConflictError(conflict);
+        }
+      }
+    }
+    // === END HASH-BASED CONFLICT DETECTION ===
+
+    const currentBranch = await getCurrentBranchName(projectRoot);
+    log.info(`[RAW_WRITE] Current branch: ${currentBranch}`);
+
+    // PHASE 1: Local validation with hooks (NO COMMIT - just validate and stage)
+    const hookResult = await writeAndValidate(
+      content,
+      filePath,
+      fullFilename,
+      projectRoot
+    );
+
+    if (!hookResult.success) {
+      throw new Error(`Git hooks validation failed: ${hookResult.error}`);
+    }
+
+    const finalContent = hookResult.contentAfterHooks || content;
+
+    // PHASE 2: Push to remote GAS
+    try {
+      const updatedFiles = await this.gasClient.updateFile(
+        scriptId,
+        filename,
+        finalContent,
+        position,
+        accessToken,
+        gasFileType as 'SERVER_JS' | 'HTML' | 'JSON'
+      );
+
+      const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, filename));
+      if (remoteFile?.updateTime) {
+        await setFileMtimeToRemote(filePath, remoteFile.updateTime, remoteFile.type);
+      }
+
+      const writtenHash = computeGitSha1(finalContent);
+
+      try {
+        await updateCachedContentHash(filePath, writtenHash);
+      } catch (cacheError) {
+        console.error(`⚠️ [HASH] Could not cache hash for ${filePath}: ${cacheError}`);
+      }
+
+      const result: any = {
+        status: 'success',
+        path: params.path,
+        scriptId,
+        filename,
+        size: finalContent.length,
+        hash: writtenHash,
+        hashNote: 'Hash computed on raw content including CommonJS wrappers. Use for expectedHash on subsequent write({raw:true}) calls.',
+        position: updatedFiles.findIndex((f: any) => fileNameMatches(f.name, filename)),
+        totalFiles: updatedFiles.length,
+        git: buildCompactGitHintLocal(currentBranch, await getUncommittedStatusLocal(projectRoot))
+      };
+
+      if (contentWarnings.length > 0) {
+        result.warnings = contentWarnings;
+      }
+
+      const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename);
+      if (gitBreadcrumbHint) {
+        result.gitBreadcrumbHint = gitBreadcrumbHint;
+      }
+
+      return result;
+
+    } catch (remoteError: any) {
+      // PHASE 3: Remote failed - unstage changes
+      log.error(`[RAW_WRITE] Remote write failed for ${filename}, unstaging local changes: ${remoteError.message}`);
+
+      try {
+        await unstageFile(fullFilename, projectRoot);
+        log.info(`[RAW_WRITE] Unstaged ${fullFilename} after remote failure`);
+      } catch (unstageError) {
+        log.warn(`[RAW_WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
+      }
+
+      throw new Error(`Remote write failed for ${filename} - local changes unstaged: ${remoteError.message}`);
+    }
   }
 
   /**

@@ -81,7 +81,7 @@ __defineModule__(_main, false);`;
       const warnings = validateCommonJsIntegrity('utils.gs', unwrappedContent, 'SERVER_JS', 'raw-write');
       expect(warnings).to.have.lengthOf(1);
       expect(warnings[0]).to.include('lacks CommonJS wrappers');
-      expect(warnings[0]).to.include('use "write" instead of "raw_write"');
+      expect(warnings[0]).to.include('write({..., fileType:');
     });
 
     it('should include filename in warning', () => {

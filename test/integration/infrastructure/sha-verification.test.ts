@@ -78,10 +78,12 @@ describe('SHA Verification Integration Tests', function() {
 
       // Intentionally corrupt the CommonJS file by writing invalid content
       console.log('🔧 Intentionally corrupting CommonJS for SHA mismatch test...');
-      await client.callTool('raw_write', {
-        path: `${mismatchProjectId}/CommonJS`,
+      await client.callTool('write', {
+        scriptId: mismatchProjectId,
+        path: 'CommonJS',
         content: '// CORRUPTED CONTENT FOR TESTING\nfunction test() { return "corrupted"; }',
         fileType: 'SERVER_JS',
+        raw: true,
         remoteOnly: true
       });
 
@@ -134,8 +136,10 @@ describe('SHA Verification Integration Tests', function() {
       console.log('🧪 Verifying file not repaired with force=false...');
 
       // Read the file to confirm it's still corrupted
-      const catResult = await client.callTool('raw_cat', {
-        path: `${mismatchProjectId}/CommonJS`
+      const catResult = await client.callTool('cat', {
+        scriptId: mismatchProjectId,
+        path: 'CommonJS',
+        raw: true
       });
 
       expect(catResult).to.have.property('content');
@@ -165,10 +169,12 @@ describe('SHA Verification Integration Tests', function() {
 
       // Intentionally corrupt the CommonJS file
       console.log('🔧 Intentionally corrupting CommonJS for auto-repair test...');
-      await client.callTool('raw_write', {
-        path: `${repairProjectId}/CommonJS`,
+      await client.callTool('write', {
+        scriptId: repairProjectId,
+        path: 'CommonJS',
         content: '// CORRUPTED CONTENT FOR AUTO-REPAIR TESTING\nfunction test() { return "corrupted"; }',
         fileType: 'SERVER_JS',
+        raw: true,
         remoteOnly: true
       });
 
@@ -238,8 +244,10 @@ describe('SHA Verification Integration Tests', function() {
       console.log('🧪 Verifying content correctness after auto-repair...');
 
       // Read the file to confirm it's repaired
-      const catResult = await client.callTool('raw_cat', {
-        path: `${repairProjectId}/CommonJS`
+      const catResult = await client.callTool('cat', {
+        scriptId: repairProjectId,
+        path: 'CommonJS',
+        raw: true
       });
 
       expect(catResult).to.have.property('content');
@@ -281,10 +289,12 @@ describe('SHA Verification Integration Tests', function() {
 
       // Corrupt the execution infrastructure
       console.log('🔧 Corrupting execution infrastructure...');
-      await client.callTool('raw_write', {
-        path: `${execProjectId}/__mcp_exec`,
+      await client.callTool('write', {
+        scriptId: execProjectId,
+        path: '__mcp_exec',
         content: '// CORRUPTED EXECUTION INFRASTRUCTURE\nfunction badExec() { }',
         fileType: 'SERVER_JS',
+        raw: true,
         remoteOnly: true
       });
     });
@@ -362,17 +372,21 @@ describe('SHA Verification Integration Tests', function() {
 
       // Corrupt both files
       console.log('🔧 Corrupting both CommonJS and execution infrastructure...');
-      await client.callTool('raw_write', {
-        path: `${multiProjectId}/CommonJS`,
+      await client.callTool('write', {
+        scriptId: multiProjectId,
+        path: 'CommonJS',
         content: '// CORRUPTED COMMONJS',
         fileType: 'SERVER_JS',
+        raw: true,
         remoteOnly: true
       });
 
-      await client.callTool('raw_write', {
-        path: `${multiProjectId}/__mcp_exec`,
+      await client.callTool('write', {
+        scriptId: multiProjectId,
+        path: '__mcp_exec',
         content: '// CORRUPTED EXECUTION',
         fileType: 'SERVER_JS',
+        raw: true,
         remoteOnly: true
       });
     });

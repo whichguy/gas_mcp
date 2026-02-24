@@ -88,8 +88,8 @@ These systems are **independent** — choose based on whether you need Sheets cu
 
 ### 3. Unix Interface
 **Commands:** cat ls grep find sed ripgrep → familiar workflow → auto CommonJS handling
-**Duality:** regular tools (clean code) vs raw_* tools (system wrappers) → LLM chooses by tool name
-**Pattern:** cat unwraps → edit clean → write wraps | raw_cat skips unwrap → see system code
+**Raw mode:** add raw: true to any tool → skips CommonJS unwrap/wrap → sees system code
+**Pattern:** cat unwraps → edit clean → write wraps | cat({raw:true}) skips unwrap → see system code
 
 ### 4. File Integrity & Caching
 **Checksums:** Git SHA-1 (`sha1("blob "+size+"\0"+content)`) + SHA-256 + MD5 → verify without download

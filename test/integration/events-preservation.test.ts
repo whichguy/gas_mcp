@@ -102,8 +102,10 @@ module.exports.__events__ = { doGet: "doGet" };
       expect(afterResult.result).to.include('EDITED_VALUE');
 
       // Also verify __events__ string is still present
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
       expect(rawResult.content).to.include('module.exports.__events__');
       expect(rawResult.content).to.include('doGet');
@@ -156,8 +158,10 @@ module.exports.__global__ = { GREETING: GREETING };
       expect(afterResult.result).to.equal('Hi');
 
       // Also verify __global__ string is still present
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
       expect(rawResult.content).to.include('module.exports.__global__');
     });
@@ -211,8 +215,10 @@ module.exports.__events__ = { doPost: "doPost" };
       expect(afterResult.result).to.equal('function');
 
       // Also verify __events__ string is still present
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
       expect(rawResult.content).to.include('module.exports.__events__');
     });
@@ -265,8 +271,10 @@ module.exports.__events__ = { onOpen: "onOpen" };
       });
 
       // Verify __events__ string is present in copied file
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileNameCopy}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileNameCopy,
+        raw: true
       });
       expect(rawResult.content).to.include('module.exports.__events__');
       expect(rawResult.content).to.include('onOpen');
@@ -315,8 +323,10 @@ module.exports.__events__ = { doGet: "doGet" };
       });
 
       // Verify __events__ string is present in moved file
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileNameMoved}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileNameMoved,
+        raw: true
       });
       expect(rawResult.content).to.include('module.exports.__events__');
       expect(rawResult.content).to.include('doGet');
@@ -372,8 +382,10 @@ module.exports.__events__ = { doGet: "doGet" };
       expect(afterResult.result).to.include('Success');
 
       // Also verify __events__ string is still present
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
       expect(rawResult.content).to.include('module.exports.__events__');
     });
@@ -451,8 +463,10 @@ module.exports.__global__ = { API_VERSION: API_VERSION };
       expect(result.result).to.deep.equal(['function', 'function']);
 
       // Verify raw content still has both __events__ and __global__
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
       expect(rawResult.content).to.include('module.exports.__events__');
       expect(rawResult.content).to.include('module.exports.__global__');

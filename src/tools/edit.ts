@@ -26,6 +26,8 @@ import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 import type { CompactGitHint } from '../utils/gitStatus.js';
 import { buildHtmlTemplateHint } from '../utils/gitStatus.js';
 import { buildWriteWorkflowHints } from '../utils/writeHints.js';
+import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
+import path from 'path';
 
 interface EditOperation {
   oldText: string;
@@ -46,6 +48,8 @@ interface EditParams {
   expectedHash?: string;
   /** Force edit even if local and remote are out of sync (bypasses hash check). */
   force?: boolean;
+  /** When true, edits raw file content including CommonJS _main() wrappers without unwrapping/rewrapping. Former raw_edit behavior. */
+  raw?: boolean;
 }
 
 interface EditResult {
@@ -143,6 +147,11 @@ export class EditTool extends BaseTool {
         description: '⚠️ Force edit even if local and remote are out of sync. Use only when intentionally discarding external changes.',
         default: false
       },
+      raw: {
+        type: 'boolean',
+        description: 'When true, edits raw file content including CommonJS _main() wrappers without unwrapping/rewrapping. Use for modifying module infrastructure. Former raw_edit behavior.',
+        default: false
+      },
       ...SchemaFragments.workingDir,
       ...SchemaFragments.accessToken
     },
@@ -217,9 +226,10 @@ export class EditTool extends BaseTool {
     filename = fileContent.name; // Normalize to canonical GAS name (matches wrappedContent key)
 
     // Unwrap CommonJS if needed, capturing existing module options for analysis
+    // In raw mode, skip unwrapping and work with raw file content directly
     let content = fileContent.source || '';
     let existingOptions: { loadNow?: boolean | null; hoistedFunctions?: any[] } | null | undefined;
-    if (fileContent.type === 'SERVER_JS') {
+    if (!params.raw && fileContent.type === 'SERVER_JS') {
       const result = unwrapModuleContent(content);
       if (result && result.unwrappedContent) {
         content = result.unwrappedContent;
@@ -336,9 +346,9 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
     if (params.dryRun) {
       const diff = this.generateDiff(originalContent, content, params.path);
       // Compute hash of what would be written on WRAPPED content (full file as stored in GAS)
-      // Re-wrap the edited content to get the correct hash
+      // In raw mode the content is already the full raw content, so no rewrapping needed
       let previewWrapped = content;
-      if (fileContent.type === 'SERVER_JS' && shouldWrapContent(fileContent.type, filename)) {
+      if (!params.raw && fileContent.type === 'SERVER_JS' && shouldWrapContent(fileContent.type, filename)) {
         // Convert null to undefined for type compatibility
         const options = existingOptions ? {
           loadNow: existingOptions.loadNow ?? undefined,
@@ -356,6 +366,41 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
         ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
         ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
       };
+    }
+
+    // RAW MODE: bypass GitOperationManager, write directly to GAS and update xattr cache
+    if (params.raw) {
+      await this.gasClient.updateFile(scriptId, filename, content, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
+
+      const editedHash = computeGitSha1(content);
+      try {
+        const { LocalFileManager } = await import('../utils/localFileManager.js');
+        const projectPath = await LocalFileManager.getProjectDirectory(scriptId);
+        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
+        const localFileName = filename + fileExtension;
+        const localFilePath = path.join(projectPath, localFileName);
+        await updateCachedContentHash(localFilePath, editedHash);
+        console.error(`🔒 [RAW_EDIT] Updated xattr cache: ${editedHash.slice(0, 8)}...`);
+      } catch (cacheError) {
+        // Non-fatal: sync drift checker will fall back to content comparison
+        console.error(`⚠️ [RAW_EDIT] Hash cache update failed: ${cacheError}`);
+      }
+
+      const rawResult: EditResult = {
+        success: true,
+        editsApplied,
+        filePath: params.path,
+        hash: editedHash,
+        ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
+        ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
+      };
+
+      const gitBreadcrumbHintRaw = getGitBreadcrumbEditHint(filename);
+      if (gitBreadcrumbHintRaw) {
+        rawResult.gitBreadcrumbHint = gitBreadcrumbHintRaw;
+      }
+
+      return rawResult;
     }
 
     // Always use GitOperationManager for proper workflow:

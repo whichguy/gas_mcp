@@ -82,8 +82,10 @@ module.exports.__events__ = { doGet: "doGet" };
       });
 
       // Read the raw content to verify loadNow is preserved
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
 
       // NEW format: __defineModule__(_main, true) - loadNow as 2nd boolean parameter
@@ -123,8 +125,10 @@ module.exports = { ADD_NUMBERS };
       });
 
       // Read the raw content to verify hoistedFunctions is preserved
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
 
       // Hoisted functions appear in the wrapped content between markers
@@ -165,8 +169,10 @@ module.exports.__events__ = { onOpen: "onOpen" };
       });
 
       // Read the raw content to verify loadNow is preserved
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
 
       // NEW format: __defineModule__(_main, true) - loadNow as 2nd boolean parameter
@@ -201,8 +207,10 @@ module.exports.__events__ = { doPost: "doPost" };
       });
 
       // Read the raw content of copied file to verify loadNow is preserved
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileNameCopy}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileNameCopy,
+        raw: true
       });
 
       // NEW format: __defineModule__(_main, true) - loadNow as 2nd boolean parameter
@@ -237,8 +245,10 @@ module.exports.__events__ = { doGet: "doGet" };
       });
 
       // Read the raw content of moved file to verify loadNow is preserved
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileNameMoved}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileNameMoved,
+        raw: true
       });
 
       // NEW format: __defineModule__(_main, true) - loadNow as 2nd boolean parameter
@@ -279,8 +289,10 @@ module.exports.__events__ = { doGet: "doGet" };
       });
 
       // Read the raw content to verify loadNow is preserved
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/${testFileName}`
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: testFileName,
+        raw: true
       });
 
       // NEW format: __defineModule__(_main, true) - loadNow as 2nd boolean parameter
