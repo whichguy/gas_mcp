@@ -9,7 +9,7 @@
 
 import { expect } from 'chai';
 import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../helpers/inProcessClient.js';
-import { setupIntegrationTest, globalAuthState } from '../setup/integrationSetup.js';
+import { setupIntegrationTest, globalAuthState, resetSharedProject } from '../setup/integrationSetup.js';
 
 describe('moduleOptions Preservation Tests', function() {
   this.timeout(120000);
@@ -23,35 +23,26 @@ describe('moduleOptions Preservation Tests', function() {
   const testFileNameMoved = 'ModuleOptionsTestMoved';
 
   before(async function() {
-    this.timeout(60000);
-
-    // Ensure global server is ready
-    await setupIntegrationTest();
+    this.timeout(30000);
 
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
       console.log('⚠️  Skipping - server not ready');
       this.skip();
+      return;
     }
 
     client = globalAuthState.client;
     auth = globalAuthState.auth!;
     gas = globalAuthState.gas!;
 
-    // Create test project - server handles auth transparently
-    const result = await gas.createTestProject('MCP-ModuleOptions-Test');
-    testProjectId = result.scriptId;
-    console.log(`✅ Created test project: ${testProjectId}`);
+    testProjectId = globalAuthState.sharedProjectId!;
+    if (!testProjectId) { this.skip(); return; }
+    console.log(`✅ Using shared test project: ${testProjectId}`);
+    await resetSharedProject();
   });
 
   after(async function() {
-    // Cleanup: delete test project
-    if (testProjectId && gas) {
-      try {
-        await gas.cleanupTestProjects();
-      } catch (e) {
-        console.warn('⚠️  Cleanup warning:', e);
-      }
-    }
+    // Shared project preserved for next suite — reset happens in next before()
   });
 
   beforeEach(async function() {

@@ -2,6 +2,7 @@ import { testResourceManager } from '../helpers/testResourceManager.js';
 import { execSync } from 'child_process';
 import { InProcessTestClient, createInProcessClient, InProcessAuthHelper, InProcessGASTestHelper } from '../helpers/inProcessClient.js';
 import { LockManager } from '../../src/utils/lockManager.js';
+import { TestProjectManager } from '../helpers/testProjectManager.js';
 
 // A singleton to hold the global state
 class GlobalAuthState {
@@ -144,43 +145,17 @@ export const mochaHooks = {
       }
     }
 
-    // 3. CREATE SHARED TEST PROJECT (or reuse from env)
+    // 3. INITIALIZE SHARED TEST PROJECT via TestProjectManager (reuse or create once)
     if (globalAuthState.isAuthenticated) {
-      const envScriptId = process.env.MCP_TEST_SCRIPT_ID;
-      if (envScriptId) {
-        globalAuthState.sharedProjectId = envScriptId;
-        console.log(`✅ Using pre-existing test project: ${envScriptId}`);
-      } else {
-        try {
-          const project = await globalAuthState.gas!.createTestProject('Shared Test');
-
-          // Retry exec probe with delay — newly created deployments need
-          // a few seconds to propagate before the URL becomes reachable
-          let probeSuccess = false;
-          const probeDelays = [5000, 8000, 12000];
-          for (let attempt = 0; attempt < probeDelays.length; attempt++) {
-            console.log(`⏳ Waiting ${probeDelays[attempt] / 1000}s for deployment propagation (attempt ${attempt + 1}/${probeDelays.length})...`);
-            await new Promise(resolve => setTimeout(resolve, probeDelays[attempt]));
-            try {
-              const probe = await globalAuthState.gas!.runFunction(project.scriptId, '1+1');
-              if (probe.status === 'success') {
-                probeSuccess = true;
-                break;
-              }
-            } catch (probeError: any) {
-              console.warn(`⚠️  Exec probe attempt ${attempt + 1}/${probeDelays.length} failed: ${probeError.message}`);
-            }
-          }
-
-          if (probeSuccess) {
-            globalAuthState.sharedProjectId = project.scriptId;
-            console.log(`✅ Shared test project: ${project.scriptId}`);
-          } else {
-            console.warn('⚠️  Shared project exec probe failed after 3 attempts — per-suite projects will be created');
-          }
-        } catch (error: any) {
-          console.warn(`⚠️  Failed to create shared project: ${error.message}`);
-        }
+      try {
+        const scriptId = await TestProjectManager.getInstance().initialize(
+          globalAuthState.gas!,
+          globalAuthState.client!
+        );
+        globalAuthState.sharedProjectId = scriptId;
+        console.log(`✅ Shared test project ready: ${scriptId}`);
+      } catch (error: any) {
+        console.warn(`⚠️  Failed to initialize shared test project: ${error.message}`);
       }
     }
 
@@ -199,15 +174,14 @@ export const mochaHooks = {
       console.warn('⚠️  Failed to release locks during teardown:', error);
     }
 
-    // Cleanup shared test project
-    if (globalAuthState.sharedProjectId && globalAuthState.gas) {
+    // Reset shared test project to baseline (preserve it for next run)
+    if (globalAuthState.sharedProjectId && globalAuthState.client) {
       try {
-        await globalAuthState.gas.cleanupTestProject(globalAuthState.sharedProjectId);
-        console.log('🧹 Cleaned up shared test project');
+        await TestProjectManager.getInstance().resetToBaseline(globalAuthState.client);
+        console.log('🔄 Reset shared test project to baseline (preserved for next run)');
       } catch (error: any) {
-        console.warn('⚠️  Failed to cleanup shared test project:', error.message);
+        console.warn('⚠️  Failed to reset shared test project:', error.message);
       }
-      globalAuthState.sharedProjectId = null;
     }
 
     // Clean up in-process client - ONCE

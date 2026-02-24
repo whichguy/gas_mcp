@@ -140,3 +140,6 @@ debug/
 
 # Auth session storage
 .auth/
+
+# Shared integration test project ID (auto-created on first run)
+test/.test-project-id

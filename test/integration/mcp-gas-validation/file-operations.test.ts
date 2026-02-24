@@ -11,7 +11,7 @@
 
 import { expect } from 'chai';
 import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
-import { setupIntegrationTest, globalAuthState } from '../../setup/integrationSetup.js';
+import { setupIntegrationTest, globalAuthState, resetSharedProject } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('File Operations Validation Tests', () => {
@@ -21,24 +21,22 @@ describe('File Operations Validation Tests', () => {
   let testProjectId: string | null = null;
 
   before(async function() {
-    this.timeout(60000); // Reduced timeout - no auth needed per test
-
-    // Ensure global server is ready
-    await setupIntegrationTest();
+    this.timeout(30000);
 
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
       console.log('⚠️  Skipping - server not ready');
       this.skip();
+      return;
     }
 
     client = globalAuthState.client;
     auth = globalAuthState.auth!;
     gas = globalAuthState.gas!;
 
-    // Create test project - server handles auth transparently
-    const result = await gas.createTestProject('MCP-FileOps-Test');
-    testProjectId = result.scriptId;
-    console.log(`✅ Created test project: ${testProjectId}`);
+    testProjectId = globalAuthState.sharedProjectId!;
+    if (!testProjectId) { this.skip(); return; }
+    console.log(`✅ Using shared test project: ${testProjectId}`);
+    await resetSharedProject();
   });
 
   beforeEach(async function() {
@@ -79,28 +77,7 @@ describe('File Operations Validation Tests', () => {
     }
   });
 
-  after(async function() {
-    this.timeout(TEST_TIMEOUTS.STANDARD);
 
-    if (testProjectId) {
-      try {
-        console.log(`🧹 Cleaning up test project: ${testProjectId}`);
-        await gas.cleanupTestProject(testProjectId);
-
-        // Verify cleanup succeeded
-        try {
-          await client.callTool('info', { scriptId: testProjectId });
-          console.warn('⚠️  Project still exists after cleanup!');
-        } catch (error) {
-          // Expected - project should be deleted
-          console.log('✅ Cleanup verified - project deleted');
-        }
-      } catch (cleanupError) {
-        console.error('❌ Cleanup failed (non-fatal):', cleanupError);
-        // Don't fail suite on cleanup error
-      }
-    }
-  });
 
   describe('File CRUD Operations', () => {
     const testFileName = 'TestFile';
