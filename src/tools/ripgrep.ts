@@ -1,12 +1,13 @@
 /**
- * ripgrep and raw_ripgrep - Advanced search with ripgrep-inspired features
- * 
- * ripgrep: High-performance search in clean user code (CommonJS unwrapped)
- * raw_ripgrep: High-performance search in raw content (including CommonJS wrappers)
- * 
+ * ripgrep - Advanced search with ripgrep-inspired features
+ *
+ * ripgrep: High-performance search with optional raw mode
+ *   - Default: searches clean user code (CommonJS unwrapped)
+ *   - raw: true: searches raw content including CommonJS wrappers (former raw_ripgrep behavior)
+ *
  * Features inspired by ripgrep: multiple patterns, context control, smart case,
  * advanced regex, replacement suggestions, and performance statistics.
- * 
+ *
  * Adapted for Google Apps Script's flat file structure with pseudo-directory filtering.
  */
 
@@ -997,12 +998,17 @@ export class RipgrepTool extends BaseTool {
         default: 'none',
         description: 'Sort results: "path" (alphabetical by file path), "modified" (by modification time), "none" (API order)'
       },
+      raw: {
+        type: 'boolean',
+        description: 'When true, searches raw file content including CommonJS _main() wrappers without unwrapping. Use for searching module infrastructure. Former raw_ripgrep behavior.',
+        default: false
+      },
       ...SchemaFragments.accessToken
     },
     required: ['scriptId', 'pattern'],
     llmGuidance: {
       toolSelection: GuidanceFragments.toolSelectionGuide.searchContent,
-      features: 'smartCase | multiline | replace (non-destructive) | sort | multi-pattern',
+      features: 'smartCase | multiline | replace (non-destructive) | sort | multi-pattern | raw (CommonJS wrappers)',
       antiPatterns: ['ripgrep to read full file -> use cat', 'complex replace -> use sed', 'search without context -> add context:2']
     }
   };
@@ -1080,11 +1086,13 @@ export class RipgrepTool extends BaseTool {
     // Normalize all options with centralized defaults
     const searchOptions = this.ripgrepEngine.normalizeRipgrepOptions(baseOptions);
 
-    // Determine target files and unwrap CommonJS content
-    const files = await this.getTargetFilesWithUnwrapping(params, accessToken);
-    
+    // Determine target files — raw mode uses direct API (no unwrapping), default unwraps CommonJS
+    const files = params.raw
+      ? await this.getTargetFilesViaAPI(params, accessToken)
+      : await this.getTargetFilesWithUnwrapping(params, accessToken);
+
     if (files.length === 0) {
-      return this.createEmptyResult(allPatterns, searchOptions);
+      return this.createEmptyResult(allPatterns, searchOptions, params.raw);
     }
 
     // Compile patterns
@@ -1111,8 +1119,8 @@ export class RipgrepTool extends BaseTool {
     }
 
     // Add metadata about content processing
-    results.contentType = 'user-code';
-    results.commonjsProcessed = true;
+    results.contentType = params.raw ? 'raw-content' : 'user-code';
+    results.commonjsProcessed = !params.raw;
 
     // Add formatted output
     results.formattedOutput = this.ripgrepEngine.formatRipgrepResults(results, searchOptions.compact);
@@ -1215,343 +1223,18 @@ export class RipgrepTool extends BaseTool {
   }
 
   /**
-   * Create empty result structure
-   */
-  private createEmptyResult(patterns: string[], options: RipgrepSearchOptions): RipgrepResult {
-    return {
-      searchPatterns: patterns,
-      searchMode: options.fixedStrings ? 'literal' : 'regex',
-      smartCaseUsed: options.smartCase,
-      multilineEnabled: options.multiline,
-      totalMatches: 0,
-      totalFiles: 0,
-      filesSearched: 0,
-      matches: [],
-      contentType: 'user-code',
-      commonjsProcessed: true,
-      truncated: false,
-      skippedFiles: [],
-      stats: options.showStats ? {
-        searchTimeMs: 0,
-        patternsCompiled: patterns.length,
-        bytesSearched: 0,
-        avgMatchTimeMs: 0,
-        memoryUsageKB: Math.round(process.memoryUsage().heapUsed / 1024)
-      } : undefined
-    };
-  }
-}
-
-/**
- * raw_ripgrep - High-performance search with ripgrep-inspired features (ADVANCED)
- * Searches complete file content including CommonJS wrappers and system code
- */
-export class RawRipgrepTool extends BaseTool {
-  public name = 'raw_ripgrep';
-  public description = '[SEARCH:RAW:ADVANCED] High-performance search on raw content including CommonJS wrappers — multi-pattern, context, regex. WHEN: searching for module system patterns, _main() wrappers, or loadNow settings. AVOID: use ripgrep for normal code search. Example: raw_ripgrep({scriptId, patterns: ["loadNow", "__events__"]})';
-
-  public outputSchema = {
-    type: 'object' as const,
-    properties: {
-      matches: { type: 'array', description: 'Array of match results with file, line, content, and context' },
-      matchCount: { type: 'number', description: 'Total matches across all files' },
-      filesSearched: { type: 'number', description: 'Number of files searched' },
-      filesMatched: { type: 'number', description: 'Number of files containing matches' },
-      stats: { type: 'object', description: 'Search statistics (patterns matched, timing)' },
-      truncated: { type: 'boolean', description: 'Whether results hit maxCount limit' }
-    }
-  };
-
-  public inputSchema = {
-    type: 'object',
-    properties: {
-      pattern: {
-        type: 'string',
-        description: 'Search pattern (regex or literal) on raw content+CommonJS wrappers+system code. "_main\\\\s*\\\\(" finds wrappers.',
-        minLength: 1,
-        examples: ['_main\\\\s*\\\\(', '__defineModule__']
-      },
-      ...SchemaFragments.scriptId,
-      patterns: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Additional search patterns (OR logic with main pattern) for searching raw content with system code.',
-        examples: [['_main', '__defineModule__']]
-      },
-      path: {
-        type: 'string',
-        description: 'Filename prefix pattern for pseudo-directory filtering. Always retrieves content via direct API calls, never uses local cached files.',
-        default: '',
-        examples: ['utils/*', '.*Controller.*']
-      },
-      pseudoDepth: {
-        type: 'number',
-        description: 'Maximum "directory depth" by counting "/" separators in filenames for raw content search.',
-        minimum: 0,
-        maximum: 10
-      },
-      fixedStrings: {
-        type: 'boolean',
-        default: false,
-        description: 'Treat patterns as literal strings instead of regex'
-      },
-      smartCase: {
-        type: 'boolean',
-        default: false,
-        description: 'Smart case matching for raw content search'
-      },
-      multiline: {
-        type: 'boolean',
-        default: false,
-        description: 'Enable multiline pattern matching across CommonJS wrapper boundaries'
-      },
-      contextBefore: {
-        type: 'number',
-        minimum: 0,
-        maximum: 10,
-        description: 'Lines to show before each match in raw content'
-      },
-      contextAfter: {
-        type: 'number',
-        minimum: 0,
-        maximum: 10,
-        description: 'Lines to show after each match in raw content'
-      },
-      context: {
-        type: 'number',
-        minimum: 0,
-        maximum: 10,
-        description: 'Lines to show before and after each match in raw content'
-      },
-      wholeWord: {
-        type: 'boolean',
-        default: false,
-        description: 'Match whole words only in raw content'
-      },
-      invertMatch: {
-        type: 'boolean',
-        default: false,
-        description: 'Show lines that do NOT match the pattern in raw content'
-      },
-      onlyMatching: {
-        type: 'boolean',
-        default: false,
-        description: 'Show only matched text portions from raw content'
-      },
-      replace: {
-        type: 'string',
-        description: 'Generate replacement suggestions for raw content (non-destructive)'
-      },
-      maxCount: {
-        type: 'number',
-        default: 50,
-        minimum: 1,
-        maximum: 1000,
-        description: 'Maximum matches per file in raw content'
-      },
-      maxFiles: {
-        type: 'number',
-        default: 100,
-        minimum: 1,
-        maximum: 500,
-        description: 'Maximum files to search'
-      },
-      count: {
-        type: 'boolean',
-        default: false,
-        description: 'Show only match counts per file'
-      },
-      filesWithMatches: {
-        type: 'boolean',
-        default: false,
-        description: 'Show only filenames with matches'
-      },
-      showStats: {
-        type: 'boolean',
-        default: false,
-        description: 'Include search performance statistics'
-      },
-      caseSensitive: {
-        type: 'boolean',
-        default: false,
-        description: 'Force case-sensitive search'
-      },
-      showLineNumbers: {
-        type: 'boolean',
-        default: true,
-        description: 'Include line numbers in results'
-      },
-      compact: {
-        type: 'boolean',
-        default: false,
-        description: 'Use compact output format'
-      },
-      excludeFiles: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Files to exclude from raw content search',
-        examples: [['*/test/*', '*Temp*']]
-      },
-      includeFileTypes: {
-        type: 'array',
-        items: {
-          type: 'string',
-          enum: ['SERVER_JS', 'HTML', 'JSON']
-        },
-        description: 'Filter by file types for raw content search'
-      },
-      ignoreCase: {
-        type: 'boolean',
-        default: false,
-        description: 'Case-insensitive search (like ripgrep -i). Overrides smartCase when true.'
-      },
-      sort: {
-        type: 'string',
-        enum: ['none', 'path', 'modified'],
-        default: 'none',
-        description: 'Sort results: "path" (alphabetical by file path), "modified" (by modification time), "none" (API order)'
-      },
-      ...SchemaFragments.accessToken
-    },
-    required: ['scriptId', 'pattern'],
-    llmGuidance: {
-      vsRipgrep: 'raw_ripgrep: complete file with wrappers | ripgrep: clean user code only'
-    }
-  };
-
-  public annotations = {
-    title: 'Ripgrep Search (Raw)',
-    readOnlyHint: true,
-    destructiveHint: false,
-    openWorldHint: true
-  };
-
-  private gasClient: GASClient;
-  private ripgrepEngine: RipgrepSearchEngine;
-
-  constructor(sessionAuthManager?: SessionAuthManager) {
-    super(sessionAuthManager);
-    this.gasClient = new GASClient();
-    this.ripgrepEngine = new RipgrepSearchEngine();
-  }
-
-  async execute(params: any): Promise<any> {
-    // Validate required parameters
-    if (!params.pattern) {
-      throw new ValidationError('pattern', params.pattern, 'non-empty search pattern');
-    }
-
-    // Build patterns array (main pattern + additional patterns)
-    const allPatterns = [params.pattern];
-    if (params.patterns && Array.isArray(params.patterns)) {
-      allPatterns.push(...params.patterns);
-    }
-
-    // Handle ignoreCase: overrides smartCase and caseSensitive when true
-    const caseSensitive = params.ignoreCase ? false : (params.caseSensitive || false);
-
-    // Build base ripgrep search options for normalization (no path translation for raw version)
-    const baseOptions: RipgrepSearchOptions = {
-      patterns: allPatterns,
-      pattern: params.pattern,
-      searchMode: params.fixedStrings ? 'literal' : 'auto',
-      pathMode: 'auto',
-      fixedStrings: params.fixedStrings || false,
-      smartCase: params.ignoreCase ? false : (params.smartCase || false),  // ignoreCase overrides smartCase
-      multiline: params.multiline || false,
-      caseSensitive: caseSensitive,
-      wholeWord: params.wholeWord || false,
-      invertMatch: params.invertMatch || false,
-      onlyMatching: params.onlyMatching || false,
-      maxResults: Math.min(params.maxCount || 50, 1000),
-      maxFilesSearched: Math.min(params.maxFiles || 100, 500),
-      contextLines: params.context || 0,
-      contextBefore: params.contextBefore,
-      contextAfter: params.contextAfter,
-      showLineNumbers: params.showLineNumbers !== false,
-      showFileHeaders: true,
-      compact: params.compact || false,
-      excludeFiles: params.excludeFiles || [],
-      includeFileTypes: params.includeFileTypes || [],
-      path: params.path,
-      pseudoDepth: params.pseudoDepth,
-      replace: params.replace,
-      showStats: params.showStats || false,
-      count: params.count || false,
-      filesWithMatches: params.filesWithMatches || false,
-      maxCount: params.maxCount || 50,
-      ignoreCase: params.ignoreCase,
-      sort: params.sort || 'none'
-    };
-
-    // Normalize all options with centralized defaults
-    const searchOptions = this.ripgrepEngine.normalizeRipgrepOptions(baseOptions);
-
-    // ⚠️ CRITICAL: Always authenticate before making API calls
-    const accessToken = await this.getAuthToken(params);
-
-    // 🔧 ADVANCED: Get target files via direct API calls only (never uses local files)
-    const files = await this.getTargetFilesViaAPI(params, accessToken);
-
-    if (files.length === 0) {
-      return this.createEmptyRawResult(allPatterns, searchOptions);
-    }
-
-    // Compile patterns
-    const compiledPatterns = this.ripgrepEngine.compileRipgrepPatterns(allPatterns, searchOptions);
-
-    // Execute ripgrep search on raw content
-    let results = await this.ripgrepEngine.searchWithRipgrepPatterns(files, compiledPatterns, searchOptions, this.extractScriptId(params));
-
-    // Sort results if requested
-    if (params.sort && params.sort !== 'none' && results.matches && Array.isArray(results.matches)) {
-      results.matches = sortRipgrepResults(results.matches, params.sort, files);
-    }
-
-    // Add metadata about raw content processing and data source
-    results.contentType = 'raw-content';
-    results.commonjsProcessed = false;
-
-    // Add formatted output
-    results.formattedOutput = this.ripgrepEngine.formatRipgrepResults(results, searchOptions.compact);
-
-    // Generate context-aware hints based on results
-    const baseHints = generateSearchHints(
-      results.totalMatches,
-      results.filesSearched,
-      params.pattern,
-      results.truncated,
-      results.stats?.searchTimeMs
-    );
-    const ripgrepHints = generateRipgrepHints(
-      results.totalMatches,
-      allPatterns,
-      searchOptions.multiline,
-      searchOptions.smartCase,
-      !!params.replace
-    );
-    const hints = mergeHints(baseHints, ripgrepHints);
-    if (Object.keys(hints).length > 0) {
-      (results as any).hints = hints;
-    }
-
-    return results;
-  }
-
-  /**
-   * Get target files via direct API calls (raw version)
+   * Get target files via direct API calls — used when raw: true (no local cache, no unwrapping)
    */
   private async getTargetFilesViaAPI(params: any, accessToken: string): Promise<GASFile[]> {
     // Use hybrid script ID resolution
     const hybridResolution = resolveHybridScriptId(params.scriptId, params.path || '');
     const scriptId = hybridResolution.scriptId;
-    const searchPath = hybridResolution.cleanPath;
 
-    // 🔧 DIRECT API CALL: Get all files from project (never uses local cache)
-    console.error(`🔧 [GAS_RAW_RIPGREP] Making direct API call to retrieve raw project content: ${scriptId}`);
+    // DIRECT API CALL: Get all files from project (never uses local cache)
+    console.error(`[GAS_RIPGREP_RAW] Making direct API call to retrieve raw project content: ${scriptId}`);
     const allFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
 
-    // Convert to GASFile format (raw content)
+    // Convert to GASFile format (raw content, no unwrapping)
     const gasFiles: GASFile[] = allFiles.map((file: any) => ({
       name: file.name,
       type: file.type || 'SERVER_JS',
@@ -1563,16 +1246,9 @@ export class RawRipgrepTool extends BaseTool {
   }
 
   /**
-   * Extract script ID from parameters
+   * Create empty result structure
    */
-  private extractScriptId(params: any): string | undefined {
-    return params.scriptId;
-  }
-
-  /**
-   * Create empty result structure for raw search
-   */
-  private createEmptyRawResult(patterns: string[], options: RipgrepSearchOptions): RipgrepResult {
+  private createEmptyResult(patterns: string[], options: RipgrepSearchOptions, raw?: boolean): RipgrepResult {
     return {
       searchPatterns: patterns,
       searchMode: options.fixedStrings ? 'literal' : 'regex',
@@ -1582,8 +1258,8 @@ export class RawRipgrepTool extends BaseTool {
       totalFiles: 0,
       filesSearched: 0,
       matches: [],
-      contentType: 'raw-content',
-      commonjsProcessed: false,
+      contentType: raw ? 'raw-content' : 'user-code',
+      commonjsProcessed: !raw,
       truncated: false,
       skippedFiles: [],
       stats: options.showStats ? {
@@ -1596,3 +1272,5 @@ export class RawRipgrepTool extends BaseTool {
     };
   }
 }
+
+

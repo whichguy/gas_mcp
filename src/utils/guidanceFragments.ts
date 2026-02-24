@@ -31,12 +31,12 @@ export class GuidanceFragments {
   static readonly toolSelectionGuide = {
     readFile: {
       cat: 'Read with CommonJS unwrapping (see clean user code)',
-      raw_cat: 'Read raw content (see system wrappers, _main, __defineModule__)',
-      recommendation: 'Use cat for normal development, raw_cat for debugging CommonJS issues'
+      'cat({raw:true})': 'Read raw content (see system wrappers, _main, __defineModule__)',
+      recommendation: 'Use cat for normal development, cat({raw:true}) for debugging CommonJS issues'
     },
     writeFile: {
       write: 'Auto-wrap with CommonJS (normal use)',
-      raw_write: 'No wrapping (system files, templates)',
+      'write({raw:true})': 'No wrapping (system files, templates) — former raw_write',
       edit: 'Exact string replacement (95% token savings vs write)',
       aider: 'Fuzzy string replacement (tolerates whitespace/formatting differences)',
       recommendation: 'edit/aider for small changes, write for new files or major rewrites'

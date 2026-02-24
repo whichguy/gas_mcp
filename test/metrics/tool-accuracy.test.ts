@@ -22,22 +22,17 @@ import {
   CatTool,
   WriteTool,
   FileStatusTool,
-  RawCatTool,
-  RawWriteTool,
-  RawCpTool,
   RmTool,
   MvTool,
   CpTool,
   CacheClearTool
 } from '../../src/tools/filesystem/index.js';
-import { GrepTool, RawGrepTool } from '../../src/tools/grep.js';
-import { FindTool, RawFindTool } from '../../src/tools/find.js';
-import { RipgrepTool, RawRipgrepTool } from '../../src/tools/ripgrep.js';
-import { SedTool, RawSedTool } from '../../src/tools/sed.js';
+import { GrepTool } from '../../src/tools/grep.js';
+import { FindTool } from '../../src/tools/find.js';
+import { RipgrepTool } from '../../src/tools/ripgrep.js';
+import { SedTool } from '../../src/tools/sed.js';
 import { EditTool } from '../../src/tools/edit.js';
-import { RawEditTool } from '../../src/tools/raw-edit.js';
 import { AiderTool } from '../../src/tools/aider.js';
-import { RawAiderTool } from '../../src/tools/raw-aider.js';
 import { DepsTool } from '../../src/tools/gas-deps.js';
 import {
   ReorderTool,
@@ -99,7 +94,7 @@ const selectionTests: SelectionTestCase[] = [
   { task: 'Create a time-based trigger to run nightly', expectedTool: 'trigger', category: 'triggers' },
   { task: 'Run a SQL-like query against my spreadsheet', expectedTool: 'sheet_sql', category: 'sheets' },
   { task: 'See all running processes in my GAS project', expectedTool: 'process_list', category: 'monitoring' },
-  { task: 'Read a file including its CommonJS wrapper code', expectedTool: 'raw_cat', category: 'file-read-raw' },
+  { task: 'Read a file including its CommonJS wrapper code', expectedTool: 'cat', category: 'file-read-raw' },
   { task: 'Get the project configuration settings', expectedTool: 'config', category: 'config' },
   { task: 'Check overall project health and status', expectedTool: 'status', category: 'status' },
   { task: 'Reorder files in the project', expectedTool: 'reorder', category: 'project' },
@@ -245,8 +240,6 @@ describe('Tool Accuracy Baselines', function () {
     LsTool, FileStatusTool, CatTool, WriteTool,
     GrepTool, RipgrepTool, SedTool, EditTool, AiderTool,
     FindTool, DepsTool, RmTool, MvTool, CpTool, CacheClearTool,
-    RawCatTool, RawWriteTool, RawGrepTool, RawRipgrepTool,
-    RawSedTool, RawEditTool, RawAiderTool, RawFindTool, RawCpTool,
     ReorderTool, ProjectCreateTool, ProjectInitTool, ProjectListTool,
     ExecTool, ExecApiTool,
     VersionDeployTool, LibraryDeployTool,
@@ -312,7 +305,7 @@ describe('Tool Accuracy Baselines', function () {
       console.log(`  Coverage: ${coverage.toFixed(1)}%`);
 
       // We expect at least 50% coverage from the 30 test cases
-      // Some tools (raw_write, raw_grep, etc.) are intentionally advanced/niche
+      // All tools support raw: true for raw content access (former raw_* tools)
       expect(coverage).to.be.greaterThanOrEqual(50, 'Selection test coverage too low');
     });
 

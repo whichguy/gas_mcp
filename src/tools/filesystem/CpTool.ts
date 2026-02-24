@@ -12,15 +12,28 @@ import { CopyOperationStrategy } from '../../core/git/operations/CopyOperationSt
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
 
+interface RawCpParams {
+  sourceScriptId: string;
+  destinationScriptId: string;
+  mergeStrategy?: 'preserve-destination' | 'overwrite-destination' | 'skip-conflicts';
+  includeFiles?: string[];
+  excludeFiles?: string[];
+  dryRun?: boolean;
+  accessToken?: string;
+}
+
 /**
  * Copy files in Google Apps Script project with CommonJS processing
  *
  * ✅ RECOMMENDED - Unwraps source module, rewraps for destination
  * Like Unix cp but handles module system
+ *
+ * When raw: true, performs cross-project bulk file copy with merge strategies
+ * (former raw_cp behavior), preserving exact content without CommonJS processing.
  */
 export class CpTool extends BaseFileSystemTool {
   public name = 'cp';
-  public description = '[FILE:COPY] Copy a file within a GAS project. WHEN: duplicating files or creating variants. AVOID: use mv to move without keeping original; use raw_cp for cross-project copies. Example: cp({scriptId, from: "Utils.gs", to: "UtilsBackup.gs"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
+  public description = '[FILE:COPY] Copy a file within a GAS project. WHEN: duplicating files or creating variants. For cross-project bulk copies with merge strategies, use cp({raw:true, sourceScriptId, destinationScriptId}). AVOID: use mv to move without keeping original. Example: cp({scriptId, from: "Utils.gs", to: "UtilsBackup.gs"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
 
   public outputSchema = {
     type: 'object' as const,
@@ -80,13 +93,50 @@ export class CpTool extends BaseFileSystemTool {
       },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
+      },
+      raw: {
+        type: 'boolean',
+        description: 'When true, performs cross-project bulk file copy with merge strategies, preserving exact content without CommonJS processing. Requires sourceScriptId and destinationScriptId instead of scriptId/from/to. Former raw_cp behavior.',
+        default: false
+      },
+      sourceScriptId: {
+        type: 'string',
+        description: 'Source GAS project ID to copy files FROM. Only used when raw: true.',
+        minLength: 20
+      },
+      destinationScriptId: {
+        type: 'string',
+        description: 'Destination GAS project ID to copy files TO. Only used when raw: true.',
+        minLength: 20
+      },
+      mergeStrategy: {
+        type: 'string',
+        enum: ['preserve-destination', 'overwrite-destination', 'skip-conflicts'],
+        default: 'preserve-destination',
+        description: 'Conflict resolution strategy. Only used when raw: true.'
+      },
+      includeFiles: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Only copy specific files (by name). Only used when raw: true. If omitted, copies all files.'
+      },
+      excludeFiles: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Exclude specific files from copying. Only used when raw: true.'
+      },
+      dryRun: {
+        type: 'boolean',
+        description: 'Preview what would be copied without actually copying. Only used when raw: true.',
+        default: false
       }
     },
     required: ['scriptId', 'from', 'to'],
     additionalProperties: false,
     llmGuidance: {
       gitIntegration: 'CRITICAL: does NOT auto-commit. Must call git_feature({operation:"commit"}) after copy.',
-      commonJs: 'Auto unwraps source→rewraps dest with correct module name. raw_cp→bulk ops without CommonJS processing.'
+      commonJs: 'Auto unwraps source→rewraps dest with correct module name. Use raw:true for bulk cross-project copies without CommonJS processing.',
+      rawMode: 'raw:true → bulk cross-project copy (former raw_cp). scriptId/from/to not required in raw mode; use sourceScriptId+destinationScriptId instead.'
     }
   };
 
@@ -98,7 +148,25 @@ export class CpTool extends BaseFileSystemTool {
     openWorldHint: true
   };
 
-  async execute(params: CopyParams): Promise<CopyResult> {
+  async execute(params: CopyParams): Promise<CopyResult | any> {
+    if (params.raw) {
+      if (!params.sourceScriptId) {
+        throw new ValidationError('sourceScriptId', undefined, 'required when raw: true');
+      }
+      if (!params.destinationScriptId) {
+        throw new ValidationError('destinationScriptId', undefined, 'required when raw: true');
+      }
+      return await this.executeRaw({
+        sourceScriptId: params.sourceScriptId,
+        destinationScriptId: params.destinationScriptId,
+        mergeStrategy: params.mergeStrategy,
+        includeFiles: params.includeFiles,
+        excludeFiles: params.excludeFiles,
+        dryRun: params.dryRun,
+        accessToken: params.accessToken
+      } as RawCpParams);
+    }
+
     // SECURITY: Validate parameters BEFORE authentication
     const accessToken = await this.getAuthToken(params);
 
@@ -285,5 +353,138 @@ export class CpTool extends BaseFileSystemTool {
       // Add manifest compatibility hints for cross-project copies (dynamic, kept)
       ...(manifestHints ? { manifestHints } : {}),
     } as CopyResult;
+  }
+
+  private async executeRaw(params: RawCpParams): Promise<any> {
+    const {
+      sourceScriptId,
+      destinationScriptId,
+      mergeStrategy = 'preserve-destination',
+      includeFiles = [],
+      excludeFiles = [],
+      dryRun = false
+    } = params;
+
+    const accessToken = await this.getAuthToken(params);
+
+    // Get source project files
+    const sourceFiles = await this.gasClient.getProjectContent(sourceScriptId, accessToken);
+
+    // Get destination project files
+    const destinationFiles = await this.gasClient.getProjectContent(destinationScriptId, accessToken);
+
+    // Create maps for easier lookup
+    const destinationFileMap = new Map(destinationFiles.map((f: any) => [f.name, f]));
+
+    // Filter source files based on include/exclude lists
+    let filesToProcess = sourceFiles.filter((file: any) => {
+      const fileName = file.name;
+      if (includeFiles.length > 0 && !includeFiles.includes(fileName)) return false;
+      if (excludeFiles.length > 0 && excludeFiles.includes(fileName)) return false;
+      return true;
+    });
+
+    const analysis = {
+      newFiles: [] as string[],
+      conflictFiles: [] as string[],
+      identicalFiles: [] as string[],
+      excludedFiles: [] as string[]
+    };
+
+    const filesToCopy: Array<{name: string; content: string; type: string; action: string}> = [];
+
+    for (const sourceFile of filesToProcess) {
+      const fileName = sourceFile.name;
+      const destinationFile = destinationFileMap.get(fileName);
+
+      if (!destinationFile) {
+        analysis.newFiles.push(fileName);
+        filesToCopy.push({ name: fileName, content: sourceFile.source || '', type: sourceFile.type || 'SERVER_JS', action: 'new' });
+      } else if (sourceFile.source === destinationFile.source) {
+        analysis.identicalFiles.push(fileName);
+      } else {
+        analysis.conflictFiles.push(fileName);
+        switch (mergeStrategy) {
+          case 'preserve-destination':
+            analysis.excludedFiles.push(`${fileName} (preserved destination)`);
+            break;
+          case 'overwrite-destination':
+            filesToCopy.push({ name: fileName, content: sourceFile.source || '', type: sourceFile.type || 'SERVER_JS', action: 'overwrite' });
+            break;
+          case 'skip-conflicts':
+            analysis.excludedFiles.push(`${fileName} (skipped conflict)`);
+            break;
+        }
+      }
+    }
+
+    if (dryRun) {
+      return {
+        dryRun: true,
+        sourceScriptId,
+        destinationScriptId,
+        mergeStrategy,
+        analysis: {
+          totalSourceFiles: sourceFiles.length,
+          filteredSourceFiles: filesToProcess.length,
+          newFiles: analysis.newFiles.length,
+          conflictFiles: analysis.conflictFiles.length,
+          identicalFiles: analysis.identicalFiles.length,
+          excludedFiles: analysis.excludedFiles.length,
+          wouldCopy: filesToCopy.length
+        },
+        details: {
+          newFiles: analysis.newFiles,
+          conflictFiles: analysis.conflictFiles,
+          identicalFiles: analysis.identicalFiles,
+          excludedFiles: analysis.excludedFiles,
+          filesToCopy: filesToCopy.map(f => ({ name: f.name, action: f.action }))
+        },
+        message: `Would copy ${filesToCopy.length} files from source to destination`
+      };
+    }
+
+    const copyResults = [];
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const file of filesToCopy) {
+      try {
+        await this.gasClient.updateFile(destinationScriptId, file.name, file.content, undefined, accessToken, file.type as 'SERVER_JS' | 'HTML' | 'JSON');
+        copyResults.push({ name: file.name, action: file.action, status: 'success' });
+        successCount++;
+      } catch (error: any) {
+        copyResults.push({ name: file.name, action: file.action, status: 'error', error: error.message });
+        errorCount++;
+      }
+    }
+
+    return {
+      success: errorCount === 0,
+      sourceScriptId,
+      destinationScriptId,
+      mergeStrategy,
+      summary: {
+        totalSourceFiles: sourceFiles.length,
+        filteredSourceFiles: filesToProcess.length,
+        attemptedCopy: filesToCopy.length,
+        successfulCopies: successCount,
+        errors: errorCount,
+        newFiles: analysis.newFiles.length,
+        conflictFiles: analysis.conflictFiles.length,
+        identicalFiles: analysis.identicalFiles.length,
+        excludedFiles: analysis.excludedFiles.length
+      },
+      details: {
+        newFiles: analysis.newFiles,
+        conflictFiles: analysis.conflictFiles,
+        identicalFiles: analysis.identicalFiles,
+        excludedFiles: analysis.excludedFiles
+      },
+      copyResults: copyResults.filter(r => r.status === 'error'),
+      message: errorCount === 0
+        ? `Successfully copied ${successCount} files from source to destination`
+        : `Copied ${successCount} files with ${errorCount} errors. See copyResults for details.`
+    };
   }
 }

@@ -128,9 +128,13 @@ export interface CatParams extends FileParams {
   preferLocal?: boolean;
   /** Write content to this local file. Creates parent dirs. Supports ~ expansion. */
   toLocal?: string;
+  /** When true, returns file content including CommonJS _main() wrappers without unwrapping. Former raw_cat behavior. */
+  raw?: boolean;
 }
 
-export interface WriteParams extends FileParams {
+export interface WriteParams extends Omit<FileParams, 'scriptId'> {
+  /** Script ID of the GAS project. Optional when scriptId is embedded in path (scriptId/filename). */
+  scriptId?: string;
   /** Content to write. Required unless fromLocal is provided. */
   content?: string;
   /** Read content from this local file instead of content param. Supports ~ expansion. */
@@ -151,6 +155,12 @@ export interface WriteParams extends FileParams {
   expectedHash?: string;
   changeReason?: string;
   projectPath?: string;
+  /** When true, writes file content exactly as provided — no CommonJS wrapping applied. Former raw_write behavior. */
+  raw?: boolean;
+  /** File execution order position (0-based). Only used when raw: true. */
+  position?: number;
+  /** Skip sync validation check. Only used when raw: true. */
+  skipSyncCheck?: boolean;
 }
 
 export interface ListParams {
@@ -188,4 +198,18 @@ export interface CopyParams {
   force?: boolean;
   workingDir?: string;
   accessToken?: string;
+  /** When true, performs cross-project bulk file copy with merge strategies. Former raw_cp behavior. */
+  raw?: boolean;
+  /** Source GAS project ID. Only used when raw: true. */
+  sourceScriptId?: string;
+  /** Destination GAS project ID. Only used when raw: true. */
+  destinationScriptId?: string;
+  /** Conflict resolution strategy. Only used when raw: true. */
+  mergeStrategy?: 'preserve-destination' | 'overwrite-destination' | 'skip-conflicts';
+  /** Only copy specific files by name. Only used when raw: true. */
+  includeFiles?: string[];
+  /** Exclude specific files from copying. Only used when raw: true. */
+  excludeFiles?: string[];
+  /** Preview what would be copied without actually copying. Only used when raw: true. */
+  dryRun?: boolean;
 }

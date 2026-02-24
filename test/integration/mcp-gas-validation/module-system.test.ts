@@ -97,9 +97,11 @@ exports.generateId = function() {
 
       await gas.writeTestFile(testProjectId!, 'TestModule', cleanCode);
 
-      // Read with raw_cat to see wrapped content
-      const rawResult = await client.callTool('raw_cat', {
-        path: `${testProjectId}/TestModule`
+      // Read with cat raw: true to see wrapped content
+      const rawResult = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: 'TestModule',
+        raw: true
       });
 
       const rawContent = rawResult.content[0].text;
@@ -404,8 +406,10 @@ exports.getA = function() {
       this.timeout(TEST_TIMEOUTS.STANDARD);
       expect(testProjectId).to.not.be.null;
 
-      const result = await client.callTool('raw_cat', {
-        path: `${testProjectId}/CommonJS`
+      const result = await client.callTool('cat', {
+        scriptId: testProjectId,
+        path: 'CommonJS',
+        raw: true
       });
 
       const content = result.content[0].text;

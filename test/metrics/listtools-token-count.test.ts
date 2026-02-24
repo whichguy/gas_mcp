@@ -22,22 +22,17 @@ import {
   CatTool,
   WriteTool,
   FileStatusTool,
-  RawCatTool,
-  RawWriteTool,
-  RawCpTool,
   RmTool,
   MvTool,
   CpTool,
   CacheClearTool
 } from '../../src/tools/filesystem/index.js';
-import { GrepTool, RawGrepTool } from '../../src/tools/grep.js';
-import { FindTool, RawFindTool } from '../../src/tools/find.js';
-import { RipgrepTool, RawRipgrepTool } from '../../src/tools/ripgrep.js';
-import { SedTool, RawSedTool } from '../../src/tools/sed.js';
+import { GrepTool } from '../../src/tools/grep.js';
+import { FindTool } from '../../src/tools/find.js';
+import { RipgrepTool } from '../../src/tools/ripgrep.js';
+import { SedTool } from '../../src/tools/sed.js';
 import { EditTool } from '../../src/tools/edit.js';
-import { RawEditTool } from '../../src/tools/raw-edit.js';
 import { AiderTool } from '../../src/tools/aider.js';
-import { RawAiderTool } from '../../src/tools/raw-aider.js';
 import { DepsTool } from '../../src/tools/gas-deps.js';
 import {
   ReorderTool,
@@ -117,8 +112,6 @@ describe('ListTools Token Count Baseline', function () {
     LsTool, FileStatusTool, CatTool, WriteTool,
     GrepTool, RipgrepTool, SedTool, EditTool, AiderTool,
     FindTool, DepsTool, RmTool, MvTool, CpTool, CacheClearTool,
-    RawCatTool, RawWriteTool, RawGrepTool, RawRipgrepTool,
-    RawSedTool, RawEditTool, RawAiderTool, RawFindTool, RawCpTool,
     ReorderTool, ProjectCreateTool, ProjectInitTool, ProjectListTool,
     ExecTool, ExecApiTool,
     DeployTool,

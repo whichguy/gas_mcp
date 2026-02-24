@@ -109,7 +109,7 @@ export function detectContentFileTypeMismatch(
       detectedType: 'HTML',
       message: 'File has .html extension but fileType is SERVER_JS. ' +
                'HTML files cannot have CommonJS wrappers. ' +
-               'Use raw_write() for HTML files or omit fileType for auto-detection.'
+               'Use write({..., raw: true}) for HTML files or omit fileType for auto-detection.'
     };
   }
 
@@ -149,7 +149,7 @@ export function detectContentFileTypeMismatch(
       mismatch: true,
       detectedType: 'HTML',
       message: 'Content contains HTML patterns but fileType is SERVER_JS. ' +
-               'Use raw_write() for HTML files or omit fileType for auto-detection.'
+               'Use write({..., raw: true}) for HTML files or omit fileType for auto-detection.'
     };
   }
 

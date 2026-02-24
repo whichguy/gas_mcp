@@ -770,8 +770,8 @@ export function validateCommonJsIntegrity(
       warnings.push(
         `${filename}: Content lacks CommonJS wrappers (_main() and __defineModule__). ` +
         `This SERVER_JS file won't participate in the module system (no require/exports). ` +
-        `If intentional, ignore this warning. Otherwise, use "write" instead of "raw_write" ` +
-        `for automatic wrapping.`
+        `If intentional, ignore this warning. Otherwise, use write({..., fileType: 'SERVER_JS'}) ` +
+        `(without raw: true) for automatic CommonJS wrapping.`
       );
     }
     return warnings;

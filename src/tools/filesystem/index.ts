@@ -3,7 +3,7 @@
  *
  * This module provides Unix-inspired file operations for GAS projects:
  * - Smart tools (cat, write, ls, rm) - automatic CommonJS processing
- * - Raw tools (raw_cat, etc.) - exact content preservation
+ * - Raw mode: add raw:true to any tool to bypass CommonJS unwrap/wrap
  *
  * ## Architecture
  * - shared/types.ts - Common TypeScript interfaces
@@ -18,14 +18,13 @@
 
 export { CatTool } from './CatTool.js';
 export { WriteTool } from './WriteTool.js';
+// RawWriteTool is an alias for WriteTool — use write({..., raw: true, fileType: ...}) for raw mode
+export { WriteTool as RawWriteTool } from './WriteTool.js';
 export { LsTool } from './LsTool.js';
 export { FileStatusTool } from './FileStatusTool.js';
-export { RawCatTool } from './RawCatTool.js';
 export { RmTool } from './RmTool.js';
-export { RawWriteTool } from './RawWriteTool.js';
 export { MvTool } from './MvTool.js';
 export { CpTool } from './CpTool.js';
-export { RawCpTool } from './RawCpTool.js';
 export { CacheClearTool } from './CacheClearTool.js';
 
 // All 11 filesystem tools successfully extracted from the monolith

@@ -33,7 +33,7 @@ import type { CatParams, FileResult } from './shared/types.js';
  */
 export class CatTool extends BaseFileSystemTool {
   public name = 'cat';
-  public description = '[FILE:READ] Read file content with automatic CommonJS unwrapping — returns clean user code. WHEN: reading any file to view or prepare for editing. AVOID: use raw_cat to see full CommonJS _main() wrappers; use edit for modifications. Example: cat({scriptId, path: "Utils.gs"})';
+  public description = '[FILE:READ] Read file content with automatic CommonJS unwrapping — returns clean user code. WHEN: reading any file to view or prepare for editing. AVOID: use raw:true to see full CommonJS _main() wrappers; use edit for modifications. Example: cat({scriptId, path: "Utils.gs"})';
 
   public outputSchema = {
     type: 'object' as const,
@@ -75,6 +75,11 @@ export class CatTool extends BaseFileSystemTool {
       workingDir: {
         ...WORKING_DIR_SCHEMA
       },
+      raw: {
+        type: 'boolean',
+        description: 'When true, returns file content including CommonJS _main() wrappers without unwrapping. Use for inspecting module infrastructure, debugging loadNow settings, or when hash must match git hash-object. Former raw_cat behavior.',
+        default: false
+      },
       accessToken: {
         ...ACCESS_TOKEN_SCHEMA
       }
@@ -84,7 +89,7 @@ export class CatTool extends BaseFileSystemTool {
     llmGuidance: {
       localFileSupport: 'toLocal:"~/backup/utils.js" → creates parent dirs, returns savedTo',
       efficientAlternatives: 'ripgrep|grep→search; edit→small changes; aider→fuzzy; sed→pattern. Use cat for full understanding|major refactor.',
-      limitations: 'SERVER_JS|HTML|JSON only; auto-unwraps _main()→raw_cat for wrappers; preferLocal:false forces remote',
+      limitations: 'SERVER_JS|HTML|JSON only; auto-unwraps _main()→raw:true to see wrappers; preferLocal:false forces remote',
       antiPatterns: 'cat→edit→cat→edit (use single edit) | cat to search (use ripgrep) | cat then regex (use grep)'
     }
   };
@@ -175,13 +180,12 @@ export class CatTool extends BaseFileSystemTool {
                       }
                     };
 
-                    // CommonJS integration - unwrap for editing
+                    // CommonJS integration - unwrap for editing (skip in raw mode)
                     let finalContent = result.content;
                     let commonJsInfo: any = null;
-
                     let existingModuleOptions: ModuleOptions | null = null;
 
-                    if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
+                    if (!params.raw && shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
                       const { unwrappedContent, existingOptions } = unwrapModuleContent(finalContent);
                       existingModuleOptions = existingOptions;
 
@@ -212,18 +216,17 @@ export class CatTool extends BaseFileSystemTool {
                           reason: 'No CommonJS wrapper structure found in content'
                         };
                       }
-                    } else {
+                    } else if (!params.raw) {
                       commonJsInfo = {
                         moduleUnwrapped: false,
                         reason: `${result.fileType || 'unknown'} files don't use the CommonJS module system`
                       };
                     }
 
-                    // Analyze content for warnings and hints (catches issues missed at write time)
-                    const contentAnalysis = analyzeContent(filename, finalContent, existingModuleOptions ?? undefined);
-
                     result.content = finalContent;
-                    result.commonJsInfo = commonJsInfo;
+                    if (!params.raw) {
+                      result.commonJsInfo = commonJsInfo;
+                    }
                     result.hash = cachedHash;  // Use verified cached hash
                     result.contentChange = {
                       changed: false,
@@ -232,17 +235,26 @@ export class CatTool extends BaseFileSystemTool {
                       source: 'fast_path_cache'
                     };
 
-                    // Populate moduleOptions (fixes bug: was always undefined in generateReadHints)
-                    if (existingModuleOptions) {
-                      result.moduleOptions = existingModuleOptions;
+                    if (params.raw) {
+                      result.hashNote = 'Hash computed on raw content including CommonJS wrappers (raw mode). Matches git hash-object value.';
                     }
 
-                    // Surface content analysis warnings and hints
-                    if (contentAnalysis.warnings.length > 0) {
-                      result.warnings = contentAnalysis.warnings;
-                    }
-                    if (contentAnalysis.hints.length > 0) {
-                      result.analysisHints = contentAnalysis.hints;
+                    if (!params.raw) {
+                      // Analyze content for warnings and hints (catches issues missed at write time)
+                      const contentAnalysis = analyzeContent(filename, finalContent, existingModuleOptions ?? undefined);
+
+                      // Populate moduleOptions (fixes bug: was always undefined in generateReadHints)
+                      if (existingModuleOptions) {
+                        result.moduleOptions = existingModuleOptions;
+                      }
+
+                      // Surface content analysis warnings and hints
+                      if (contentAnalysis.warnings.length > 0) {
+                        result.warnings = contentAnalysis.warnings;
+                      }
+                      if (contentAnalysis.hints.length > 0) {
+                        result.analysisHints = contentAnalysis.hints;
+                      }
                     }
 
                     // Add git breadcrumb hint for .git/* files
@@ -456,15 +468,14 @@ export class CatTool extends BaseFileSystemTool {
       source = 'remote';
     }
 
-    // CommonJS integration - unwrap for editing
+    // CommonJS integration - unwrap for editing (skip in raw mode)
     // Store raw content BEFORE unwrapping for hash computation
     const rawContent = result.content;
     let finalContent = result.content;
     let commonJsInfo: any = null;
-
     let existingModuleOptions: ModuleOptions | null = null;
 
-    if (shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
+    if (!params.raw && shouldWrapContent(result.fileType || 'SERVER_JS', filename)) {
       const { unwrappedContent, existingOptions } = unwrapModuleContent(finalContent);
       existingModuleOptions = existingOptions;
 
@@ -495,36 +506,42 @@ export class CatTool extends BaseFileSystemTool {
           reason: 'No CommonJS wrapper structure found in content'
         };
       }
-    } else {
+    } else if (!params.raw) {
       commonJsInfo = {
         moduleUnwrapped: false,
         reason: `${result.fileType || 'unknown'} files don't use the CommonJS module system`
       };
     }
 
-    // Analyze content for warnings and hints (catches issues missed at write time)
-    const contentAnalysis = analyzeContent(filename, finalContent, existingModuleOptions ?? undefined);
-
     result.content = finalContent;
-    result.commonJsInfo = commonJsInfo;
+    if (!params.raw) {
+      result.commonJsInfo = commonJsInfo;
 
-    // Populate moduleOptions (fixes bug: was always undefined in generateReadHints)
-    if (existingModuleOptions) {
-      result.moduleOptions = existingModuleOptions;
-    }
+      // Analyze content for warnings and hints (catches issues missed at write time)
+      const contentAnalysis = analyzeContent(filename, finalContent, existingModuleOptions ?? undefined);
 
-    // Surface content analysis warnings and hints
-    if (contentAnalysis.warnings.length > 0) {
-      result.warnings = contentAnalysis.warnings;
-    }
-    if (contentAnalysis.hints.length > 0) {
-      result.analysisHints = contentAnalysis.hints;
+      // Populate moduleOptions (fixes bug: was always undefined in generateReadHints)
+      if (existingModuleOptions) {
+        result.moduleOptions = existingModuleOptions;
+      }
+
+      // Surface content analysis warnings and hints
+      if (contentAnalysis.warnings.length > 0) {
+        result.warnings = contentAnalysis.warnings;
+      }
+      if (contentAnalysis.hints.length > 0) {
+        result.analysisHints = contentAnalysis.hints;
+      }
     }
 
     // Compute hash on WRAPPED content (full file as stored in GAS)
     // This ensures hash matches `git hash-object <file>` on local synced files
     const contentHash = computeGitSha1(rawContent);
     result.hash = contentHash;
+
+    if (params.raw) {
+      result.hashNote = 'Hash computed on raw content including CommonJS wrappers (raw mode). Matches git hash-object value.';
+    }
 
     // Content-change signaling: tell the LLM if file differs from last cached read
     const contentChanged = previousCachedHash !== null && previousCachedHash !== contentHash;

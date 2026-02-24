@@ -1,7 +1,7 @@
 /**
  * RegexProcessor - Centralized regex pattern handling for search tools
  *
- * Eliminates duplication across GrepTool, RawGrepTool, SedTool, RawSedTool,
+ * Eliminates duplication across GrepTool, SedTool, RawSedTool,
  * RipgrepTool, and RawRipgrepTool.
  *
  * Features:

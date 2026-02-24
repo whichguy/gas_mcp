@@ -290,8 +290,10 @@ export class InProcessTestClient {
           tool = new CatTool(this.sessionManager);
           break;
         case 'raw_cat':
-          const { RawCatTool } = await import('../../src/tools/filesystem/RawCatTool.js');
-          tool = new RawCatTool(this.sessionManager);
+          // raw_cat is now cat({raw:true}) - use CatTool with raw flag
+          const { CatTool: RawCatToolCompat } = await import('../../src/tools/filesystem/CatTool.js');
+          tool = new RawCatToolCompat(this.sessionManager);
+          args = { ...args, raw: true };
           break;
         case 'ls':
           const { LsTool } = await import('../../src/tools/filesystem/LsTool.js');
@@ -488,12 +490,10 @@ export class InProcessTestClient {
       // Filesystem - Raw tools
       { name: 'raw_cat', description: 'Read raw file contents', inputSchema: schema },
       { name: 'raw_write', description: 'Write raw file contents', inputSchema: schema },
-      { name: 'raw_grep', description: 'Raw grep search', inputSchema: schema },
       { name: 'raw_ripgrep', description: 'Raw ripgrep search', inputSchema: schema },
       { name: 'raw_sed', description: 'Raw stream editor', inputSchema: schema },
       { name: 'raw_edit', description: 'Raw file edit', inputSchema: schema },
       { name: 'raw_aider', description: 'Raw AI-assisted editing', inputSchema: schema },
-      { name: 'raw_find', description: 'Raw find files', inputSchema: schema },
       { name: 'raw_cp', description: 'Raw copy files', inputSchema: schema },
       // Project management
       { name: 'reorder', description: 'Reorder project files', inputSchema: schema },

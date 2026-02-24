@@ -363,10 +363,12 @@ describe('Git Auto-Commit Workflow Integration Tests', () => {
       expect(testProjectId).to.not.be.null;
       expect(tempSyncFolder).to.not.be.null;
 
-      const result = await client.callAndParse('raw_write', {
-        path: `${testProjectId}/RawWriteTest`,
+      const result = await client.callAndParse('write', {
+        scriptId: testProjectId,
+        path: 'RawWriteTest',
         content: 'function rawTest() { return "raw"; }',
-        fileType: 'SERVER_JS'
+        fileType: 'SERVER_JS',
+        raw: true
       });
 
       // Should include git information

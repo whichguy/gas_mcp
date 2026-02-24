@@ -18,22 +18,17 @@ import {
   CatTool,
   WriteTool,
   FileStatusTool,
-  RawCatTool,
-  RawWriteTool,
-  RawCpTool,
   RmTool,
   MvTool,
   CpTool,
   CacheClearTool
 } from '../tools/filesystem/index.js';
-import { GrepTool, RawGrepTool } from '../tools/grep.js';
-import { FindTool, RawFindTool } from '../tools/find.js';
-import { RipgrepTool, RawRipgrepTool } from '../tools/ripgrep.js';
-import { SedTool, RawSedTool } from '../tools/sed.js';
+import { GrepTool } from '../tools/grep.js';
+import { FindTool } from '../tools/find.js';
+import { RipgrepTool } from '../tools/ripgrep.js';
+import { SedTool } from '../tools/sed.js';
 import { EditTool } from '../tools/edit.js';
-import { RawEditTool } from '../tools/raw-edit.js';
 import { AiderTool } from '../tools/aider.js';
-import { RawAiderTool } from '../tools/raw-aider.js';
 import { DepsTool } from '../tools/gas-deps.js';
 import {
   ReorderTool,
@@ -249,15 +244,16 @@ export class MCPGasServer {
    * - `mv` - Move/rename files
    * - `cp` - Copy files
    *
-   * ### Filesystem Operations - ADVANCED (6 tools)
-   * - `raw_cat` - Advanced: Read with explicit project ID paths
-   * - `raw_write` - Advanced: Write with explicit project ID paths
-   * - `raw_grep` - Advanced: Search full content (API-only, never local files)
-   * - `raw_ripgrep` - Advanced: High-performance search on raw content including CommonJS wrappers and system code
-   * - `raw_sed` - Advanced: sed-style find/replace on raw content including wrappers for system-level modifications
-   * - `raw_edit` - Advanced: Token-efficient editing on raw content (includes CommonJS wrappers)
-   * - `raw_find` - Advanced: Find files with actual GAS names
-   * - `raw_cp` - Advanced: Remote-to-remote file copying with merge strategies
+   * ### Filesystem Operations - ADVANCED (raw mode via raw:true parameter)
+   * - cat({raw:true}) - Read with CommonJS wrappers included (former raw_cat)
+   * - write({raw:true, fileType:...}) - Write without CommonJS wrapping (former raw_write)
+   * - grep({raw:true}) - Search full content including CommonJS wrappers (former raw_grep)
+   * - ripgrep({raw:true}) - High-performance search on raw content (former raw_ripgrep)
+   * - sed({raw:true}) - Find/replace on raw content including wrappers (former raw_sed)
+   * - edit({raw:true}) - Token-efficient editing on raw content (former raw_edit)
+   * - find({raw:true}) - Find files with actual GAS names (former raw_find)
+   * - cp({raw:true, sourceScriptId, destinationScriptId}) - Cross-project bulk copy (former raw_cp)
+   * - aider({raw:true}) - Fuzzy editing on raw content (former raw_aider)
    *
    * ### 🏗Project Management (1 tool)
    * - `reorder` - File ordering
@@ -302,14 +298,10 @@ export class MCPGasServer {
       // 🔐 Authentication
       AuthTool,
 
-      // 📂 Filesystem - Smart tools (auto CommonJS unwrap/wrap)
+      // 📂 Filesystem - Smart tools (add raw:true to any tool for raw content access)
       LsTool, FileStatusTool, CatTool, WriteTool,
       GrepTool, RipgrepTool, SedTool, EditTool, AiderTool,
       FindTool, DepsTool, RmTool, MvTool, CpTool, CacheClearTool,
-
-      // 📂 Filesystem - Raw tools (preserve exact content)
-      RawCatTool, RawWriteTool, RawGrepTool, RawRipgrepTool,
-      RawSedTool, RawEditTool, RawAiderTool, RawFindTool, RawCpTool,
 
       // 🏗️ Project management
       ReorderTool, ProjectCreateTool, ProjectInitTool, ProjectListTool,
