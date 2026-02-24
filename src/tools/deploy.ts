@@ -1424,14 +1424,15 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     try {
       const result = await this.gasClient.executeFunction(
         scriptId,
-        'exec_api',
-        [null, 'ConfigManager', 'getScript', key],
+        'invoke',
+        [`const CM = require('common-js/ConfigManager'); new CM('DEPLOY').get(${JSON.stringify(key)}, null)`],
         accessToken
       );
       if (result.error) return null;
       const response = result.result;
-      return response?.success ? response.result : null;
-    } catch {
+      return response?.success ? (response.result ?? null) : null;
+    } catch (err: unknown) {
+      console.error(`⚠️  getConfigManagerValue('${key}'): ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   }
@@ -1444,12 +1445,17 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   ): Promise<void> {
     const result = await this.gasClient.executeFunction(
       scriptId,
-      'exec_api',
-      [null, 'ConfigManager', 'setScript', key, value],
+      'invoke',
+      [`const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setScript(${JSON.stringify(key)}, ${JSON.stringify(value)})`],
       accessToken
     );
     if (result.error) {
-      throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${result.error}`);
+      throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${JSON.stringify(result.error)}`);
+    }
+    const response = result.result;
+    if (response && !response.success) {
+      const errorDetail = typeof response.error === 'string' ? response.error : (response.message || 'unknown error');
+      throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${errorDetail}`);
     }
   }
 
@@ -1461,12 +1467,17 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   ): Promise<void> {
     const result = await this.gasClient.executeFunction(
       scriptId,
-      'exec_api',
-      [null, 'ConfigManager', 'setDocument', key, value],
+      'invoke',
+      [`const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setDocument(${JSON.stringify(key)}, ${JSON.stringify(value)})`],
       accessToken
     );
     if (result.error) {
-      throw new GASApiError(`ConfigManager.setDocument('${key}') failed: ${result.error}`);
+      throw new GASApiError(`ConfigManager.setDocument('${key}') failed: ${JSON.stringify(result.error)}`);
+    }
+    const response = result.result;
+    if (response && !response.success) {
+      const errorDetail = typeof response.error === 'string' ? response.error : (response.message || 'unknown error');
+      throw new GASApiError(`ConfigManager.setDocument('${key}') failed: ${errorDetail}`);
     }
   }
 
