@@ -7,6 +7,7 @@ import { describe, it, before, after } from 'mocha';
 import { expect } from 'chai';
 import { GASClient } from '../../src/api/gasClient.js';
 import { GASFile } from '../../src/api/gasTypes.js';
+import { globalAuthState } from '../setup/globalAuth.js';
 
 describe('File Ordering - Integration Tests', function() {
   this.timeout(60000); // 60s timeout for API calls
@@ -17,16 +18,17 @@ describe('File Ordering - Integration Tests', function() {
   before(async function() {
     gasClient = new GASClient();
 
-    // Use test project from environment or skip tests
-    testScriptId = process.env.MCP_GAS_TEST_SCRIPT_ID || '';
-    if (!testScriptId) {
-      console.log('⚠️  Skipping file ordering tests - MCP_GAS_TEST_SCRIPT_ID not set');
+    if (!globalAuthState.isAuthenticated || !globalAuthState.sharedProjectId) {
+      console.log('⚠️  Skipping file ordering tests - not authenticated or no shared project');
       this.skip();
+      return;
     }
+    testScriptId = globalAuthState.sharedProjectId;
 
     // Ensure authenticated - try to get project content
     try {
-      await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      await gasClient.getProjectContent(testScriptId, token);
     } catch (error) {
       console.log('⚠️  Skipping file ordering tests - not authenticated');
       this.skip();
@@ -35,7 +37,8 @@ describe('File Ordering - Integration Tests', function() {
 
   describe('Position Field Capture', function() {
     it('should capture position field after sorting', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       // Verify all files have position field
       expect(files.length).to.be.greaterThan(0);
@@ -47,7 +50,8 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should preserve position order through array operations', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       // Create a copy and verify positions match indices
       const filesCopy = [...files];
@@ -58,7 +62,8 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should have sequential positions starting from 0', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       const positions = files.map(f => f.position).filter(p => p !== undefined) as number[];
 
@@ -73,7 +78,8 @@ describe('File Ordering - Integration Tests', function() {
 
   describe('Critical File Enforcement', function() {
     it('should identify critical files if present', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       const criticalFiles = [
         'common-js/require',
@@ -101,7 +107,8 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should have critical files in correct order if all present', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       const criticalOrder = [
         'common-js/require',
@@ -132,14 +139,15 @@ describe('File Ordering - Integration Tests', function() {
   describe('Round-Trip Consistency', function() {
     it('should maintain order after updateProjectContent', async function() {
       // Get current files
-      const originalFiles = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const originalFiles = await gasClient.getProjectContent(testScriptId, token);
       const originalOrder = originalFiles.map(f => f.name);
 
       // Update project with same content (no changes)
       await gasClient.updateProjectContent(testScriptId, originalFiles);
 
       // Get files again
-      const updatedFiles = await gasClient.getProjectContent(testScriptId);
+      const updatedFiles = await gasClient.getProjectContent(testScriptId, token);
       const updatedOrder = updatedFiles.map(f => f.name);
 
       // Order should be identical
@@ -148,13 +156,14 @@ describe('File Ordering - Integration Tests', function() {
 
     it('should maintain positions after round-trip', async function() {
       // Get current files
-      const originalFiles = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const originalFiles = await gasClient.getProjectContent(testScriptId, token);
 
       // Update project
       await gasClient.updateProjectContent(testScriptId, originalFiles);
 
       // Get files again
-      const updatedFiles = await gasClient.getProjectContent(testScriptId);
+      const updatedFiles = await gasClient.getProjectContent(testScriptId, token);
 
       // Positions should match
       originalFiles.forEach((originalFile, index) => {
@@ -180,7 +189,8 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should handle files with undefined position field', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       // Verify no file has undefined position
       files.forEach(file => {
@@ -190,7 +200,8 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should handle duplicate file names gracefully', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       const fileNames = files.map(f => f.name);
       const uniqueNames = new Set(fileNames);
@@ -203,8 +214,9 @@ describe('File Ordering - Integration Tests', function() {
 
   describe('Performance', function() {
     it('should capture positions efficiently (< 100ms overhead)', async function() {
+      const token = await globalAuthState.client!.getAccessToken();
       const startTime = Date.now();
-      const files = await gasClient.getProjectContent(testScriptId);
+      const files = await gasClient.getProjectContent(testScriptId, token);
       const endTime = Date.now();
 
       const duration = endTime - startTime;
@@ -218,7 +230,8 @@ describe('File Ordering - Integration Tests', function() {
     });
 
     it('should handle large projects efficiently', async function() {
-      const files = await gasClient.getProjectContent(testScriptId);
+      const token = await globalAuthState.client!.getAccessToken();
+      const files = await gasClient.getProjectContent(testScriptId, token);
 
       // Position capture is O(n), should scale linearly
       // Test with actual file count

@@ -13,6 +13,7 @@
 import { expect } from 'chai';
 import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
+import { resetSharedProject } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('Code Execution Validation Tests', () => {
@@ -22,27 +23,20 @@ describe('Code Execution Validation Tests', () => {
   let testProjectId: string | null = null;
 
   before(async function() {
-    this.timeout(TEST_TIMEOUTS.EXECUTION);
+    this.timeout(30000);
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
       console.log('⚠️  Skipping integration tests - not authenticated');
       this.skip();
+      return;
     }
     client = globalAuthState.client;
-    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
+    auth = globalAuthState.auth!;
     gas = globalAuthState.gas!;
 
-    // Create test project
-    const result = await gas.createTestProject('MCP-Execution-Test');
-    testProjectId = result.scriptId;
-    console.log(`✅ Created execution test project: ${testProjectId}`);
-  });
-
-  after(async function() {
-    this.timeout(TEST_TIMEOUTS.STANDARD);
-    if (testProjectId) {
-      console.log(`🧹 Cleaning up test project: ${testProjectId}`);
-      await gas.cleanupTestProject(testProjectId);
-    }
+    testProjectId = globalAuthState.sharedProjectId!;
+    if (!testProjectId) { this.skip(); return; }
+    console.log(`✅ Using shared test project: ${testProjectId}`);
+    await resetSharedProject();
   });
 
   describe('Basic Expression Execution', () => {

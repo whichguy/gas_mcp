@@ -3,8 +3,7 @@
  *
  * Single suite that:
  * - Authenticates ONCE (via globalAuth.ts)
- * - Creates test projects ONCE
- * - Reuses projects and credentials across all tests
+ * - Reuses the shared test project across all tests
  * - Cleans up resources at the end
  *
  * This eliminates repeated OAuth prompts and speeds up test execution.
@@ -14,22 +13,18 @@ import { expect } from 'chai';
 import { describe, it, before, after } from 'mocha';
 import { globalAuthState } from '../setup/globalAuth.js';
 import { TestProjectFactory, TestProjectTemplate } from '../fixtures/mock-projects/testProjectFactory.js';
+import { resetSharedProject } from '../setup/integrationSetup.js';
 
 describe('Consolidated Integration Test Suite', function() {
   // Increase timeout for project creation
   this.timeout(300000); // 5 minutes
 
   // Shared test resources
-  let mathProjectId: string;
-  let dataProjectId: string;
-  let webAppProjectId: string;
+  let testProjectId: string;
 
   let mathTemplate: TestProjectTemplate;
   let dataTemplate: TestProjectTemplate;
   let webAppTemplate: TestProjectTemplate;
-
-  // Track created projects for cleanup
-  const createdProjects: string[] = [];
 
   before(async function() {
     console.log('\n🏗️  ===== CONSOLIDATED SUITE SETUP =====');
@@ -46,91 +41,32 @@ describe('Consolidated Integration Test Suite', function() {
     dataTemplate = TestProjectFactory.createDataProcessingProject();
     webAppTemplate = TestProjectFactory.createWebAppProject();
 
-    // Create test projects ONCE using the helper
-    console.log('📦 Creating test projects (one-time setup)...');
+    testProjectId = globalAuthState.sharedProjectId!;
+    if (!testProjectId) { throw new Error('No shared test project available'); }
+    await resetSharedProject();
 
-    try {
-      // Create math operations project
-      console.log('  Creating math operations project...');
-      const mathResult = await globalAuthState.gas!.createTestProject(mathTemplate.title);
-      mathProjectId = mathResult.scriptId;
-      createdProjects.push(mathProjectId);
-
-      // Add files to math project
-      for (const file of mathTemplate.files) {
-        await globalAuthState.gas!.writeTestFile(mathProjectId, file.name, file.content);
-      }
-      console.log(`  ✅ Math project: ${mathProjectId}`);
-
-      // Create data processing project
-      console.log('  Creating data processing project...');
-      const dataResult = await globalAuthState.gas!.createTestProject(dataTemplate.title);
-      dataProjectId = dataResult.scriptId;
-      createdProjects.push(dataProjectId);
-
-      // Add files to data project
-      for (const file of dataTemplate.files) {
-        await globalAuthState.gas!.writeTestFile(dataProjectId, file.name, file.content);
-      }
-      console.log(`  ✅ Data project: ${dataProjectId}`);
-
-      // Create web app project
-      console.log('  Creating web app project...');
-      const webAppResult = await globalAuthState.gas!.createTestProject(webAppTemplate.title);
-      webAppProjectId = webAppResult.scriptId;
-      createdProjects.push(webAppProjectId);
-
-      // Add files to web app project
-      for (const file of webAppTemplate.files) {
-        await globalAuthState.gas!.writeTestFile(webAppProjectId, file.name, file.content);
-      }
-      console.log(`  ✅ Web app project: ${webAppProjectId}`);
-
-      console.log('✅ All test projects created and ready');
-    } catch (error) {
-      console.error('❌ Failed to create test projects:', error);
-      throw error;
+    // Add files from all templates to single project
+    for (const file of mathTemplate.files) {
+      await globalAuthState.gas!.writeTestFile(testProjectId, file.name, file.content);
     }
+    for (const file of dataTemplate.files) {
+      await globalAuthState.gas!.writeTestFile(testProjectId, file.name, file.content);
+    }
+    for (const file of webAppTemplate.files) {
+      await globalAuthState.gas!.writeTestFile(testProjectId, file.name, file.content);
+    }
+    console.log(`✅ Shared test project populated with all template files: ${testProjectId}`);
   });
 
   after(async function() {
-    console.log('\n🧹 ===== CONSOLIDATED SUITE CLEANUP =====');
-
-    // Cleanup projects (optional - projects can be left for debugging)
-    if (process.env.CLEANUP_TEST_PROJECTS === 'true') {
-      for (const projectId of createdProjects) {
-        try {
-          console.log(`  Cleaning up project: ${projectId}`);
-          // List and delete files
-          const files = await globalAuthState.client!.callAndParse('ls', {
-            scriptId: projectId,
-            path: ''
-          });
-
-          if (files.items) {
-            for (const file of files.items) {
-              await globalAuthState.client!.callAndParse('rm', {
-                path: `${projectId}/${file.name}`
-              });
-            }
-          }
-        } catch (error) {
-          console.warn(`  ⚠️  Failed to cleanup project ${projectId}:`, error);
-        }
-      }
-    } else {
-      console.log('  Skipping project cleanup (set CLEANUP_TEST_PROJECTS=true to enable)');
-      console.log(`  Created projects: ${createdProjects.join(', ')}`);
-    }
-
-    console.log('✅ Suite cleanup complete');
+    // Shared project preserved for next suite — reset happens in next before()
   });
 
   describe('File Operations', () => {
     describe('List Files (ls)', () => {
-      it('should list all files in math project', async () => {
+      it('should list all files in test project', async () => {
         const result = await globalAuthState.client!.callAndParse('ls', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           path: ''
         });
 
@@ -145,7 +81,7 @@ describe('Consolidated Integration Test Suite', function() {
 
       it('should list files with checksums', async () => {
         const result = await globalAuthState.client!.callAndParse('ls', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           path: '',
           checksums: true
         });
@@ -157,7 +93,7 @@ describe('Consolidated Integration Test Suite', function() {
 
       it('should list files in detailed mode', async () => {
         const result = await globalAuthState.client!.callAndParse('ls', {
-          scriptId: dataProjectId,
+          scriptId: testProjectId,
           path: '',
           detailed: true
         });
@@ -173,7 +109,7 @@ describe('Consolidated Integration Test Suite', function() {
     describe('Read Files (cat)', () => {
       it('should read math operations file', async () => {
         const result = await globalAuthState.client!.callAndParse('cat', {
-          path: `${mathProjectId}/mathOperations.gs`
+          path: `${testProjectId}/mathOperations.gs`
         });
 
         expect(result.content).to.be.a('string');
@@ -184,7 +120,7 @@ describe('Consolidated Integration Test Suite', function() {
 
       it('should read data processor file', async () => {
         const result = await globalAuthState.client!.callAndParse('cat', {
-          path: `${dataProjectId}/dataProcessor.gs`
+          path: `${testProjectId}/dataProcessor.gs`
         });
 
         expect(result.content).to.be.a('string');
@@ -194,7 +130,7 @@ describe('Consolidated Integration Test Suite', function() {
 
       it('should read appsscript.json manifest', async () => {
         const result = await globalAuthState.client!.callAndParse('cat', {
-          path: `${mathProjectId}/appsscript.json`
+          path: `${testProjectId}/appsscript.json`
         });
 
         expect(result.content).to.be.a('string');
@@ -218,7 +154,7 @@ function anotherHelper(x) {
 }`;
 
         const result = await globalAuthState.client!.callAndParse('write', {
-          path: `${mathProjectId}/testUtils.gs`,
+          path: `${testProjectId}/testUtils.gs`,
           content: content
         });
 
@@ -238,7 +174,7 @@ function testHelper() {
 
         // Write updated content
         const writeResult = await globalAuthState.client!.callAndParse('write', {
-          path: `${mathProjectId}/testUtils.gs`,
+          path: `${testProjectId}/testUtils.gs`,
           content: newContent
         });
 
@@ -246,7 +182,7 @@ function testHelper() {
 
         // Verify update
         const verifyResult = await globalAuthState.client!.callAndParse('cat', {
-          path: `${mathProjectId}/testUtils.gs`
+          path: `${testProjectId}/testUtils.gs`
         });
 
         expect(verifyResult.content).to.include('UPDATED');
@@ -258,7 +194,7 @@ function testHelper() {
     describe('Mathematical Operations', () => {
       it('should execute simple addition', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           js_statement: 'add(15, 27)'
         });
 
@@ -267,7 +203,7 @@ function testHelper() {
 
       it('should execute multiplication', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           js_statement: 'multiply(6, 7)'
         });
 
@@ -276,7 +212,7 @@ function testHelper() {
 
       it('should calculate fibonacci number', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           js_statement: 'fibonacci(10)'
         });
 
@@ -285,7 +221,7 @@ function testHelper() {
 
       it('should check prime numbers', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           js_statement: 'isPrime(17)'
         });
 
@@ -294,7 +230,7 @@ function testHelper() {
 
       it('should run all math tests', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           js_statement: 'runAllTests()'
         });
 
@@ -309,7 +245,7 @@ function testHelper() {
     describe('Data Processing', () => {
       it('should process array data', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: dataProjectId,
+          scriptId: testProjectId,
           js_statement: 'processArray([-1, 2, -3, 4, 5])'
         });
 
@@ -318,7 +254,7 @@ function testHelper() {
 
       it('should transform object keys and values', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: dataProjectId,
+          scriptId: testProjectId,
           js_statement: 'transformObject({name: "test", value: "hello"})'
         });
 
@@ -328,7 +264,7 @@ function testHelper() {
 
       it('should parse and validate JSON', async () => {
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: dataProjectId,
+          scriptId: testProjectId,
           js_statement: 'parseAndValidateJSON(\'{"test": true}\')'
         });
 
@@ -357,13 +293,13 @@ module.exports = {
 };`;
 
         await globalAuthState.client!.callAndParse('write', {
-          path: `${mathProjectId}/Calculator.gs`,
+          path: `${testProjectId}/Calculator.gs`,
           content: moduleContent
         });
 
         // Use the module
         const result = await globalAuthState.client!.callAndParse('exec', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           js_statement: 'require("Calculator").calculate("multiply", 6, 7)'
         });
 
@@ -376,7 +312,7 @@ module.exports = {
     describe('Grep - Content Search', () => {
       it('should find function definitions', async () => {
         const result = await globalAuthState.client!.callAndParse('grep', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           pattern: 'function.*\\(',
           regex: true
         });
@@ -389,7 +325,7 @@ module.exports = {
 
       it('should find specific strings', async () => {
         const result = await globalAuthState.client!.callAndParse('grep', {
-          scriptId: dataProjectId,
+          scriptId: testProjectId,
           pattern: 'processArray',
           regex: false
         });
@@ -403,7 +339,7 @@ module.exports = {
     describe('Find - File Search', () => {
       it('should find .gs files', async () => {
         const result = await globalAuthState.client!.callAndParse('find', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           pattern: '*.gs'
         });
 
@@ -414,7 +350,7 @@ module.exports = {
 
       it('should find JSON files', async () => {
         const result = await globalAuthState.client!.callAndParse('find', {
-          scriptId: dataProjectId,
+          scriptId: testProjectId,
           pattern: '*.json'
         });
 
@@ -428,12 +364,12 @@ module.exports = {
   describe('Project Management', () => {
     it('should get project info', async () => {
       const result = await globalAuthState.client!.callAndParse('project_info', {
-        scriptId: mathProjectId
+        scriptId: testProjectId
       });
 
       expect(result.content).to.be.an('array');
       const text = JSON.stringify(result.content);
-      expect(text).to.include(mathProjectId);
+      expect(text).to.include(testProjectId);
       expect(text).to.include('title');
     });
 
@@ -443,10 +379,8 @@ module.exports = {
       expect(result.content).to.be.an('array');
       const text = JSON.stringify(result.content);
 
-      // Should include our test projects
-      expect(text).to.include(mathProjectId) ||
-      expect(text).to.include(dataProjectId) ||
-      expect(text).to.include(webAppProjectId);
+      // Should include our test project
+      expect(text).to.include(testProjectId);
     });
   });
 
@@ -467,7 +401,7 @@ module.exports = {
     it('should handle file not found', async () => {
       try {
         await globalAuthState.client!.callAndParse('cat', {
-          path: `${mathProjectId}/NonExistentFile.gs`
+          path: `${testProjectId}/NonExistentFile.gs`
         });
         expect.fail('Should have thrown error');
       } catch (error: any) {
@@ -479,7 +413,7 @@ module.exports = {
     it('should handle execution errors', async () => {
       try {
         await globalAuthState.client!.callAndParse('exec', {
-          scriptId: mathProjectId,
+          scriptId: testProjectId,
           js_statement: 'nonExistentFunction()'
         });
         expect.fail('Should have thrown error');
@@ -495,11 +429,11 @@ module.exports = {
       this.timeout(30000); // 30 seconds
 
       const operations = [
-        { scriptId: mathProjectId, js_statement: 'add(1, 2)' },
-        { scriptId: mathProjectId, js_statement: 'multiply(3, 4)' },
-        { scriptId: dataProjectId, js_statement: 'processArray([1,2,3])' },
-        { scriptId: mathProjectId, js_statement: 'fibonacci(5)' },
-        { scriptId: dataProjectId, js_statement: 'generateTestData()' }
+        { scriptId: testProjectId, js_statement: 'add(1, 2)' },
+        { scriptId: testProjectId, js_statement: 'multiply(3, 4)' },
+        { scriptId: testProjectId, js_statement: 'processArray([1,2,3])' },
+        { scriptId: testProjectId, js_statement: 'fibonacci(5)' },
+        { scriptId: testProjectId, js_statement: 'generateTestData()' }
       ];
 
       const startTime = Date.now();

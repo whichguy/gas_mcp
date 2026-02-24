@@ -4,6 +4,7 @@ import { WriteTool } from '../../src/tools/filesystem/WriteTool.js';
 import { getCachedGASMetadata, hasCachedMetadata } from '../../src/utils/gasMetadataCache.js';
 import { isFileInSyncByHash } from '../../src/utils/fileHelpers.js';
 import { computeGitSha1 } from '../../src/utils/hashUtils.js';
+import { globalAuthState } from '../setup/globalAuth.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -26,8 +27,6 @@ import * as os from 'os';
 describe('Metadata Cache Integration Tests', function() {
   this.timeout(300000); // 5 minutes for integration tests
 
-  // Test project ID - use exec-test project
-  const TEST_SCRIPT_ID = process.env.TEST_SCRIPT_ID || '';
   const TEST_FILENAME = `test-metadata-cache-${Date.now()}`;
   const TEST_CONTENT = `// Test file for metadata caching
 function testFunction() {
@@ -41,22 +40,15 @@ module.exports = { testFunction };`;
   let localFilePath: string;
 
   before(async function() {
-    if (!TEST_SCRIPT_ID) {
-      console.log('⚠️  No TEST_SCRIPT_ID set, skipping integration tests');
+    if (!globalAuthState.isAuthenticated || !globalAuthState.sharedProjectId) {
+      console.log('⚠️  No authenticated shared project, skipping metadata cache tests');
       this.skip();
       return;
     }
-
-    if (!process.env.GAS_INTEGRATION_TEST) {
-      console.log('⚠️  GAS_INTEGRATION_TEST not set, skipping integration tests');
-      this.skip();
-      return;
-    }
-
-    writeTool = new WriteTool();
-    catTool = new CatTool();
-
-    console.log(`\n🧪 Running metadata cache integration tests on project: ${TEST_SCRIPT_ID}`);
+    const scriptId = globalAuthState.sharedProjectId;
+    writeTool = new WriteTool(globalAuthState.client!.sessionManager);
+    catTool = new CatTool(globalAuthState.client!.sessionManager);
+    console.log(`\n🧪 Running metadata cache integration tests on project: ${scriptId}`);
   });
 
   after(async function() {
@@ -76,7 +68,7 @@ module.exports = { testFunction };`;
 
     const result: any = await writeTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`,
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`,
       content: TEST_CONTENT,
       fileType: 'SERVER_JS'
     });
@@ -111,7 +103,7 @@ module.exports = { testFunction };`;
     // First read - should use fast path if metadata cached
     const result1: any = await catTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`
     });
 
     expect(result1.content).to.include('testFunction');
@@ -122,7 +114,7 @@ module.exports = { testFunction };`;
     // Second read - should also use fast path
     const result2: any = await catTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`
     });
 
     expect(result2.content).to.include('testFunction');
@@ -188,7 +180,7 @@ module.exports = { testFunction };`;
     // Perform cat operation
     const result: any = await catTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`
     });
 
     expect(result.source).to.equal('local');
@@ -215,7 +207,7 @@ module.exports = { testFunction };`;
     // Cat should still work, but use slow path
     const result: any = await catTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`
     });
 
     expect(result.content).to.include('testFunction');
@@ -239,7 +231,7 @@ module.exports = { testFunction };`;
     const updatedContent = TEST_CONTENT + '\n// Updated remotely';
     await writeTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`,
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`,
       content: updatedContent,
       fileType: 'SERVER_JS'
     });
@@ -252,7 +244,7 @@ module.exports = { testFunction };`;
     // Read file - should detect change and update metadata
     const result: any = await catTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`
     });
 
     expect(result.content).to.include('Updated remotely');
@@ -287,7 +279,7 @@ module.exports = { testFunction };`;
         // Write file
         const writeResult: any = await writeTool.execute({
           scriptId: '',
-          path: `${TEST_SCRIPT_ID}/${fileType.filename}`,
+          path: `${globalAuthState.sharedProjectId!}/${fileType.filename}`,
           content: fileType.content,
           fileType: fileType.type as any
         });
@@ -333,7 +325,7 @@ module.exports = { testFunction };`;
     const slowStart = Date.now();
     await catTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`
     });
     const slowTime = Date.now() - slowStart;
     console.log(`   Slow path (no cache): ${slowTime}ms`);
@@ -342,7 +334,7 @@ module.exports = { testFunction };`;
     const fastStart = Date.now();
     await catTool.execute({
       scriptId: '',
-      path: `${TEST_SCRIPT_ID}/${TEST_FILENAME}`
+      path: `${globalAuthState.sharedProjectId!}/${TEST_FILENAME}`
     });
     const fastTime = Date.now() - fastStart;
     console.log(`   Fast path (cached):   ${fastTime}ms`);

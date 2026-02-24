@@ -15,6 +15,7 @@
 import { expect } from 'chai';
 import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
 import { globalAuthState } from '../../setup/globalAuth.js';
+import { resetSharedProject } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('Module System Validation Tests', () => {
@@ -24,34 +25,27 @@ describe('Module System Validation Tests', () => {
   let testProjectId: string | null = null;
 
   before(async function() {
-    this.timeout(TEST_TIMEOUTS.EXECUTION);
+    this.timeout(30000);
     if (!globalAuthState.isAuthenticated || !globalAuthState.client) {
       console.log('⚠️  Skipping integration tests - not authenticated');
       this.skip();
+      return;
     }
     client = globalAuthState.client;
-    auth = globalAuthState.auth!;  // Reuse global auth with sessionId
+    auth = globalAuthState.auth!;
     gas = globalAuthState.gas!;
 
-    // Create test project with CommonJS infrastructure
-    const result = await gas.createTestProject('MCP-CommonJS-Test');
-    testProjectId = result.scriptId;
-    console.log(`✅ Created CommonJS test project: ${testProjectId}`);
+    testProjectId = globalAuthState.sharedProjectId!;
+    if (!testProjectId) { this.skip(); return; }
+    console.log(`✅ Using shared test project: ${testProjectId}`);
+    await resetSharedProject();
 
-    // Verify CommonJS.js exists
+    // Verify CommonJS.js exists (part of infrastructure baseline)
     const lsResult = await client.callTool('ls', {
       scriptId: testProjectId
     });
 
     expect(lsResult.content[0].text).to.include('CommonJS');
-  });
-
-  after(async function() {
-    this.timeout(TEST_TIMEOUTS.STANDARD);
-    if (testProjectId) {
-      console.log(`🧹 Cleaning up test project: ${testProjectId}`);
-      await gas.cleanupTestProject(testProjectId);
-    }
   });
 
   describe('Module Creation with Exports', () => {
