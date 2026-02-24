@@ -10,7 +10,7 @@
  */
 
 import { expect } from 'chai';
-import { describe, it, before, after } from 'mocha';
+import { describe, it, before } from 'mocha';
 import { globalAuthState } from '../setup/globalAuth.js';
 import { resetSharedProject } from '../setup/integrationSetup.js';
 
@@ -39,10 +39,6 @@ function multiply(a, b) { return a * b; }`
     );
 
     console.log(`✅ Using shared test project: ${testProjectId}\n`);
-  });
-
-  after(async function() {
-    // Shared project preserved for next suite — reset happens in next before()
   });
 
   describe('File Operations - No OAuth Prompts', () => {

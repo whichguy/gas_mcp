@@ -3,11 +3,12 @@
  * Tests the fixes for the file ordering bug where position field was missing
  */
 
-import { describe, it, before, after } from 'mocha';
+import { describe, it, before } from 'mocha';
 import { expect } from 'chai';
 import { GASClient } from '../../src/api/gasClient.js';
 import { GASFile } from '../../src/api/gasTypes.js';
 import { globalAuthState } from '../setup/globalAuth.js';
+import { resetSharedProject } from '../setup/integrationSetup.js';
 
 describe('File Ordering - Integration Tests', function() {
   this.timeout(60000); // 60s timeout for API calls
@@ -24,6 +25,7 @@ describe('File Ordering - Integration Tests', function() {
       return;
     }
     testScriptId = globalAuthState.sharedProjectId;
+    await resetSharedProject();
 
     // Ensure authenticated - try to get project content
     try {
