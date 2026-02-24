@@ -11,7 +11,7 @@
 
 import { expect } from 'chai';
 import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../../helpers/inProcessClient.js';
-import { setupIntegrationTest, globalAuthState, resetSharedProject } from '../../setup/integrationSetup.js';
+import { globalAuthState, resetSharedProject } from '../../setup/integrationSetup.js';
 import { TEST_TIMEOUTS } from './testTimeouts.js';
 
 describe('File Operations Validation Tests', () => {
