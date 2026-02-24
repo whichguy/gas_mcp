@@ -723,9 +723,17 @@ export class InProcessGASTestHelper {
   }
 
   /**
-   * Cleanup a single test project (alias for compatibility)
+   * Cleanup a single test project.
+   * For the shared test project, delegates to TestProjectManager.resetToBaseline().
+   * For other projects, logs a warning (deletion not implemented).
    */
   async cleanupTestProject(projectId: string): Promise<void> {
+    const { TestProjectManager } = await import('./testProjectManager.js');
+    const mgr = TestProjectManager.getInstance();
+    if (mgr.isReady() && mgr.getScriptId() === projectId) {
+      await mgr.resetToBaseline(this.client);
+      return;
+    }
     console.log(`⚠️  Note: In-process client does not implement project deletion yet`);
     console.log(`   Manual cleanup required for project: ${projectId}`);
     console.log('   Visit: https://script.google.com to delete manually');

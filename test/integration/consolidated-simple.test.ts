@@ -3,7 +3,7 @@
  *
  * Demonstrates:
  * - SINGLE OAuth authentication (via globalAuth.ts)
- * - Project creation and reuse across tests
+ * - Shared project reuse across tests
  * - No repeated OAuth prompts
  *
  * This proves the architecture works without complex test scenarios.
@@ -12,26 +12,23 @@
 import { expect } from 'chai';
 import { describe, it, before, after } from 'mocha';
 import { globalAuthState } from '../setup/globalAuth.js';
+import { resetSharedProject } from '../setup/integrationSetup.js';
 
 describe('Simplified Consolidated Suite - Single OAuth', function() {
   this.timeout(300000); // 5 minutes
 
   let testProjectId: string;
-  const createdProjects: string[] = [];
 
   before(async function() {
-    console.log('\n🏗️  ===== SETUP: CREATE ONE TEST PROJECT =====');
+    console.log('\n🏗️  ===== SETUP: USING SHARED TEST PROJECT =====');
 
     if (!globalAuthState.isAuthenticated || !globalAuthState.gas) {
       throw new Error('Global authentication not available');
     }
 
-    console.log('✅ Authenticated - creating test project...');
-
-    // Create ONE test project
-    const project = await globalAuthState.gas.createTestProject('Test Project - Consolidated Suite');
-    testProjectId = project.scriptId;
-    createdProjects.push(testProjectId);
+    testProjectId = globalAuthState.sharedProjectId!;
+    if (!testProjectId) { throw new Error('No shared test project available'); }
+    await resetSharedProject();
 
     // Add a simple test file
     await globalAuthState.gas.writeTestFile(
@@ -41,14 +38,11 @@ describe('Simplified Consolidated Suite - Single OAuth', function() {
 function multiply(a, b) { return a * b; }`
     );
 
-    console.log(`✅ Test project created: ${testProjectId}\n`);
+    console.log(`✅ Using shared test project: ${testProjectId}\n`);
   });
 
   after(async function() {
-    console.log('\n🧹 ===== CLEANUP =====');
-    console.log(`Created ${createdProjects.length} test projects`);
-    console.log(`Project IDs: ${createdProjects.join(', ')}`);
-    console.log('✅ Cleanup complete (projects left for debugging)\n');
+    // Shared project preserved for next suite — reset happens in next before()
   });
 
   describe('File Operations - No OAuth Prompts', () => {
