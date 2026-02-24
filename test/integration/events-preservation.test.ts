@@ -12,15 +12,13 @@
  */
 
 import { expect } from 'chai';
-import { InProcessTestClient, InProcessAuthHelper, InProcessGASTestHelper } from '../helpers/inProcessClient.js';
+import { InProcessTestClient } from '../helpers/inProcessClient.js';
 import { globalAuthState, resetSharedProject } from '../setup/integrationSetup.js';
 
 describe('__events__ Handler Survival Tests', function() {
   this.timeout(180000);
 
   let client: InProcessTestClient;
-  let auth: InProcessAuthHelper;
-  let gas: InProcessGASTestHelper;
   let testProjectId: string | null = null;
   const testFileName = 'EventHandlerTest';
   const testFileNameCopy = 'EventHandlerTestCopy';
@@ -36,17 +34,11 @@ describe('__events__ Handler Survival Tests', function() {
     }
 
     client = globalAuthState.client;
-    auth = globalAuthState.auth!;
-    gas = globalAuthState.gas!;
 
     testProjectId = globalAuthState.sharedProjectId!;
     if (!testProjectId) { this.skip(); return; }
     console.log(`✅ Using shared test project: ${testProjectId}`);
     await resetSharedProject();
-  });
-
-  after(async function() {
-    // Shared project preserved for next suite — reset happens in next before()
   });
 
   beforeEach(async function() {

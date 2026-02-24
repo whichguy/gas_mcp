@@ -10,7 +10,7 @@
  */
 
 import { expect } from 'chai';
-import { describe, it, before, after } from 'mocha';
+import { describe, it, before } from 'mocha';
 import { globalAuthState } from '../setup/globalAuth.js';
 import { TestProjectFactory, TestProjectTemplate } from '../fixtures/mock-projects/testProjectFactory.js';
 import { resetSharedProject } from '../setup/integrationSetup.js';
@@ -56,10 +56,6 @@ describe('Consolidated Integration Test Suite', function() {
       await globalAuthState.gas!.writeTestFile(testProjectId, file.name, file.content);
     }
     console.log(`✅ Shared test project populated with all template files: ${testProjectId}`);
-  });
-
-  after(async function() {
-    // Shared project preserved for next suite — reset happens in next before()
   });
 
   describe('File Operations', () => {
@@ -392,9 +388,7 @@ module.exports = {
         });
         expect.fail('Should have thrown error');
       } catch (error: any) {
-        expect(error.message).to.include('validation') ||
-        expect(error.message).to.include('invalid') ||
-        expect(error.message).to.include('not found');
+        expect(error.message).to.match(/validation|invalid|not found/i);
       }
     });
 
@@ -405,8 +399,7 @@ module.exports = {
         });
         expect.fail('Should have thrown error');
       } catch (error: any) {
-        expect(error.message).to.include('not found') ||
-        expect(error.message).to.include('does not exist');
+        expect(error.message).to.match(/not found|does not exist/i);
       }
     });
 
@@ -418,8 +411,7 @@ module.exports = {
         });
         expect.fail('Should have thrown error');
       } catch (error: any) {
-        expect(error.message).to.include('error') ||
-        expect(error.message).to.include('not defined');
+        expect(error.message).to.match(/error|not defined/i);
       }
     });
   });

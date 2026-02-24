@@ -5,9 +5,8 @@ import { getCachedGASMetadata, hasCachedMetadata } from '../../src/utils/gasMeta
 import { isFileInSyncByHash } from '../../src/utils/fileHelpers.js';
 import { computeGitSha1 } from '../../src/utils/hashUtils.js';
 import { globalAuthState } from '../setup/globalAuth.js';
+import { resetSharedProject } from '../setup/integrationSetup.js';
 import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
 
 /**
  * Integration Test: Extended Attributes Metadata Caching
@@ -46,6 +45,7 @@ module.exports = { testFunction };`;
       return;
     }
     const scriptId = globalAuthState.sharedProjectId;
+    await resetSharedProject();
     writeTool = new WriteTool(globalAuthState.client!.sessionManager);
     catTool = new CatTool(globalAuthState.client!.sessionManager);
     console.log(`\n🧪 Running metadata cache integration tests on project: ${scriptId}`);
