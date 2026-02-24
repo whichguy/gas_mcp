@@ -117,11 +117,12 @@ export class TestProjectManager {
     } catch (err: any) {
       const msg = String(err?.message || err);
       if (/404|not.?found/i.test(msg)) {
+        const lostId = this.scriptId;
         console.warn('⚠️  TestProjectManager: Project not found — clearing stored ID');
         await this._clearIdFile();
         this.scriptId = null;
         this.ready = false;
-        throw new Error(`TestProjectManager: project ${this.scriptId} not found (404) — re-initialize`);
+        throw new Error(`TestProjectManager: project ${lostId} not found (404) — re-initialize`);
       }
       throw err;
     }

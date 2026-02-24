@@ -152,9 +152,6 @@ describe('TestProjectManager', () => {
       const client = makeClientMock(allFiles);
       await mgr.initialize(gas, client);
 
-      // Reset globalAuthState.gas stub for the properties reset call
-      const originalGas = (await import('../../setup/globalAuth.js')).globalAuthState.gas;
-
       await mgr.resetToBaseline(client);
 
       const updateCall = client.gasClient.updateProjectContent;
