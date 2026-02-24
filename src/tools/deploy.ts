@@ -1067,9 +1067,17 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     const result = await this.execTool.execute({
       scriptId,
       js_statement,
-      autoRedeploy: false,
+      autoRedeploy: true,
+      skipSyncCheck: true,
       accessToken,
     });
+
+    // Surface exec-level failures (e.g. quota exceeded, permission denied) before parsing
+    if (result?.status !== 'success') {
+      throw new GASApiError(
+        `Sheet sync exec failed: ${result?.error?.message || 'unknown error'}`
+      );
+    }
 
     // Parse the sync result from Logger output
     let syncResult: any = { source: sourceSpreadsheetId, target: targetSpreadsheetId };
@@ -1124,7 +1132,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
         var docProps = docPropsService ? (docPropsService.getProperties() || {}) : {};
         Logger.log(JSON.stringify({ script: scriptProps, doc: docProps }));
       `,
-      autoRedeploy: false,
+      autoRedeploy: true,
+      skipSyncCheck: true,
       accessToken,
     });
 
@@ -1164,7 +1173,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
           var docProps = docPropsService ? (docPropsService.getProperties() || {}) : {};
           Logger.log(JSON.stringify({ script: scriptProps, doc: docProps }));
         `,
-        autoRedeploy: false,
+        autoRedeploy: true,
+        skipSyncCheck: true,
         accessToken,
       });
 
@@ -1200,7 +1210,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
               var sp = PropertiesService.getScriptProperties();
               keys.forEach(function(k) { sp.deleteProperty(k); });
             `,
-            autoRedeploy: false,
+            autoRedeploy: true,
+            skipSyncCheck: true,
             accessToken,
           });
           deleted.push(...scriptExtras);
@@ -1220,7 +1231,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
               var dp = PropertiesService.getDocumentProperties();
               if (dp) { keys.forEach(function(k) { dp.deleteProperty(k); }); }
             `,
-            autoRedeploy: false,
+            autoRedeploy: true,
+            skipSyncCheck: true,
             accessToken,
           });
           deleted.push(...docExtras.map(k => `doc:${k}`));
@@ -1241,7 +1253,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
               var docProps = docPropsService ? (docPropsService.getProperties() || {}) : {};
               Logger.log(JSON.stringify({ script: scriptProps, doc: docProps }));
             `,
-            autoRedeploy: false,
+            autoRedeploy: true,
+            skipSyncCheck: true,
             accessToken,
           });
 
@@ -1274,7 +1287,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
                   var sp = PropertiesService.getScriptProperties();
                   keys.forEach(function(k) { sp.deleteProperty(k); });
                 `,
-                autoRedeploy: false,
+                autoRedeploy: true,
+                skipSyncCheck: true,
                 accessToken,
               });
               consumerDeleted.push(...consumerScriptExtras);
@@ -1294,7 +1308,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
                   var dp = PropertiesService.getDocumentProperties();
                   if (dp) { keys.forEach(function(k) { dp.deleteProperty(k); }); }
                 `,
-                autoRedeploy: false,
+                autoRedeploy: true,
+                skipSyncCheck: true,
                 accessToken,
               });
               consumerDeleted.push(...consumerDocExtras.map(k => `doc:${k}`));
@@ -1361,7 +1376,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
               var props = JSON.parse(JSON.parse(${propsJson}));
               PropertiesService.getScriptProperties().setProperties(props, false);
             `,
-            autoRedeploy: false,
+            autoRedeploy: true,
+            skipSyncCheck: true,
             accessToken,
           });
           consumerSynced.push(...scriptEntries.map(([k]) => k));
@@ -1385,7 +1401,8 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
                 dp.setProperties(props, false);
               }
             `,
-            autoRedeploy: false,
+            autoRedeploy: true,
+            skipSyncCheck: true,
             accessToken,
           });
           consumerSynced.push(...docEntries.map(([k]) => `doc:${k}`));
@@ -1422,17 +1439,17 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     accessToken?: string
   ): Promise<string | null> {
     try {
-      const result = await this.gasClient.executeFunction(
+      const result = await this.execTool.execute({
         scriptId,
-        'invoke',
-        [`const CM = require('common-js/ConfigManager'); new CM('DEPLOY').get(${JSON.stringify(key)}, null)`],
-        accessToken
-      );
-      if (result.error) return null;
-      const response = result.result;
-      return response?.success ? (response.result ?? null) : null;
+        js_statement: `const CM = require('common-js/ConfigManager'); new CM('DEPLOY').get(${JSON.stringify(key)}, null)`,
+        autoRedeploy: true,
+        skipSyncCheck: true,
+        accessToken,
+      });
+      if (result.status !== 'success') return null;
+      return result.result ?? null;
     } catch (err: unknown) {
-      console.error(`⚠️  getConfigManagerValue('${key}'): ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`getConfigManagerValue('${key}'): ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   }
@@ -1443,19 +1460,15 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     value: string,
     accessToken?: string
   ): Promise<void> {
-    const result = await this.gasClient.executeFunction(
+    const result = await this.execTool.execute({
       scriptId,
-      'invoke',
-      [`const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setScript(${JSON.stringify(key)}, ${JSON.stringify(value)})`],
-      accessToken
-    );
-    if (result.error) {
-      throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${JSON.stringify(result.error)}`);
-    }
-    const response = result.result;
-    if (response && !response.success) {
-      const errorDetail = typeof response.error === 'string' ? response.error : (response.message || 'unknown error');
-      throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${errorDetail}`);
+      js_statement: `const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setScript(${JSON.stringify(key)}, ${JSON.stringify(value)})`,
+      autoRedeploy: true,
+      skipSyncCheck: true,
+      accessToken,
+    });
+    if (result.status !== 'success') {
+      throw new GASApiError(`ConfigManager.setScript('${key}') failed: ${result.error?.message || 'unknown error'}`);
     }
   }
 
@@ -1465,19 +1478,15 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     value: string,
     accessToken?: string
   ): Promise<void> {
-    const result = await this.gasClient.executeFunction(
+    const result = await this.execTool.execute({
       scriptId,
-      'invoke',
-      [`const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setDocument(${JSON.stringify(key)}, ${JSON.stringify(value)})`],
-      accessToken
-    );
-    if (result.error) {
-      throw new GASApiError(`ConfigManager.setDocument('${key}') failed: ${JSON.stringify(result.error)}`);
-    }
-    const response = result.result;
-    if (response && !response.success) {
-      const errorDetail = typeof response.error === 'string' ? response.error : (response.message || 'unknown error');
-      throw new GASApiError(`ConfigManager.setDocument('${key}') failed: ${errorDetail}`);
+      js_statement: `const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setDocument(${JSON.stringify(key)}, ${JSON.stringify(value)})`,
+      autoRedeploy: true,
+      skipSyncCheck: true,
+      accessToken,
+    });
+    if (result.status !== 'success') {
+      throw new GASApiError(`ConfigManager.setDocument('${key}') failed: ${result.error?.message || 'unknown error'}`);
     }
   }
 
