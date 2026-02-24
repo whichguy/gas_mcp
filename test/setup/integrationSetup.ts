@@ -61,6 +61,7 @@ export async function setupIntegrationTest(): Promise<void> {
       // Call the global auth setup - this starts the server and authenticates
       await mochaHooks.beforeAll.call({ timeout: (ms: number) => {} });
       setupComplete = true;
+      setupInProgress = false;
       console.log('✅ Global server ready - all tests will use this authenticated server');
     } catch (error) {
       setupInProgress = false;
