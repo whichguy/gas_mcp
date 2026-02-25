@@ -13,7 +13,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
 
 /**
@@ -97,12 +97,12 @@ export class SyncManifest {
 
       // Validate version
       if (manifest.version !== '2.1') {
-        log.warn(`[MANIFEST] Version mismatch: expected 2.1, got ${manifest.version}`);
+        mcpLogger.warning('rsync', `[MANIFEST] Version mismatch: expected 2.1, got ${manifest.version}`);
       }
 
       this.data = manifest;
 
-      log.debug(`[MANIFEST] Loaded manifest for ${manifest.scriptId}, ${Object.keys(manifest.files).length} files tracked`);
+      mcpLogger.debug('rsync', `[MANIFEST] Loaded manifest for ${manifest.scriptId}, ${Object.keys(manifest.files).length} files tracked`);
 
       return {
         exists: true,
@@ -113,7 +113,7 @@ export class SyncManifest {
 
     } catch (error: any) {
       if (error.code === 'ENOENT') {
-        log.debug(`[MANIFEST] No manifest found at ${this.manifestPath} - bootstrap sync required`);
+        mcpLogger.debug('rsync', `[MANIFEST] No manifest found at ${this.manifestPath} - bootstrap sync required`);
         return {
           exists: false,
           manifest: null,
@@ -122,7 +122,7 @@ export class SyncManifest {
         };
       }
 
-      log.error(`[MANIFEST] Failed to load manifest: ${error.message}`);
+      mcpLogger.error('rsync', `[MANIFEST] Failed to load manifest: ${error.message}`);
       throw error;
     }
   }
@@ -147,10 +147,10 @@ export class SyncManifest {
 
       this.data = manifest;
 
-      log.info(`[MANIFEST] Saved manifest for ${manifest.scriptId}, ${Object.keys(manifest.files).length} files tracked`);
+      mcpLogger.info('rsync', `[MANIFEST] Saved manifest for ${manifest.scriptId}, ${Object.keys(manifest.files).length} files tracked`);
 
     } catch (error: any) {
-      log.error(`[MANIFEST] Failed to save manifest: ${error.message}`);
+      mcpLogger.error('rsync', `[MANIFEST] Failed to save manifest: ${error.message}`);
       throw error;
     }
   }
@@ -295,7 +295,7 @@ export class SyncManifest {
     try {
       await fs.unlink(this.manifestPath);
       this.data = null;
-      log.info(`[MANIFEST] Deleted manifest at ${this.manifestPath}`);
+      mcpLogger.info('rsync', `[MANIFEST] Deleted manifest at ${this.manifestPath}`);
     } catch (error: any) {
       if (error.code !== 'ENOENT') {
         throw error;

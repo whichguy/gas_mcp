@@ -9,7 +9,7 @@
  * - Feature workflow support
  */
 
-import { log } from './logger.js';
+import { mcpLogger } from './mcpLogger.js';
 import { execGitCommand } from './gitCommands.js';
 import { getCurrentBranchName, getUncommittedStatus } from './gitStatus.js';
 
@@ -124,7 +124,7 @@ export async function ensureFeatureBranch(projectPath: string): Promise<FeatureB
 
     // Already on feature branch - use it
     if (isFeatureBranch(currentBranch)) {
-      log.info(`[GIT-AUTO-COMMIT] Using existing feature branch: ${currentBranch}`);
+      mcpLogger.info('git', `[GIT-AUTO-COMMIT] Using existing feature branch: ${currentBranch}`);
       return {
         branch: currentBranch,
         created: false
@@ -134,12 +134,12 @@ export async function ensureFeatureBranch(projectPath: string): Promise<FeatureB
     // Not on feature branch - create new auto-generated branch
     const newBranchName = generateAutoBranchName();
 
-    log.info(`[GIT-AUTO-COMMIT] Creating new feature branch: ${newBranchName}`);
+    mcpLogger.info('git', `[GIT-AUTO-COMMIT] Creating new feature branch: ${newBranchName}`);
 
     // SECURITY: Use spawn with array args to prevent shell injection
     await execGitCommand(['checkout', '-b', newBranchName], projectPath);
 
-    log.info(`[GIT-AUTO-COMMIT] ✓ Feature branch created: ${newBranchName}`);
+    mcpLogger.info('git', `[GIT-AUTO-COMMIT] ✓ Feature branch created: ${newBranchName}`);
 
     return {
       branch: newBranchName,
@@ -148,7 +148,7 @@ export async function ensureFeatureBranch(projectPath: string): Promise<FeatureB
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    log.error('[GIT-AUTO-COMMIT] Error ensuring feature branch:', errorMsg);
+    mcpLogger.error('git', { message: '[GIT-AUTO-COMMIT] Error ensuring feature branch', details: errorMsg });
     throw new Error(`Failed to ensure feature branch: ${errorMsg}`);
   }
 }
@@ -170,7 +170,7 @@ export async function getAllBranches(projectPath: string): Promise<string[]> {
       .filter(Boolean);  // Remove empty lines
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    log.error('[GIT-AUTO-COMMIT] Error listing branches:', errorMsg);
+    mcpLogger.error('git', { message: '[GIT-AUTO-COMMIT] Error listing branches', details: errorMsg });
     throw new Error(`Failed to list branches: ${errorMsg}`);
   }
 }

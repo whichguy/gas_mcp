@@ -16,7 +16,6 @@
 import { BaseTool } from '../base.js';
 import { GuidanceFragments } from '../../utils/guidanceFragments.js';
 import { SessionAuthManager } from '../../auth/sessionManager.js';
-import { log } from '../../utils/logger.js';
 import { GASClient } from '../../api/gasClient.js';
 import { SyncPlanner, SyncPlanError, DiffResult } from './SyncPlanner.js';
 import { SyncExecutor, SyncExecuteError } from './SyncExecutor.js';
@@ -246,7 +245,7 @@ export class RsyncTool extends BaseTool {
     const { operation, scriptId } = params;
 
     mcpLogger.info('rsync', { event: 'sync_start', operation, scriptId, dryrun: !!params.dryrun });
-    log.info(`[RSYNC] ${operation} operation for ${scriptId}${params.dryrun ? ' (dryrun)' : ''}`);
+    mcpLogger.info('rsync', `[RSYNC] ${operation} operation for ${scriptId}${params.dryrun ? ' (dryrun)' : ''}`);
 
     // Validate scriptId
     this.validate.scriptId(scriptId, 'rsync operation');
@@ -380,13 +379,13 @@ export class RsyncTool extends BaseTool {
     // Log operation details
     if (ops.hasChanges) {
       if (ops.add.length > 0) {
-        log.info(`[RSYNC] Files to add: ${ops.add.map(f => f.filename).join(', ')}`);
+        mcpLogger.info('rsync', `[RSYNC] Files to add: ${ops.add.map(f => f.filename).join(', ')}`);
       }
       if (ops.update.length > 0) {
-        log.info(`[RSYNC] Files to update: ${ops.update.map(f => f.filename).join(', ')}`);
+        mcpLogger.info('rsync', `[RSYNC] Files to update: ${ops.update.map(f => f.filename).join(', ')}`);
       }
       if (ops.delete.length > 0) {
-        log.info(`[RSYNC] Files to delete: ${ops.delete.map(f => f.filename).join(', ')}`);
+        mcpLogger.info('rsync', `[RSYNC] Files to delete: ${ops.delete.map(f => f.filename).join(', ')}`);
       }
     }
 
@@ -471,7 +470,7 @@ export class RsyncTool extends BaseTool {
 
       return { branch, isFeatureBranch, workflowHint: { action, command, reason } };
     } catch (error) {
-      log.warn(`[RSYNC] Failed to build git hint:`, error instanceof Error ? error.message : String(error));
+      mcpLogger.warning('rsync', { message: '[RSYNC] Failed to build git hint', details: error instanceof Error ? error.message : String(error) });
       return null;
     }
   }
@@ -485,7 +484,7 @@ export class RsyncTool extends BaseTool {
     message: string,
     details?: Record<string, unknown>
   ): RsyncErrorResponse {
-    log.error(`[RSYNC] ${operation} error: ${code} - ${message}`);
+    mcpLogger.error('rsync', `[RSYNC] ${operation} error: ${code} - ${message}`);
 
     return {
       success: false,
@@ -511,7 +510,7 @@ export class RsyncTool extends BaseTool {
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    log.error(`[RSYNC] Unexpected error in ${operation}:`, error);
+    mcpLogger.error('rsync', { message: `[RSYNC] Unexpected error in ${operation}`, details: error });
 
     return this.errorResponse(operation, 'INTERNAL_ERROR', message);
   }

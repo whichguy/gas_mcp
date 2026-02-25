@@ -15,7 +15,7 @@ import { ValidationError } from '../../errors/mcpErrors.js';
 import { LocalFileManager } from '../../utils/localFileManager.js';
 import { getCurrentBranch, isFeatureBranch, hasUncommittedChanges, getAllBranches } from '../../utils/gitAutoCommit.js';
 import { buildCompactDeployHint } from '../../utils/gitStatus.js';
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { ensureGitInitialized } from '../../utils/gitInit.js';
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
 import { exec, spawn } from 'child_process';
@@ -139,10 +139,10 @@ export class GitFeatureTool extends BaseFileSystemTool {
     const gitResult = await ensureGitInitialized(gitRoot);
 
     if (gitResult.isNew) {
-      log.info(`[GIT_FEATURE] Auto-initialized git repository (config: ${gitResult.configSource})`);
+      mcpLogger.info('git-feature', `[GIT_FEATURE] Auto-initialized git repository (config: ${gitResult.configSource})`);
     }
 
-    log.info(`[GIT_FEATURE] Operation: ${operation}, Git root: ${gitRoot}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Operation: ${operation}, Git root: ${gitRoot}`);
 
     // Use session worktree if available (all operations should be session-aware)
     let effectiveGitRoot = gitRoot;
@@ -153,9 +153,9 @@ export class GitFeatureTool extends BaseFileSystemTool {
       try {
         await access(join(worktreePath, '.git'));
         effectiveGitRoot = worktreePath;
-        log.info(`[GIT_FEATURE] Using session worktree: ${effectiveGitRoot}`);
+        mcpLogger.info('git-feature', `[GIT_FEATURE] Using session worktree: ${effectiveGitRoot}`);
       } catch {
-        log.debug(`[GIT_FEATURE] Session worktree not on disk, using main repo`);
+        mcpLogger.debug('git-feature', `[GIT_FEATURE] Session worktree not on disk, using main repo`);
       }
     }
 
@@ -195,7 +195,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
           result.deploy = deployHint;
         }
       } catch (err: unknown) {
-        log.warn(`[GIT_FEATURE] Failed to build deploy hint (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+        mcpLogger.warning('git-feature', `[GIT_FEATURE] Failed to build deploy hint (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -242,7 +242,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       const result = await execAsync('git symbolic-ref refs/remotes/origin/HEAD', { cwd: gitRoot });
       const defaultBranch = result.stdout.trim().replace('refs/remotes/origin/', '');
       if (defaultBranch) {
-        log.debug(`[GIT_FEATURE] Default branch detected via symbolic-ref: ${defaultBranch}`);
+        mcpLogger.debug('git-feature', `[GIT_FEATURE] Default branch detected via symbolic-ref: ${defaultBranch}`);
         return defaultBranch;
       }
     } catch {
@@ -252,7 +252,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     try {
       // Strategy 2: Check if 'main' branch exists
       await execAsync('git show-ref --verify --quiet refs/heads/main', { cwd: gitRoot });
-      log.debug('[GIT_FEATURE] Default branch detected: main (verified exists)');
+      mcpLogger.debug('git-feature', '[GIT_FEATURE] Default branch detected: main (verified exists)');
       return 'main';
     } catch {
       // main doesn't exist, try master
@@ -261,7 +261,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     try {
       // Strategy 3: Check if 'master' branch exists
       await execAsync('git show-ref --verify --quiet refs/heads/master', { cwd: gitRoot });
-      log.debug('[GIT_FEATURE] Default branch detected: master (verified exists)');
+      mcpLogger.debug('git-feature', '[GIT_FEATURE] Default branch detected: master (verified exists)');
       return 'master';
     } catch {
       // Neither main nor master exists
@@ -272,7 +272,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       const result = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: gitRoot });
       const currentBranch = result.stdout.trim();
       if (currentBranch && currentBranch !== 'HEAD') {
-        log.warn(`[GIT_FEATURE] Using current branch as default: ${currentBranch}`);
+        mcpLogger.warning('git-feature', `[GIT_FEATURE] Using current branch as default: ${currentBranch}`);
         return currentBranch;
       }
     } catch {
@@ -280,7 +280,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     }
 
     // Final fallback: assume 'main'
-    log.warn('[GIT_FEATURE] Could not detect default branch, defaulting to main');
+    mcpLogger.warning('git-feature', '[GIT_FEATURE] Could not detect default branch, defaulting to main');
     return 'main';
   }
 
@@ -425,11 +425,11 @@ export class GitFeatureTool extends BaseFileSystemTool {
     const branchName = `llm-feature-${featureName}`;
     const safeBranchName = this.sanitizeBranchName(branchName);
 
-    log.info(`[GIT_FEATURE] Creating feature branch: ${safeBranchName}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Creating feature branch: ${safeBranchName}`);
 
     await this.execGitCommand(['checkout', '-b', safeBranchName], gitRoot);
 
-    log.info(`[GIT_FEATURE] ✓ Feature branch created: ${branchName}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Feature branch created: ${branchName}`);
 
     return {
       status: 'success',
@@ -472,7 +472,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       );
     }
 
-    log.info(`[GIT_FEATURE] Finishing feature branch: ${targetBranch}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Finishing feature branch: ${targetBranch}`);
 
     // Sanitize branch names for safety
     const safeTargetBranch = this.sanitizeBranchName(targetBranch);
@@ -480,7 +480,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     // Detect default branch and switch to it
     const defaultBranch = await this.getDefaultBranch(gitRoot);
     const safeDefaultBranch = this.sanitizeBranchName(defaultBranch);
-    log.info(`[GIT_FEATURE] Switching to default branch: ${safeDefaultBranch}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Switching to default branch: ${safeDefaultBranch}`);
 
     await this.execGitCommand(['checkout', safeDefaultBranch], gitRoot);
 
@@ -521,23 +521,23 @@ export class GitFeatureTool extends BaseFileSystemTool {
     const commitShaOutput = await this.execGitCommand(['rev-parse', 'HEAD'], gitRoot);
     const commitSha = commitShaOutput.trim();
 
-    log.info(`[GIT_FEATURE] ✓ Squash commit created: ${commitSha}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Squash commit created: ${commitSha}`);
 
     // Push to remote if requested
     let pushed = false;
     let pushError: string | undefined;
     if (pushToRemote) {
       try {
-        log.info(`[GIT_FEATURE] Pushing ${defaultBranch} to ${remote}`);
+        mcpLogger.info('git-feature', `[GIT_FEATURE] Pushing ${defaultBranch} to ${remote}`);
         const safeDefaultBranchForPush = this.sanitizeBranchName(defaultBranch);
         await this.execGitCommand(['push', '-u', remote, safeDefaultBranchForPush], gitRoot);
         pushed = true;
-        log.info(`[GIT_FEATURE] ✓ Pushed ${defaultBranch} to ${remote}`);
+        mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Pushed ${defaultBranch} to ${remote}`);
       } catch (error) {
         // Don't fail the merge if push fails - partial success is OK
         pushError = error instanceof Error ? error.message : String(error);
-        log.warn(`[GIT_FEATURE] ⚠ Push failed: ${pushError}`);
-        log.warn(`[GIT_FEATURE] Merge successful but push failed. Run git push manually.`);
+        mcpLogger.warning('git-feature', `[GIT_FEATURE] ⚠ Push failed: ${pushError}`);
+        mcpLogger.warning('git-feature', `[GIT_FEATURE] Merge successful but push failed. Run git push manually.`);
       }
     }
 
@@ -546,7 +546,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     if (deleteAfterMerge) {
       await this.execGitCommand(['branch', '-D', safeTargetBranch], gitRoot);
       deleted = true;
-      log.info(`[GIT_FEATURE] ✓ Feature branch deleted: ${targetBranch}`);
+      mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Feature branch deleted: ${targetBranch}`);
     }
 
     // Add warning hint if merged but NOT pushed to GitHub
@@ -606,7 +606,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       uncommittedChangesLost = await hasUncommittedChanges(gitRoot);
     }
 
-    log.info(`[GIT_FEATURE] Rolling back feature branch: ${branch}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Rolling back feature branch: ${branch}`);
 
     // Sanitize branch name for safety
     const safeBranch = this.sanitizeBranchName(branch);
@@ -617,14 +617,14 @@ export class GitFeatureTool extends BaseFileSystemTool {
     if (onTargetBranch) {
       defaultBranch = await this.getDefaultBranch(gitRoot);
       safeDefaultBranch = this.sanitizeBranchName(defaultBranch);
-      log.info(`[GIT_FEATURE] Switching to default branch: ${safeDefaultBranch}`);
+      mcpLogger.info('git-feature', `[GIT_FEATURE] Switching to default branch: ${safeDefaultBranch}`);
       await this.execGitCommand(['checkout', safeDefaultBranch], gitRoot);
     }
 
     // Delete feature branch (force delete to discard commits)
     await this.execGitCommand(['branch', '-D', safeBranch], gitRoot);
 
-    log.info(`[GIT_FEATURE] ✓ Feature branch deleted: ${branch}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Feature branch deleted: ${branch}`);
 
     return {
       status: 'success',
@@ -649,7 +649,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     // Get current branch
     const currentBranch = await getCurrentBranch(gitRoot);
 
-    log.info(`[GIT_FEATURE] Found ${featureBranches.length} feature branches`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Found ${featureBranches.length} feature branches`);
 
     return {
       status: 'success',
@@ -683,7 +683,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       );
     }
 
-    log.info(`[GIT_FEATURE] Switching to branch: ${branch}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Switching to branch: ${branch}`);
 
     // Sanitize branch name for safety
     const safeBranch = this.sanitizeBranchName(branch);
@@ -691,7 +691,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     // Switch branch
     await this.execGitCommand(['checkout', safeBranch], gitRoot);
 
-    log.info(`[GIT_FEATURE] ✓ Switched to branch: ${branch}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Switched to branch: ${branch}`);
 
     return {
       status: 'success',
@@ -709,7 +709,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     gitRoot: string,
     message: string
   ): Promise<Record<string, unknown>> {
-    log.info('[GIT_FEATURE] Executing commit operation');
+    mcpLogger.info('git-feature', '[GIT_FEATURE] Executing commit operation');
 
     // Pre-flight check: not in detached HEAD
     if (await this.isDetachedHead(gitRoot)) {
@@ -732,7 +732,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       throw new Error('Could not determine current branch');
     }
 
-    log.info(`[GIT_FEATURE] Committing changes on branch: ${currentBranch}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Committing changes on branch: ${currentBranch}`);
 
     // Stage all changes (per user preference: always commit all)
     await this.execGitCommand(['add', '-A'], gitRoot);
@@ -751,7 +751,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     const stats = await this.execGitCommand(['show', '--stat', '--oneline', 'HEAD'], gitRoot);
     const filesChanged = (stats.match(/\|/g) || []).length;
 
-    log.info(`[GIT_FEATURE] ✓ Committed ${filesChanged} file(s): ${shortSha}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Committed ${filesChanged} file(s): ${shortSha}`);
 
     return {
       status: 'success',
@@ -774,7 +774,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     branch?: string,
     remote: string = 'origin'
   ): Promise<Record<string, unknown>> {
-    log.info('[GIT_FEATURE] Executing push operation');
+    mcpLogger.info('git-feature', '[GIT_FEATURE] Executing push operation');
 
     // Pre-flight check: not in detached HEAD
     if (await this.isDetachedHead(gitRoot)) {
@@ -790,7 +790,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
     }
     const currentBranch = branchResult;
 
-    log.info(`[GIT_FEATURE] Pushing branch: ${currentBranch} to remote: ${remote}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] Pushing branch: ${currentBranch} to remote: ${remote}`);
 
     // Sanitize remote name for safety
     if (!/^[a-zA-Z0-9_-]+$/.test(remote)) {
@@ -834,7 +834,7 @@ export class GitFeatureTool extends BaseFileSystemTool {
       }
     }
 
-    log.info(`[GIT_FEATURE] ✓ Pushed ${currentBranch} to ${remote}`);
+    mcpLogger.info('git-feature', `[GIT_FEATURE] ✓ Pushed ${currentBranch} to ${remote}`);
 
     return {
       status: 'success',

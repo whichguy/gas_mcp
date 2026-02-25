@@ -16,7 +16,7 @@
  * - CatTool (for sync variant)
  */
 
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { FileFilter } from '../../utils/fileFilter.js';
 import { ensureFeatureBranch } from '../../utils/gitAutoCommit.js';
 import { clearGASMetadata, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
@@ -99,7 +99,7 @@ export class GitOperationManager {
     options: GitOperationOptions
   ): Promise<GitOperationResult<T>> {
 
-    log.info(`[GIT-MANAGER] Starting git operation: ${operation.getType()}`);
+    mcpLogger.info('git', `[GIT-MANAGER] Starting git operation: ${operation.getType()}`);
 
     // PHASE 0: Setup & Path Resolution
     let localPath = await this.pathResolver.resolve(
@@ -108,7 +108,7 @@ export class GitOperationManager {
       options.accessToken
     );
 
-    log.info(`[GIT-MANAGER] Resolved local path: ${localPath}`);
+    mcpLogger.info('git', `[GIT-MANAGER] Resolved local path: ${localPath}`);
 
     const hasBreadcrumb = await this.pathResolver.hasBreadcrumb(
       options.scriptId,
@@ -125,17 +125,17 @@ export class GitOperationManager {
       syncMode = 'simple';
     }
 
-    log.info(`[GIT-MANAGER] Sync mode: ${syncMode} (breadcrumb: ${hasBreadcrumb})`);
+    mcpLogger.info('git', `[GIT-MANAGER] Sync mode: ${syncMode} (breadcrumb: ${hasBreadcrumb})`);
 
     const syncStrategy = await this.syncFactory.create(syncMode, this.gasClient);
 
     // PHASE 1: Git Preparation - Ensure git repo exists and feature branch
-    log.info(`[GIT-MANAGER] Ensuring git repository...`);
+    mcpLogger.info('git', `[GIT-MANAGER] Ensuring git repository...`);
     const { LocalFileManager } = await import('../../utils/localFileManager.js');
     const gitStatus = await LocalFileManager.ensureProjectGitRepo(options.scriptId, localPath);
 
     if (gitStatus.gitInitialized) {
-      log.debug(`[GIT-MANAGER] Git repository ready (new: ${gitStatus.isNewRepo})`);
+      mcpLogger.debug('git', `[GIT-MANAGER] Git repository ready (new: ${gitStatus.isNewRepo})`);
     } else {
       throw new Error('Failed to initialize git repository');
     }
@@ -152,17 +152,17 @@ export class GitOperationManager {
         this.gasClient,
         options.accessToken
       );
-      log.info(`[GIT-MANAGER] Using session worktree: ${localPath}`);
+      mcpLogger.info('git', `[GIT-MANAGER] Using session worktree: ${localPath}`);
 
       // Get current branch name from the worktree (should be session/{id})
       const { getCurrentBranchName } = await import('../../utils/gitStatus.js');
       const currentBranch = await getCurrentBranchName(localPath);
       branchResult = { branch: currentBranch || `session/${worktreeManager['sessionId']}`, created: false };
-      log.info(`[GIT-MANAGER] Session worktree branch: ${branchResult.branch}`);
+      mcpLogger.info('git', `[GIT-MANAGER] Session worktree branch: ${branchResult.branch}`);
     } else {
-      log.info(`[GIT-MANAGER] Ensuring feature branch...`);
+      mcpLogger.info('git', `[GIT-MANAGER] Ensuring feature branch...`);
       branchResult = await ensureFeatureBranch(localPath);
-      log.info(`[GIT-MANAGER] Branch: ${branchResult.branch} (created: ${branchResult.created})`);
+      mcpLogger.info('git', `[GIT-MANAGER] Branch: ${branchResult.branch} (created: ${branchResult.created})`);
     }
 
     // PHASE 2: Pre-Operation Sync (skipped - no bidirectional mode)
@@ -174,13 +174,13 @@ export class GitOperationManager {
     let affectedFiles: string[] = [];
 
     try {
-      log.info(`[GIT-MANAGER] Computing changes: ${operation.getType()}`);
+      mcpLogger.info('git', `[GIT-MANAGER] Computing changes: ${operation.getType()}`);
 
       // PHASE 3A: Compute changes (reads remote, applies logic, returns Map<filename, content>)
       const computedChanges = await operation.computeChanges();
       affectedFiles = operation.getAffectedFiles();
 
-      log.info(`[GIT-MANAGER] Changes computed. Affected files: ${affectedFiles.join(', ')}`);
+      mcpLogger.info('git', `[GIT-MANAGER] Changes computed. Affected files: ${affectedFiles.join(', ')}`);
 
       // PHASE 4: Local Validation with Hooks (skip if local-only mode)
       let validatedContent = computedChanges; // Default: use computed as-is
@@ -189,21 +189,21 @@ export class GitOperationManager {
         const commitMessage = options.changeReason ||
           this.generateSmartCommitMessage(operation, affectedFiles);
 
-        log.info(`[GIT-MANAGER] Validating with hooks: ${commitMessage}`);
+        mcpLogger.info('git', `[GIT-MANAGER] Validating with hooks: ${commitMessage}`);
 
         // Import file system utilities
         const { writeFile, mkdir, unlink, readFile } = await import('fs/promises');
         const { dirname, join } = await import('path');
 
         // STEP 1: Write ALL files to local disk (including deletions)
-        log.debug(`[GIT-MANAGER] Writing ${computedChanges.size} file(s) to local disk`);
+        mcpLogger.debug('git', `[GIT-MANAGER] Writing ${computedChanges.size} file(s) to local disk`);
 
         const { LocalFileManager } = await import('../../utils/localFileManager.js');
 
         for (const [filename, content] of computedChanges.entries()) {
           // GAS .git/* are sync breadcrumbs — skip to avoid EEXIST (worktree) or overwriting real git config (repo)
           if (FileFilter.isGitBreadcrumbPath(filename)) {
-            log.warn(`[GIT-MANAGER] Skipping git breadcrumb: ${filename}`);
+            mcpLogger.warning('git', `[GIT-MANAGER] Skipping git breadcrumb: ${filename}`);
             continue;
           }
 
@@ -216,7 +216,7 @@ export class GitOperationManager {
             // File deletion: unlink local file
             try {
               await unlink(filePath);
-              log.debug(`[GIT-MANAGER] Deleted local file: ${fullFilename}`);
+              mcpLogger.debug('git', `[GIT-MANAGER] Deleted local file: ${fullFilename}`);
 
               // Clear xattr cache to prevent stale hash detection if file is recreated
               await clearGASMetadata(filePath).catch(() => {
@@ -224,20 +224,20 @@ export class GitOperationManager {
               });
             } catch (error: any) {
               if (error.code !== 'ENOENT') {
-                log.warn(`[GIT-MANAGER] Failed to delete ${fullFilename}: ${error.message}`);
+                mcpLogger.warning('git', `[GIT-MANAGER] Failed to delete ${fullFilename}: ${error.message}`);
               }
             }
           } else {
             // File creation/update: write content
             await mkdir(dirname(filePath), { recursive: true });
             await writeFile(filePath, content, 'utf-8');
-            log.debug(`[GIT-MANAGER] Wrote local file: ${fullFilename}`);
+            mcpLogger.debug('git', `[GIT-MANAGER] Wrote local file: ${fullFilename}`);
           }
         }
 
         // STEP 2: Stage files (NO AUTO-COMMIT - aligns with Claude Code philosophy)
         // "NEVER commit changes unless the user explicitly asks you to."
-        log.info(`[GIT-MANAGER] Staging ${affectedFiles.length} file(s) - NOT committing`);
+        mcpLogger.info('git', `[GIT-MANAGER] Staging ${affectedFiles.length} file(s) - NOT committing`);
 
         // Convert GAS filenames to local filenames with extensions for git
         const affectedFilesWithExtensions = affectedFiles.map(filename => {
@@ -290,7 +290,7 @@ export class GitOperationManager {
             }
 
             // Valid remote-only scenario - proceed without local staging
-            log.info(
+            mcpLogger.info('git',
               `[GIT-MANAGER] Delete operation: ${affectedFilesWithExtensions.length} file(s) not tracked in local git, ` +
               `proceeding with remote deletion only (no local staging needed)`
             );
@@ -302,10 +302,10 @@ export class GitOperationManager {
         }
 
         stagedFiles = stageResult.stagedFiles;
-        log.info(`[GIT-MANAGER] Staged ${stagedFiles.length} file(s) - NOT committed`);
+        mcpLogger.info('git', `[GIT-MANAGER] Staged ${stagedFiles.length} file(s) - NOT committed`);
 
         // STEP 3: Read back ALL hook-validated files
-        log.debug(`[GIT-MANAGER] Reading back hook-validated content`);
+        mcpLogger.debug('git', `[GIT-MANAGER] Reading back hook-validated content`);
 
         validatedContent = new Map<string, string>();
 
@@ -318,7 +318,7 @@ export class GitOperationManager {
           if (originalContent === '') {
             // Deleted file: keep as empty string
             validatedContent.set(filename, '');
-            log.debug(`[GIT-MANAGER] Deletion confirmed: ${filename}`);
+            mcpLogger.debug('git', `[GIT-MANAGER] Deletion confirmed: ${filename}`);
           } else {
             // Read back hook-validated content
             try {
@@ -326,12 +326,12 @@ export class GitOperationManager {
               validatedContent.set(filename, hookValidatedContent);
 
               if (hookValidatedContent !== originalContent) {
-                log.info(`[GIT-MANAGER] Hooks modified ${filename} (${originalContent.length} → ${hookValidatedContent.length} bytes)`);
+                mcpLogger.info('git', `[GIT-MANAGER] Hooks modified ${filename} (${originalContent.length} → ${hookValidatedContent.length} bytes)`);
               }
             } catch (error: any) {
               // If file doesn't exist after hooks, hooks may have deleted it
               if (error.code === 'ENOENT') {
-                log.warn(`[GIT-MANAGER] File ${filename} not found after hooks - may have been deleted by hooks`);
+                mcpLogger.warning('git', `[GIT-MANAGER] File ${filename} not found after hooks - may have been deleted by hooks`);
                 validatedContent.set(filename, '');
               } else {
                 throw new Error(`Failed to read ${filename} after hooks: ${error.message}`);
@@ -340,15 +340,15 @@ export class GitOperationManager {
           }
         }
 
-        log.info(`[GIT-MANAGER] Validation complete. Staged: ${stagedFiles.length} file(s)`);
+        mcpLogger.info('git', `[GIT-MANAGER] Validation complete. Staged: ${stagedFiles.length} file(s)`);
       }
 
       // PHASE 5: Apply validated changes to remote
-      log.info(`[GIT-MANAGER] Applying validated changes to remote...`);
+      mcpLogger.info('git', `[GIT-MANAGER] Applying validated changes to remote...`);
 
       operationResult = await operation.applyChanges(validatedContent);
 
-      log.info(`[GIT-MANAGER] Remote write complete`);
+      mcpLogger.info('git', `[GIT-MANAGER] Remote write complete`);
 
       // Overwrite local files with WRAPPED content from strategy.
       // Strategies return wrappedContent (the content written to GAS remote).
@@ -368,7 +368,7 @@ export class GitOperationManager {
           const hash = computeGitSha1(content);
           await updateCachedContentHash(filePath, hash);
           wrappedFilesWithExt.push(fullFilename);
-          log.debug(`[GIT-MANAGER] Overwrote local with wrapped content: ${fullFilename} (hash: ${hash.slice(0, 8)}...)`);
+          mcpLogger.debug('git', `[GIT-MANAGER] Overwrote local with wrapped content: ${fullFilename} (hash: ${hash.slice(0, 8)}...)`);
         }
 
         // Re-stage so git index matches working tree (WRAPPED content).
@@ -385,14 +385,14 @@ export class GitOperationManager {
             git.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git add exit code ${code}`)));
             git.on('error', reject);
           });
-          log.debug(`[GIT-MANAGER] Re-staged ${wrappedContent.size} file(s) with wrapped content`);
+          mcpLogger.debug('git', `[GIT-MANAGER] Re-staged ${wrappedContent.size} file(s) with wrapped content`);
         } catch (restageErr: any) {
-          log.warn(`[GIT-MANAGER] Re-stage failed (non-fatal): ${restageErr.message}`);
+          mcpLogger.warning('git', `[GIT-MANAGER] Re-stage failed (non-fatal): ${restageErr.message}`);
         }
       }
 
       // SUCCESS
-      log.info(`[GIT-MANAGER] Git operation completed successfully`);
+      mcpLogger.info('git', `[GIT-MANAGER] Git operation completed successfully`);
 
       // Get uncommitted status for compact git hints
       const { getUncommittedStatus } = await import('../../utils/gitStatus.js');
@@ -416,11 +416,11 @@ export class GitOperationManager {
 
     } catch (error: any) {
       // PHASE 6: Atomic Rollback
-      log.error(`[GIT-MANAGER] Operation failed: ${error.message}`);
+      mcpLogger.error('git', `[GIT-MANAGER] Operation failed: ${error.message}`);
 
       // Unstage any staged files (no commits to revert since we don't auto-commit)
       if (stagedFiles.length > 0) {
-        log.info(`[GIT-MANAGER] Unstaging ${stagedFiles.length} file(s)...`);
+        mcpLogger.info('git', `[GIT-MANAGER] Unstaging ${stagedFiles.length} file(s)...`);
 
         try {
           const { spawn } = await import('child_process');
@@ -454,19 +454,19 @@ export class GitOperationManager {
             });
           }
 
-          log.info(`[GIT-MANAGER] Unstaging successful`);
+          mcpLogger.info('git', `[GIT-MANAGER] Unstaging successful`);
         } catch (unstageError: any) {
-          log.warn(`[GIT-MANAGER] Unstaging failed: ${unstageError.message}`);
+          mcpLogger.warning('git', `[GIT-MANAGER] Unstaging failed: ${unstageError.message}`);
         }
       }
 
       // Rollback the file operation itself
       try {
-        log.info(`[GIT-MANAGER] Rolling back file operation...`);
+        mcpLogger.info('git', `[GIT-MANAGER] Rolling back file operation...`);
         await operation.rollback();
-        log.info(`[GIT-MANAGER] File operation rollback complete`);
+        mcpLogger.info('git', `[GIT-MANAGER] File operation rollback complete`);
       } catch (rollbackError: any) {
-        log.error(`[GIT-MANAGER] File operation rollback failed: ${rollbackError.message}`);
+        mcpLogger.error('git', `[GIT-MANAGER] File operation rollback failed: ${rollbackError.message}`);
       }
 
       throw new Error(

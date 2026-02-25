@@ -6,7 +6,7 @@
  */
 
 import { spawn } from 'child_process';
-import { log } from './logger.js';
+import { mcpLogger } from './mcpLogger.js';
 
 /**
  * Information about uncommitted changes in a git repository
@@ -92,7 +92,7 @@ export async function getUncommittedStatus(repoPath: string): Promise<Uncommitte
       hasMore: lines.length > 10
     };
   } catch (error) {
-    log.warn(`[GIT-STATUS] Failed to get status for ${repoPath}:`, error instanceof Error ? error.message : String(error));
+    mcpLogger.warning('git', { message: `[GIT-STATUS] Failed to get status for ${repoPath}`, details: error instanceof Error ? error.message : String(error) });
     return {
       count: 0,
       files: [],
@@ -114,7 +114,7 @@ export async function getCurrentBranchName(repoPath: string): Promise<string> {
     // rev-parse returns 'HEAD' when in detached HEAD state
     return trimmed || 'unknown';
   } catch (error) {
-    log.warn(`[GIT-STATUS] Failed to get branch for ${repoPath}:`, error instanceof Error ? error.message : String(error));
+    mcpLogger.warning('git', { message: `[GIT-STATUS] Failed to get branch for ${repoPath}`, details: error instanceof Error ? error.message : String(error) });
     return 'unknown';
   }
 }
