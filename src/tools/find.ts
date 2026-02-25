@@ -119,6 +119,7 @@ export class FindTool extends BaseTool {
       ...SchemaFragments.accessToken
     },
     required: ['scriptId'],
+    additionalProperties: false,
     llmGuidance: {
       limitations: 'GAS flat structure (no real dirs); *,?,[abc] wildcards match filenames not paths; virtual dotfile names (.gitignore not .gitignore.gs). raw:true→actual GAS names',
       antiPatterns: 'find then cat each→use ripgrep | find without pattern→use ls | find for content→use grep/ripgrep'
