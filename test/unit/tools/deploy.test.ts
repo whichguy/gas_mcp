@@ -14,6 +14,7 @@ import { describe, it, beforeEach } from 'mocha';
 import { LibraryDeployTool } from '../../../src/tools/deploy.js';
 import { DeployConfigTool } from '../../../src/tools/deployment.js';
 import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
+import { GASApiError } from '../../../src/errors/mcpErrors.js';
 
 describe('LibraryDeployTool', () => {
   let tool: LibraryDeployTool;
@@ -234,7 +235,7 @@ describe('LibraryDeployTool', () => {
     });
 
     it('should reject potential injection payloads', () => {
-      expect(() => callValidate(tool, 'a;eval(')).to.throw();
+      expect(() => callValidate(tool, "a;eval(")).to.throw();
       expect(() => callValidate(tool, 'a\n//')).to.throw();
     });
   });
@@ -692,7 +693,7 @@ describe('LibraryDeployTool', () => {
     const TARGET_ID = 'target-script-id';
 
     function makeExecResult(scriptProps: Record<string, string>, docProps: Record<string, string>): any {
-      return { logger_output: JSON.stringify({ script: scriptProps, doc: docProps }) };
+      return { status: 'success', logger_output: JSON.stringify({ script: scriptProps, doc: docProps }) };
     }
 
     it('should copy non-managed script-scope and doc-scope properties to target', async () => {
@@ -978,6 +979,9 @@ describe('LibraryDeployTool', () => {
       expect(calls[0].js_statement).to.include('setDocument');
       expect(calls[0].js_statement).to.include('MY_DOC_KEY');
       expect(calls[0].js_statement).to.include('val');
+      expect(calls[0].scriptId).to.equal('1Y72rigcMUAwRd7bwl3CR57');
+      expect(calls[0].autoRedeploy).to.be.true;
+      expect(calls[0].skipSyncCheck).to.be.true;
     });
 
     it('should throw GASApiError when execTool.execute returns an error', async () => {
@@ -990,6 +994,7 @@ describe('LibraryDeployTool', () => {
         await (tool as any).setDocConfigManagerValue('1Y72rigcMUAwRd7bwl3CR57', 'KEY', 'val');
       } catch (e: any) {
         threw = true;
+        expect(e).to.be.instanceOf(GASApiError);
         expect(e.message).to.include('setDocument');
         expect(e.message).to.include('KEY');
       }
