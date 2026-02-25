@@ -361,7 +361,6 @@ export async function auth({
         );
     }
   } catch (error: any) {
-    console.error('Authentication error:', error);
     mcpLogger.error('auth', { event: 'login_failure', error: error.message, mode });
 
     // CLEANUP on any error
