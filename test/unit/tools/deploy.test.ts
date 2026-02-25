@@ -244,36 +244,36 @@ describe('LibraryDeployTool', () => {
   // deriveUserSymbol Tests
   // ============================================================
   describe('deriveUserSymbol', () => {
-    // This method is async and calls getProjectName which reads config.
-    // We test the PascalCase conversion logic directly.
-    function testConversion(name: string): string {
-      return name
-        .split(/[-_\s]+/)
-        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join('');
+    async function derive(name: string): Promise<string> {
+      (tool as any).getProjectName = async () => name;
+      return (tool as any).deriveUserSymbol('stub-id');
     }
 
-    it('should convert kebab-case to PascalCase', () => {
-      expect(testConversion('sheets-chat')).to.equal('SheetsChat');
-      expect(testConversion('my-cool-tool')).to.equal('MyCoolTool');
+    it('should convert kebab-case to PascalCase', async () => {
+      expect(await derive('sheets-chat')).to.equal('SheetsChat');
+      expect(await derive('my-cool-tool')).to.equal('MyCoolTool');
     });
 
-    it('should convert snake_case to PascalCase', () => {
-      expect(testConversion('sheet_chat')).to.equal('SheetChat');
-      expect(testConversion('my_tool')).to.equal('MyTool');
+    it('should convert snake_case to PascalCase', async () => {
+      expect(await derive('sheet_chat')).to.equal('SheetChat');
+      expect(await derive('my_tool')).to.equal('MyTool');
     });
 
-    it('should handle single word', () => {
-      expect(testConversion('utils')).to.equal('Utils');
-      expect(testConversion('API')).to.equal('API');
+    it('should handle single word', async () => {
+      expect(await derive('utils')).to.equal('Utils');
+      expect(await derive('API')).to.equal('API');
     });
 
-    it('should handle already PascalCase', () => {
-      expect(testConversion('SheetsChat')).to.equal('SheetsChat');
+    it('should handle already PascalCase', async () => {
+      expect(await derive('SheetsChat')).to.equal('SheetsChat');
     });
 
-    it('should handle spaces', () => {
-      expect(testConversion('my tool')).to.equal('MyTool');
+    it('should handle spaces', async () => {
+      expect(await derive('my tool')).to.equal('MyTool');
+    });
+
+    it('should prefix Lib when result starts with a digit', async () => {
+      expect(await derive('123project')).to.equal('Lib123project');
     });
   });
 
@@ -600,6 +600,7 @@ describe('LibraryDeployTool', () => {
     const SOURCE_ID = 'src-script-id';
     const CONSUMER_ID = 'consumer-script-id';
     const USER_SYMBOL = 'MyLib';
+    // Source manifest template passed to writeConsumerShim for scopes/timezone reference
     const MANIFEST_JSON = { timeZone: 'America/New_York', oauthScopes: ['scope1'] };
 
     function makeManifest(lib?: object): any[] {
@@ -765,6 +766,7 @@ describe('LibraryDeployTool', () => {
       expect(result.errors).to.include('KEY_A');
       expect(result.errors).to.include('doc:KEY_B');
       expect(result.synced).to.deep.equal([]);
+      expect(result.skipped).to.deep.equal([]);
     });
 
     it('should handle missing logger_output gracefully (best-effort parse)', async () => {
@@ -1028,7 +1030,9 @@ describe('LibraryDeployTool', () => {
       (mcpConfig.McpGasConfigManager as any).getConfig = async () => ({
         projects: { 'MyLib': { scriptId: 'dev-id', name: 'MyLib', environments: {} } }
       });
+      let saveConfigCalled = false;
       (mcpConfig.McpGasConfigManager as any).saveConfig = async () => {
+        saveConfigCalled = true;
         throw new Error('disk full');
       };
 
@@ -1050,6 +1054,7 @@ describe('LibraryDeployTool', () => {
 
       // saveConfig throwing should NOT propagate
       expect(threw).to.be.false;
+      expect(saveConfigCalled).to.be.true;
     });
   });
 });
