@@ -20,7 +20,11 @@ export const mcpLogger = {
   },
 
   debug(logger: string, data: unknown): void {
-    this.log('debug', logger, data);
+    if (ServerContext.isInitialized()) {
+      this.log('debug', logger, data);
+    } else if (process.env.DEBUG) {
+      console.error(`[DEBUG] [${logger}]`, data);
+    }
   },
 
   info(logger: string, data: unknown): void {
