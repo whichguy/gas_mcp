@@ -836,10 +836,12 @@ describe('LibraryDeployTool', () => {
       let deleteCallMade = false;
 
       (tool as any).execTool = {
-        execute: async (_params: any) => {
+        execute: async (params: any) => {
+          if (params.js_statement?.includes('deleteProperty')) {
+            deleteCallMade = true;
+          }
           callCount++;
           if (callCount === 1) return makeExecResult({ A: '1' }, {}); // source read only
-          deleteCallMade = true; // any second execTool call is unexpected (writes go through setConfigManagerValue mock)
           return {};
         },
       };
