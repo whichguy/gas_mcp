@@ -727,7 +727,7 @@ export class GrepSearchEngine {
           }
         } catch (error) {
           // Skip problematic patterns and continue
-          console.warn(`Pattern search failed for term "${term}":`, error);
+          console.error(`Pattern search failed for term "${term}":`, error);
           continue;
         }
       }
