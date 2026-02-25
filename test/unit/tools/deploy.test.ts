@@ -964,31 +964,30 @@ describe('LibraryDeployTool', () => {
   // ============================================================
   describe('setDocConfigManagerValue', () => {
     it('should call ConfigManager.setDocument (not setScript) with key and value', async () => {
-      const calls: any[][] = [];
-      (tool as any).gasClient = {
-        executeFunction: async (_id: string, _fn: string, args: any[]) => {
-          calls.push(args);
-          return { error: null };
+      const calls: any[] = [];
+      (tool as any).execTool = {
+        execute: async (params: any) => {
+          calls.push(params);
+          return { status: 'success' };
         },
       };
 
-      await (tool as any).setDocConfigManagerValue('scriptId', 'MY_DOC_KEY', 'val', 'token');
+      await (tool as any).setDocConfigManagerValue('1Y72rigcMUAwRd7bwl3CR57', 'MY_DOC_KEY', 'val', 'token');
 
       expect(calls).to.have.length(1);
-      // args[2] is the ConfigManager function name
-      expect(calls[0][2]).to.equal('setDocument');
-      expect(calls[0][3]).to.equal('MY_DOC_KEY');
-      expect(calls[0][4]).to.equal('val');
+      expect(calls[0].js_statement).to.include('setDocument');
+      expect(calls[0].js_statement).to.include('MY_DOC_KEY');
+      expect(calls[0].js_statement).to.include('val');
     });
 
-    it('should throw GASApiError when executeFunction returns an error', async () => {
-      (tool as any).gasClient = {
-        executeFunction: async () => ({ error: 'permission denied' }),
+    it('should throw GASApiError when execTool.execute returns an error', async () => {
+      (tool as any).execTool = {
+        execute: async () => ({ status: 'error', error: { message: 'permission denied' } }),
       };
 
       let threw = false;
       try {
-        await (tool as any).setDocConfigManagerValue('scriptId', 'KEY', 'val');
+        await (tool as any).setDocConfigManagerValue('1Y72rigcMUAwRd7bwl3CR57', 'KEY', 'val');
       } catch (e: any) {
         threw = true;
         expect(e.message).to.include('setDocument');
