@@ -839,7 +839,7 @@ describe('LibraryDeployTool', () => {
         execute: async (_params: any) => {
           callCount++;
           if (callCount === 1) return makeExecResult({ A: '1' }, {}); // source read only
-          deleteCallMade = true; // any second exec in reconcile=false mode would be a delete (unexpected)
+          deleteCallMade = true; // any second execTool call is unexpected (writes go through setConfigManagerValue mock)
           return {};
         },
       };
@@ -1016,7 +1016,6 @@ describe('LibraryDeployTool', () => {
         updateProjectContent: async (_id: string, files: any[]) => files,
         getProject: async () => ({ title: 'MyLib Project' }),
       };
-      (tool as any).addLibraryToProject = async () => {};
       (tool as any).deriveUserSymbol = async () => 'MyLib';
       (tool as any).setConfigManagerValue = async () => {};
 
