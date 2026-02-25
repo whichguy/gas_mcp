@@ -20,6 +20,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { GuidanceFragments } from '../utils/guidanceFragments.js';
 import { getGitBreadcrumbEditHint, type GitBreadcrumbEditHint } from '../utils/gitBreadcrumbHints.js';
 import type { CompactGitHint } from '../utils/gitStatus.js';
+import { mcpLogger } from '../utils/mcpLogger.js';
 
 /**
  * Interface for sed operation results
@@ -343,7 +344,7 @@ export class SedTool extends BaseTool {
 
       } catch (error) {
         // Skip invalid regex patterns
-        console.warn(`Invalid regex pattern: ${pattern}`, error);
+        mcpLogger.warning('sed', { message: `Invalid regex pattern: ${pattern}`, details: error instanceof Error ? error.message : String(error) });
       }
     }
 

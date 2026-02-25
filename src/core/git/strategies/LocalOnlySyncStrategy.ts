@@ -11,7 +11,7 @@
  * 4. pushToRemote() - No-op
  */
 
-import { log } from '../../../utils/logger.js';
+import { mcpLogger } from '../../../utils/mcpLogger.js';
 import type { SyncStrategy } from './SyncStrategy.js';
 import type { GASClient } from '../../../api/gasClient.js';
 
@@ -27,7 +27,7 @@ export class LocalOnlySyncStrategy implements SyncStrategy {
     projectPath?: string,
     accessToken?: string
   ): Promise<void> {
-    log.debug(`[LOCAL-ONLY-SYNC] pullFromRemote: no-op (local-only mode)`);
+    mcpLogger.debug('git', `[LOCAL-ONLY-SYNC] pullFromRemote: no-op (local-only mode)`);
     // No-op: Local-only mode doesn't interact with remote
   }
 
@@ -41,7 +41,7 @@ export class LocalOnlySyncStrategy implements SyncStrategy {
     projectPath?: string,
     accessToken?: string
   ): Promise<void> {
-    log.debug(`[LOCAL-ONLY-SYNC] pushToRemote: no-op (local-only mode)`);
+    mcpLogger.debug('git', `[LOCAL-ONLY-SYNC] pushToRemote: no-op (local-only mode)`);
     // No-op: Local-only mode doesn't push to remote
   }
 

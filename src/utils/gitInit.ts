@@ -11,7 +11,7 @@ import { access, constants } from 'fs/promises';
 import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { log } from './logger.js';
+import { mcpLogger } from './mcpLogger.js';
 
 const execAsync = promisify(exec);
 
@@ -54,9 +54,9 @@ async function setDefaultGitConfig(repoPath: string): Promise<void> {
   try {
     await execAsync('git config user.name "MCP Gas"', { cwd: repoPath });
     await execAsync('git config user.email "mcp@gas.local"', { cwd: repoPath });
-    log.info('[GIT-INIT] Set default git config (user.name="MCP Gas", user.email="mcp@gas.local")');
+    mcpLogger.info('git', '[GIT-INIT] Set default git config (user.name="MCP Gas", user.email="mcp@gas.local")');
   } catch (error) {
-    log.warn('[GIT-INIT] Failed to set default git config:', error instanceof Error ? error.message : String(error));
+    mcpLogger.warning('git', { message: '[GIT-INIT] Failed to set default git config', details: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -85,7 +85,7 @@ export async function ensureGitInitialized(repoPath: string): Promise<GitInitRes
     const gitExists = await access(gitPath, constants.F_OK).then(() => true).catch(() => false);
 
     if (gitExists) {
-      log.debug(`[GIT-INIT] Git repository already exists at ${repoPath}`);
+      mcpLogger.debug('git', `[GIT-INIT] Git repository already exists at ${repoPath}`);
       return {
         initialized: true,
         isNew: false,
@@ -95,13 +95,13 @@ export async function ensureGitInitialized(repoPath: string): Promise<GitInitRes
     }
 
     // Initialize git repository
-    log.info(`[GIT-INIT] Initializing git repository at ${repoPath}`);
+    mcpLogger.info('git', `[GIT-INIT] Initializing git repository at ${repoPath}`);
 
     try {
       await execAsync('git init', { cwd: repoPath });
-      log.info(`[GIT-INIT] ✓ Git repository initialized`);
+      mcpLogger.info('git', `[GIT-INIT] ✓ Git repository initialized`);
     } catch (error) {
-      log.error('[GIT-INIT] Failed to run git init:', error instanceof Error ? error.message : String(error));
+      mcpLogger.error('git', { message: '[GIT-INIT] Failed to run git init', details: error instanceof Error ? error.message : String(error) });
       throw new Error(`Git initialization failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
@@ -112,11 +112,11 @@ export async function ensureGitInitialized(repoPath: string): Promise<GitInitRes
 
     if (globalConfig.name && globalConfig.email) {
       // Global config exists - git will use it automatically
-      log.info(`[GIT-INIT] Using global git config (name="${globalConfig.name}", email="${globalConfig.email}")`);
+      mcpLogger.info('git', `[GIT-INIT] Using global git config (name="${globalConfig.name}", email="${globalConfig.email}")`);
       configSource = 'global';
     } else {
       // No global config - set local defaults
-      log.info('[GIT-INIT] No global git config found, setting local defaults');
+      mcpLogger.info('git', '[GIT-INIT] No global git config found, setting local defaults');
       await setDefaultGitConfig(repoPath);
       configSource = 'defaults';
     }
@@ -129,7 +129,7 @@ export async function ensureGitInitialized(repoPath: string): Promise<GitInitRes
     };
 
   } catch (error) {
-    log.error('[GIT-INIT] Unexpected error during git initialization:', error instanceof Error ? error.message : String(error));
+    mcpLogger.error('git', { message: '[GIT-INIT] Unexpected error during git initialization', details: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }

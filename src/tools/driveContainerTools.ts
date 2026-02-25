@@ -8,6 +8,7 @@ import { BaseTool } from './base.js';
 import { SessionAuthManager } from '../auth/sessionManager.js';
 import { GASErrorHandler } from '../utils/errorHandler.js';
 import { MCPValidator } from '../utils/validation.js';
+import { mcpLogger } from '../utils/mcpLogger.js';
 
 // ============================================================================
 // INTERFACES AND TYPES
@@ -572,7 +573,7 @@ export class CreateScriptTool extends BaseTool {
           errorHeaders[key] = value;
         });
       } catch (bodyError) {
-        console.warn('Failed to read error response body:', bodyError);
+        mcpLogger.warning('drive', { message: 'Failed to read error response body', details: bodyError instanceof Error ? bodyError.message : String(bodyError) });
       }
       
       const error = new Error(`Failed to create script project: ${createResponse.status} ${createResponse.statusText} - ${errorText}`);
@@ -648,7 +649,7 @@ export class CreateScriptTool extends BaseTool {
           }
         );
       } catch (error: any) {
-        console.warn('Failed to add starter code (non-critical):', error.message);
+        mcpLogger.warning('drive', { message: 'Failed to add starter code (non-critical)', details: error.message });
       }
       // Don't throw error as project was created successfully
     }

@@ -13,7 +13,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
-import { log } from './logger.js';
+import { mcpLogger } from './mcpLogger.js';
 
 const SESSION_DIR = path.join(os.homedir(), '.auth', 'mcp-gas', 'sessions');
 const HEARTBEAT_INTERVAL = 60 * 1000; // 60 seconds
@@ -57,7 +57,7 @@ export class SessionIdentity {
       return SessionIdentity.instance;
     }
     SessionIdentity.instance = new SessionIdentity();
-    log.info(`[SESSION] Initialized session: ${SessionIdentity.instance.id}`);
+    mcpLogger.info('session', `[SESSION] Initialized session: ${SessionIdentity.instance.id}`);
     return SessionIdentity.instance;
   }
 
@@ -83,7 +83,7 @@ export class SessionIdentity {
       try {
         await this.writeMetadata();
       } catch (err) {
-        log.warn(`[SESSION] Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
+        mcpLogger.warning('session', `[SESSION] Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }, HEARTBEAT_INTERVAL);
 
@@ -92,7 +92,7 @@ export class SessionIdentity {
       this.heartbeatTimer.unref();
     }
 
-    log.info(`[SESSION] Heartbeat started (${HEARTBEAT_INTERVAL / 1000}s interval)`);
+    mcpLogger.info('session', `[SESSION] Heartbeat started (${HEARTBEAT_INTERVAL / 1000}s interval)`);
   }
 
   /**
@@ -130,21 +130,21 @@ export class SessionIdentity {
 
         try {
           await worktreeManager.removeWorktreeByPath(wt.worktreePath, wt.mainRepoPath, this.id);
-          log.info(`[SESSION] Removed session worktree: ${wt.worktreePath}`);
+          mcpLogger.info('session', `[SESSION] Removed session worktree: ${wt.worktreePath}`);
         } catch (err) {
-          log.warn(`[SESSION] Could not remove worktree ${wt.worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+          mcpLogger.warning('session', `[SESSION] Could not remove worktree ${wt.worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } catch (err) {
-      log.warn(`[SESSION] Could not clean up worktrees: ${err instanceof Error ? err.message : String(err)}`);
+      mcpLogger.warning('session', `[SESSION] Could not clean up worktrees: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     try {
       await fs.unlink(this.metadataPath);
-      log.info(`[SESSION] Session metadata cleaned up: ${this.id}`);
+      mcpLogger.info('session', `[SESSION] Session metadata cleaned up: ${this.id}`);
     } catch (err: any) {
       if (err.code !== 'ENOENT') {
-        log.warn(`[SESSION] Could not remove session metadata: ${err.message}`);
+        mcpLogger.warning('session', `[SESSION] Could not remove session metadata: ${err.message}`);
       }
     }
   }
@@ -200,7 +200,7 @@ export class SessionIdentity {
       }
     } catch (err: any) {
       if (err.code !== 'ENOENT') {
-        log.warn(`[SESSION] Error scanning sessions: ${err.message}`);
+        mcpLogger.warning('session', `[SESSION] Error scanning sessions: ${err.message}`);
       }
     }
 
@@ -216,7 +216,7 @@ export class SessionIdentity {
 
     if (staleSessions.length === 0) return results;
 
-    log.info(`[SESSION] Found ${staleSessions.length} stale session(s)`);
+    mcpLogger.info('session', `[SESSION] Found ${staleSessions.length} stale session(s)`);
 
     // Lazy import to avoid circular dependency
     const { SessionWorktreeManager } = await import('./sessionWorktree.js');
@@ -247,9 +247,9 @@ export class SessionIdentity {
         // No unmerged work — safe to remove
         try {
           await worktreeManager.removeWorktreeByPath(wt.worktreePath, wt.mainRepoPath, session.id);
-          log.info(`[SESSION] Removed stale worktree: ${wt.worktreePath}`);
+          mcpLogger.info('session', `[SESSION] Removed stale worktree: ${wt.worktreePath}`);
         } catch (err) {
-          log.warn(`[SESSION] Failed to remove worktree ${wt.worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
+          mcpLogger.warning('session', `[SESSION] Failed to remove worktree ${wt.worktreePath}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -259,7 +259,7 @@ export class SessionIdentity {
           await fs.unlink(path.join(SESSION_DIR, `${session.id}.json`));
         } catch (err: any) {
           if (err.code !== 'ENOENT') {
-            log.warn(`[SESSION] Could not remove session file: ${err.message}`);
+            mcpLogger.warning('session', `[SESSION] Could not remove session file: ${err.message}`);
           }
         }
         results.push({ session: session.id, action: 'cleaned' });

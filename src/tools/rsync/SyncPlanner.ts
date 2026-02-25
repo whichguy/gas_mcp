@@ -19,7 +19,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import ignore, { Ignore } from 'ignore';
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncManifest, ManifestLoadResult } from './SyncManifest.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
@@ -109,7 +109,7 @@ export class SyncPlanner {
   async computeDiff(options: DiffOptions): Promise<DiffResult> {
     const { scriptId, direction, projectPath, accessToken, force = false, excludePatterns } = options;
 
-    log.info(`[PLANNER] Computing ${direction} diff for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
+    mcpLogger.info('rsync', `[PLANNER] Computing ${direction} diff for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
 
     const warnings: string[] = [];
 
@@ -186,7 +186,7 @@ export class SyncPlanner {
         gasFiles,
       };
 
-      log.info(`[PLANNER] Diff computed: +${diffResult.add.length} ~${diffResult.update.length} -${diffResult.delete.length}`);
+      mcpLogger.info('rsync', `[PLANNER] Diff computed: +${diffResult.add.length} ~${diffResult.update.length} -${diffResult.delete.length}`);
 
       return result;
 
@@ -197,7 +197,7 @@ export class SyncPlanner {
       }
 
       // Wrap other errors
-      log.error(`[PLANNER] Unexpected error:`, error);
+      mcpLogger.error('rsync', { message: '[PLANNER] Unexpected error', details: error });
       throw new SyncPlanError(
         'API_ERROR',
         `Failed to compute sync diff: ${error instanceof Error ? error.message : String(error)}`
@@ -258,7 +258,7 @@ export class SyncPlanner {
       );
     }
 
-    log.debug(`[PLANNER] Resolved local path: ${localPath}`);
+    mcpLogger.debug('rsync', `[PLANNER] Resolved local path: ${localPath}`);
     return localPath;
   }
 
@@ -310,7 +310,7 @@ export class SyncPlanner {
       // Filter out excluded patterns
       const filtered = this.filterFiles(files, excludePatterns);
 
-      log.debug(`[PLANNER] Fetched ${filtered.length} files from GAS (${files.length} total)`);
+      mcpLogger.debug('rsync', `[PLANNER] Fetched ${filtered.length} files from GAS (${files.length} total)`);
       return filtered;
 
     } catch (error) {
@@ -335,7 +335,7 @@ export class SyncPlanner {
       const content = await fs.readFile(path.join(repoRoot, '.gitignore'), 'utf-8');
       ig.add(content);
       hasPatterns = true;
-      log.debug(`[PLANNER] Loaded .gitignore from ${repoRoot}`);
+      mcpLogger.debug('rsync', `[PLANNER] Loaded .gitignore from ${repoRoot}`);
     } catch {
       // No .gitignore - continue
     }
@@ -345,7 +345,7 @@ export class SyncPlanner {
       const content = await fs.readFile(path.join(repoRoot, '.claspignore'), 'utf-8');
       ig.add(content);
       hasPatterns = true;
-      log.debug(`[PLANNER] Loaded .claspignore from ${repoRoot}`);
+      mcpLogger.debug('rsync', `[PLANNER] Loaded .claspignore from ${repoRoot}`);
     } catch {
       // No .claspignore - continue
     }
@@ -376,7 +376,7 @@ export class SyncPlanner {
         await fs.access(localPath);
       } catch {
         // Directory doesn't exist - return empty (bootstrap case)
-        log.debug(`[PLANNER] Local path does not exist: ${localPath} - bootstrap sync`);
+        mcpLogger.debug('rsync', `[PLANNER] Local path does not exist: ${localPath} - bootstrap sync`);
         return { files: [], skippedFiles: [] };
       }
 
@@ -392,7 +392,7 @@ export class SyncPlanner {
       // Filter out user-provided exclude patterns
       const filtered = this.filterDiffFiles(files, excludePatterns);
 
-      log.debug(`[PLANNER] Scanned ${filtered.length} local GAS files (${files.length} before user excludes, ${skippedFiles.length} skipped)`);
+      mcpLogger.debug('rsync', `[PLANNER] Scanned ${filtered.length} local GAS files (${files.length} before user excludes, ${skippedFiles.length} skipped)`);
       return { files: filtered, skippedFiles };
 
     } catch (error) {
@@ -438,7 +438,7 @@ export class SyncPlanner {
 
         // Skip directories matching .gitignore patterns
         if (ig?.ignores(entryRelPath + '/')) {
-          log.debug(`[PLANNER] Skipping directory (gitignore): ${entryRelPath}`);
+          mcpLogger.debug('rsync', `[PLANNER] Skipping directory (gitignore): ${entryRelPath}`);
           continue;
         }
 
@@ -458,7 +458,7 @@ export class SyncPlanner {
 
         // Skip files matching .gitignore patterns
         if (ig?.ignores(entryRelPath)) {
-          log.debug(`[PLANNER] Skipping file (gitignore): ${entryRelPath}`);
+          mcpLogger.debug('rsync', `[PLANNER] Skipping file (gitignore): ${entryRelPath}`);
           continue;
         }
 

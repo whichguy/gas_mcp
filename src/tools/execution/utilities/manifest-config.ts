@@ -7,6 +7,7 @@
 
 import { GASClient } from '../../../api/gasClient.js';
 import { findManifestFile, isManifestFile } from '../../../utils/fileHelpers.js';
+import { mcpLogger } from '../../../utils/mcpLogger.js';
 
 /**
  * Helper function to ensure manifest has proper entry point configuration
@@ -46,7 +47,7 @@ export async function ensureManifestEntryPoints(
         manifest = JSON.parse(manifestFile.source);
         console.error('Parsed existing manifest successfully');
       } catch (parseError) {
-        console.warn('Failed to parse existing manifest, starting fresh...');
+        mcpLogger.warning('exec', { message: 'Failed to parse existing manifest, starting fresh' });
         manifest = {};
       }
 

@@ -482,7 +482,7 @@ export class LocalFileManager {
     summary: string;
   }> {
     // For backward compatibility, just call the simple version
-    console.warn('⚠️ mergeProjectFiles is deprecated - use copyRemoteToLocal for simple overwrite behavior');
+    console.error('⚠️ mergeProjectFiles is deprecated - use copyRemoteToLocal for simple overwrite behavior');
     
     const result = await this.copyRemoteToLocal(projectName, remoteFiles, workingDir);
     
@@ -512,7 +512,7 @@ export class LocalFileManager {
     summary: string;
   }> {
     // For backward compatibility, use current working directory as project name
-    console.warn('⚠️ mergeRemoteFiles is deprecated - use copyRemoteToLocal for simple overwrite behavior');
+    console.error('⚠️ mergeRemoteFiles is deprecated - use copyRemoteToLocal for simple overwrite behavior');
     
     const actualWorkingDir = this.getWorkingDirectory(workingDir);
     const projectName = actualWorkingDir; // Use working dir as project name (legacy behavior)

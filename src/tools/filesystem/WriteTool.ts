@@ -27,7 +27,7 @@ import { detectLocalGit, checkBreadcrumbExists, buildRecommendation, type GitDet
 import { buildWriteWorkflowHints } from '../../utils/writeHints.js';
 // Note: localGitDetection imports removed - CompactGitHint replaces verbose git detection in responses
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { getGitBreadcrumbWriteHint } from '../../utils/gitBreadcrumbHints.js';
 import { analyzeContent, analyzeHtmlContent, analyzeCommonJsContent, analyzeManifestContent, determineFileType as determineFileTypeUtil } from '../../utils/contentAnalyzer.js';
 import { generateFileDiff, getDiffStats } from '../../utils/diffGenerator.js';
@@ -232,7 +232,7 @@ export class WriteTool extends BaseFileSystemTool {
       try {
         originalContent = await readFile(localPath, 'utf-8');
         contentSource = 'fromLocal';
-        log.info(`[WRITE] Reading content from local file: ${localPath} (${originalContent.length} chars)`);
+        mcpLogger.info('write', `[WRITE] Reading content from local file: ${localPath} (${originalContent.length} chars)`);
       } catch (readError: any) {
         throw new FileOperationError('fromLocal', params.fromLocal, `Failed to read local file: ${readError.message}`);
       }
@@ -267,7 +267,7 @@ export class WriteTool extends BaseFileSystemTool {
         const accessToken = await this.getAuthToken(params);
         prefetchedFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
       } catch (prefetchError: any) {
-        log.warn(`[WRITE] Prefetch failed, downstream operations will fetch individually: ${(prefetchError as Error).message}`);
+        mcpLogger.warning('write', `[WRITE] Prefetch failed, downstream operations will fetch individually: ${(prefetchError as Error).message}`);
       }
     }
 
@@ -428,7 +428,7 @@ export class WriteTool extends BaseFileSystemTool {
     const isGitBreadcrumb = filename.startsWith('.git/') || filename === '.git';
     if (isGitBreadcrumb) {
       remoteOnly = true;
-      log.info(`[WRITE] .git/ breadcrumb file detected: ${filename} - forcing remote-only (GAS breadcrumbs should not be written to local .git/ directory)`);
+      mcpLogger.info('write', `[WRITE] .git/ breadcrumb file detected: ${filename} - forcing remote-only (GAS breadcrumbs should not be written to local .git/ directory)`);
     }
 
     // Two-phase git discovery with projectPath support
@@ -441,10 +441,10 @@ export class WriteTool extends BaseFileSystemTool {
 
     if (gitDiscovery.gitExists && !remoteOnly) {
       // Git discovered → use enhanced atomic workflow with feature branches
-      log.info(`[WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
+      mcpLogger.info('write', `[WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
 
       if (gitDiscovery.breadcrumbsPulled && gitDiscovery.breadcrumbsPulled.length > 0) {
-        log.info(`[WRITE] Pulled ${gitDiscovery.breadcrumbsPulled.length} git breadcrumbs from GAS`);
+        mcpLogger.info('write', `[WRITE] Pulled ${gitDiscovery.breadcrumbsPulled.length} git breadcrumbs from GAS`);
       }
 
       // Resolve working directory with projectPath
@@ -465,7 +465,7 @@ export class WriteTool extends BaseFileSystemTool {
       );
     }
 
-    log.info('[WRITE] No git discovered, using remote-first workflow');
+    mcpLogger.info('write', '[WRITE] No git discovered, using remote-first workflow');
 
     // Check if git repo exists locally (even if not discovered by new discovery mechanism)
     const gitStatus = await LocalFileManager.ensureProjectGitRepo(projectName, workingDir);
@@ -544,7 +544,7 @@ export class WriteTool extends BaseFileSystemTool {
         if (existingFile && params.force) {
           // Log when force bypasses conflict detection
           const currentRemoteHash = computeGitSha1(existingFile.source || '');
-          log.warn(`[WRITE] force=true: bypassing conflict detection for ${filename} (remote hash: ${currentRemoteHash.slice(0, 8)}...)`);
+          mcpLogger.warning('write', `[WRITE] force=true: bypassing conflict detection for ${filename} (remote hash: ${currentRemoteHash.slice(0, 8)}...)`);
         }
 
         if (existingFile && !params.force) {
@@ -984,7 +984,7 @@ Or use force:true to overwrite (destructive).`;
       this.gasClient,
       accessToken
     );
-    log.info(`[WRITE] Using session worktree: ${projectPath}`);
+    mcpLogger.info('write', `[WRITE] Using session worktree: ${projectPath}`);
 
     const filePath = join(projectPath, fullFilename);
 
@@ -992,7 +992,7 @@ Or use force:true to overwrite (destructive).`;
     const { getCurrentBranchName } = await import('../../utils/gitStatus.js');
     const currentBranch = await getCurrentBranchName(projectPath);
 
-    log.info(`[WRITE] Current branch: ${currentBranch}`);
+    mcpLogger.info('write', `[WRITE] Current branch: ${currentBranch}`);
 
     // PHASE 1: Local validation with hooks (NO COMMIT - just validate and stage)
     const hookResult = await writeLocalAndValidateHooksOnly(
@@ -1083,7 +1083,7 @@ Or use force:true to overwrite (destructive).`;
 
       } catch (remoteError: any) {
         // PHASE 3: Remote failed - unstage changes (simple cleanup, no commit to revert)
-        log.error(`[WRITE] Remote write failed for ${filename} in project ${scriptId}, unstaging local changes: ${remoteError.message}`);
+        mcpLogger.error('write', `[WRITE] Remote write failed for ${filename} in project ${scriptId}, unstaging local changes: ${remoteError.message}`);
 
         try {
           const { spawn } = await import('child_process');
@@ -1108,9 +1108,9 @@ Or use force:true to overwrite (destructive).`;
               git.on('error', reject);
             });
           }
-          log.info(`[WRITE] Unstaged ${fullFilename} after remote failure`);
+          mcpLogger.info('write', `[WRITE] Unstaged ${fullFilename} after remote failure`);
         } catch (unstageError) {
-          log.warn(`[WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
+          mcpLogger.warning('write', `[WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
         }
 
         // Re-throw ConflictError as-is (don't wrap it)
@@ -1549,7 +1549,7 @@ Or use force:true to overwrite (destructive).`;
     const fullFilename = filename + fileExtension;
     const filePath = join(projectRoot, fullFilename);
 
-    log.info(`[RAW_WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
+    mcpLogger.info('write', `[RAW_WRITE] Git discovered: ${gitDiscovery.source} at ${gitDiscovery.gitPath}`);
 
     // === HASH-BASED CONFLICT DETECTION (Git Path - RAW content) ===
     if (!params.force) {
@@ -1619,7 +1619,7 @@ Or use force:true to overwrite (destructive).`;
     // === END HASH-BASED CONFLICT DETECTION ===
 
     const currentBranch = await getCurrentBranchName(projectRoot);
-    log.info(`[RAW_WRITE] Current branch: ${currentBranch}`);
+    mcpLogger.info('write', `[RAW_WRITE] Current branch: ${currentBranch}`);
 
     // PHASE 1: Local validation with hooks (NO COMMIT - just validate and stage)
     const hookResult = await writeAndValidate(
@@ -1685,13 +1685,13 @@ Or use force:true to overwrite (destructive).`;
 
     } catch (remoteError: any) {
       // PHASE 3: Remote failed - unstage changes
-      log.error(`[RAW_WRITE] Remote write failed for ${filename}, unstaging local changes: ${remoteError.message}`);
+      mcpLogger.error('write', `[RAW_WRITE] Remote write failed for ${filename}, unstaging local changes: ${remoteError.message}`);
 
       try {
         await unstageFile(fullFilename, projectRoot);
-        log.info(`[RAW_WRITE] Unstaged ${fullFilename} after remote failure`);
+        mcpLogger.info('write', `[RAW_WRITE] Unstaged ${fullFilename} after remote failure`);
       } catch (unstageError) {
-        log.warn(`[RAW_WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
+        mcpLogger.warning('write', `[RAW_WRITE] Could not unstage ${fullFilename}: ${unstageError}`);
       }
 
       throw new Error(`Remote write failed for ${filename} - local changes unstaged: ${remoteError.message}`);

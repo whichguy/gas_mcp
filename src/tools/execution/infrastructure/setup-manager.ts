@@ -17,6 +17,7 @@ import { fileNameMatches } from '../../../api/pathParser.js';
 import { InfrastructureStatus, buildInfrastructureStatus } from '../../../types/infrastructureTypes.js';
 import { computeGitSha1 } from '../../../utils/hashUtils.js';
 import { INFRASTRUCTURE_REGISTRY } from '../../infrastructure-registry.js';
+import { mcpLogger } from '../../../utils/mcpLogger.js';
 
 /**
  * Sets up execution infrastructure for a Google Apps Script project
@@ -84,7 +85,7 @@ export async function setupInfrastructure(
       throw new Error(`Setup failed: Unable to check project files - ${error.message}`);
     }
     // Assume shim doesn't exist if we can't check
-    console.warn('Could not check for existing shim, assuming it does not exist');
+    mcpLogger.warning('exec', { message: 'Could not check for existing shim, assuming it does not exist' });
   }
 
   // Add execution shim if needed
@@ -179,7 +180,7 @@ export async function setupInfrastructure(
               await sessionAuthManager.setCachedDeploymentUrl(scriptId, gasRunUrl);
             }
           } catch (urlError: any) {
-            console.warn(`URL construction failed during short-circuit: ${urlError.message}`);
+            mcpLogger.warning('exec', { message: `URL construction failed during short-circuit: ${urlError.message}` });
           }
 
           // Cache infrastructure as verified
@@ -215,7 +216,7 @@ export async function setupInfrastructure(
             SessionAuthManager.invalidateInfrastructure(scriptId);
             infrastructureVerification = { verified: true, expectedSHA, actualSHA: expectedSHA };
           } catch (repairError: any) {
-            console.warn(`⚠️  [GAS_RUN] Auto-repair failed: ${repairError.message} — continuing with stale shim`);
+            mcpLogger.warning('exec', { message: `Auto-repair failed: ${repairError.message} — continuing with stale shim` });
           }
         }
       }
@@ -261,7 +262,7 @@ export async function setupInfrastructure(
       );
       console.error('Error HTML template deployed');
     } catch (error: any) {
-      console.warn(`HTML template deployment failed: ${error.message} - IDE interface may not work properly`);
+      mcpLogger.warning('exec', { message: `HTML template deployment failed: ${error.message} - IDE interface may not work properly` });
       // Don't fail the whole setup if HTML templates fail - they're not critical for basic execution
     }
   } else {
@@ -279,9 +280,9 @@ export async function setupInfrastructure(
     console.error('Manifest updated successfully');
   } catch (error: any) {
     if (error.message?.includes('timeout')) {
-      console.warn(`Manifest update timeout: ${error.message} - continuing anyway`);
+      mcpLogger.warning('exec', { message: `Manifest update timeout: ${error.message} - continuing anyway` });
     } else {
-      console.warn(`Manifest update failed: ${error.message} - continuing anyway`);
+      mcpLogger.warning('exec', { message: `Manifest update failed: ${error.message} - continuing anyway` });
     }
   }
 
@@ -332,9 +333,9 @@ export async function setupInfrastructure(
     }
   } catch (error: any) {
     if (error.message?.includes('timeout')) {
-      console.warn(`URL construction timeout: ${error.message} - continuing anyway`);
+      mcpLogger.warning('exec', { message: `URL construction timeout: ${error.message} - continuing anyway` });
     } else {
-      console.warn(`URL construction failed: ${error.message} - continuing anyway`);
+      mcpLogger.warning('exec', { message: `URL construction failed: ${error.message} - continuing anyway` });
     }
   }
 

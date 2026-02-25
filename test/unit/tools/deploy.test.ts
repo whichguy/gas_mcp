@@ -859,7 +859,7 @@ describe('LibraryDeployTool', () => {
 
     // ------ consumer sync ------
 
-    it('test D: should sync source props to consumer via direct PropertiesService when consumerScriptId provided', async () => {
+    it('should sync source props to consumer via direct PropertiesService when consumerScriptId provided', async () => {
       const CONSUMER_ID = 'consumer-script-id';
       const execCalls: any[] = [];
 
@@ -888,7 +888,7 @@ describe('LibraryDeployTool', () => {
       expect(consumerWrite.js_statement).to.include('\\"1\\"');
     });
 
-    it('test E: should have no consumerSync field when consumerScriptId is omitted', async () => {
+    it('should have no consumerSync field when consumerScriptId is omitted', async () => {
       (tool as any).execTool = {
         execute: async () => makeExecResult({ A: '1' }, {}),
       };
@@ -900,7 +900,7 @@ describe('LibraryDeployTool', () => {
       expect(result).to.not.have.property('consumerSync');
     });
 
-    it('test F: consumer reconcile should delete consumer extras when reconcile:true', async () => {
+    it('should delete consumer extras when reconcile:true', async () => {
       const CONSUMER_ID = 'consumer-script-id';
       const consumerDeleteStatements: string[] = [];
 

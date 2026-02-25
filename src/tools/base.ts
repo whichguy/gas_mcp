@@ -8,6 +8,7 @@ import { GASErrorHandler, ErrorContext } from '../utils/errorHandler.js';
 import { MCPValidator } from '../utils/validation.js';
 import { AuthConfig } from '../auth/oauthClient.js';
 import { loadOAuthConfigFromJson } from './authConfig.js';
+import { mcpLogger } from '../utils/mcpLogger.js';
 
 /**
  * Base class for all MCP Gas tools with comprehensive authentication and validation support
@@ -179,7 +180,7 @@ export abstract class BaseTool implements Tool {
       this.authClient = new GASAuthClient(fullConfig);
     } catch (error) {
       // If config loading fails, use a minimal config for base tool
-      console.warn('⚠️  Base tool: Failed to load OAuth config, using minimal fallback');
+      mcpLogger.warning('base', { message: 'Base tool: Failed to load OAuth config, using minimal fallback' });
       const minimalConfig: AuthConfig = {
         client_id: 'base-tool-fallback',
         client_secret: undefined,
@@ -295,7 +296,7 @@ export abstract class BaseTool implements Tool {
 
       } catch (error: any) {
         // Log auth errors but continue to fallback
-        console.warn(`⚠️ [${this.name}] Session auth error:`, error.message);
+        mcpLogger.warning('base', { message: `[${this.name}] Session auth error`, details: error.message });
       }
 
       // Both attempts failed

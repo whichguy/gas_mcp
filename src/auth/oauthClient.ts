@@ -606,15 +606,15 @@ export class GASAuthClient {
             console.error(`   Status: ${response.status} ${response.statusText}`);
 
             if (!response.ok) {
-                console.warn(`[GOOGLE OAUTH API] Token revocation failed: ${response.status} ${response.statusText}`);
-                console.warn(`   ⏱ Duration: ${duration}ms`);
+                console.error(`[GOOGLE OAUTH API] Token revocation failed: ${response.status} ${response.statusText}`);
+                console.error(`   ⏱ Duration: ${duration}ms`);
                 // Don't throw error - revocation failure shouldn't block logout
             } else {
                 console.error(`[GOOGLE OAUTH API SUCCESS] Token revoked successfully after ${duration}ms`);
             }
 
         } catch (error: any) {
-            console.warn(' Token revocation error:', error.message);
+            console.error(' Token revocation error:', error.message);
             // Don't throw error - revocation failure shouldn't block logout
         }
     }

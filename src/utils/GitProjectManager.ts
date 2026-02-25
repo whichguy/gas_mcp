@@ -70,7 +70,7 @@ export class GitProjectManager {
 
       // Skip if we couldn't extract valid paths
       if (prefix === null || gitPath === null) {
-        console.warn(`Skipping invalid git file: ${file.name}`);
+        console.error(`Skipping invalid git file: ${file.name}`);
         continue;
       }
 
