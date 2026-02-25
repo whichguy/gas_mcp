@@ -849,6 +849,7 @@ export class RipgrepTool extends BaseTool {
 
   public inputSchema = {
     type: 'object',
+    additionalProperties: false,
     properties: {
       pattern: {
         type: 'string',
