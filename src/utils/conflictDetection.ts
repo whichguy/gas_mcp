@@ -10,7 +10,7 @@
 
 import { ConflictError, type ConflictDetails } from '../errors/mcpErrors.js';
 import { computeGitSha1, hashesEqual } from './hashUtils.js';
-import { log } from './logger.js';
+import { mcpLogger } from './mcpLogger.js';
 
 /**
  * Parameters for conflict checking
@@ -83,7 +83,7 @@ export function checkForConflict(params: ConflictCheckParams): ConflictCheckResu
 
   // Force bypass - log and proceed
   if (force && expectedHash) {
-    log.warn(
+    mcpLogger.warning('sync',
       `[${operation.toUpperCase()}] force=true: bypassing conflict detection for ${filename} ` +
       `(remote hash: ${currentRemoteHash.slice(0, 8)}...)`
     );

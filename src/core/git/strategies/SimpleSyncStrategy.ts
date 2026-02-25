@@ -13,7 +13,7 @@
  * This matches the current WriteTool behavior.
  */
 
-import { log } from '../../../utils/logger.js';
+import { mcpLogger } from '../../../utils/mcpLogger.js';
 import { LocalFileManager } from '../../../utils/localFileManager.js';
 import type { SyncStrategy } from './SyncStrategy.js';
 import type { GASClient } from '../../../api/gasClient.js';
@@ -31,7 +31,7 @@ export class SimpleSyncStrategy implements SyncStrategy {
     projectPath?: string,
     accessToken?: string
   ): Promise<void> {
-    log.debug(`[SIMPLE-SYNC] pullFromRemote: no-op (simple mode doesn't pull)`);
+    mcpLogger.debug('git', `[SIMPLE-SYNC] pullFromRemote: no-op (simple mode doesn't pull)`);
     // No-op: Simple mode doesn't pull before operations
   }
 
@@ -46,7 +46,7 @@ export class SimpleSyncStrategy implements SyncStrategy {
     projectPath?: string,
     accessToken?: string
   ): Promise<void> {
-    log.debug(`[SIMPLE-SYNC] pushToRemote: ensuring local cache updated`);
+    mcpLogger.debug('git', `[SIMPLE-SYNC] pushToRemote: ensuring local cache updated`);
 
     // In simple mode, the operation strategy already pushed to remote
     // We just need to ensure local cache is consistent
@@ -74,10 +74,10 @@ export class SimpleSyncStrategy implements SyncStrategy {
         workingDir
       );
 
-      log.debug(`[SIMPLE-SYNC] Local cache updated for ${files.length} files`);
+      mcpLogger.debug('git', `[SIMPLE-SYNC] Local cache updated for ${files.length} files`);
 
     } catch (error: any) {
-      log.warn(`[SIMPLE-SYNC] Failed to update local cache: ${error.message}`);
+      mcpLogger.warning('git', `[SIMPLE-SYNC] Failed to update local cache: ${error.message}`);
       // Non-fatal: local cache update is optional
     }
   }

@@ -128,7 +128,7 @@ async function cacheDeploymentUrlsForSession(
     
   } catch (error: any) {
     // Don't fail authentication if deployment caching fails
-    console.warn('Failed to cache deployment URLs (non-fatal):', error.message);
+    mcpLogger.warning('auth', { message: 'Failed to cache deployment URLs (non-fatal)', details: error.message });
   }
 }
 
@@ -274,7 +274,7 @@ export async function auth({
           }
         } catch (statusError: any) {
           // CRITICAL: Never throw auth errors from status mode to prevent auto-auth trigger
-          console.warn('Error checking auth status (non-fatal):', statusError.message);
+          mcpLogger.warning('auth', { message: 'Error checking auth status (non-fatal)', details: statusError.message });
           return {
             status: 'not_authenticated',
             message: 'Not currently authenticated (status check failed)',
@@ -310,7 +310,7 @@ export async function auth({
           };
         } catch (logoutError: any) {
           // CRITICAL: Never throw auth errors from logout mode to prevent auto-auth trigger
-          console.warn('Error during logout (non-fatal):', logoutError.message);
+          mcpLogger.warning('auth', { message: 'Error during logout (non-fatal)', details: logoutError.message });
           return {
             status: 'logged_out',
             message: 'Logout completed (with some cleanup errors)',
@@ -370,7 +370,7 @@ export async function auth({
     
     // BUG FIX: Never throw authentication errors for status/logout modes to prevent auto-auth trigger
     if (mode === 'status') {
-      console.warn('Outer catch for status mode - returning not authenticated (non-fatal):', error.message);
+      mcpLogger.warning('auth', { message: 'Outer catch for status mode - returning not authenticated (non-fatal)', details: error.message });
       return {
         status: 'not_authenticated',
         message: 'Not currently authenticated (status check error)',
@@ -379,7 +379,7 @@ export async function auth({
     }
     
     if (mode === 'logout') {
-      console.warn('Outer catch for logout mode - returning logged out (non-fatal):', error.message);
+      mcpLogger.warning('auth', { message: 'Outer catch for logout mode - returning logged out (non-fatal)', details: error.message });
       return {
         status: 'logged_out',
         message: 'Logout completed (with errors)',

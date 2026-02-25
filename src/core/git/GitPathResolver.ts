@@ -14,7 +14,7 @@
  * - rsync operations (pull/push)
  */
 
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { LocalFileManager } from '../../utils/localFileManager.js';
 import { GitProjectManager } from '../../utils/GitProjectManager.js';
 import { join } from 'path';
@@ -71,7 +71,7 @@ export class GitPathResolver {
    * const path = await resolver.resolve('abc123...', 'backend');
    */
   async resolve(scriptId: string, projectPath?: string, accessToken?: string): Promise<string> {
-    log.debug(`[PATH-RESOLVER] Resolving path for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
+    mcpLogger.debug('git', `[PATH-RESOLVER] Resolving path for ${scriptId}${projectPath ? `/${projectPath}` : ''}`);
 
     try {
       // Check for .git/config breadcrumb
@@ -83,14 +83,14 @@ export class GitPathResolver {
           ? join(configuredPath, projectPath)
           : configuredPath;
 
-        log.info(`[PATH-RESOLVER] Using breadcrumb path: ${resolvedPath}`);
+        mcpLogger.info('git', `[PATH-RESOLVER] Using breadcrumb path: ${resolvedPath}`);
         return resolvedPath;
       }
 
-      log.debug(`[PATH-RESOLVER] No breadcrumb found, using LocalFileManager default`);
+      mcpLogger.debug('git', `[PATH-RESOLVER] No breadcrumb found, using LocalFileManager default`);
 
     } catch (error: any) {
-      log.debug(`[PATH-RESOLVER] Error checking breadcrumb: ${error.message}`);
+      mcpLogger.debug('git', `[PATH-RESOLVER] Error checking breadcrumb: ${error.message}`);
     }
 
     // Fall back to LocalFileManager default
@@ -102,7 +102,7 @@ export class GitPathResolver {
       ? join(defaultPath, projectPath)
       : defaultPath;
 
-    log.info(`[PATH-RESOLVER] Using default path: ${resolvedPath}`);
+    mcpLogger.info('git', `[PATH-RESOLVER] Using default path: ${resolvedPath}`);
     return resolvedPath;
   }
 
@@ -139,7 +139,7 @@ export class GitPathResolver {
     try {
       // If no access token provided, return null (can't fetch from remote)
       if (!accessToken) {
-        log.debug(`[PATH-RESOLVER] No access token, skipping breadcrumb fetch`);
+        mcpLogger.debug('git', `[PATH-RESOLVER] No access token, skipping breadcrumb fetch`);
         return null;
       }
 
@@ -152,7 +152,7 @@ export class GitPathResolver {
       return config as GitBreadcrumbConfig | null;
 
     } catch (error: any) {
-      log.debug(`[PATH-RESOLVER] Could not fetch breadcrumb: ${error.message}`);
+      mcpLogger.debug('git', `[PATH-RESOLVER] Could not fetch breadcrumb: ${error.message}`);
       return null;
     }
   }
