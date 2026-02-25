@@ -64,6 +64,8 @@ interface RawWriteParams {
  * Automatically wraps user code with CommonJS, validates with git hooks (if available)
  */
 export class WriteTool extends BaseFileSystemTool {
+  static readonly VALID_RAW_FILE_TYPES: readonly string[] = ['SERVER_JS', 'HTML', 'JSON'];
+
   public name = 'write';
   public description = '[FILE:WRITE] Create or fully replace a file with automatic CommonJS wrapping. WHEN: creating new files or replacing entire file content. AVOID: use edit for partial changes (83% fewer tokens); use aider for fuzzy-match edits. Example: write({scriptId, path: "Utils.gs", content: "function add(a,b){return a+b}"}). GIT: use git_feature(start) before features, git_feature(commit) after changes.';
 
@@ -195,9 +197,9 @@ export class WriteTool extends BaseFileSystemTool {
       if (!rawFileType) {
         throw new ValidationError('fileType', undefined, 'required when raw: true');
       }
-      const validFileTypes = ['SERVER_JS', 'HTML', 'JSON'];
-      if (!validFileTypes.includes(rawFileType)) {
-        throw new ValidationError('fileType', rawFileType, 'must be one of SERVER_JS, HTML, JSON when raw: true');
+      if (!WriteTool.VALID_RAW_FILE_TYPES.includes(rawFileType)) {
+        throw new ValidationError('fileType', rawFileType,
+          `must be one of ${WriteTool.VALID_RAW_FILE_TYPES.join(', ')} when raw: true`);
       }
       return await this.executeRaw(params as unknown as RawWriteParams);
     }
@@ -1257,8 +1259,8 @@ Or use force:true to overwrite (destructive).`;
 
     // ⚠️ SPECIAL FILE VALIDATION: appsscript.json must be in root
     const parsedPath = parsePath(path);
-    let filename2 = filename;
-    if (isManifestFile(filename2)) {
+    let gasName = filename;
+    if (isManifestFile(gasName)) {
       if (parsedPath.directory && parsedPath.directory !== '') {
         throw new ValidationError(
           'path',
@@ -1273,20 +1275,20 @@ Or use force:true to overwrite (destructive).`;
 
     // Strip extensions only if they match the declared file type
     if (gasFileType === 'SERVER_JS') {
-      if (filename2.toLowerCase().endsWith('.js')) {
-        filename2 = filename2.slice(0, -3);
-      } else if (filename2.toLowerCase().endsWith('.gs')) {
-        filename2 = filename2.slice(0, -3);
+      if (gasName.toLowerCase().endsWith('.js')) {
+        gasName = gasName.slice(0, -3);
+      } else if (gasName.toLowerCase().endsWith('.gs')) {
+        gasName = gasName.slice(0, -3);
       }
     } else if (gasFileType === 'HTML') {
-      if (filename2.toLowerCase().endsWith('.html')) {
-        filename2 = filename2.slice(0, -5);
-      } else if (filename2.toLowerCase().endsWith('.htm')) {
-        filename2 = filename2.slice(0, -4);
+      if (gasName.toLowerCase().endsWith('.html')) {
+        gasName = gasName.slice(0, -5);
+      } else if (gasName.toLowerCase().endsWith('.htm')) {
+        gasName = gasName.slice(0, -4);
       }
     } else if (gasFileType === 'JSON') {
-      if (filename2.toLowerCase().endsWith('.json')) {
-        filename2 = filename2.slice(0, -5);
+      if (gasName.toLowerCase().endsWith('.json')) {
+        gasName = gasName.slice(0, -5);
       }
     }
 
@@ -1294,7 +1296,7 @@ Or use force:true to overwrite (destructive).`;
 
     // Content integrity validation (non-blocking warnings)
     const contentWarnings = validateCommonJsIntegrity(
-      filename2, content, gasFileType, 'raw-write'
+      gasName, content, gasFileType, 'raw-write'
     );
 
     // After validation passes, check authentication
@@ -1310,7 +1312,7 @@ Or use force:true to overwrite (destructive).`;
       return await this.executeRawWithGitWorkflow(
         params,
         { scriptId } as any,
-        filename2,
+        gasName,
         content,
         gasFileType,
         position,
@@ -1327,12 +1329,12 @@ Or use force:true to overwrite (destructive).`;
       const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
 
       if (localRoot) {
-        const fileExtension = LocalFileManager.getFileExtensionFromName(filename2);
-        const localPath = join(localRoot, filename2 + fileExtension);
+        const fileExtension = LocalFileManager.getFileExtensionFromName(gasName);
+        const localPath = join(localRoot, gasName + fileExtension);
 
         try {
           const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-          await checkSyncOrThrowByHash(localPath, filename2, remoteFiles, true);
+          await checkSyncOrThrowByHash(localPath, gasName, remoteFiles, true);
         } catch (syncError: any) {
           if (syncError.message && syncError.message.includes('out of sync')) {
             throw syncError;
@@ -1346,7 +1348,7 @@ Or use force:true to overwrite (destructive).`;
 
     if (!params.force) {
       const currentFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, filename2));
+      const existingFile = currentFiles.find((f: any) => fileNameMatches(f.name, gasName));
 
       if (existingFile) {
         const currentRemoteHash = computeGitSha1(existingFile.source || '');
@@ -1359,8 +1361,8 @@ Or use force:true to overwrite (destructive).`;
             const { LocalFileManager } = await import('../../utils/localFileManager.js');
             const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
             if (localRoot) {
-              const fileExtension = LocalFileManager.getFileExtensionFromName(filename2);
-              const localPath = join(localRoot, filename2 + fileExtension);
+              const fileExtension = LocalFileManager.getFileExtensionFromName(gasName);
+              const localPath = join(localRoot, gasName + fileExtension);
               expectedHash = await getCachedContentHash(localPath) || undefined;
               if (expectedHash) {
                 hashSource = 'xattr';
@@ -1375,8 +1377,8 @@ Or use force:true to overwrite (destructive).`;
           const { createTwoFilesPatch } = await import('diff');
 
           const diffContent = createTwoFilesPatch(
-            `${filename2} (expected)`,
-            `${filename2} (current remote)`,
+            `${gasName} (expected)`,
+            `${gasName} (current remote)`,
             '',
             existingFile.source || '',
             'baseline from your last read',
@@ -1388,7 +1390,7 @@ Or use force:true to overwrite (destructive).`;
 
           const conflict: ConflictDetails = {
             scriptId,
-            filename: filename2,
+            filename: gasName,
             operation: 'write',
             expectedHash,
             currentHash: currentRemoteHash,
@@ -1418,7 +1420,7 @@ Or use force:true to overwrite (destructive).`;
 
     const updatedFiles = await this.gasClient.updateFile(
       scriptId,
-      filename2,
+      gasName,
       content,
       position,
       accessToken,
@@ -1433,12 +1435,12 @@ Or use force:true to overwrite (destructive).`;
       const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
 
       if (localRoot) {
-        const fileExtension = LocalFileManager.getFileExtensionFromName(filename2);
-        const localPath = join(localRoot, filename2 + fileExtension);
+        const fileExtension = LocalFileManager.getFileExtensionFromName(gasName);
+        const localPath = join(localRoot, gasName + fileExtension);
         await mkdir(dirname(localPath), { recursive: true });
         await writeFile(localPath, content, 'utf-8');
 
-        const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, filename2));
+        const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, gasName));
         if (remoteFile?.updateTime) {
           await setFileMtimeToRemote(localPath, remoteFile.updateTime, remoteFile.type);
         }
@@ -1495,11 +1497,11 @@ Or use force:true to overwrite (destructive).`;
       status: 'success',
       path,
       scriptId,
-      filename: filename2,
+      filename: gasName,
       size: content.length,
       hash: writtenHash,
       hashNote: 'Hash computed on raw content (including CommonJS wrappers if present).',
-      position: updatedFiles.findIndex((f: any) => fileNameMatches(f.name, filename2)),
+      position: updatedFiles.findIndex((f: any) => fileNameMatches(f.name, gasName)),
       totalFiles: updatedFiles.length
     };
 
@@ -1511,7 +1513,7 @@ Or use force:true to overwrite (destructive).`;
       result.git = gitDetection;
     }
 
-    const gitBreadcrumbHint = getGitBreadcrumbWriteHint(filename2);
+    const gitBreadcrumbHint = getGitBreadcrumbWriteHint(gasName);
     if (gitBreadcrumbHint) {
       result.gitBreadcrumbHint = gitBreadcrumbHint;
     }

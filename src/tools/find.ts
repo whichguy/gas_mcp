@@ -28,11 +28,9 @@ interface FindOptions {
   size?: string;        // Size filter (e.g., +100k, -1M)
   newer?: string;       // Find files newer than this file
   older?: string;       // Find files older than this file
-  exec?: string;        // Command to execute on each file (not implemented)
   print?: boolean;      // Print file names (default true)
   print0?: boolean;     // Print with null separator
   ls?: boolean;         // Long listing format
-  delete?: boolean;     // Delete matched files (not implemented for safety)
   prune?: boolean;      // Don't descend into directories
 }
 
