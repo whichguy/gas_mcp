@@ -244,8 +244,7 @@ export class RsyncTool extends BaseTool {
 
     const { operation, scriptId } = params;
 
-    mcpLogger.info('rsync', { event: 'sync_start', operation, scriptId, dryrun: !!params.dryrun });
-    mcpLogger.info('rsync', `[RSYNC] ${operation} operation for ${scriptId}${params.dryrun ? ' (dryrun)' : ''}`);
+    mcpLogger.info('rsync', { event: 'sync_start', operation, scriptId, dryrun: !!params.dryrun, message: `[RSYNC] ${operation} operation for ${scriptId}${params.dryrun ? ' (dryrun)' : ''}` });
 
     // Validate scriptId
     this.validate.scriptId(scriptId, 'rsync operation');
