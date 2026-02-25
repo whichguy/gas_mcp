@@ -259,7 +259,7 @@ export class SedTool extends BaseTool {
               accessToken: params.accessToken,
               raw: params.raw || false,
               // When raw: true, pass fileType from the cat result (required by raw write path)
-              ...(params.raw ? { fileType: (catResult.type || catResult.fileType || 'SERVER_JS').toUpperCase() } : {})
+              ...(params.raw ? { fileType: (catResult.fileType || 'SERVER_JS').toUpperCase() } : {})
             }) as any;  // WriteTool returns extended result with git info
             // Capture git hint from last successful write
             if (writeResult.git) {

@@ -191,8 +191,13 @@ export class WriteTool extends BaseFileSystemTool {
 
   async execute(params: WriteParams): Promise<WriteResult> {
     if ((params as any).raw) {
-      if (!(params as any).fileType) {
+      const rawFileType = (params as any).fileType;
+      if (!rawFileType) {
         throw new ValidationError('fileType', undefined, 'required when raw: true');
+      }
+      const validFileTypes = ['SERVER_JS', 'HTML', 'JSON'];
+      if (!validFileTypes.includes(rawFileType)) {
+        throw new ValidationError('fileType', rawFileType, 'must be one of SERVER_JS, HTML, JSON when raw: true');
       }
       return await this.executeRaw(params as unknown as RawWriteParams);
     }
@@ -711,12 +716,9 @@ Or use force:true to overwrite (destructive).`;
     let commitMessage = `Update ${filename}`;
 
     if (previousLocalContent !== null) {
-      const isNewFile = previousLocalContent === null;
       const contentChanged = previousLocalContent !== content;
 
-      if (isNewFile) {
-        commitMessage = `Add ${filename}`;
-      } else if (contentChanged) {
+      if (contentChanged) {
         const prevLength = previousLocalContent.length;
         const newLength = content.length;
         const sizeDiff = newLength - prevLength;

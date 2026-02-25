@@ -155,7 +155,8 @@ export class GrepTool extends BaseTool {
       },
       ...SchemaFragments.accessToken
     },
-    required: ['scriptId', 'pattern']
+    required: ['scriptId', 'pattern'],
+    additionalProperties: false
   };
 
   public annotations = {
@@ -235,8 +236,8 @@ export class GrepTool extends BaseTool {
     // Execute search
     const results = await this.grepEngine.searchFiles(files, searchOptions, this.extractScriptId(params));
 
-    // Translate file names back to virtual names in results
-    if (results.matches && Array.isArray(results.matches)) {
+    // Translate file names back to virtual names in results (skip in raw mode — raw shows actual GAS names)
+    if (!params.raw && results.matches && Array.isArray(results.matches)) {
       results.matches.forEach((fileResult: any) => {
         const virtualName = gasNameToVirtual(fileResult.fileName);
         if (virtualName !== fileResult.fileName) {
@@ -407,8 +408,10 @@ export class GrepTool extends BaseTool {
       return await this.getSpecificFilesViaAPI(params.files, accessToken);
     }
 
+    // Apply virtual file translation for path (skip in raw mode — raw uses actual GAS names)
+    const translatedPath = (!params.raw && params.path) ? translatePathForOperation(params.path, true) : (params.path || '');
     // Use hybrid script ID resolution
-    const hybridResolution = resolveHybridScriptId(params.scriptId, params.path || '');
+    const hybridResolution = resolveHybridScriptId(params.scriptId, translatedPath || '');
     const scriptId = hybridResolution.scriptId;
     const searchPath = hybridResolution.cleanPath;
 
