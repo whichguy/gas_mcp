@@ -380,6 +380,11 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
       };
     }
 
+    // NOTE: Raw mode intentionally skips local file write. It updates remote GAS and the xattr
+    // hash cache only. The local git mirror (~/gas-repos/) is NOT updated — this is by design
+    // since raw mode operates on CommonJS infrastructure content that the git workflow never
+    // writes directly. The stale local file + correct xattr hash means subsequent reads will
+    // fall back to fetching from GAS (correct behavior).
     // Raw mode: write modified raw content directly to GAS (no rewrap, no git workflow)
     if (params.raw) {
       await this.gasClient.updateFile(scriptId, filename, modifiedContent, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
