@@ -17,7 +17,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { SyncManifest } from './SyncManifest.js';
 import { SyncDiffResult } from './SyncDiff.js';
 import { GASClient, GASFile } from '../../api/gasClient.js';
@@ -108,7 +108,7 @@ export class SyncExecutor {
   async apply(options: ApplyOptions): Promise<SyncResult> {
     const { direction, scriptId, operations, localPath, isBootstrap, accessToken, confirmDeletions = false, prefetchedGasFiles } = options;
 
-    log.info(`[EXECUTOR] Applying ${direction} sync: +${operations.add.length} ~${operations.update.length} -${operations.delete.length}`);
+    mcpLogger.info('rsync', `[EXECUTOR] Applying ${direction} sync: +${operations.add.length} ~${operations.update.length} -${operations.delete.length}`);
 
     // Validate deletion confirmation
     if (operations.delete.length > 0) {
@@ -181,7 +181,7 @@ export class SyncExecutor {
         result.contentAnalysis = pullContentAnalysis;
       }
 
-      log.info(`[EXECUTOR] Sync complete: +${result.filesAdded} ~${result.filesUpdated} -${result.filesDeleted}`);
+      mcpLogger.info('rsync', `[EXECUTOR] Sync complete: +${result.filesAdded} ~${result.filesUpdated} -${result.filesDeleted}`);
 
       return result;
 
@@ -192,7 +192,7 @@ export class SyncExecutor {
       }
 
       // Wrap other errors
-      log.error(`[EXECUTOR] Unexpected error:`, error);
+      mcpLogger.error('rsync', { message: '[EXECUTOR] Unexpected error', details: error });
       throw new SyncExecuteError(
         'EXECUTION_ERROR',
         `Failed to execute sync: ${error instanceof Error ? error.message : String(error)}`
@@ -216,7 +216,7 @@ export class SyncExecutor {
     operations: SyncDiffResult,
     localPath: string
   ): Promise<{ file: string; warnings: string[]; hints: string[] }[]> {
-    log.info(`[EXECUTOR] Executing PULL: ${operations.totalOperations} operations`);
+    mcpLogger.info('rsync', `[EXECUTOR] Executing PULL: ${operations.totalOperations} operations`);
 
     // Write files directly to repo root (not src/ subdirectory)
     const targetDir = localPath;
@@ -243,7 +243,7 @@ export class SyncExecutor {
         analysisMap.set(op.filename, { warnings: analysis.warnings, hints: analysis.hints });
       }
 
-      log.debug(`[EXECUTOR] Added: ${op.filename} (type: ${fileType})`);
+      mcpLogger.debug('rsync', `[EXECUTOR] Added: ${op.filename} (type: ${fileType})`);
     }
 
     // Process UPDATE operations
@@ -265,7 +265,7 @@ export class SyncExecutor {
         analysisMap.set(op.filename, { warnings: analysis.warnings, hints: analysis.hints });
       }
 
-      log.debug(`[EXECUTOR] Updated: ${op.filename} (type: ${fileType})`);
+      mcpLogger.debug('rsync', `[EXECUTOR] Updated: ${op.filename} (type: ${fileType})`);
     }
 
     // Process DELETE operations
@@ -273,7 +273,7 @@ export class SyncExecutor {
       const filePath = path.join(targetDir, this.gasFilenameToLocalPath(op.filename, op.fileType));
       try {
         await fs.unlink(filePath);
-        log.debug(`[EXECUTOR] Deleted: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
+        mcpLogger.debug('rsync', `[EXECUTOR] Deleted: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
 
         await clearGASMetadata(filePath).catch(() => {});
       } catch (error: unknown) {
@@ -306,7 +306,7 @@ export class SyncExecutor {
    * before pushing to GAS.
    */
   private async executePush(operations: SyncDiffResult, scriptId: string, accessToken: string, prefetchedGasFiles?: GASFile[]): Promise<GASFile[]> {
-    log.info(`[EXECUTOR] Executing PUSH: ${operations.totalOperations} operations`);
+    mcpLogger.info('rsync', `[EXECUTOR] Executing PUSH: ${operations.totalOperations} operations`);
 
     // Use pre-fetched files from diff computation or fetch fresh
     const currentGasFiles = prefetchedGasFiles || await this.gasClient.getProjectContent(scriptId, accessToken);
@@ -317,7 +317,7 @@ export class SyncExecutor {
     // Single atomic API call to update all files - returns post-push state
     const updatedFiles = await this.gasClient.updateProjectContent(scriptId, newFiles, accessToken);
 
-    log.debug(`[EXECUTOR] Pushed ${newFiles.length} files to GAS`);
+    mcpLogger.debug('rsync', `[EXECUTOR] Pushed ${newFiles.length} files to GAS`);
     return updatedFiles;
   }
 
@@ -411,7 +411,7 @@ export class SyncExecutor {
 
     // Wrap with CommonJS
     const wrappedContent = wrapModuleContent(content, moduleName, existingOptions);
-    log.debug(`[EXECUTOR] Wrapped CommonJS for: ${filename}${existingOptions ? ' (preserved options)' : ''}`);
+    mcpLogger.debug('rsync', `[EXECUTOR] Wrapped CommonJS for: ${filename}${existingOptions ? ' (preserved options)' : ''}`);
     return wrappedContent;
   }
 
@@ -483,13 +483,13 @@ export class SyncExecutor {
       // Check if there are changes to commit
       const status = await this.execGitCommand(['status', '--porcelain'], localPath);
       if (!status.trim()) {
-        log.debug(`[EXECUTOR] No changes to commit`);
+        mcpLogger.debug('rsync', `[EXECUTOR] No changes to commit`);
         return;
       }
 
       // Commit
       await this.execGitCommand(['commit', '-m', message], localPath);
-      log.debug(`[EXECUTOR] Committed changes: ${message}`);
+      mcpLogger.debug('rsync', `[EXECUTOR] Committed changes: ${message}`);
 
     } catch (error) {
       throw new SyncExecuteError(
@@ -575,7 +575,7 @@ export class SyncExecutor {
     // Save manifest
     await manifest.save(manifestData);
 
-    log.info(`[EXECUTOR] Updated manifest with ${files.length} files`);
+    mcpLogger.info('rsync', `[EXECUTOR] Updated manifest with ${files.length} files`);
   }
 
   /**

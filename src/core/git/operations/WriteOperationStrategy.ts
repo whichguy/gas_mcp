@@ -24,7 +24,7 @@ import { updateCachedContentHash, getCachedContentHash } from '../../../utils/ga
 import { unwrapModuleContent } from '../../../utils/moduleWrapper.js';
 import { setFileMtimeToRemote } from '../../../utils/fileHelpers.js';
 import { generateFileDiff, getDiffStats } from '../../../utils/diffGenerator.js';
-import { log } from '../../../utils/logger.js';
+import { mcpLogger } from '../../../utils/mcpLogger.js';
 import { readFile } from 'fs/promises';
 import type { FileOperationStrategy, OperationType } from './FileOperationStrategy.js';
 
@@ -103,7 +103,7 @@ export class WriteOperationStrategy implements FileOperationStrategy<WriteStrate
     // === HASH-BASED CONFLICT DETECTION ===
     if (existingFile && force) {
       const currentRemoteHash = computeGitSha1(existingFile.source || '');
-      log.warn(`[WRITE-STRATEGY] force=true: bypassing conflict detection for ${filename} (remote hash: ${currentRemoteHash.slice(0, 8)}...)`);
+      mcpLogger.warning('git', `[WRITE-STRATEGY] force=true: bypassing conflict detection for ${filename} (remote hash: ${currentRemoteHash.slice(0, 8)}...)`);
     }
 
     if (existingFile && !force) {
@@ -249,9 +249,9 @@ Or use force:true to overwrite (destructive).`;
         const currentFiles = await gasClient.getProjectContent(scriptId, accessToken);
         const withoutFile = currentFiles.filter((f: any) => !fileNameMatches(f.name, filename));
         await gasClient.updateProjectContent(scriptId, withoutFile, accessToken);
-        log.info(`[WRITE-STRATEGY] Rollback: removed new file ${filename} from remote`);
+        mcpLogger.info('git', `[WRITE-STRATEGY] Rollback: removed new file ${filename} from remote`);
       } catch (error: any) {
-        log.warn(`[WRITE-STRATEGY] Rollback failed (could not remove new file): ${error.message}`);
+        mcpLogger.warning('git', `[WRITE-STRATEGY] Rollback failed (could not remove new file): ${error.message}`);
       }
       return;
     }
@@ -265,9 +265,9 @@ Or use force:true to overwrite (destructive).`;
           : f
       );
       await gasClient.updateProjectContent(scriptId, restored, accessToken);
-      log.info(`[WRITE-STRATEGY] Rollback: restored original content of ${filename}`);
+      mcpLogger.info('git', `[WRITE-STRATEGY] Rollback: restored original content of ${filename}`);
     } catch (error: any) {
-      log.warn(`[WRITE-STRATEGY] Rollback failed (could not restore original): ${error.message}`);
+      mcpLogger.warning('git', `[WRITE-STRATEGY] Rollback failed (could not restore original): ${error.message}`);
     }
   }
 

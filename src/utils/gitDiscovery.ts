@@ -9,7 +9,7 @@ import { access, stat, mkdir, writeFile, constants } from 'fs/promises';
 import * as path from 'path';
 import { join, dirname } from 'path';
 import type { GASClient } from '../api/gasClient.js';
-import { log } from '../utils/logger.js';
+import { mcpLogger } from '../utils/mcpLogger.js';
 import { expandTilde } from './pathExpansion.js';
 import { validateScriptId } from './localGitDetection.js';
 import { LocalFileManager } from './localFileManager.js';
@@ -51,7 +51,7 @@ async function scanLocalFilesystem(startPath: string): Promise<GitDiscoveryResul
       await access(startPath, constants.F_OK);
     } catch {
       // Start path doesn't exist - no git to discover
-      log.debug(`[GIT-DISCOVERY] Start path does not exist: ${startPath}`);
+      mcpLogger.debug('git', `[GIT-DISCOVERY] Start path does not exist: ${startPath}`);
       return {
         gitExists: false,
         source: 'none',
@@ -74,7 +74,7 @@ async function scanLocalFilesystem(startPath: string): Promise<GitDiscoveryResul
         // .git can be a directory (normal repo) or file (submodule)
         if (stats.isDirectory() || stats.isFile()) {
           const source = isFirstCheck ? 'local-project' : 'local-parent';
-          log.info(`[GIT-DISCOVERY] Found .git at ${gitPath} (${source})`);
+          mcpLogger.info('git', `[GIT-DISCOVERY] Found .git at ${gitPath} (${source})`);
 
           return {
             gitExists: true,
@@ -98,7 +98,7 @@ async function scanLocalFilesystem(startPath: string): Promise<GitDiscoveryResul
     }
 
     // No .git found in hierarchy
-    log.debug('[GIT-DISCOVERY] No local .git found in filesystem hierarchy');
+    mcpLogger.debug('git', '[GIT-DISCOVERY] No local .git found in filesystem hierarchy');
     return {
       gitExists: false,
       source: 'none',
@@ -106,7 +106,7 @@ async function scanLocalFilesystem(startPath: string): Promise<GitDiscoveryResul
     };
 
   } catch (error) {
-    log.error('[GIT-DISCOVERY] Error scanning local filesystem:', error instanceof Error ? error.message : String(error));
+    mcpLogger.error('git', { message: '[GIT-DISCOVERY] Error scanning local filesystem', details: error instanceof Error ? error.message : String(error) });
     return {
       gitExists: false,
       source: 'none',
@@ -134,7 +134,7 @@ async function scanAndPullGASBreadcrumbs(
   accessToken: string
 ): Promise<GitDiscoveryResult> {
   try {
-    log.debug(`[GIT-DISCOVERY] Scanning GAS project for .git/* breadcrumbs`);
+    mcpLogger.debug('git', `[GIT-DISCOVERY] Scanning GAS project for .git/* breadcrumbs`);
 
     // Fetch all files from GAS project
     const files = await gasClient.getProjectContent(scriptId, accessToken);
@@ -152,7 +152,7 @@ async function scanAndPullGASBreadcrumbs(
     });
 
     if (breadcrumbFiles.length === 0) {
-      log.debug('[GIT-DISCOVERY] No .git breadcrumbs found in GAS project');
+      mcpLogger.debug('git', '[GIT-DISCOVERY] No .git breadcrumbs found in GAS project');
       return {
         gitExists: false,
         source: 'none',
@@ -160,7 +160,7 @@ async function scanAndPullGASBreadcrumbs(
       };
     }
 
-    log.info(`[GIT-DISCOVERY] Found ${breadcrumbFiles.length} git breadcrumb files in GAS`);
+    mcpLogger.info('git', `[GIT-DISCOVERY] Found ${breadcrumbFiles.length} git breadcrumb files in GAS`);
 
     // Ensure local project directory exists
     await mkdir(localProjectPath, { recursive: true });
@@ -197,9 +197,9 @@ async function scanAndPullGASBreadcrumbs(
         await writeFile(localFilePath, content, 'utf-8');
 
         pulledFiles.push(localFilename);
-        log.debug(`[GIT-DISCOVERY] Pulled ${file.name} → ${localFilename}`);
+        mcpLogger.debug('git', `[GIT-DISCOVERY] Pulled ${file.name} → ${localFilename}`);
       } catch (error) {
-        log.error(`[GIT-DISCOVERY] Error pulling ${file.name}:`, error instanceof Error ? error.message : String(error));
+        mcpLogger.error('git', { message: `[GIT-DISCOVERY] Error pulling ${file.name}`, details: error instanceof Error ? error.message : String(error) });
       }
     }
 
@@ -208,7 +208,7 @@ async function scanAndPullGASBreadcrumbs(
     try {
       await access(gitPath, constants.F_OK);
 
-      log.info(`[GIT-DISCOVERY] Successfully initialized git from ${pulledFiles.length} breadcrumbs`);
+      mcpLogger.info('git', `[GIT-DISCOVERY] Successfully initialized git from ${pulledFiles.length} breadcrumbs`);
 
       return {
         gitExists: true,
@@ -219,7 +219,7 @@ async function scanAndPullGASBreadcrumbs(
       };
     } catch {
       // .git directory doesn't exist yet - may need manual git init
-      log.warn('[GIT-DISCOVERY] Pulled breadcrumbs but .git directory not found - may need manual git init');
+      mcpLogger.warning('git', '[GIT-DISCOVERY] Pulled breadcrumbs but .git directory not found - may need manual git init');
 
       return {
         gitExists: false,
@@ -230,7 +230,7 @@ async function scanAndPullGASBreadcrumbs(
     }
 
   } catch (error) {
-    log.error('[GIT-DISCOVERY] Error scanning GAS breadcrumbs:', error instanceof Error ? error.message : String(error));
+    mcpLogger.error('git', { message: '[GIT-DISCOVERY] Error scanning GAS breadcrumbs', details: error instanceof Error ? error.message : String(error) });
     return {
       gitExists: false,
       source: 'none',
@@ -277,20 +277,20 @@ export async function discoverGit(
     const baseProjectPath = LocalFileManager.resolveProjectPath(scriptId);
     const startPath = projectPath ? join(baseProjectPath, projectPath) : baseProjectPath;
 
-    log.debug(`[GIT-DISCOVERY] Starting two-phase discovery for ${scriptId} at ${startPath}`);
+    mcpLogger.debug('git', `[GIT-DISCOVERY] Starting two-phase discovery for ${scriptId} at ${startPath}`);
 
     // Phase A: Scan local filesystem
-    log.debug('[GIT-DISCOVERY] Phase A: Scanning local filesystem...');
+    mcpLogger.debug('git', '[GIT-DISCOVERY] Phase A: Scanning local filesystem...');
     const localResult = await scanLocalFilesystem(startPath);
 
     if (localResult.gitExists) {
-      log.info(`[GIT-DISCOVERY] ✓ Phase A complete: ${localResult.source}`);
+      mcpLogger.info('git', `[GIT-DISCOVERY] ✓ Phase A complete: ${localResult.source}`);
       return localResult;
     }
 
     // Phase B: Scan GAS for breadcrumbs
-    log.debug('[GIT-DISCOVERY] Phase A: No local git found');
-    log.debug('[GIT-DISCOVERY] Phase B: Scanning GAS for breadcrumbs...');
+    mcpLogger.debug('git', '[GIT-DISCOVERY] Phase A: No local git found');
+    mcpLogger.debug('git', '[GIT-DISCOVERY] Phase B: Scanning GAS for breadcrumbs...');
 
     const gasResult = await scanAndPullGASBreadcrumbs(
       scriptId,
@@ -300,15 +300,15 @@ export async function discoverGit(
     );
 
     if (gasResult.gitExists) {
-      log.info(`[GIT-DISCOVERY] ✓ Phase B complete: ${gasResult.source}`);
+      mcpLogger.info('git', `[GIT-DISCOVERY] ✓ Phase B complete: ${gasResult.source}`);
     } else {
-      log.debug('[GIT-DISCOVERY] Phase B: No breadcrumbs found');
+      mcpLogger.debug('git', '[GIT-DISCOVERY] Phase B: No breadcrumbs found');
     }
 
     return gasResult;
 
   } catch (error) {
-    log.error('[GIT-DISCOVERY] Unexpected error during discovery:', error instanceof Error ? error.message : String(error));
+    mcpLogger.error('git', { message: '[GIT-DISCOVERY] Unexpected error during discovery', details: error instanceof Error ? error.message : String(error) });
     return {
       gitExists: false,
       source: 'none',

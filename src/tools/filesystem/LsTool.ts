@@ -5,7 +5,7 @@ import { DETAILED_SCHEMA, RECURSIVE_SCHEMA, WILDCARD_MODE_SCHEMA, ACCESS_TOKEN_S
 import { SchemaFragments } from '../../utils/schemaFragments.js';
 import { toResourcePath } from '../../utils/fileListCache.js';
 import { executeServerCode } from '../../utils/serverSideExec.js';
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { generateLsHints } from '../../utils/responseHints.js';
 import type { CompactGitHint } from '../../utils/gitStatus.js';
 import type { ListParams, ListResult } from './shared/types.js';
@@ -170,15 +170,15 @@ export class LsTool extends BaseFileSystemTool {
       const resourcePaths = filteredFiles.map((f: any) => toResourcePath(f.name, f.type));
       const js_statement = `__mcp_computeFileHashes(${JSON.stringify(resourcePaths)})`;
 
-      log.info(`[LsTool] Computing server-side hashes for ${resourcePaths.length} files...`);
+      mcpLogger.info('ls', `[LsTool] Computing server-side hashes for ${resourcePaths.length} files...`);
       const execResult = await executeServerCode(this.gasClient, scriptId, js_statement, accessToken);
 
       if (execResult.success) {
         serverHashes = execResult.result || {};
-        log.info(`[LsTool] Received ${Object.keys(serverHashes).length} hashes from server`);
+        mcpLogger.info('ls', `[LsTool] Received ${Object.keys(serverHashes).length} hashes from server`);
       } else {
         hashWarning = `Server-side hash computation failed: ${execResult.message || 'Unknown error'}. Ensure __mcp_exec is deployed.`;
-        log.error(`[LsTool] ${hashWarning}`);
+        mcpLogger.error('ls', `[LsTool] ${hashWarning}`);
       }
     }
 

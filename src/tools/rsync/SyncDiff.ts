@@ -11,7 +11,7 @@
  * - Use manifest for deletion tracking
  */
 
-import { log } from '../../utils/logger.js';
+import { mcpLogger } from '../../utils/mcpLogger.js';
 import { SyncManifestData } from './SyncManifest.js';
 import { FileFilter, FileFilterOptions } from '../../utils/fileFilter.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
@@ -93,7 +93,7 @@ export class SyncDiff {
   ): SyncDiffResult {
     const { isBootstrap, manifest, direction } = options;
 
-    log.debug(`[DIFF] Computing diff: ${sourceFiles.length} source files, ${destFiles.length} dest files, bootstrap=${isBootstrap}`);
+    mcpLogger.debug('rsync', `[DIFF] Computing diff: ${sourceFiles.length} source files, ${destFiles.length} dest files, bootstrap=${isBootstrap}`);
 
     const result: SyncDiffResult = {
       add: [],
@@ -134,7 +134,7 @@ export class SyncDiff {
           fileType: sourceFile.fileType
         });
 
-        log.debug(`[DIFF] ADD: ${filename}`);
+        mcpLogger.debug('rsync', `[DIFF] ADD: ${filename}`);
 
       } else if (sourceFile.sha1 !== destFile.sha1) {
         // File exists in both but content differs -> UPDATE
@@ -148,7 +148,7 @@ export class SyncDiff {
           fileType: sourceFile.fileType
         });
 
-        log.debug(`[DIFF] UPDATE: ${filename} (${destFile.sha1.slice(0, 8)} -> ${sourceFile.sha1.slice(0, 8)})`);
+        mcpLogger.debug('rsync', `[DIFF] UPDATE: ${filename} (${destFile.sha1.slice(0, 8)} -> ${sourceFile.sha1.slice(0, 8)})`);
       }
       // else: files are identical, no operation needed
     }
@@ -169,11 +169,11 @@ export class SyncDiff {
               fileType: destFile.fileType
             });
 
-            log.debug(`[DIFF] DELETE: ${filename}`);
+            mcpLogger.debug('rsync', `[DIFF] DELETE: ${filename}`);
           } else if (!manifest) {
             // No manifest but not bootstrap - this shouldn't happen
             // Log warning but don't delete
-            log.warn(`[DIFF] Would delete ${filename} but no manifest to verify - skipping`);
+            mcpLogger.warning('rsync', `[DIFF] Would delete ${filename} but no manifest to verify - skipping`);
           }
         }
       }
@@ -187,7 +187,7 @@ export class SyncDiff {
       }
 
       if (wouldDelete.length > 0) {
-        log.info(`[DIFF] Bootstrap mode: ${wouldDelete.length} files skipped for deletion (${wouldDelete.slice(0, 3).join(', ')}${wouldDelete.length > 3 ? '...' : ''})`);
+        mcpLogger.info('rsync', `[DIFF] Bootstrap mode: ${wouldDelete.length} files skipped for deletion (${wouldDelete.slice(0, 3).join(', ')}${wouldDelete.length > 3 ? '...' : ''})`);
       }
     }
 
@@ -196,7 +196,7 @@ export class SyncDiff {
     result.hasChanges = result.totalOperations > 0;
     result.hasDestructiveChanges = result.delete.length > 0;
 
-    log.info(`[DIFF] Result: +${result.add.length} ~${result.update.length} -${result.delete.length} (${result.totalOperations} total operations)`);
+    mcpLogger.info('rsync', `[DIFF] Result: +${result.add.length} ~${result.update.length} -${result.delete.length} (${result.totalOperations} total operations)`);
 
     return result;
   }
@@ -255,7 +255,7 @@ export class SyncDiff {
     return files.filter(file => {
       const result = filter.filter(file.filename);
       if (result.skip) {
-        log.debug(`[DIFF] Excluding file: ${file.filename} (${result.reason})`);
+        mcpLogger.debug('rsync', `[DIFF] Excluding file: ${file.filename} (${result.reason})`);
         return false;
       }
       return true;

@@ -19,7 +19,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
-import { log } from './logger.js';
+import { mcpLogger } from './mcpLogger.js';
 import { computeGitSha1 } from './hashUtils.js';
 import { LocalFileManager } from './localFileManager.js';
 import { FileFilter } from './fileFilter.js';
@@ -73,7 +73,7 @@ export class SessionWorktreeManager {
     // Serialize creation per scriptId to prevent concurrent creates
     const existingLock = SessionWorktreeManager.creationLocks.get(scriptId);
     if (existingLock) {
-      log.info(`[SESSION-WT] Waiting for concurrent worktree creation for ${scriptId}`);
+      mcpLogger.info('session', `[SESSION-WT] Waiting for concurrent worktree creation for ${scriptId}`);
       return existingLock;
     }
 
@@ -104,7 +104,7 @@ export class SessionWorktreeManager {
       return worktreePath;
     }
 
-    log.info(`[SESSION-WT] Creating session worktree for ${scriptId}`);
+    mcpLogger.info('session', `[SESSION-WT] Creating session worktree for ${scriptId}`);
 
     // 0. Ensure worktree parent directory exists
     const worktreeBase = path.join(WORKTREE_BASE, scriptId);
@@ -120,19 +120,19 @@ export class SessionWorktreeManager {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('EEXIST') || msg.includes('already exists') || msg.includes('already used by worktree')) {
-        log.warn(`[SESSION-WT] Stale worktree detected, cleaning up and retrying: ${msg}`);
-        try { await fs.rm(worktreePath, { recursive: true, force: true }); } catch (e) { log.debug(`[SESSION-WT] cleanup rm: ${e}`); }
-        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch (e) { log.debug(`[SESSION-WT] cleanup branch -D: ${e}`); }
-        try { await execGitSpawn(['worktree', 'prune'], mainRepoPath); } catch (e) { log.debug(`[SESSION-WT] cleanup prune: ${e}`); }
+        mcpLogger.warning('session', `[SESSION-WT] Stale worktree detected, cleaning up and retrying: ${msg}`);
+        try { await fs.rm(worktreePath, { recursive: true, force: true }); } catch (e) { mcpLogger.debug('session', `[SESSION-WT] cleanup rm: ${e}`); }
+        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch (e) { mcpLogger.debug('session', `[SESSION-WT] cleanup branch -D: ${e}`); }
+        try { await execGitSpawn(['worktree', 'prune'], mainRepoPath); } catch (e) { mcpLogger.debug('session', `[SESSION-WT] cleanup prune: ${e}`); }
         // Retry branch delete after prune (prune may have freed the branch reference)
-        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch (e) { log.debug(`[SESSION-WT] cleanup branch -D retry: ${e}`); }
+        try { await execGitSpawn(['branch', '-D', branchName], mainRepoPath); } catch (e) { mcpLogger.debug('session', `[SESSION-WT] cleanup branch -D retry: ${e}`); }
         // Retry once
         await execGitSpawn(['worktree', 'add', worktreePath, '-b', branchName], mainRepoPath);
       } else {
         throw err;
       }
     }
-    log.info(`[SESSION-WT] Created worktree at ${worktreePath} (branch: ${branchName})`);
+    mcpLogger.info('session', `[SESSION-WT] Created worktree at ${worktreePath} (branch: ${branchName})`);
 
     // Steps 3-5 wrapped in try/catch: if anything fails after worktree creation,
     // roll back to prevent leaving a partially initialized worktree that passes
@@ -148,7 +148,7 @@ export class SessionWorktreeManager {
       for (const file of files) {
         // GAS .git/* are sync breadcrumbs — mkdir('.git') would EEXIST since worktree .git is a file
         if (FileFilter.isGitBreadcrumbPath(file.name)) {
-          log.debug(`[SESSION-WT] Skipping git breadcrumb: ${file.name}`);
+          mcpLogger.debug('session', `[SESSION-WT] Skipping git breadcrumb: ${file.name}`);
           continue;
         }
 
@@ -170,16 +170,16 @@ export class SessionWorktreeManager {
       // Only store base hashes after successful commit (atomic with worktree)
       SessionWorktreeManager.sessionBaseHashes.set(scriptId, baseHashes);
 
-      log.info(`[SESSION-WT] Worktree initialized with ${files.length} file(s)`);
+      mcpLogger.info('session', `[SESSION-WT] Worktree initialized with ${files.length} file(s)`);
       return worktreePath;
 
     } catch (err) {
       // Rollback: remove the partially initialized worktree
-      log.error(`[SESSION-WT] Worktree initialization failed, rolling back: ${err instanceof Error ? err.message : String(err)}`);
+      mcpLogger.error('session', `[SESSION-WT] Worktree initialization failed, rolling back: ${err instanceof Error ? err.message : String(err)}`);
       try {
         await this.removeWorktreeByPath(worktreePath, mainRepoPath, this.sessionId);
       } catch (rollbackErr) {
-        log.warn(`[SESSION-WT] Rollback cleanup failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`);
+        mcpLogger.warning('session', `[SESSION-WT] Rollback cleanup failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`);
       }
       throw err;
     }
@@ -225,7 +225,7 @@ export class SessionWorktreeManager {
       await execGitSpawn(['worktree', 'remove', '--force', worktreePath], mainRepoPath);
     } catch (err) {
       // If worktree dir is already gone, just prune
-      log.warn(`[SESSION-WT] worktree remove failed, trying prune: ${err instanceof Error ? err.message : String(err)}`);
+      mcpLogger.warning('session', `[SESSION-WT] worktree remove failed, trying prune: ${err instanceof Error ? err.message : String(err)}`);
       try {
         await execGitSpawn(['worktree', 'prune'], mainRepoPath);
       } catch {
@@ -247,7 +247,7 @@ export class SessionWorktreeManager {
       // Already gone
     }
 
-    log.info(`[SESSION-WT] Removed worktree and branch: ${branchName}`);
+    mcpLogger.info('session', `[SESSION-WT] Removed worktree and branch: ${branchName}`);
   }
 
   /**
@@ -275,7 +275,7 @@ export class SessionWorktreeManager {
       }
     } catch (err: any) {
       if (err.code !== 'ENOENT') {
-        log.warn(`[SESSION-WT] Error listing worktrees: ${err.message}`);
+        mcpLogger.warning('session', `[SESSION-WT] Error listing worktrees: ${err.message}`);
       }
     }
 
@@ -394,7 +394,7 @@ export class SessionWorktreeManager {
     } catch {
       // No commits — create an initial empty commit
       await execGitSpawn(['commit', '--allow-empty', '-m', 'Initial commit'], mainRepoPath);
-      log.info(`[SESSION-WT] Created initial commit in ${mainRepoPath}`);
+      mcpLogger.info('session', `[SESSION-WT] Created initial commit in ${mainRepoPath}`);
     }
   }
 }
