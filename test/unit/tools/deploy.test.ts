@@ -984,7 +984,7 @@ describe('LibraryDeployTool', () => {
       expect(calls[0].js_statement).to.include('MY_DOC_KEY');
       expect(calls[0].js_statement).to.include('val');
       expect(calls[0].scriptId).to.equal('1Y72rigcMUAwRd7bwl3CR57');
-      expect(calls[0].autoRedeploy).to.be.true;
+      expect(calls[0].autoRedeploy).to.be.false;
       expect(calls[0].skipSyncCheck).to.be.true;
     });
 
