@@ -456,7 +456,7 @@ export class MergeSession {
     try {
       await fs.rm(this.tempDir, { recursive: true, force: true });
     } catch (error) {
-      console.warn(`Failed to clean up temp dir: ${this.tempDir}`);
+      console.error(`Failed to clean up temp dir: ${this.tempDir}`);
     }
   }
 }

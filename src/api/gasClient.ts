@@ -69,7 +69,7 @@ export class GASClient {
       const config = loadOAuthConfigFromJson();
       this.authClient = new GASAuthClient(config);
     } catch (error) {
-      console.warn('⚠️  GASClient: Failed to load OAuth config, using minimal fallback');
+      console.error('⚠️  GASClient: Failed to load OAuth config, using minimal fallback');
       const minimalConfig: AuthConfig = {
         client_id: 'gas-client-no-config',
         client_secret: undefined,

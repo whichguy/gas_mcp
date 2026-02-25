@@ -88,7 +88,7 @@ export class AuthStateManager {
         }
       }
     } catch (error: any) {
-      console.warn('⚠️  Failed to load auth session:', error.message);
+      console.error('⚠️  Failed to load auth session:', error.message);
     }
     
     this.loaded = true;
@@ -116,7 +116,7 @@ export class AuthStateManager {
         }
       }
     } catch (error: any) {
-      console.warn('⚠️  Failed to save auth session:', error.message);
+      console.error('⚠️  Failed to save auth session:', error.message);
     }
   }
 
