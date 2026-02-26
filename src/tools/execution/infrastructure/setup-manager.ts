@@ -59,8 +59,9 @@ export async function setupInfrastructure(
   };
   let shimWasCreated = false;
 
-  // Check if shim and HTML templates exist
+  // Check if shim, require module, and HTML templates exist
   let shimExists = false;
+  let requireExists = false;
   let htmlTemplatesExist = false;
   let existingFiles: GASFile[] | null = existingRemoteFiles ?? null;
   try {
@@ -75,10 +76,11 @@ export async function setupInfrastructure(
       console.error('Using pre-fetched remoteFiles for infrastructure check (skipping API call)');
     }
     shimExists = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec'));
+    requireExists = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/require'));
     const hasSuccessHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_success'));
     const hasErrorHtml = existingFiles.some((file: GASFile) => fileNameMatches(file.name, 'common-js/__mcp_exec_error'));
     htmlTemplatesExist = hasSuccessHtml && hasErrorHtml;
-    console.error(`Shim exists: ${shimExists}, HTML templates exist: ${htmlTemplatesExist}`);
+    console.error(`Shim exists: ${shimExists}, Require module exists: ${requireExists}, HTML templates exist: ${htmlTemplatesExist}`);
   } catch (error: any) {
     if (error.message?.includes('timeout')) {
       console.error(`Timeout checking for shim: ${error.message}`);
@@ -165,8 +167,8 @@ export async function setupInfrastructure(
       if (remoteSHA === expectedSHA) {
         console.error(`✅ [GAS_RUN] Execution infrastructure verified via in-memory SHA (${remoteSHA.substring(0, 8)}...)`);
 
-        // SHA-gated short-circuit: shim verified + HTML present → skip manifest & HEAD deployment
-        if (htmlTemplatesExist) {
+        // SHA-gated short-circuit: shim verified + HTML present + require module present → skip manifest & HEAD deployment
+        if (htmlTemplatesExist && requireExists) {
           console.error(`⚡ [SHA SHORT-CIRCUIT] Shim verified + HTML present — skipping manifest & HEAD deployment`);
 
           // Cache the deployment URL and return early
@@ -238,6 +240,32 @@ export async function setupInfrastructure(
       } catch (verifyError: any) {
         console.error(`⚠️  [GAS_RUN] Infrastructure verification failed (non-blocking): ${verifyError.message}`);
         infrastructureVerification = { verified: false, error: verifyError.message };
+      }
+    }
+  }
+
+  // Install CommonJS require module if missing (required by __mcp_exec for __defineModule__)
+  // This handles thin-shim consumers that reference the CommonJS system via a library
+  // rather than having require.gs directly in their project files.
+  if (!requireExists) {
+    console.error('Installing CommonJS require module (required by __mcp_exec)...');
+    const requireGeneratedFiles = CodeGenerator.generateProjectFiles({
+      type: 'head_deployment',
+      timezone: 'America/Los_Angeles',
+      includeTestFunctions: true,
+      mcpVersion: '1.0.0'
+    });
+    const requireFile = requireGeneratedFiles.files.find((file: GASFile) => fileNameMatches(file.name, 'common-js/require'));
+    if (requireFile?.source) {
+      try {
+        await withTimeout(
+          gasClient.updateFile(scriptId, 'common-js/require', requireFile.source, 0, accessToken),
+          20000,
+          'Install CommonJS require module'
+        );
+        console.error('CommonJS require module installed successfully');
+      } catch (error: any) {
+        mcpLogger.warning('exec', { message: `CommonJS require module installation failed: ${error.message}` });
       }
     }
   }
