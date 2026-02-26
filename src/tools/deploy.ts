@@ -1442,7 +1442,7 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       const result = await this.execTool.execute({
         scriptId,
         js_statement: `const CM = require('common-js/ConfigManager'); new CM('DEPLOY').get(${JSON.stringify(key)}, null)`,
-        autoRedeploy: true,
+        autoRedeploy: false,
         skipSyncCheck: true,
         accessToken,
       });
@@ -1463,7 +1463,7 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     const result = await this.execTool.execute({
       scriptId,
       js_statement: `const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setScript(${JSON.stringify(key)}, ${JSON.stringify(value)})`,
-      autoRedeploy: true,
+      autoRedeploy: false,
       skipSyncCheck: true,
       accessToken,
     });
@@ -1481,7 +1481,7 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     const result = await this.execTool.execute({
       scriptId,
       js_statement: `const CM = require('common-js/ConfigManager'); new CM('DEPLOY').setDocument(${JSON.stringify(key)}, ${JSON.stringify(value)})`,
-      autoRedeploy: true,
+      autoRedeploy: false,
       skipSyncCheck: true,
       accessToken,
     });
