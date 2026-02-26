@@ -330,8 +330,9 @@ function __defineModule__(moduleFactory, loadNow, options) {
   const moduleFactories = globalThis.__moduleFactories__;
 
   // Parse parameters
-  const shouldLoadNow = typeof loadNow === 'boolean' ? loadNow : false;
+  // Support both new format __defineModule__(_main, true) and old format __defineModule__(_main, null, { loadNow: true })
   const opts = typeof options === 'object' && options !== null ? options : {};
+  const shouldLoadNow = typeof loadNow === 'boolean' ? loadNow : (typeof opts.loadNow === 'boolean' ? opts.loadNow : false);
 
   // Get module name: explicit from options or auto-detect
   const explicitName = opts.explicitName;
