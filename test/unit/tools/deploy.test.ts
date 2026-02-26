@@ -965,6 +965,82 @@ describe('LibraryDeployTool', () => {
   });
 
   // ============================================================
+  // getConfigManagerValue Tests
+  // ============================================================
+  describe('getConfigManagerValue', () => {
+    it('should call ConfigManager.get with key and return result', async () => {
+      const calls: any[] = [];
+      (tool as any).execTool = {
+        execute: async (params: any) => {
+          calls.push(params);
+          return { status: 'success', result: 'my-value' };
+        },
+      };
+
+      const result = await (tool as any).getConfigManagerValue('1Y72rigcMUAwRd7bwl3CR57', 'MY_KEY', 'token');
+
+      expect(calls).to.have.length(1);
+      expect(calls[0].js_statement).to.include('MY_KEY');
+      expect(calls[0].scriptId).to.equal('1Y72rigcMUAwRd7bwl3CR57');
+      expect(calls[0].autoRedeploy).to.be.false;
+      expect(calls[0].skipSyncCheck).to.be.true;
+      expect(result).to.equal('my-value');
+    });
+
+    it('should return null when execTool.execute returns non-success status', async () => {
+      (tool as any).execTool = {
+        execute: async () => ({ status: 'error', error: { message: 'not found' } }),
+      };
+
+      const result = await (tool as any).getConfigManagerValue('1Y72rigcMUAwRd7bwl3CR57', 'MISSING_KEY');
+
+      expect(result).to.be.null;
+    });
+  });
+
+  // ============================================================
+  // setConfigManagerValue Tests
+  // ============================================================
+  describe('setConfigManagerValue', () => {
+    it('should call ConfigManager.setScript with key and value', async () => {
+      const calls: any[] = [];
+      (tool as any).execTool = {
+        execute: async (params: any) => {
+          calls.push(params);
+          return { status: 'success' };
+        },
+      };
+
+      await (tool as any).setConfigManagerValue('1Y72rigcMUAwRd7bwl3CR57', 'MY_KEY', 'my-value', 'token');
+
+      expect(calls).to.have.length(1);
+      expect(calls[0].js_statement).to.include('setScript');
+      expect(calls[0].js_statement).to.include('MY_KEY');
+      expect(calls[0].js_statement).to.include('my-value');
+      expect(calls[0].scriptId).to.equal('1Y72rigcMUAwRd7bwl3CR57');
+      expect(calls[0].autoRedeploy).to.be.false;
+      expect(calls[0].skipSyncCheck).to.be.true;
+    });
+
+    it('should throw GASApiError when execTool.execute returns an error', async () => {
+      (tool as any).execTool = {
+        execute: async () => ({ status: 'error', error: { message: 'write failed' } }),
+      };
+
+      let threw = false;
+      try {
+        await (tool as any).setConfigManagerValue('1Y72rigcMUAwRd7bwl3CR57', 'KEY', 'val');
+      } catch (e: any) {
+        threw = true;
+        expect(e).to.be.instanceOf(GASApiError);
+        expect(e.message).to.include('setScript');
+        expect(e.message).to.include('KEY');
+      }
+      expect(threw).to.be.true;
+    });
+  });
+
+  // ============================================================
   // setDocConfigManagerValue Tests
   // ============================================================
   describe('setDocConfigManagerValue', () => {
