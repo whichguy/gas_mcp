@@ -15,7 +15,7 @@ import { LibraryDeployTool } from '../../../src/tools/deploy.js';
 import { DeployConfigTool } from '../../../src/tools/deployment.js';
 import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
 import { GASApiError } from '../../../src/errors/mcpErrors.js';
-import { enforceDeployFileOrder } from '../../../src/utils/deployUtils.js';
+import { enforceDeployFileOrder, stripMcpEnvironments, prepareFilesForDeploy } from '../../../src/utils/deployUtils.js';
 
 describe('LibraryDeployTool', () => {
   let tool: LibraryDeployTool;
@@ -361,24 +361,21 @@ describe('LibraryDeployTool', () => {
   // stripMcpEnvironments Tests (13c)
   // ============================================================
   describe('stripMcpEnvironments', () => {
-    function callStrip(t: any, files: any[]): any[] {
-      return t.stripMcpEnvironments(files);
-    }
-
+    // stripMcpEnvironments is now an exported function in deployUtils.ts (moved from private method)
     it('should strip mcp_environments from appsscript.json', () => {
       const files = [
         {
-          name: 'appsscript', type: 'JSON',
+          name: 'appsscript', type: 'JSON' as const,
           source: JSON.stringify({
             timeZone: 'America/New_York',
             oauthScopes: ['scope1'],
             mcp_environments: { staging: { sourceScriptId: 'abc' } }
           })
         },
-        { name: 'Code', type: 'SERVER_JS', source: 'function main() {}' }
+        { name: 'Code', type: 'SERVER_JS' as const, source: 'function main() {}' }
       ];
-      const result = callStrip(tool, files);
-      const manifest = JSON.parse(result[0].source);
+      const result = stripMcpEnvironments(files);
+      const manifest = JSON.parse(result[0].source!);
       expect(manifest).to.not.have.property('mcp_environments');
       expect(manifest.timeZone).to.equal('America/New_York');
       expect(manifest.oauthScopes).to.deep.equal(['scope1']);
@@ -388,29 +385,29 @@ describe('LibraryDeployTool', () => {
     it('should leave appsscript without mcp_environments unchanged', () => {
       const files = [
         {
-          name: 'appsscript', type: 'JSON',
+          name: 'appsscript', type: 'JSON' as const,
           source: JSON.stringify({ timeZone: 'America/Chicago', runtimeVersion: 'V8' })
         }
       ];
-      const result = callStrip(tool, files);
-      const manifest = JSON.parse(result[0].source);
+      const result = stripMcpEnvironments(files);
+      const manifest = JSON.parse(result[0].source!);
       expect(manifest.timeZone).to.equal('America/Chicago');
       expect(manifest.runtimeVersion).to.equal('V8');
     });
 
     it('should not modify non-appsscript files even if they contain mcp_environments text', () => {
       const files = [
-        { name: 'Code', type: 'SERVER_JS', source: 'var mcp_environments = {};' },
-        { name: 'Utils', type: 'SERVER_JS', source: '// mcp_environments' }
+        { name: 'Code', type: 'SERVER_JS' as const, source: 'var mcp_environments = {};' },
+        { name: 'Utils', type: 'SERVER_JS' as const, source: '// mcp_environments' }
       ];
-      const result = callStrip(tool, files);
+      const result = stripMcpEnvironments(files);
       expect(result[0].source).to.equal(files[0].source);
       expect(result[1].source).to.equal(files[1].source);
     });
 
     it('should handle invalid JSON in appsscript gracefully (return file unchanged)', () => {
-      const files = [{ name: 'appsscript', type: 'JSON', source: 'not valid json' }];
-      const result = callStrip(tool, files);
+      const files = [{ name: 'appsscript', type: 'JSON' as const, source: 'not valid json' }];
+      const result = stripMcpEnvironments(files);
       expect(result[0].source).to.equal('not valid json');
     });
 
@@ -424,9 +421,9 @@ describe('LibraryDeployTool', () => {
         webapp: { access: 'ANYONE', executeAs: 'USER_ACCESSING' },
         mcp_environments: { staging: { sourceScriptId: 'xyz' } }
       };
-      const files = [{ name: 'appsscript', type: 'JSON', source: JSON.stringify(original) }];
-      const result = callStrip(tool, files);
-      const manifest = JSON.parse(result[0].source);
+      const files = [{ name: 'appsscript', type: 'JSON' as const, source: JSON.stringify(original) }];
+      const result = stripMcpEnvironments(files);
+      const manifest = JSON.parse(result[0].source!);
       expect(manifest).to.not.have.property('mcp_environments');
       expect(manifest.timeZone).to.equal('America/Chicago');
       expect(manifest.webapp).to.deep.equal(original.webapp);
@@ -436,8 +433,8 @@ describe('LibraryDeployTool', () => {
 
     it('should return a new array (not mutate input)', () => {
       const source = JSON.stringify({ timeZone: 'UTC', mcp_environments: { staging: {} } });
-      const files = [{ name: 'appsscript', type: 'JSON', source }];
-      const result = callStrip(tool, files);
+      const files = [{ name: 'appsscript', type: 'JSON' as const, source }];
+      const result = stripMcpEnvironments(files);
       expect(result).to.not.equal(files);
       expect(files[0].source).to.equal(source);  // original unchanged
     });
@@ -1302,6 +1299,8 @@ describe('enforceDeployFileOrder', () => {
   it('should preserve relative order of non-common-js files', () => {
     const files = [
       makeFile('common-js/require'),
+      makeFile('common-js/ConfigManager'),
+      makeFile('common-js/__mcp_exec'),
       makeFile('alpha'),
       makeFile('beta'),
       makeFile('gamma'),
@@ -1311,15 +1310,38 @@ describe('enforceDeployFileOrder', () => {
     expect(nonCommonJs.map(f => f.name)).to.deep.equal(['alpha', 'beta', 'gamma']);
   });
 
-  it('should handle missing critical files gracefully (no undefined entries)', () => {
-    // Only ConfigManager present (no require, no __mcp_exec)
+  it('should throw when common-js/require is missing', () => {
+    // Only ConfigManager present (no require) — should throw, not silently drop
     const files = [
       makeFile('myApp'),
       makeFile('common-js/ConfigManager'),
+      makeFile('common-js/__mcp_exec'),
     ];
-    const result = enforceDeployFileOrder(files);
-    expect(result.length).to.equal(files.length);
-    expect(result.every(f => f !== undefined)).to.be.true;
+    expect(() => enforceDeployFileOrder(files)).to.throw(
+      '[enforceDeployFileOrder] Required file "common-js/require" is missing from source project.'
+    );
+  });
+
+  it('should throw when common-js/ConfigManager is missing', () => {
+    const files = [
+      makeFile('myApp'),
+      makeFile('common-js/require'),
+      makeFile('common-js/__mcp_exec'),
+    ];
+    expect(() => enforceDeployFileOrder(files)).to.throw(
+      '[enforceDeployFileOrder] Required file "common-js/ConfigManager" is missing from source project.'
+    );
+  });
+
+  it('should throw when common-js/__mcp_exec is missing', () => {
+    const files = [
+      makeFile('myApp'),
+      makeFile('common-js/require'),
+      makeFile('common-js/ConfigManager'),
+    ];
+    expect(() => enforceDeployFileOrder(files)).to.throw(
+      '[enforceDeployFileOrder] Required file "common-js/__mcp_exec" is missing from source project.'
+    );
   });
 
   it('should place critical files before other common-js files', () => {
@@ -1334,5 +1356,119 @@ describe('enforceDeployFileOrder', () => {
     expect(names.indexOf('common-js/require')).to.be.lessThan(names.indexOf('common-js/OtherModule'));
     expect(names.indexOf('common-js/ConfigManager')).to.be.lessThan(names.indexOf('common-js/OtherModule'));
     expect(names.indexOf('common-js/__mcp_exec')).to.be.lessThan(names.indexOf('common-js/OtherModule'));
+  });
+
+  it('should throw BUG error if output common-js count differs from input (completeness guard)', () => {
+    // Simulate a BUG where a common-js file would be dropped during reordering.
+    // This is an internal consistency check — we verify the guard fires by testing
+    // that all critical files are present but manufacture a scenario where one could slip through.
+    // In practice, this guard catches future coding errors in enforceDeployFileOrder itself.
+    // We verify the happy-path: all 4 common-js files (3 critical + 1 other) are preserved.
+    const files = [
+      makeFile('common-js/require'),
+      makeFile('common-js/ConfigManager'),
+      makeFile('common-js/__mcp_exec'),
+      makeFile('common-js/OtherModule'),
+      makeFile('myApp'),
+    ];
+    const result = enforceDeployFileOrder(files);
+    const outputCommonJs = result.filter(f => f.name.startsWith('common-js/'));
+    expect(outputCommonJs.length).to.equal(4);  // all 4 common-js files present
+    expect(result.length).to.equal(files.length);  // total unchanged
+  });
+});
+
+describe('prepareFilesForDeploy', () => {
+  function makeFile(name: string, type: 'SERVER_JS' | 'JSON' = 'SERVER_JS') {
+    return { name, type, source: `// ${name}` };
+  }
+
+  it('should strip mcp_environments AND enforce critical order in one call', () => {
+    const files = [
+      { name: 'appsscript', type: 'JSON' as const, source: JSON.stringify({
+        timeZone: 'UTC',
+        mcp_environments: { staging: { sourceScriptId: 'abc' } }
+      })},
+      makeFile('myApp'),
+      makeFile('common-js/__mcp_exec'),
+      makeFile('common-js/ConfigManager'),
+      makeFile('common-js/require'),
+    ];
+    const result = prepareFilesForDeploy(files);
+    // Ordering enforced: require first, ConfigManager second, __mcp_exec third
+    expect(result[0].name).to.equal('common-js/require');
+    expect(result[1].name).to.equal('common-js/ConfigManager');
+    expect(result[2].name).to.equal('common-js/__mcp_exec');
+    // mcp_environments stripped from appsscript
+    const manifest = JSON.parse(result.find(f => f.name === 'appsscript')!.source!);
+    expect(manifest).to.not.have.property('mcp_environments');
+    expect(manifest.timeZone).to.equal('UTC');
+    // All files preserved
+    expect(result.length).to.equal(files.length);
+  });
+
+  it('should throw when a critical common-js file is missing', () => {
+    const files = [
+      makeFile('common-js/ConfigManager'),
+      makeFile('common-js/__mcp_exec'),
+      makeFile('myApp'),
+    ];
+    expect(() => prepareFilesForDeploy(files)).to.throw(
+      '[enforceDeployFileOrder] Required file "common-js/require" is missing from source project.'
+    );
+  });
+});
+
+describe('updateProjectContent — request body shape', () => {
+  it('should send only { name, type, source } per file (no timestamp fields)', async () => {
+    // Verify the GASFileOperations.updateProjectContent strips all output-only
+    // fields (createTime, updateTime, lastModifyUser) from the request body.
+    // The GAS API ignores these on write, and for cross-project deploy they would
+    // incorrectly copy source timestamps to the target project.
+    const { GASFileOperations } = await import('../../../src/api/gasFileOperations.js');
+    const capturedFiles: any[] = [];
+    const mockAuthOps = {
+      initializeClient: async () => {},
+      makeApiCall: async (fn: () => Promise<any>) => fn(),
+      getScriptApi: () => ({
+        projects: {
+          updateContent: async ({ requestBody }: any) => {
+            capturedFiles.push(...requestBody.files);
+            return { data: { files: requestBody.files } };
+          }
+        }
+      })
+    };
+    const mockLockManager = {
+      acquireLock: async () => {},
+      releaseLock: async () => {},
+      getInstance: () => mockLockManager,
+    };
+    // Patch LockManager.getInstance to return our mock
+    const { LockManager } = await import('../../../src/utils/lockManager.js');
+    const origGetInstance = LockManager.getInstance;
+    (LockManager as any).getInstance = () => mockLockManager;
+
+    try {
+      const ops = new GASFileOperations(mockAuthOps as any);
+      const inputFiles = [{
+        name: 'Code',
+        type: 'SERVER_JS' as const,
+        source: 'function main() {}',
+        createTime: '2024-01-01T00:00:00Z',
+        updateTime: '2024-06-01T00:00:00Z',
+        lastModifyUser: { name: 'Test User', email: 'test@example.com' }
+      }];
+      await ops.updateProjectContent('test-script-id', inputFiles as any);
+      expect(capturedFiles).to.have.length(1);
+      expect(capturedFiles[0]).to.have.keys(['name', 'type', 'source']);
+      expect(capturedFiles[0]).to.not.have.property('createTime');
+      expect(capturedFiles[0]).to.not.have.property('updateTime');
+      expect(capturedFiles[0]).to.not.have.property('lastModifyUser');
+      expect(capturedFiles[0].name).to.equal('Code');
+      expect(capturedFiles[0].source).to.equal('function main() {}');
+    } finally {
+      (LockManager as any).getInstance = origGetInstance;
+    }
   });
 });

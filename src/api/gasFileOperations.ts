@@ -60,10 +60,6 @@ export class GASFileOperations {
               name: file.name,
               type: file.type,
               source: file.source,
-              // ✅ Preserve metadata to maintain file history and ordering
-              ...(file.createTime && { createTime: file.createTime }),
-              ...(file.updateTime && { updateTime: file.updateTime }),
-              ...(file.lastModifyUser && { lastModifyUser: file.lastModifyUser })
             }))
           }
         });
