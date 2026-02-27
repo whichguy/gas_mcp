@@ -592,6 +592,33 @@ describe('LibraryDeployTool', () => {
       expect(writtenKeys).to.include('STAGING_SCRIPT_ID');
       expect(writtenKeys).to.include('STAGING_SPREADSHEET_URL');
     });
+
+    it('should throw GASApiError with created IDs when all config writes fail', async () => {
+      (tool as any).getConfigManagerValue = async () => null;
+
+      const libManifest = { timeZone: 'UTC' };
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify(libManifest) }
+        ],
+        updateProjectContent: async () => [],
+      };
+
+      (tool as any).setConfigManagerValue = async () => { throw new Error('exec infra not ready'); };
+      (tool as any).createStandaloneProject = async () => 'created-source';
+      (tool as any).createBlankSpreadsheet = async () => 'created-sheet';
+      (tool as any).createContainerBoundScript = async () => 'created-consumer';
+      (tool as any).writeConsumerShim = async () => {};
+
+      try {
+        await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
+        expect.fail('should have thrown');
+      } catch (err: any) {
+        expect(err.message).to.include('config keys failed to persist');
+        expect(err.message).to.include('source=created-source');
+        expect(err.message).to.include('consumer=created-consumer');
+      }
+    });
   });
 
   // ============================================================
@@ -1221,6 +1248,8 @@ describe('enforceDeployFileOrder', () => {
     ];
     const result = enforceDeployFileOrder(files);
     expect(result[0].name).to.equal('common-js/require');
+    expect(result[1].name).to.equal('common-js/ConfigManager');
+    expect(result[2].name).to.equal('common-js/__mcp_exec');
   });
 
   it('should return same number of files as input (no files dropped)', () => {
