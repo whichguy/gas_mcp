@@ -158,16 +158,9 @@
  */
 
 // ========== DEBUG LOGGING (must be defined before global functions) ==========
-const debugLog = (() => {
-  try {
-    // CRITICAL: Cannot use require() here as it creates circular dependency
-    // debugLog is used by require() itself, so it must be available before any modules load
-    // Default to disabled logging to prevent errors during initialization
-    return () => {};
-  } catch (e) {
-    return () => {};
-  }
-})();
+// CRITICAL: Cannot use require() here as it creates circular dependency
+// debugLog is used by require() itself, so it must be available before any modules load
+const debugLog = () => {};
 
 // ========== GLOBAL FUNCTIONS (before IIFE) ==========
 

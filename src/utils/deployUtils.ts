@@ -4,6 +4,8 @@
  */
 
 import { GASClient } from '../api/gasClient.js';
+import { GASFile } from '../api/gasTypes.js';
+import { fileNameMatches } from '../api/pathParser.js';
 import { ExecTool } from '../tools/execution.js';
 import { ENV_TAGS } from './deployConstants.js';
 
@@ -62,6 +64,43 @@ export async function setDeploymentInConfigManager(
     autoRedeploy: false,
     accessToken,
   });
+}
+
+/**
+ * Critical common-js files that must appear first, in this exact order.
+ * common-js/require must be at position 0 — it bootstraps the module system.
+ */
+const DEPLOY_CRITICAL_ORDER = [
+  'common-js/require',
+  'common-js/ConfigManager',
+  'common-js/__mcp_exec',
+] as const;
+
+/**
+ * Enforce common-js file ordering before pushing to staging/prod.
+ * Guarantees:
+ *   [0] common-js/require       — bootstraps the module system
+ *   [1] common-js/ConfigManager — available to all modules at load time
+ *   [2] common-js/__mcp_exec    — MCP exec infrastructure
+ *   [3..] remaining common-js/* in API order
+ *   [n..] non-common-js files   in API order
+ *
+ * Called between stripMcpEnvironments() and updateProjectContent() in
+ * promoteToStaging and promoteToProd.
+ */
+export function enforceDeployFileOrder(files: GASFile[]): GASFile[] {
+  const criticalFiles = DEPLOY_CRITICAL_ORDER
+    .map(baseName => files.find(f => fileNameMatches(f.name, baseName)))
+    .filter((f): f is GASFile => f !== undefined);
+
+  const criticalActualNames = new Set(criticalFiles.map(f => f.name));
+
+  const otherCommonJs = files.filter(
+    f => f.name.startsWith('common-js/') && !criticalActualNames.has(f.name)
+  );
+  const nonCommonJs = files.filter(f => !f.name.startsWith('common-js/'));
+
+  return [...criticalFiles, ...otherCommonJs, ...nonCommonJs];
 }
 
 /**
