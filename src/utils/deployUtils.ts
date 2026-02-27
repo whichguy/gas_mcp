@@ -79,6 +79,23 @@ const DEPLOY_CRITICAL_ORDER = [
 ] as const;
 
 /**
+ * Strip mcp_environments from appsscript.json before pushing to -source libraries.
+ * All other manifest properties (oauthScopes, timeZone, runtimeVersion, etc.) are preserved.
+ * mcp_environments is dev-only tracking metadata that must not reach staging/prod.
+ */
+export function stripMcpEnvironments(files: GASFile[]): GASFile[] {
+  return files.map((f: GASFile) => {
+    if (f.name !== 'appsscript' || !f.source) return f;
+    try {
+      const json = JSON.parse(f.source);
+      if (!json.mcp_environments) return f;
+      const { mcp_environments: _mcp_environments, ...rest } = json;
+      return { ...f, source: JSON.stringify(rest, null, 2) };
+    } catch { return f; }
+  });
+}
+
+/**
  * Enforce common-js file ordering before pushing to staging/prod.
  * Guarantees:
  *   [0] common-js/require       — bootstraps the module system
@@ -87,13 +104,20 @@ const DEPLOY_CRITICAL_ORDER = [
  *   [3..] remaining common-js/* in API order
  *   [n..] non-common-js files   in API order
  *
- * Called between stripMcpEnvironments() and updateProjectContent() in
- * promoteToStaging and promoteToProd.
+ * Throws if any critical file is absent — a missing file would silently deploy
+ * a broken CommonJS module system without this guard.
  */
 export function enforceDeployFileOrder(files: GASFile[]): GASFile[] {
-  const criticalFiles = DEPLOY_CRITICAL_ORDER
-    .map(baseName => files.find(f => fileNameMatches(f.name, baseName)))
-    .filter((f): f is GASFile => f !== undefined);
+  const criticalFiles = DEPLOY_CRITICAL_ORDER.map(baseName => {
+    const file = files.find(f => fileNameMatches(f.name, baseName));
+    if (!file) {
+      throw new Error(
+        `[enforceDeployFileOrder] Required file "${baseName}" is missing from source project. ` +
+        `Cannot deploy without the CommonJS module system.`
+      );
+    }
+    return file;
+  });
 
   const criticalActualNames = new Set(criticalFiles.map(f => f.name));
 
@@ -102,7 +126,27 @@ export function enforceDeployFileOrder(files: GASFile[]): GASFile[] {
   );
   const nonCommonJs = files.filter(f => !f.name.startsWith('common-js/'));
 
+  // Assert no common-js files were lost between input and output
+  const inputCommonJsCount = files.filter(f => f.name.startsWith('common-js/')).length;
+  const outputCommonJsCount = criticalFiles.length + otherCommonJs.length;
+  if (inputCommonJsCount !== outputCommonJsCount) {
+    throw new Error(
+      `[enforceDeployFileOrder] BUG: ${inputCommonJsCount} common-js files in input but ` +
+      `${outputCommonJsCount} in output — ${inputCommonJsCount - outputCommonJsCount} lost`
+    );
+  }
+
   return [...criticalFiles, ...otherCommonJs, ...nonCommonJs];
+}
+
+/**
+ * Prepare source files for cross-project deploy:
+ * 1. Strip mcp_environments from appsscript.json (dev-only tracking metadata)
+ * 2. Enforce critical common-js ordering (require first, ConfigManager second, __mcp_exec third)
+ * 3. Assert all common-js files are present (throws on missing critical file)
+ */
+export function prepareFilesForDeploy(files: GASFile[]): GASFile[] {
+  return enforceDeployFileOrder(stripMcpEnvironments(files));
 }
 
 /**

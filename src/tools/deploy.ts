@@ -29,12 +29,23 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { LockManager } from '../utils/lockManager.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 import { generateLibraryDeployHints, generateLibraryDeployErrorHints } from '../utils/deployHints.js';
-import { enforceDeployFileOrder } from '../utils/deployUtils.js';
+import { prepareFilesForDeploy } from '../utils/deployUtils.js';
 import { mcpLogger } from '../utils/mcpLogger.js';
 import { LibraryEnvironment, SOURCE_CONFIG_KEYS, MANAGED_PROPERTY_KEYS } from '../utils/deployConstants.js';
 import { ExecTool } from './execution.js';
 import { getGitHead, updateDeployState } from '../utils/gitStatus.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
+
+/** Minimal typed shape for promote params (userSymbol field only; full params are `any`). */
+interface PromoteUserSymbolParams {
+  userSymbol?: string;
+}
+
+/** Minimal typed shape for envConfig (userSymbol fields only; full config is `any`). */
+interface EnvConfigUserSymbol {
+  template?: { userSymbol?: string };
+  userSymbol?: string;
+}
 
 /**
  * ConfigManager property keys per environment
@@ -56,10 +67,16 @@ const CONFIG_KEYS = {
 
 /**
  * Per-environment file-push deployment tool
+ *
+ * @invariant Never modifies local files. All operations go directly to GAS API via gasClient.
+ *   Local git mirrors are updated only through explicit rsync/sync operations, not by deploy.
  */
 export class LibraryDeployTool extends BaseTool {
   public name = 'deploy';
-  public description = 'Deploy to staging/prod — pushes files to per-environment -source library, consumers auto-update via HEAD. For deployment infrastructure reset, use deploy_config().';
+  public description = 'Deploy to staging/prod — pushes files to per-environment -source library, consumers auto-update via HEAD. For deployment infrastructure reset, use deploy_config(). '
+    + 'WARNING: Promote overwrites destination files. Promote replaces ALL files in the target -source library '
+    + 'with the source files. Files present in the target but absent in the source are deleted from GAS. '
+    + 'Local files are never modified.';
 
   public outputSchema = {
     type: 'object' as const,
@@ -105,7 +122,7 @@ export class LibraryDeployTool extends BaseTool {
         type: 'string',
         enum: ['staging', 'prod'],
         description:
-          'Target environment. staging: push files from main library → staging-source. prod: push files from staging-source → prod-source.',
+          'Target environment. staging: push files from main library → staging-source (replaces ALL files in staging-source). prod: push files from staging-source → prod-source (replaces ALL files in prod-source). Files in the target that are absent from the source are deleted from GAS.',
       },
       description: {
         type: 'string',
@@ -117,7 +134,10 @@ export class LibraryDeployTool extends BaseTool {
           + 'Copies sheets (structure, formulas, formatting, and template data) from the upstream environment\'s '
           + 'spreadsheet. Does NOT handle application/user data migration — if target environments need seeded '
           + 'data (reference tables, config sheets, live data not present in the template), that must be handled '
-          + 'separately via exec() or manual copy.',
+          + 'separately via exec() or manual copy. '
+          + 'Note: Sheet tabs present in the target but absent in the source are left in place '
+          + '— sheet sync is additive-only; no target sheets are deleted '
+          + '(unlike file promote, which is destructive).',
         default: true,
       },
       syncProperties: {
@@ -340,7 +360,9 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(2, 4, 'Pushing files to staging-source library...');
 
     // Push all files to staging-source (strip mcp_environments — that's dev-only tracking metadata)
-    const filesToPush = enforceDeployFileOrder(this.stripMcpEnvironments(libraryFiles));
+    // ⚠️ DESTRUCTIVE: replaces ALL files in the target project with filesToPush.
+    // Files in the target that are absent here are deleted from GAS (not locally).
+    const filesToPush = prepareFilesForDeploy(libraryFiles);
     await this.gasClient.updateProjectContent(stagingSourceScriptId!, filesToPush, accessToken);
     console.error(`✅ Pushed ${libraryFiles.length} files to staging-source`);
 
@@ -351,15 +373,10 @@ export class LibraryDeployTool extends BaseTool {
     // libraryFiles is the dev library content — manifest is used for scopes/timezone reference
     const devManifestForShim = libraryFiles.find((f: GASFile) => f.name === 'appsscript');
     const devManifestJsonForShim = devManifestForShim?.source ? JSON.parse(devManifestForShim.source) : {};
-    // userSymbol: params takes precedence, then manifest-primary path (template.userSymbol),
-    // then gas-config.json fallback path (top-level userSymbol), then derive from project name
-    const userSymbol = params.userSymbol || envConfig?.template?.userSymbol || envConfig?.userSymbol || await this.deriveUserSymbol(scriptId);
-    if (!params.userSymbol && !envConfig?.template?.userSymbol && !envConfig?.userSymbol) {
-      console.error(`⚠️  [shim validation] userSymbol not found in config — derived "${userSymbol}" from project name. Verify this matches the library's intended namespace.`);
-    }
     // Step 3: Validating consumer shim
     await sendProgress?.(3, 4, 'Validating consumer shim...');
 
+    const userSymbol = await this.resolveUserSymbol(params, envConfig, scriptId);
     let shimValidation: any;
     if (stagingConsumerScriptId) {
       shimValidation = await this.validateAndRepairConsumerShim(
@@ -493,7 +510,9 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(2, 4, 'Pushing files to prod-source library...');
 
     // Push all files to prod-source (strip mcp_environments defensively — staging-source should not have it, but guard anyway)
-    const prodFilesToPush = enforceDeployFileOrder(this.stripMcpEnvironments(stagingFiles));
+    // ⚠️ DESTRUCTIVE: replaces ALL files in the target project with prodFilesToPush.
+    // Files in the target that are absent here are deleted from GAS (not locally).
+    const prodFilesToPush = prepareFilesForDeploy(stagingFiles);
     await this.gasClient.updateProjectContent(prodSourceScriptId!, prodFilesToPush, accessToken);
     console.error(`✅ Pushed ${stagingFiles.length} files to prod-source`);
 
@@ -503,15 +522,10 @@ export class LibraryDeployTool extends BaseTool {
     // Validate/repair prod consumer shim — use staging-source manifest for scopes/timezone reference
     const stagingSourceManifestForShim = stagingFiles.find((f: GASFile) => f.name === 'appsscript');
     const stagingSourceManifestJsonForShim = stagingSourceManifestForShim?.source ? JSON.parse(stagingSourceManifestForShim.source) : {};
-    // userSymbol: params takes precedence, then manifest-primary path (template.userSymbol),
-    // then gas-config.json fallback path (top-level userSymbol), then derive from project name
-    const prodUserSymbol = params.userSymbol || envConfig?.template?.userSymbol || envConfig?.userSymbol || await this.deriveUserSymbol(scriptId);
-    if (!params.userSymbol && !envConfig?.template?.userSymbol && !envConfig?.userSymbol) {
-      console.error(`⚠️  [shim validation] userSymbol not found in config — derived "${prodUserSymbol}" from project name. Verify this matches the library's intended namespace.`);
-    }
     // Step 3: Validating consumer shim
     await sendProgress?.(3, 4, 'Validating consumer shim...');
 
+    const prodUserSymbol = await this.resolveUserSymbol(params, envConfig, scriptId);
     let shimValidation: any;
     if (prodConsumerScriptId) {
       shimValidation = await this.validateAndRepairConsumerShim(
@@ -1532,19 +1546,28 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   // ---------------------------------------------------------------------------
 
   /**
-   * Strip mcp_environments from appsscript.json before pushing to -source libraries.
-   * All other manifest properties (oauthScopes, timeZone, runtimeVersion, etc.) are preserved.
+   * Resolve userSymbol for shim validation, with a 4-level fallback chain:
+   * 1. params.userSymbol (explicit override)
+   * 2. envConfig.template.userSymbol (manifest-primary path)
+   * 3. envConfig.userSymbol (gas-config.json fallback path)
+   * 4. derived from project name via deriveUserSymbol()
+   *
+   * Logs a warning when falling back to derivation (derivation is a best-guess,
+   * and the caller should verify it matches the library's intended namespace).
    */
-  private stripMcpEnvironments(files: GASFile[]): GASFile[] {
-    return files.map((f: GASFile) => {
-      if (f.name !== 'appsscript' || !f.source) return f;
-      try {
-        const json = JSON.parse(f.source);
-        if (!json.mcp_environments) return f;
-        const { mcp_environments: _mcp_environments, ...rest } = json;
-        return { ...f, source: JSON.stringify(rest, null, 2) };
-      } catch { return f; }
-    });
+  private async resolveUserSymbol(
+    params: PromoteUserSymbolParams,
+    envConfig: EnvConfigUserSymbol | null | undefined,
+    scriptId: string
+  ): Promise<string> {
+    const symbol = params.userSymbol
+      || envConfig?.template?.userSymbol
+      || envConfig?.userSymbol
+      || await this.deriveUserSymbol(scriptId);
+    if (!params.userSymbol && !envConfig?.template?.userSymbol && !envConfig?.userSymbol) {
+      console.error(`⚠️  [shim validation] userSymbol not found in config — derived "${symbol}" from project name. Verify this matches the library's intended namespace.`);
+    }
+    return symbol;
   }
 
   /**
