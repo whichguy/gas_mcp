@@ -828,12 +828,21 @@ export class LibraryDeployTool extends BaseTool {
       [CONFIG_KEYS[environment].sourceScriptId, sourceScriptId],
       [CONFIG_KEYS[environment].spreadsheetUrl, spreadsheetId],
     ];
+    const configWriteFailures: string[] = [];
     for (const [key, value] of configKeys) {
       try {
         await this.setConfigManagerValue(libraryScriptId, key, value, accessToken);
       } catch (error: unknown) {
         console.error(`⚠️  Failed to store ${key} in ConfigManager: ${error instanceof Error ? error.message : String(error)}`);
+        configWriteFailures.push(key);
       }
+    }
+    if (configWriteFailures.length > 0) {
+      throw new GASApiError(
+        `[autoCreateConsumer] ${environment} environment created but config keys failed to persist: ${configWriteFailures.join(', ')}. ` +
+        `Created: source=${sourceScriptId}, consumer=${consumerScriptId}. ` +
+        `Run deploy_config({operation: "reset", scriptId}) to set up exec infrastructure, then promote again.`
+      );
     }
 
     return { consumerScriptId, spreadsheetId, sourceScriptId };
