@@ -380,7 +380,10 @@ export class LibraryDeployTool extends BaseTool {
     // Validate/repair staging consumer shim (catches config drift between promotes)
     // libraryFiles is the dev library content — manifest is used for scopes/timezone reference
     const devManifestForShim = libraryFiles.find((f: GASFile) => f.name === 'appsscript');
-    const devManifestJsonForShim = devManifestForShim?.source ? JSON.parse(devManifestForShim.source) : {};
+    let devManifestJsonForShim: Record<string, any> = {};
+    try {
+      if (devManifestForShim?.source) devManifestJsonForShim = JSON.parse(devManifestForShim.source);
+    } catch { /* best-effort: use empty manifest if parsing fails */ }
     // Step 3: Validating consumer shim
     await sendProgress?.(3, 4, 'Validating consumer shim...');
 
@@ -399,7 +402,16 @@ export class LibraryDeployTool extends BaseTool {
     const sheetSyncMode: string = params.syncSheets ?? 'replace_all';
     let sheetSync: any = undefined;
     if (sheetSyncMode !== 'off') {
-      const sourceSpreadsheetId = envConfig?.templateSpreadsheetId;
+      let sourceSpreadsheetId = envConfig?.templateSpreadsheetId;
+      if (!sourceSpreadsheetId) {
+        try {
+          const devProject = await this.gasClient.getProject(scriptId, accessToken);
+          sourceSpreadsheetId = devProject.parentId;
+        } catch (e) {
+          // non-fatal — standalone libraries have no parentId
+          console.debug?.('deploy: getProject() failed deriving sheet sync source:', (e as Error)?.message);
+        }
+      }
       const targetSpreadsheetId = envConfig?.staging?.spreadsheetId;
       if (sourceSpreadsheetId && targetSpreadsheetId) {
         try {
@@ -530,7 +542,10 @@ export class LibraryDeployTool extends BaseTool {
 
     // Validate/repair prod consumer shim — use staging-source manifest for scopes/timezone reference
     const stagingSourceManifestForShim = stagingFiles.find((f: GASFile) => f.name === 'appsscript');
-    const stagingSourceManifestJsonForShim = stagingSourceManifestForShim?.source ? JSON.parse(stagingSourceManifestForShim.source) : {};
+    let stagingSourceManifestJsonForShim: Record<string, any> = {};
+    try {
+      if (stagingSourceManifestForShim?.source) stagingSourceManifestJsonForShim = JSON.parse(stagingSourceManifestForShim.source);
+    } catch { /* best-effort: use empty manifest if parsing fails */ }
     // Step 3: Validating consumer shim
     await sendProgress?.(3, 4, 'Validating consumer shim...');
 
