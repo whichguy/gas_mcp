@@ -662,28 +662,35 @@ export class LibraryDeployTool extends BaseTool {
       }
     }
 
+    const gasUrl = (id: string) => `https://script.google.com/d/${id}/edit`;
+    const sheetUrl = (id: string) => `https://docs.google.com/spreadsheets/d/${id}`;
+
     return {
       operation: 'status',
-      dev: { scriptId, description: 'Main library — all source code lives here' },
+      dev: {
+        scriptId,
+        scriptUrl: gasUrl(scriptId),
+        description: 'Main library — all source code lives here',
+      },
       staging: envConfig?.staging?.sourceScriptId
         ? {
             sourceScriptId: envConfig.staging.sourceScriptId,
+            sourceScriptUrl: gasUrl(envConfig.staging.sourceScriptId),
             consumerScriptId: envConfig.staging.consumerScriptId,
+            consumerScriptUrl: envConfig.staging.consumerScriptId ? gasUrl(envConfig.staging.consumerScriptId) : null,
             spreadsheetId: envConfig.staging.spreadsheetId,
-            spreadsheetUrl: envConfig.staging.spreadsheetId
-              ? `https://docs.google.com/spreadsheets/d/${envConfig.staging.spreadsheetId}`
-              : null,
+            spreadsheetUrl: envConfig.staging.spreadsheetId ? sheetUrl(envConfig.staging.spreadsheetId) : null,
             lastPromotedAt: stagingPromotedAt || null,
           }
         : { configured: false },
       prod: envConfig?.prod?.sourceScriptId
         ? {
             sourceScriptId: envConfig.prod.sourceScriptId,
+            sourceScriptUrl: gasUrl(envConfig.prod.sourceScriptId),
             consumerScriptId: envConfig.prod.consumerScriptId,
+            consumerScriptUrl: envConfig.prod.consumerScriptId ? gasUrl(envConfig.prod.consumerScriptId) : null,
             spreadsheetId: envConfig.prod.spreadsheetId,
-            spreadsheetUrl: envConfig.prod.spreadsheetId
-              ? `https://docs.google.com/spreadsheets/d/${envConfig.prod.spreadsheetId}`
-              : null,
+            spreadsheetUrl: envConfig.prod.spreadsheetId ? sheetUrl(envConfig.prod.spreadsheetId) : null,
             lastPromotedAt: prodPromotedAt || null,
           }
         : { configured: false },
