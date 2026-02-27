@@ -67,10 +67,16 @@ const CONFIG_KEYS = {
 
 /**
  * Per-environment file-push deployment tool
+ *
+ * @invariant Never modifies local files. All operations go directly to GAS API via gasClient.
+ *   Local git mirrors are updated only through explicit rsync/sync operations, not by deploy.
  */
 export class LibraryDeployTool extends BaseTool {
   public name = 'deploy';
-  public description = 'Deploy to staging/prod — pushes files to per-environment -source library, consumers auto-update via HEAD. For deployment infrastructure reset, use deploy_config().';
+  public description = 'Deploy to staging/prod — pushes files to per-environment -source library, consumers auto-update via HEAD. For deployment infrastructure reset, use deploy_config(). '
+    + 'WARNING: Promote overwrites destination files. Promote replaces ALL files in the target -source library '
+    + 'with the source files. Files present in the target but absent in the source are deleted from GAS. '
+    + 'Local files are never modified.';
 
   public outputSchema = {
     type: 'object' as const,
@@ -116,7 +122,7 @@ export class LibraryDeployTool extends BaseTool {
         type: 'string',
         enum: ['staging', 'prod'],
         description:
-          'Target environment. staging: push files from main library → staging-source. prod: push files from staging-source → prod-source.',
+          'Target environment. staging: push files from main library → staging-source (replaces ALL files in staging-source). prod: push files from staging-source → prod-source (replaces ALL files in prod-source). Files in the target that are absent from the source are deleted from GAS.',
       },
       description: {
         type: 'string',
@@ -128,7 +134,10 @@ export class LibraryDeployTool extends BaseTool {
           + 'Copies sheets (structure, formulas, formatting, and template data) from the upstream environment\'s '
           + 'spreadsheet. Does NOT handle application/user data migration — if target environments need seeded '
           + 'data (reference tables, config sheets, live data not present in the template), that must be handled '
-          + 'separately via exec() or manual copy.',
+          + 'separately via exec() or manual copy. '
+          + 'Note: Sheet tabs present in the target but absent in the source are left in place '
+          + '— sheet sync is additive-only; no target sheets are deleted '
+          + '(unlike file promote, which is destructive).',
         default: true,
       },
       syncProperties: {
@@ -351,6 +360,8 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(2, 4, 'Pushing files to staging-source library...');
 
     // Push all files to staging-source (strip mcp_environments — that's dev-only tracking metadata)
+    // ⚠️ DESTRUCTIVE: replaces ALL files in the target project with filesToPush.
+    // Files in the target that are absent here are deleted from GAS (not locally).
     const filesToPush = prepareFilesForDeploy(libraryFiles);
     await this.gasClient.updateProjectContent(stagingSourceScriptId!, filesToPush, accessToken);
     console.error(`✅ Pushed ${libraryFiles.length} files to staging-source`);
@@ -499,6 +510,8 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(2, 4, 'Pushing files to prod-source library...');
 
     // Push all files to prod-source (strip mcp_environments defensively — staging-source should not have it, but guard anyway)
+    // ⚠️ DESTRUCTIVE: replaces ALL files in the target project with prodFilesToPush.
+    // Files in the target that are absent here are deleted from GAS (not locally).
     const prodFilesToPush = prepareFilesForDeploy(stagingFiles);
     await this.gasClient.updateProjectContent(prodSourceScriptId!, prodFilesToPush, accessToken);
     console.error(`✅ Pushed ${stagingFiles.length} files to prod-source`);
