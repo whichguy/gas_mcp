@@ -20,6 +20,23 @@ import { INFRASTRUCTURE_REGISTRY } from '../../infrastructure-registry.js';
 import { mcpLogger } from '../../../utils/mcpLogger.js';
 
 /**
+ * Wraps a Promise with a rejection timeout. The timer is cleared as soon as the
+ * operation settles, so it does not hold the event loop open unnecessarily.
+ */
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => {
+      reject(new Error(`${operationName} timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  return Promise.race([
+    operation.finally(() => clearTimeout(timerId)),
+    timeoutPromise
+  ]);
+}
+
+/**
  * Sets up execution infrastructure for a Google Apps Script project
  *
  * This includes:
@@ -41,18 +58,6 @@ export async function setupInfrastructure(
   sessionAuthManager?: SessionAuthManager,
   existingRemoteFiles?: GASFile[]
 ): Promise<InfrastructureStatus> {
-  // HANGING FIX: Add timeout wrapper for all Google API calls
-  const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number, operationName: string): Promise<T> => {
-    return Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`${operationName} timeout after ${timeoutMs}ms`));
-        }, timeoutMs);
-      })
-    ]);
-  };
-
   // Track infrastructure verification status for response
   let infrastructureVerification: { verified: boolean; expectedSHA?: string; actualSHA?: string; error?: string } = {
     verified: true // Assume success unless verification fails
@@ -169,7 +174,7 @@ export async function setupInfrastructure(
 
         // SHA-gated short-circuit: shim verified + HTML present + require module present → skip manifest & HEAD deployment
         if (htmlTemplatesExist && requireExists) {
-          console.error(`⚡ [SHA SHORT-CIRCUIT] Shim verified + HTML present — skipping manifest & HEAD deployment`);
+          console.error(`⚡ [SHA SHORT-CIRCUIT] Shim verified + HTML present + require module present — skipping manifest & HEAD deployment`);
 
           // Cache the deployment URL and return early
           try {
