@@ -650,7 +650,8 @@ describe('LibraryDeployTool', () => {
         expect(err.message).to.include('config keys failed to persist');
         // Only the second key (STAGING_SOURCE_SCRIPT_ID) failed — first key succeeded
         expect(err.message).to.include('STAGING_SOURCE_SCRIPT_ID');
-        expect(err.message).to.not.include('STAGING_SCRIPT_ID,');
+        // First key (STAGING_SCRIPT_ID) succeeded — verify it does NOT appear in the failure list
+        expect(err.message).to.not.match(/STAGING_SCRIPT_ID(?:,|\s|$)/);
         expect(err.message).to.include('source=partial-source');
         expect(err.message).to.include('spreadsheet=partial-sheet');
       }
@@ -1195,6 +1196,91 @@ describe('LibraryDeployTool', () => {
       // saveConfig throwing should NOT propagate
       expect(threw).to.be.false;
       expect(saveConfigCalled).to.be.true;
+    });
+  });
+
+  // ============================================================
+  // promoteToStaging: auto-derive sourceSpreadsheetId from parentId
+  // ============================================================
+  describe('promoteToStaging: auto-derive sheet sync source from parentId', () => {
+    function stubPromoteToStagingDeps(t: any, overrides: {
+      envConfig?: any;
+      getProjectResult?: any;
+      getProjectThrows?: boolean;
+    }): { syncedSource: { value: string | undefined }; getProjectCalled: { value: boolean } } {
+      const getProjectCalled = { value: false };
+      const syncedSource = { value: undefined as string | undefined };
+
+      const defaultEnvConfig = {
+        staging: {
+          sourceScriptId: 'staging-src-id',
+          consumerScriptId: 'staging-consumer-id',
+          spreadsheetId: 'staging-sheet-id',
+        },
+        ...(overrides.envConfig ?? {}),
+      };
+
+      (t as any).getEnvironmentConfig = async () => defaultEnvConfig;
+      (t as any).gasClient = {
+        getProject: async (_scriptId: string) => {
+          getProjectCalled.value = true;
+          if (overrides.getProjectThrows) throw new Error('403 Forbidden');
+          return overrides.getProjectResult ?? { scriptId: _scriptId, title: 'Test', parentId: 'parent-sheet-id' };
+        },
+        getProjectContent: async () => [
+          { name: 'common-js/require', type: 'SERVER_JS', source: '// require' },
+          { name: 'common-js/ConfigManager', type: 'SERVER_JS', source: '// ConfigManager' },
+          { name: 'common-js/__mcp_exec', type: 'SERVER_JS', source: '// __mcp_exec' },
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify({ timeZone: 'UTC' }) }
+        ],
+        updateProjectContent: async () => [],
+      };
+      (t as any).storePromoteTimestamp = async () => ({ stored: true, failures: [] });
+      (t as any).resolveUserSymbol = async () => 'MyLib';
+      (t as any).validateAndRepairConsumerShim = async () => ({ valid: true, updated: false });
+      (t as any).syncSheets = async (source: string) => {
+        syncedSource.value = source;
+        return { synced: [], added: [] };
+      };
+      (t as any).doSyncProperties = async () => ({ synced: [], skipped: [] });
+
+      return { syncedSource, getProjectCalled };
+    }
+
+    it('should call getProject() when templateSpreadsheetId is absent and use parentId as sourceSpreadsheetId', async () => {
+      const { syncedSource, getProjectCalled } = stubPromoteToStagingDeps(tool, {});
+
+      await (tool as any).promoteToStaging('dev-script-id', { syncSheets: 'replace_all' }, 'token');
+
+      expect(getProjectCalled.value).to.be.true;
+      expect(syncedSource.value).to.equal('parent-sheet-id');
+    });
+
+    it('should fall back silently (no throw) when getProject() throws and skip syncSheets', async () => {
+      const { syncedSource, getProjectCalled } = stubPromoteToStagingDeps(tool, { getProjectThrows: true });
+
+      let threw = false;
+      try {
+        await (tool as any).promoteToStaging('dev-script-id', { syncSheets: 'replace_all' }, 'token');
+      } catch {
+        threw = true;
+      }
+
+      expect(threw).to.be.false;
+      expect(getProjectCalled.value).to.be.true;
+      // syncSheets not called: sourceSpreadsheetId is undefined after getProject() fails
+      expect(syncedSource.value).to.be.undefined;
+    });
+
+    it('should use templateSpreadsheetId from envConfig and skip getProject() when present', async () => {
+      const { syncedSource, getProjectCalled } = stubPromoteToStagingDeps(tool, {
+        envConfig: { templateSpreadsheetId: 'config-template-sheet' },
+      });
+
+      await (tool as any).promoteToStaging('dev-script-id', { syncSheets: 'replace_all' }, 'token');
+
+      expect(getProjectCalled.value).to.be.false;
+      expect(syncedSource.value).to.equal('config-template-sheet');
     });
   });
 });
