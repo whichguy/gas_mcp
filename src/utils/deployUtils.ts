@@ -49,13 +49,15 @@ export async function setDeploymentInConfigManager(
   accessToken?: string
 ): Promise<void> {
   const envUpper = environment.toUpperCase();
+  const urlKey = `${envUpper}_URL`;
+  const idKey = `${envUpper}_DEPLOYMENT_ID`;
 
   const js_statement = `
     const ConfigManager = require('common-js/ConfigManager');
     const config = new ConfigManager('DEPLOY');
-    config.setScript('${envUpper}_URL', '${url}');
-    config.setScript('${envUpper}_DEPLOYMENT_ID', '${deploymentId}');
-    Logger.log('[Deploy] Stored ${environment}: ${url}');
+    config.setScript(${JSON.stringify(urlKey)}, ${JSON.stringify(url)});
+    config.setScript(${JSON.stringify(idKey)}, ${JSON.stringify(deploymentId)});
+    Logger.log('[Deploy] Stored ${environment}: ' + ${JSON.stringify(url)});
   `;
 
   await execTool.execute({

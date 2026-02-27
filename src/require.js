@@ -349,12 +349,8 @@ function __defineModule__(moduleFactory, loadNow, options) {
 
   // If loadNow=true, immediately execute module via require()
   if (shouldLoadNow) {
-    try {
-      require(moduleName);
-      return; // Module is now cached and processed by require()
-    } catch (error) {
-      throw error; // Re-throw to prevent silent failures
-    }
+    require(moduleName); // Module is now cached and processed by require()
+    return;
   }
 
   // Module registered without execution - will execute on first require()
