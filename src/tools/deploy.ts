@@ -29,6 +29,7 @@ import { SchemaFragments } from '../utils/schemaFragments.js';
 import { LockManager } from '../utils/lockManager.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 import { generateLibraryDeployHints, generateLibraryDeployErrorHints } from '../utils/deployHints.js';
+import { enforceDeployFileOrder } from '../utils/deployUtils.js';
 import { mcpLogger } from '../utils/mcpLogger.js';
 import { LibraryEnvironment, SOURCE_CONFIG_KEYS, MANAGED_PROPERTY_KEYS } from '../utils/deployConstants.js';
 import { ExecTool } from './execution.js';
@@ -339,7 +340,7 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(2, 4, 'Pushing files to staging-source library...');
 
     // Push all files to staging-source (strip mcp_environments — that's dev-only tracking metadata)
-    const filesToPush = this.stripMcpEnvironments(libraryFiles);
+    const filesToPush = enforceDeployFileOrder(this.stripMcpEnvironments(libraryFiles));
     await this.gasClient.updateProjectContent(stagingSourceScriptId!, filesToPush, accessToken);
     console.error(`✅ Pushed ${libraryFiles.length} files to staging-source`);
 
@@ -492,7 +493,7 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(2, 4, 'Pushing files to prod-source library...');
 
     // Push all files to prod-source (strip mcp_environments defensively — staging-source should not have it, but guard anyway)
-    const prodFilesToPush = this.stripMcpEnvironments(stagingFiles);
+    const prodFilesToPush = enforceDeployFileOrder(this.stripMcpEnvironments(stagingFiles));
     await this.gasClient.updateProjectContent(prodSourceScriptId!, prodFilesToPush, accessToken);
     console.error(`✅ Pushed ${stagingFiles.length} files to prod-source`);
 
@@ -555,6 +556,15 @@ export class LibraryDeployTool extends BaseTool {
     const prodSpreadsheetUrl = prodSpreadsheetId
       ? `https://docs.google.com/spreadsheets/d/${prodSpreadsheetId}`
       : null;
+
+    // P7: Record this deploy so deploy hints are suppressed until the next commit
+    try {
+      const projectDir = await LocalFileManager.getProjectDirectory(scriptId);
+      const head = await getGitHead(projectDir);
+      if (head) updateDeployState(scriptId, head);
+    } catch (err: unknown) {
+      console.error(`⚠️  [deploy] Failed to update deploy state (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     return {
       operation: 'promote',

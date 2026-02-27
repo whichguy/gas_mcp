@@ -15,6 +15,7 @@ import { LibraryDeployTool } from '../../../src/tools/deploy.js';
 import { DeployConfigTool } from '../../../src/tools/deployment.js';
 import { SessionAuthManager } from '../../../src/auth/sessionManager.js';
 import { GASApiError } from '../../../src/errors/mcpErrors.js';
+import { enforceDeployFileOrder } from '../../../src/utils/deployUtils.js';
 
 describe('LibraryDeployTool', () => {
   let tool: LibraryDeployTool;
@@ -1203,5 +1204,72 @@ describe('DeployConfigTool', () => {
       const fields = Object.keys(tool.outputSchema.properties);
       expect(fields).to.include('configWarning');
     });
+  });
+});
+
+describe('enforceDeployFileOrder', () => {
+  function makeFile(name: string) {
+    return { name, type: 'SERVER_JS' as const, source: `// ${name}` };
+  }
+
+  it('should place common-js/require at index 0', () => {
+    const files = [
+      makeFile('myApp'),
+      makeFile('common-js/ConfigManager'),
+      makeFile('common-js/require'),
+      makeFile('common-js/__mcp_exec'),
+    ];
+    const result = enforceDeployFileOrder(files);
+    expect(result[0].name).to.equal('common-js/require');
+  });
+
+  it('should return same number of files as input (no files dropped)', () => {
+    const files = [
+      makeFile('myApp'),
+      makeFile('utils'),
+      makeFile('common-js/__mcp_exec'),
+      makeFile('common-js/ConfigManager'),
+      makeFile('common-js/require'),
+      makeFile('common-js/OtherModule'),
+    ];
+    const result = enforceDeployFileOrder(files);
+    expect(result.length).to.equal(files.length);
+  });
+
+  it('should preserve relative order of non-common-js files', () => {
+    const files = [
+      makeFile('common-js/require'),
+      makeFile('alpha'),
+      makeFile('beta'),
+      makeFile('gamma'),
+    ];
+    const result = enforceDeployFileOrder(files);
+    const nonCommonJs = result.filter(f => !f.name.startsWith('common-js/'));
+    expect(nonCommonJs.map(f => f.name)).to.deep.equal(['alpha', 'beta', 'gamma']);
+  });
+
+  it('should handle missing critical files gracefully (no undefined entries)', () => {
+    // Only ConfigManager present (no require, no __mcp_exec)
+    const files = [
+      makeFile('myApp'),
+      makeFile('common-js/ConfigManager'),
+    ];
+    const result = enforceDeployFileOrder(files);
+    expect(result.length).to.equal(files.length);
+    expect(result.every(f => f !== undefined)).to.be.true;
+  });
+
+  it('should place critical files before other common-js files', () => {
+    const files = [
+      makeFile('common-js/OtherModule'),
+      makeFile('common-js/__mcp_exec'),
+      makeFile('common-js/ConfigManager'),
+      makeFile('common-js/require'),
+    ];
+    const result = enforceDeployFileOrder(files);
+    const names = result.map(f => f.name);
+    expect(names.indexOf('common-js/require')).to.be.lessThan(names.indexOf('common-js/OtherModule'));
+    expect(names.indexOf('common-js/ConfigManager')).to.be.lessThan(names.indexOf('common-js/OtherModule'));
+    expect(names.indexOf('common-js/__mcp_exec')).to.be.lessThan(names.indexOf('common-js/OtherModule'));
   });
 });
