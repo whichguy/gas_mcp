@@ -69,10 +69,15 @@ describe('LibraryDeployTool', () => {
       expect(tool.inputSchema.properties).to.not.have.property('reconcile');
     });
 
-    it('should have syncSheets param defaulting to true', () => {
+    it('should have syncSheets param as string enum defaulting to smart', () => {
       expect(tool.inputSchema.properties).to.have.property('syncSheets');
-      expect(tool.inputSchema.properties.syncSheets.type).to.equal('boolean');
-      expect(tool.inputSchema.properties.syncSheets.default).to.equal(true);
+      expect(tool.inputSchema.properties.syncSheets.type).to.equal('string');
+      expect(tool.inputSchema.properties.syncSheets.enum).to.deep.equal(['smart', 'replace_all', 'add_new_only', 'off']);
+      expect(tool.inputSchema.properties.syncSheets.default).to.equal('smart');
+    });
+
+    it('should document preserved[] in sheetSync outputSchema description', () => {
+      expect(tool.outputSchema.properties.sheetSync.description).to.include('preserved');
     });
 
     it('should have syncProperties param defaulting to true', () => {
