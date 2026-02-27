@@ -840,7 +840,7 @@ export class LibraryDeployTool extends BaseTool {
     if (configWriteFailures.length > 0) {
       throw new GASApiError(
         `[autoCreateConsumer] ${environment} environment created but config keys failed to persist: ${configWriteFailures.join(', ')}. ` +
-        `Created: source=${sourceScriptId}, consumer=${consumerScriptId}. ` +
+        `Created: source=${sourceScriptId}, consumer=${consumerScriptId}, spreadsheet=${spreadsheetId}. ` +
         `Run deploy_config({operation: "reset", scriptId}) to set up exec infrastructure, then promote again.`
       );
     }

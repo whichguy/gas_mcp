@@ -617,6 +617,40 @@ describe('LibraryDeployTool', () => {
         expect(err.message).to.include('config keys failed to persist');
         expect(err.message).to.include('source=created-source');
         expect(err.message).to.include('consumer=created-consumer');
+        expect(err.message).to.include('spreadsheet=created-sheet');
+      }
+    });
+
+    it('should throw GASApiError listing only the failed key on partial config write failure', async () => {
+      (tool as any).getConfigManagerValue = async () => null;
+
+      const libManifest = { timeZone: 'UTC' };
+      (tool as any).gasClient = {
+        getProjectContent: async () => [
+          { name: 'appsscript', type: 'JSON', source: JSON.stringify(libManifest) }
+        ],
+        updateProjectContent: async () => [],
+      };
+
+      let callCount = 0;
+      (tool as any).setConfigManagerValue = async () => {
+        if (++callCount === 2) throw new Error('write failed on second key');
+      };
+      (tool as any).createStandaloneProject = async () => 'partial-source';
+      (tool as any).createBlankSpreadsheet = async () => 'partial-sheet';
+      (tool as any).createContainerBoundScript = async () => 'partial-consumer';
+      (tool as any).writeConsumerShim = async () => {};
+
+      try {
+        await (tool as any).autoCreateConsumer('devId', 'staging', {}, 'token');
+        expect.fail('should have thrown');
+      } catch (err: any) {
+        expect(err.message).to.include('config keys failed to persist');
+        // Only the second key (STAGING_SOURCE_SCRIPT_ID) failed — first key succeeded
+        expect(err.message).to.include('STAGING_SOURCE_SCRIPT_ID');
+        expect(err.message).to.not.include('STAGING_SCRIPT_ID,');
+        expect(err.message).to.include('source=partial-source');
+        expect(err.message).to.include('spreadsheet=partial-sheet');
       }
     });
   });
