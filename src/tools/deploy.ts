@@ -102,7 +102,7 @@ export class LibraryDeployTool extends BaseTool {
       discrepancies:  { type: 'array',  description: 'Consumer manifest issues detected (status)' },
       shimValidation: { type: 'object', description: 'Shim validation result (promote): { valid, updated, issue? }' },
       sheetSync:      { type: 'object', description: 'Sheet sync results: { source, target, synced[], added[], preserved[], skipped[] }. '
-        + 'synced = app-owned sheets overwritten (matched _defaults/_template suffix). '
+        + 'synced = app-owned sheets overwritten (matched leading _ prefix or _defaults/_template suffix in smart mode). '
         + 'added = new sheets copied to target (absent before). '
         + 'preserved = source sheets that existed in target and were intentionally left untouched '
         + '(user-owned; protect operator configuration). '
@@ -136,16 +136,16 @@ export class LibraryDeployTool extends BaseTool {
       syncSheets: {
         type: 'string',
         enum: ['smart', 'replace_all', 'add_new_only', 'off'],
-        default: 'smart',
-        description: 'Sheet sync policy for promote. Default: \'smart\'. '
-          + '\'smart\': sheets whose names end with \'_defaults\' or \'_template\' (case-insensitive) are always '
-          + 'overwritten (app-owned template sheets); all other sheets are init-only (copied on first promote, '
-          + 'preserved on re-deploys to protect operator customization). '
-          + '\'replace_all\': overwrite all matching sheets on every promote (previous behavior). '
+        default: 'replace_all',
+        description: 'Sheet sync policy for promote. Default: \'replace_all\'. '
+          + '\'replace_all\': overwrite all matching sheets on every promote. '
+          + '\'smart\': sheets whose names start with \'_\' or end with \'_defaults\' or \'_template\' '
+          + '(case-insensitive) are always overwritten (app-owned template sheets); all other sheets are '
+          + 'init-only (copied on first promote, preserved on re-deploys to protect operator customization). '
           + '\'add_new_only\': only copy sheets absent from target; never overwrite. '
           + '\'off\': disable sheet sync entirely. '
-          + 'Naming convention: use Config_defaults for app-owned defaults (always overwritten), '
-          + 'Config for per-environment operator config (init-only). '
+          + 'Naming convention for \'smart\' mode: use _Config or Config_defaults for app-owned defaults '
+          + '(always overwritten), Config for per-environment operator config (init-only). '
           + 'Does NOT handle application/user data migration — seed data must be handled separately.',
       },
       syncProperties: {
@@ -195,11 +195,11 @@ export class LibraryDeployTool extends BaseTool {
       auto_behaviors: [
         'First promote auto-creates staging/prod -source library + consumer spreadsheet if not yet configured',
         'Every promote validates consumer shim (rewrites if stale or developmentMode missing)',
-        'syncSheets:\'smart\' (default) — init-only for user sheets; always-overwrite for *_defaults/*_template sheets.',
+        'syncSheets:\'replace_all\' (default) — overwrite all matching sheets on every promote.',
         'spreadsheetUrl always returned — share with user to access the environment',
       ],
       self_contained: 'deploy handles all environment setup automatically — no prerequisite tool calls needed',
-      defaults: 'dryRun:false | syncSheets:\'smart\' | syncProperties:true | reconcileProperties:false | userSymbol: derived from project name',
+      defaults: 'dryRun:false | syncSheets:\'replace_all\' | syncProperties:true | reconcileProperties:false | userSymbol: derived from project name',
       limitations: [
         'syncSheets copies sheet tabs via copyTo() — only data already in the source template spreadsheet travels with the deploy',
         'Application data, user records, and reference tables not present in the source spreadsheet must be seeded/copied separately',
@@ -396,7 +396,7 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(4, 4, 'Syncing sheets and properties...');
 
     // Sheet sync: template → staging
-    const sheetSyncMode: string = params.syncSheets ?? 'smart';
+    const sheetSyncMode: string = params.syncSheets ?? 'replace_all';
     let sheetSync: any = undefined;
     if (sheetSyncMode !== 'off') {
       const sourceSpreadsheetId = envConfig?.templateSpreadsheetId;
@@ -546,7 +546,7 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(4, 4, 'Syncing sheets and properties...');
 
     // Sheet sync: staging → prod
-    const sheetSyncMode: string = params.syncSheets ?? 'smart';
+    const sheetSyncMode: string = params.syncSheets ?? 'replace_all';
     let sheetSync: any = undefined;
     if (sheetSyncMode !== 'off') {
       const stagingSpreadsheetId = envConfig?.staging?.spreadsheetId;
@@ -1096,7 +1096,7 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
           copied = srcSheet.copyTo(target);
           copied.setName(name);
           added.push(name);
-        } else if (mode === 'replace_all' || (mode === 'smart' && /(_defaults|_template)$/i.test(name))) {
+        } else if (mode === 'replace_all' || (mode === 'smart' && /^_|(_defaults|_template)$/i.test(name))) {
           // App-owned (template) sheet: overwrite on every deploy
           copied = srcSheet.copyTo(target);
           target.deleteSheet(targetSheets[targetIdx]);
