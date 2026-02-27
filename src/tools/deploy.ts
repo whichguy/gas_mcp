@@ -101,7 +101,12 @@ export class LibraryDeployTool extends BaseTool {
       prod:    { type: 'object', description: 'Prod environment (status): { sourceScriptId, consumerScriptId, spreadsheetId, spreadsheetUrl, lastPromotedAt } | { configured: false }' },
       discrepancies:  { type: 'array',  description: 'Consumer manifest issues detected (status)' },
       shimValidation: { type: 'object', description: 'Shim validation result (promote): { valid, updated, issue? }' },
-      sheetSync:      { type: 'object', description: 'Sheet sync results (promote): { source, target, synced[], added[], skipped[] }. Sheets are synced via copyTo() — copies structure + template data only. Application or user data not present in the source spreadsheet is NOT migrated.' },
+      sheetSync:      { type: 'object', description: 'Sheet sync results: { source, target, synced[], added[], preserved[], skipped[] }. '
+        + 'synced = app-owned sheets overwritten (matched _defaults/_template suffix). '
+        + 'added = new sheets copied to target (absent before). '
+        + 'preserved = source sheets that existed in target and were intentionally left untouched '
+        + '(user-owned; protect operator configuration). '
+        + 'skipped = target-only sheets left in place (not in source at all).' },
       propertySync:   { type: 'object', description: 'Property sync results (promote, when syncProperties:true): { source, target, synced[], skipped[], deleted[]?, errors[]?, consumerSync? }. synced = keys copied; skipped = infra keys excluded; deleted = keys removed from target absent in source (reconcileProperties:true only); errors = keys that failed. consumerSync = same result shape for the consumer shim script (written via direct PropertiesService, not ConfigManager).' },
       configWarning:  { type: 'string', description: 'Non-fatal ConfigManager write failures (deployment still succeeded)' },
       hints:          { type: 'object', description: 'Context-aware next-step hints' },
@@ -129,16 +134,19 @@ export class LibraryDeployTool extends BaseTool {
         description: 'Promotion description (contextual note).',
       },
       syncSheets: {
-        type: 'boolean',
-        description: 'Sync spreadsheet sheets from source to target environment during promote. Default: true. '
-          + 'Copies sheets (structure, formulas, formatting, and template data) from the upstream environment\'s '
-          + 'spreadsheet. Does NOT handle application/user data migration — if target environments need seeded '
-          + 'data (reference tables, config sheets, live data not present in the template), that must be handled '
-          + 'separately via exec() or manual copy. '
-          + 'Note: Sheet tabs present in the target but absent in the source are left in place '
-          + '— sheet sync is additive-only; no target sheets are deleted '
-          + '(unlike file promote, which is destructive).',
-        default: true,
+        type: 'string',
+        enum: ['smart', 'replace_all', 'add_new_only', 'off'],
+        default: 'smart',
+        description: 'Sheet sync policy for promote. Default: \'smart\'. '
+          + '\'smart\': sheets whose names end with \'_defaults\' or \'_template\' (case-insensitive) are always '
+          + 'overwritten (app-owned template sheets); all other sheets are init-only (copied on first promote, '
+          + 'preserved on re-deploys to protect operator customization). '
+          + '\'replace_all\': overwrite all matching sheets on every promote (previous behavior). '
+          + '\'add_new_only\': only copy sheets absent from target; never overwrite. '
+          + '\'off\': disable sheet sync entirely. '
+          + 'Naming convention: use Config_defaults for app-owned defaults (always overwritten), '
+          + 'Config for per-environment operator config (init-only). '
+          + 'Does NOT handle application/user data migration — seed data must be handled separately.',
       },
       syncProperties: {
         type: 'boolean',
@@ -187,11 +195,11 @@ export class LibraryDeployTool extends BaseTool {
       auto_behaviors: [
         'First promote auto-creates staging/prod -source library + consumer spreadsheet if not yet configured',
         'Every promote validates consumer shim (rewrites if stale or developmentMode missing)',
-        'syncSheets:true (default) copies sheets (structure + template data) from source spreadsheet to target — does NOT migrate application/user data',
+        'syncSheets:\'smart\' (default) — init-only for user sheets; always-overwrite for *_defaults/*_template sheets.',
         'spreadsheetUrl always returned — share with user to access the environment',
       ],
       self_contained: 'deploy handles all environment setup automatically — no prerequisite tool calls needed',
-      defaults: 'dryRun:false | syncSheets:true | syncProperties:true | reconcileProperties:false | userSymbol: derived from project name',
+      defaults: 'dryRun:false | syncSheets:\'smart\' | syncProperties:true | reconcileProperties:false | userSymbol: derived from project name',
       limitations: [
         'syncSheets copies sheet tabs via copyTo() — only data already in the source template spreadsheet travels with the deploy',
         'Application data, user records, and reference tables not present in the source spreadsheet must be seeded/copied separately',
@@ -388,13 +396,14 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(4, 4, 'Syncing sheets and properties...');
 
     // Sheet sync: template → staging
+    const sheetSyncMode: string = params.syncSheets ?? 'smart';
     let sheetSync: any = undefined;
-    if (params.syncSheets !== false) {
+    if (sheetSyncMode !== 'off') {
       const sourceSpreadsheetId = envConfig?.templateSpreadsheetId;
       const targetSpreadsheetId = envConfig?.staging?.spreadsheetId;
       if (sourceSpreadsheetId && targetSpreadsheetId) {
         try {
-          sheetSync = await this.syncSheets(sourceSpreadsheetId, targetSpreadsheetId, scriptId, accessToken);
+          sheetSync = await this.syncSheets(sourceSpreadsheetId, targetSpreadsheetId, sheetSyncMode, scriptId, accessToken);
         } catch (syncError: unknown) {
           const syncMsg = syncError instanceof Error ? syncError.message : String(syncError);
           console.error(`⚠️  Sheet sync failed: ${syncMsg}`);
@@ -537,12 +546,13 @@ export class LibraryDeployTool extends BaseTool {
     await sendProgress?.(4, 4, 'Syncing sheets and properties...');
 
     // Sheet sync: staging → prod
+    const sheetSyncMode: string = params.syncSheets ?? 'smart';
     let sheetSync: any = undefined;
-    if (params.syncSheets !== false) {
+    if (sheetSyncMode !== 'off') {
       const stagingSpreadsheetId = envConfig?.staging?.spreadsheetId;
       if (stagingSpreadsheetId && prodSpreadsheetId) {
         try {
-          sheetSync = await this.syncSheets(stagingSpreadsheetId, prodSpreadsheetId, scriptId, accessToken);
+          sheetSync = await this.syncSheets(stagingSpreadsheetId, prodSpreadsheetId, sheetSyncMode, scriptId, accessToken);
         } catch (syncError: unknown) {
           const syncMsg = syncError instanceof Error ? syncError.message : String(syncError);
           console.error(`⚠️  Sheet sync failed: ${syncMsg}`);
@@ -1048,6 +1058,7 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
   private async syncSheets(
     sourceSpreadsheetId: string,
     targetSpreadsheetId: string,
+    mode: string,
     scriptId: string,
     accessToken?: string
   ): Promise<any> {
@@ -1056,37 +1067,48 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
     if (!SPREADSHEET_ID_RE.test(sourceSpreadsheetId) || !SPREADSHEET_ID_RE.test(targetSpreadsheetId)) {
       throw new ValidationError('spreadsheetId', `${sourceSpreadsheetId}|${targetSpreadsheetId}`, 'valid Sheets ID (alphanumeric, hyphens, underscores, 25-60 chars)');
     }
+    // Validate mode before embedding in GAS script string to prevent injection
+    const VALID_SYNC_MODES = ['smart', 'replace_all', 'add_new_only'] as const;
+    if (!(VALID_SYNC_MODES as readonly string[]).includes(mode)) {
+      throw new ValidationError('syncSheets', mode, `one of: ${VALID_SYNC_MODES.join(', ')}`);
+    }
 
-    console.error(`🔄 Syncing sheets: ${sourceSpreadsheetId} → ${targetSpreadsheetId}`);
+    console.error(`🔄 Syncing sheets: ${sourceSpreadsheetId} → ${targetSpreadsheetId} (mode: ${mode})`);
 
     // Execute via GAS — copyTo preserves formulas, formatting, data validation
     const js_statement = `
       var source = SpreadsheetApp.openById('${sourceSpreadsheetId}');
       var target = SpreadsheetApp.openById('${targetSpreadsheetId}');
+      var mode = '${mode}';
       var sourceSheets = source.getSheets();
       var targetSheets = target.getSheets();
       var targetNames = targetSheets.map(function(s) { return s.getName(); });
-      var synced = [], added = [], skipped = [];
+      var synced = [], added = [], skipped = [], preserved = [];
 
       for (var i = 0; i < sourceSheets.length; i++) {
         var srcSheet = sourceSheets[i];
         var name = srcSheet.getName();
-        var copied = srcSheet.copyTo(target);
-
         var targetIdx = targetNames.indexOf(name);
-        if (targetIdx !== -1) {
-          // Replace: delete old, rename copy
+        var copied;
+
+        if (targetIdx === -1) {
+          // Sheet absent from target: always add (regardless of mode)
+          copied = srcSheet.copyTo(target);
+          copied.setName(name);
+          added.push(name);
+        } else if (mode === 'replace_all' || (mode === 'smart' && /(_defaults|_template)$/i.test(name))) {
+          // App-owned (template) sheet: overwrite on every deploy
+          copied = srcSheet.copyTo(target);
           target.deleteSheet(targetSheets[targetIdx]);
           copied.setName(name);
           synced.push(name);
         } else {
-          // New sheet
-          copied.setName(name);
-          added.push(name);
+          // User-owned sheet or add_new_only mode: preserve operator customization
+          preserved.push(name);
         }
       }
 
-      // Collect names of target sheets not in source (left untouched)
+      // Target-only sheets (not in source at all)
       var sourceNames = sourceSheets.map(function(s) { return s.getName(); });
       for (var j = 0; j < targetNames.length; j++) {
         if (sourceNames.indexOf(targetNames[j]) === -1) {
@@ -1094,7 +1116,7 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
         }
       }
 
-      Logger.log(JSON.stringify({ synced: synced, added: added, skipped: skipped }));
+      Logger.log(JSON.stringify({ synced: synced, added: added, skipped: skipped, preserved: preserved }));
     `;
 
     const result = await this.execTool.execute({
@@ -1123,7 +1145,7 @@ function menuAction2() { ${userSymbol}.menuAction2(); }
       // Best-effort parsing
     }
 
-    console.error(`✅ Sheet sync complete: ${syncResult.synced?.length || 0} synced, ${syncResult.added?.length || 0} added, ${syncResult.skipped?.length || 0} skipped`);
+    console.error(`✅ Sheet sync complete: ${syncResult.synced?.length || 0} synced, ${syncResult.added?.length || 0} added, ${syncResult.preserved?.length || 0} preserved, ${syncResult.skipped?.length || 0} skipped`);
     return syncResult;
   }
 
