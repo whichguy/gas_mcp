@@ -28,8 +28,6 @@ import {
   wrapModuleContent,
   getModuleName
 } from '../../utils/moduleWrapper.js';
-import { computeGitSha1 } from '../../utils/hashUtils.js';
-import { updateCachedContentHash, clearGASMetadata, cacheGASMetadata } from '../../utils/gasMetadataCache.js';
 import { analyzeContent } from '../../utils/contentAnalyzer.js';
 
 /**
@@ -229,21 +227,13 @@ export class SyncExecutor {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
-      // Cache GAS metadata (updateTime, fileType) for CatTool fast path
-      const fileType = op.fileType || 'SERVER_JS';
-      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {});
-
-      // Cache the content hash for sync status comparison
-      const contentHash = computeGitSha1(contentToWrite);
-      await updateCachedContentHash(filePath, contentHash).catch(() => {});
-
       // Analyze content for LLM hints
       const analysis = analyzeContent(op.filename, contentToWrite);
       if (analysis.warnings.length > 0 || analysis.hints.length > 0) {
         analysisMap.set(op.filename, { warnings: analysis.warnings, hints: analysis.hints });
       }
 
-      mcpLogger.debug('rsync', `[EXECUTOR] Added: ${op.filename} (type: ${fileType})`);
+      mcpLogger.debug('rsync', `[EXECUTOR] Added: ${op.filename} (type: ${op.fileType})`);
     }
 
     // Process UPDATE operations
@@ -253,19 +243,13 @@ export class SyncExecutor {
       await fs.mkdir(path.dirname(filePath), { recursive: true });
       await fs.writeFile(filePath, contentToWrite, 'utf-8');
 
-      const fileType = op.fileType || 'SERVER_JS';
-      await cacheGASMetadata(filePath, new Date().toISOString(), fileType).catch(() => {});
-
-      const contentHash = computeGitSha1(contentToWrite);
-      await updateCachedContentHash(filePath, contentHash).catch(() => {});
-
       // Analyze content for LLM hints
       const analysis = analyzeContent(op.filename, contentToWrite);
       if (analysis.warnings.length > 0 || analysis.hints.length > 0) {
         analysisMap.set(op.filename, { warnings: analysis.warnings, hints: analysis.hints });
       }
 
-      mcpLogger.debug('rsync', `[EXECUTOR] Updated: ${op.filename} (type: ${fileType})`);
+      mcpLogger.debug('rsync', `[EXECUTOR] Updated: ${op.filename}`);
     }
 
     // Process DELETE operations
@@ -275,7 +259,6 @@ export class SyncExecutor {
         await fs.unlink(filePath);
         mcpLogger.debug('rsync', `[EXECUTOR] Deleted: ${op.filename} (type: ${op.fileType || 'SERVER_JS'})`);
 
-        await clearGASMetadata(filePath).catch(() => {});
       } catch (error: unknown) {
         if (error instanceof Error && (error as NodeJS.ErrnoException).code !== 'ENOENT') {
           throw error;

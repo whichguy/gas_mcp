@@ -28,7 +28,6 @@ import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 import type { CompactGitHint } from '../utils/gitStatus.js';
 import { buildHtmlTemplateHint } from '../utils/gitStatus.js';
 import { buildWriteWorkflowHints } from '../utils/writeHints.js';
-import { updateCachedContentHash } from '../utils/gasMetadataCache.js';
 import path from 'path';
 
 interface AiderOperation {
@@ -389,26 +388,11 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
     if (params.raw) {
       await this.gasClient.updateFile(scriptId, filename, modifiedContent, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
 
-      // Compute hash and update xattr cache to prevent false "stale" errors on subsequent exec calls
-      const editedHash = computeGitSha1(modifiedContent);
-      try {
-        const { LocalFileManager } = await import('../utils/localFileManager.js');
-        const projectPath = await LocalFileManager.getProjectDirectory(scriptId);
-        const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-        const localFileName = filename + fileExtension;
-        const localFilePath = path.join(projectPath, localFileName);
-        await updateCachedContentHash(localFilePath, editedHash);
-        console.error(`[AIDER:RAW] Updated xattr cache: ${editedHash.slice(0, 8)}...`);
-      } catch (cacheError) {
-        // Non-fatal: sync drift checker will fall back to content comparison
-        console.error(`[AIDER:RAW] Hash cache update failed: ${cacheError}`);
-      }
-
       const result: AiderResult = {
         success: true,
         editsApplied,
         filePath: params.path,
-        hash: editedHash,
+        hash: computeGitSha1(modifiedContent),
         ...(analysis.warnings.length > 0 ? { warnings: analysis.warnings } : {}),
         ...(analysis.hints.length > 0 ? { hints: analysis.hints } : {})
       };
