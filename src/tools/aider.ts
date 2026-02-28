@@ -28,8 +28,6 @@ import { computeGitSha1, hashesEqual } from '../utils/hashUtils.js';
 import type { CompactGitHint } from '../utils/gitStatus.js';
 import { buildHtmlTemplateHint } from '../utils/gitStatus.js';
 import { buildWriteWorkflowHints } from '../utils/writeHints.js';
-import path from 'path';
-
 interface AiderOperation {
   searchText: string;
   replaceText: string;

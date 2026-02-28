@@ -33,7 +33,7 @@ async function revertLocalFile(
     } else {
       // Delete new file
       await unlink(filePath);
-console.error(`🗑️  [HOOK_VALIDATION] Removed new file: ${filename}`);
+      console.error(`🗑️  [HOOK_VALIDATION] Removed new file: ${filename}`);
     }
   } catch (error: any) {
     console.error(`⚠️  [HOOK_VALIDATION] Revert failed: ${error.message}`);
