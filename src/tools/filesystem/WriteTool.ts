@@ -45,7 +45,7 @@ import { WriteOperationStrategy } from '../../core/git/operations/WriteOperation
 interface RawWriteParams {
   scriptId: string;
   path: string;
-  content: string;
+  content?: string;
   fileType: 'SERVER_JS' | 'HTML' | 'JSON';
   accessToken?: string;
   expectedHash?: string;
@@ -54,6 +54,7 @@ interface RawWriteParams {
   skipSyncCheck?: boolean;
   projectPath?: string;
   changeReason?: string;
+  fromLocal?: string;
 }
 
 /**
@@ -1251,7 +1252,22 @@ Or use force:true to overwrite (destructive).`;
       }
     }
 
-    const content: string = params.content;
+    let content!: string;
+    if (params.fromLocal) {
+      if (params.content) {
+        throw new ValidationError('content/fromLocal', 'both provided', 'only one of content or fromLocal should be provided');
+      }
+      const localPath = expandAndValidateLocalPath(params.fromLocal);
+      try {
+        content = await readFile(localPath, 'utf-8');
+      } catch (readError: any) {
+        throw new FileOperationError('fromLocal', params.fromLocal, `Failed to read local file: ${readError.message}`);
+      }
+    } else if (params.content !== undefined) {
+      content = params.content;
+    } else {
+      throw new ValidationError('content', undefined, 'content or fromLocal is required');
+    }
 
     // Content integrity validation (non-blocking warnings)
     const contentWarnings = validateCommonJsIntegrity(
