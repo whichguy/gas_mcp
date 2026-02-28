@@ -26,8 +26,8 @@ export interface ConflictCheckParams {
   currentRemoteContent: string;
   /** Expected hash from previous read (optional) */
   expectedHash?: string;
-  /** Source of expected hash: 'param' if explicitly provided, 'xattr' if from cache */
-  hashSource?: 'param' | 'xattr';
+  /** Source of expected hash: 'param' if explicitly provided, 'local_git' if from local git repo */
+  hashSource?: 'param' | 'local_git' | 'computed';
   /** Force bypass conflict detection */
   force?: boolean;
 }

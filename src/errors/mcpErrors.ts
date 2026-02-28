@@ -148,7 +148,7 @@ export interface ConflictDetails {
   operation: 'write' | 'edit' | 'aider' | 'cp' | 'mv' | 'rm' | 'sed';
   expectedHash: string;
   currentHash: string;
-  hashSource: 'param' | 'xattr' | 'computed';
+  hashSource: 'param' | 'local_git' | 'computed';
   changeDetails?: {
     sizeChange: string;
     timeElapsed?: string;

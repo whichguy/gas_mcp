@@ -367,12 +367,11 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
       };
     }
 
-    // NOTE: Raw mode intentionally skips local file write. It updates remote GAS and the xattr
-    // hash cache only. The local git mirror (~/gas-repos/) is NOT updated — this is by design
-    // since raw mode operates on CommonJS infrastructure content that the git workflow never
-    // writes directly. The stale local file + correct xattr hash means subsequent reads will
-    // fall back to fetching from GAS (correct behavior).
-    // RAW MODE: bypass GitOperationManager, write directly to GAS and update xattr cache
+    // NOTE: Raw mode intentionally skips local file write. It updates remote GAS only.
+    // The local git mirror (~/gas-repos/) is NOT updated — this is by design since raw mode
+    // operates on CommonJS infrastructure content that the git workflow never writes directly.
+    // Subsequent reads with preferLocal:false will fetch the latest content from GAS.
+    // RAW MODE: bypass GitOperationManager, write directly to GAS
     if (params.raw) {
       await this.gasClient.updateFile(scriptId, filename, content, undefined, accessToken, fileContent.type as 'SERVER_JS' | 'HTML' | 'JSON');
 
@@ -421,7 +420,7 @@ ${content.substring(0, 2000)}${content.length > 2000 ? '...' : ''}`;
       accessToken
     });
 
-    // Get hash from strategy's wrapped content (GitOperationManager handles local overwrite + xattr)
+    // Get hash from strategy's wrapped content (GitOperationManager handles local git mirror update)
     const wrappedMap = gitResult.result.wrappedContent;
     const wrappedStr = wrappedMap?.get(filename);
     const editedHash = wrappedStr ? computeGitSha1(wrappedStr) : readHash;

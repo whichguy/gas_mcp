@@ -242,7 +242,7 @@ export class CpTool extends BaseFileSystemTool {
     const isCrossProject = fromProjectId !== toProjectId;
 
     // Compute destination file hash from strategy's wrapped content
-    // (GitOperationManager handles local file overwrite + xattr cache)
+    // (GitOperationManager handles local git mirror update)
     let destHash: string | undefined;
     try {
       const wrappedStr = copyResult.wrappedContent?.get(toFilename) || '';
