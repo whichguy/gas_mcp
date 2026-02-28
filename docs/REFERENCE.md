@@ -263,7 +263,7 @@ write({scriptId: "container-bound-id", path: "Utils", content: "..."})
 - **Limitations**: Requires all scopes at once
 - **Usage**: `auth({mode: "start"})`
 
-### File Operations (13 tools)
+### File Operations (14 tools)
 
 All work identically for both script types.
 
@@ -285,6 +285,7 @@ All work identically for both script types.
 - `edit` - Token-efficient editing with exact string matching
 - `aider` - Token-efficient fuzzy editing
 - `file_status` - Comprehensive file status with SHA checksums
+- `cache_clear` - No-op (xattr cache removed); returns migration note. Use `preferLocal:false` on cat for forced remote refresh, or `rsync pull` for bulk refresh.
 
 **Limitations:**
 - Only 3 file types supported (SERVER_JS, HTML, JSON)
