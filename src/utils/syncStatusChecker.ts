@@ -5,12 +5,11 @@
  * STATUSES: in_sync | local_stale | remote_only | local_only
  * OPTIONS: excludeSystemFiles (skip common-js/*) | includeContent (for diffs) | maxContentFiles (limit 5)
  *
- * Compares xattr-cached hashes (local) against Git SHA-1 hashes (remote).
+ * Compares local git file content hashes against Git SHA-1 hashes (remote).
  */
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { getValidatedContentHash } from './gasMetadataCache.js';
 import { computeGitSha1 } from './hashUtils.js';
 // Note: moduleWrapper imports removed - local files are stored WRAPPED, no re-wrapping needed
 import { FileFilter } from './fileFilter.js';
@@ -174,9 +173,9 @@ export async function checkSyncStatus(
     try {
       await fs.access(localFilePath);
       localFileExists = true;
-      // Get validated hash from xattr cache (authoritative, no mtime check)
-      const validatedResult = await getValidatedContentHash(localFilePath);
-      localHash = validatedResult?.hash || null;
+      // Compute hash from local git file content (authoritative local state)
+      const localContent = await fs.readFile(localFilePath, 'utf-8');
+      localHash = computeGitSha1(localContent);
     } catch {
       // Local file doesn't exist
     }

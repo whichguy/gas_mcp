@@ -20,9 +20,7 @@ import { GASClient } from '../../../api/gasClient.js';
 import { ConflictError, type ConflictDetails } from '../../../errors/mcpErrors.js';
 import { fileNameMatches } from '../../../api/pathParser.js';
 import { computeGitSha1, hashesEqual } from '../../../utils/hashUtils.js';
-import { updateCachedContentHash, getCachedContentHash } from '../../../utils/gasMetadataCache.js';
 import { unwrapModuleContent } from '../../../utils/moduleWrapper.js';
-import { setFileMtimeToRemote } from '../../../utils/fileHelpers.js';
 import { generateFileDiff, getDiffStats } from '../../../utils/diffGenerator.js';
 import { mcpLogger } from '../../../utils/mcpLogger.js';
 import { readFile } from 'fs/promises';
@@ -113,13 +111,15 @@ export class WriteOperationStrategy implements FileOperationStrategy<WriteStrate
       let hashSource: 'param' | 'xattr' | 'computed' = 'param';
 
       if (!resolvedExpectedHash && localFilePath) {
+        // Use local git file content as the conflict detection seed.
+        // The local git file stores the same wrapped content written by the last PUT —
+        // computing its hash is equivalent to what xattr cached previously.
         try {
-          resolvedExpectedHash = await getCachedContentHash(localFilePath) || undefined;
-          if (resolvedExpectedHash) {
-            hashSource = 'xattr';
-          }
+          const localContent = await readFile(localFilePath, 'utf-8');
+          resolvedExpectedHash = computeGitSha1(localContent);
+          hashSource = 'local_git' as any;
         } catch {
-          // xattr cache not available - continue without
+          // Local git file not available — skip conflict detection
         }
       }
 
@@ -193,44 +193,15 @@ Or use force:true to overwrite (destructive).`;
     const remoteResult = await gasClient.updateProjectContent(scriptId, updatedFiles, accessToken);
     const updatedFile = remoteResult.find((f: any) => fileNameMatches(f.name, filename));
 
-    // Fetch authoritative updateTime for mtime sync
-    let updateTime: string | undefined = updatedFile?.updateTime;
-    if (!updateTime) {
-      try {
-        const metadata = await gasClient.getProjectMetadata(scriptId, accessToken);
-        const fileMetadata = metadata.find((f: any) => fileNameMatches(f.name, filename));
-        updateTime = fileMetadata?.updateTime;
-      } catch {
-        // Non-fatal: mtime sync is best-effort
-      }
-    }
-
-    // Set local mtime to match remote (best-effort)
-    if (localFilePath && updateTime) {
-      try {
-        await setFileMtimeToRemote(localFilePath, updateTime, fileType);
-      } catch {
-        // Non-fatal
-      }
-    }
-
-    // Compute and cache hash of written content (on WRAPPED content, matching git hash-object)
+    // Compute hash of written content for response (used by callers for optimistic locking)
     const writtenHash = computeGitSha1(contentToWrite);
-
-    if (localFilePath) {
-      try {
-        await updateCachedContentHash(localFilePath, writtenHash);
-      } catch {
-        // Non-fatal: xattr not supported on filesystem
-      }
-    }
 
     return {
       success: true,
       filename,
       hash: writtenHash,
       size: contentToWrite.length,
-      updateTime,
+      updateTime: updatedFile?.updateTime,
       wrappedContent: new Map([[filename, contentToWrite]])
     };
   }

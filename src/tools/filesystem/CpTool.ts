@@ -10,7 +10,6 @@ import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { CopyOperationStrategy } from '../../core/git/operations/CopyOperationStrategy.js';
 import { computeGitSha1 } from '../../utils/hashUtils.js';
-import { updateCachedContentHash } from '../../utils/gasMetadataCache.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
 import path from 'node:path';
 
@@ -456,17 +455,6 @@ export class CpTool extends BaseFileSystemTool {
         copyResults.push({ name: file.name, action: file.action, status: 'success' });
         successCount++;
 
-        // Update xattr hash cache for destination project to prevent false "stale" conflict errors
-        const fileHash = computeGitSha1(file.content);
-        try {
-          const { LocalFileManager } = await import('../../utils/localFileManager.js');
-          const destProjectPath = await LocalFileManager.getProjectDirectory(destinationScriptId);
-          const fileExt = LocalFileManager.getFileExtensionFromName(file.name);
-          const localFilePath = path.join(destProjectPath, file.name + fileExt);
-          await updateCachedContentHash(localFilePath, fileHash);
-        } catch {
-          // Non-fatal: destination project may not have a local clone yet
-        }
       } catch (error: any) {
         copyResults.push({ name: file.name, action: file.action, status: 'error', error: error.message });
         errorCount++;

@@ -13,11 +13,10 @@ import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
 import { parsePath, matchesDirectory, getDirectory, getBaseName, joinPath, isWildcardPattern, matchesPattern, resolveHybridScriptId, fileNameMatches } from '../../api/pathParser.js';
 import { ValidationError, FileOperationError, ConflictError, type ConflictDetails } from '../../errors/mcpErrors.js';
 import { computeGitSha1, isValidGitSha1, hashesEqual } from '../../utils/hashUtils.js';
-import { getCachedContentHash, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
 import { unwrapModuleContent, shouldWrapContent, wrapModuleContent, getModuleName, analyzeCommonJsUsage, detectAndCleanContent, extractDefineModuleOptionsWithDebug, validateCommonJsIntegrity } from '../../utils/moduleWrapper.js';
 import { translatePathForOperation } from '../../utils/virtualFileTranslation.js';
 import { GitFormatTranslator } from '../../utils/GitFormatTranslator.js';
-import { setFileMtimeToRemote, isManifestFile, checkSyncOrThrowByHash } from '../../utils/fileHelpers.js';
+import { isManifestFile } from '../../utils/fileHelpers.js';
 import { processHoistedAnnotations } from '../../utils/hoistedFunctionGenerator.js';
 import { shouldAutoSync } from '../../utils/syncDecisions.js';
 import { validateAndParseFilePath } from '../../utils/filePathProcessor.js';
@@ -558,20 +557,19 @@ export class WriteTool extends BaseFileSystemTool {
           let localFilePath: string | undefined;
 
           if (!expectedHash) {
-            // Try to get cached hash from xattr
+            // Use local git file content as the conflict detection seed
             try {
               const { LocalFileManager } = await import('../../utils/localFileManager.js');
               const localRoot = await LocalFileManager.getProjectDirectory(projectName, workingDir);
               if (localRoot) {
                 const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
                 localFilePath = join(localRoot, filename + fileExtension);
-                expectedHash = await getCachedContentHash(localFilePath) || undefined;
-                if (expectedHash) {
-                  hashSource = 'xattr';
-                }
+                const localContent = await readFile(localFilePath, 'utf-8');
+                expectedHash = computeGitSha1(localContent);
+                hashSource = 'local_git' as any;
               }
             } catch {
-              // xattr cache not available - continue without
+              // Local git file not available - continue without conflict detection
             }
           }
 
@@ -786,15 +784,6 @@ Or use force:true to overwrite (destructive).`;
         await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
 
-        // ✅ IMMEDIATELY set mtime to match remote (close race window)
-        const authoritativeUpdateTime = results.remoteFile?.updateTime;
-        if (authoritativeUpdateTime) {
-          await setFileMtimeToRemote(filePath, authoritativeUpdateTime, fileType);
-          console.error(`⏰ [SYNC] Set mtime after git write: ${authoritativeUpdateTime}`);
-        } else {
-          console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
-        }
-
         // Stage the file (NO COMMIT - LLM must call git_feature)
         const { spawn } = await import('child_process');
         await new Promise<void>((resolve, reject) => {
@@ -824,26 +813,6 @@ Or use force:true to overwrite (destructive).`;
 
         await mkdir(dirname(filePath), { recursive: true });
         await import('fs').then(fs => fs.promises.writeFile(filePath, content, 'utf-8'));
-
-        // ✅ IMMEDIATELY set mtime to match remote (close race window)
-        const authoritativeUpdateTime = results.remoteFile?.updateTime;
-        if (authoritativeUpdateTime) {
-          await setFileMtimeToRemote(filePath, authoritativeUpdateTime, fileType);
-          console.error(`⏰ [SYNC] Set mtime after final write: ${authoritativeUpdateTime}`);
-        } else {
-          console.error(`⚠️ [SYNC] No remote updateTime available, leaving mtime as NOW`);
-        }
-
-        // Update xattr cache with new hash for future conflict detection
-        if (results.hash) {
-          try {
-            await updateCachedContentHash(filePath, results.hash);
-            console.error(`🔒 [HASH] Updated xattr cache with hash: ${results.hash.slice(0, 8)}...`);
-          } catch (cacheError) {
-            // Non-fatal: xattr not supported on filesystem
-            console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
-          }
-        }
 
         results.localFile = {
           path: filePath,
@@ -1227,16 +1196,6 @@ Or use force:true to overwrite (destructive).`;
       workingDir
     );
 
-    // Set mtime to match remote for proper sync tracking
-    const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-    const fullFilename = filename + fileExtension;
-    const projectPath = await LocalFileManager.getProjectDirectory(projectName, workingDir);
-    const localFilePath = join(projectPath, fullFilename);
-
-    if (remoteFile.updateTime) {
-      await setFileMtimeToRemote(localFilePath, remoteFile.updateTime, remoteFile.type);
-    }
-
     console.error(`✅ [AUTO-PULL] Successfully pulled ${filename} to local cache`);
     return true;
   }
@@ -1323,26 +1282,6 @@ Or use force:true to overwrite (destructive).`;
       );
     }
 
-    // Fallback: Write-protection - check sync before writing (unless skipSyncCheck is true)
-    if (!params.skipSyncCheck) {
-      const { LocalFileManager } = await import('../../utils/localFileManager.js');
-      const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
-
-      if (localRoot) {
-        const fileExtension = LocalFileManager.getFileExtensionFromName(gasName);
-        const localPath = join(localRoot, gasName + fileExtension);
-
-        try {
-          const remoteFiles = await this.gasClient.getProjectContent(scriptId, accessToken);
-          await checkSyncOrThrowByHash(localPath, gasName, remoteFiles, true);
-        } catch (syncError: any) {
-          if (syncError.message && syncError.message.includes('out of sync')) {
-            throw syncError;
-          }
-        }
-      }
-    }
-
     // === HASH-BASED CONFLICT DETECTION (RAW content) ===
     let writtenHash: string | undefined;
 
@@ -1357,19 +1296,19 @@ Or use force:true to overwrite (destructive).`;
         let hashSource: 'param' | 'xattr' | 'computed' = 'param';
 
         if (!expectedHash) {
+          // Use local git file content as the conflict detection seed
           try {
             const { LocalFileManager } = await import('../../utils/localFileManager.js');
             const localRoot = await LocalFileManager.getProjectDirectory(scriptId);
             if (localRoot) {
               const fileExtension = LocalFileManager.getFileExtensionFromName(gasName);
               const localPath = join(localRoot, gasName + fileExtension);
-              expectedHash = await getCachedContentHash(localPath) || undefined;
-              if (expectedHash) {
-                hashSource = 'xattr';
-              }
+              const localContent = await readFile(localPath, 'utf-8');
+              expectedHash = computeGitSha1(localContent);
+              hashSource = 'local_git' as any;
             }
           } catch {
-            // xattr cache not available
+            // Local git file not available - continue without conflict detection
           }
         }
 
@@ -1440,19 +1379,6 @@ Or use force:true to overwrite (destructive).`;
         await mkdir(dirname(localPath), { recursive: true });
         await writeFile(localPath, content, 'utf-8');
 
-        const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, gasName));
-        if (remoteFile?.updateTime) {
-          await setFileMtimeToRemote(localPath, remoteFile.updateTime, remoteFile.type);
-        }
-
-        if (writtenHash) {
-          try {
-            await updateCachedContentHash(localPath, writtenHash);
-            console.error(`🔒 [HASH] Updated xattr cache with hash: ${writtenHash.slice(0, 8)}...`);
-          } catch (cacheError) {
-            console.error(`⚠️ [HASH] Could not cache hash: ${cacheError}`);
-          }
-        }
       }
     } catch (syncError) {
       // Don't fail the operation if local sync fails - remote write succeeded
@@ -1563,13 +1489,13 @@ Or use force:true to overwrite (destructive).`;
         let hashSource: 'param' | 'xattr' | 'computed' = 'param';
 
         if (!expectedHash) {
+          // Use local git file content as the conflict detection seed
           try {
-            expectedHash = await getCachedContentHash(filePath) || undefined;
-            if (expectedHash) {
-              hashSource = 'xattr';
-            }
+            const localContent = await readFile(filePath, 'utf-8');
+            expectedHash = computeGitSha1(localContent);
+            hashSource = 'local_git' as any;
           } catch {
-            // xattr cache not available
+            // Local git file not available - continue without conflict detection
           }
         }
 
@@ -1646,18 +1572,7 @@ Or use force:true to overwrite (destructive).`;
         gasFileType as 'SERVER_JS' | 'HTML' | 'JSON'
       );
 
-      const remoteFile = updatedFiles.find((f: any) => fileNameMatches(f.name, filename));
-      if (remoteFile?.updateTime) {
-        await setFileMtimeToRemote(filePath, remoteFile.updateTime, remoteFile.type);
-      }
-
       const writtenHash = computeGitSha1(finalContent);
-
-      try {
-        await updateCachedContentHash(filePath, writtenHash);
-      } catch (cacheError) {
-        console.error(`⚠️ [HASH] Could not cache hash for ${filePath}: ${cacheError}`);
-      }
 
       const result: any = {
         status: 'success',
