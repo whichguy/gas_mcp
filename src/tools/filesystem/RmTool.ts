@@ -8,7 +8,6 @@ import { GitPathResolver } from '../../core/git/GitPathResolver.js';
 import { SyncStrategyFactory } from '../../core/git/SyncStrategyFactory.js';
 import { DeleteOperationStrategy } from '../../core/git/operations/DeleteOperationStrategy.js';
 import { checkForConflictOrThrow } from '../../utils/conflictDetection.js';
-import { clearGASMetadata } from '../../utils/gasMetadataCache.js';
 import { join as pathJoin } from 'path';
 
 /**
@@ -131,18 +130,6 @@ export class RmTool extends BaseFileSystemTool {
       changeReason: params.changeReason || defaultMessage,
       accessToken
     });
-
-    // Clear xattr cache for deleted file (prevents false collision on recreate)
-    try {
-      const { LocalFileManager } = await import('../../utils/localFileManager.js');
-      const projectPath = await LocalFileManager.getProjectDirectory(parsedPath.scriptId);
-      const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-      const localFilePath = pathJoin(projectPath, filename + fileExtension);
-      await clearGASMetadata(localFilePath);
-      console.error(`🗑️ [RM] Cleared xattr cache for deleted file`);
-    } catch (cacheError) {
-      console.error(`⚠️ [RM] Cache clear failed: ${cacheError}`);
-    }
 
     // Return response with compact git hints for LLM guidance
     return {

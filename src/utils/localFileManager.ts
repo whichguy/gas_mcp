@@ -4,7 +4,6 @@ import { FileOperationError, ValidationError } from '../errors/mcpErrors.js';
 import { McpGasConfigManager } from '../config/mcpGasConfig.js';
 import { ensureGitInitialized } from './gitInit.js';
 import { isManifestFile } from './fileHelpers.js';
-import { clearGASMetadata } from './gasMetadataCache.js';
 import { FileFilter } from './fileFilter.js';
 
 /**
@@ -703,9 +702,7 @@ export class LocalFileManager {
         const fileName = this.normalizeFileName(name);
         const filePath = path.join(projectPath, `${fileName}${extension}`);
         await fs.unlink(filePath);
-        // Clear xattr cache to prevent stale hash detection if file is recreated
-        await clearGASMetadata(filePath).catch(() => {});
-        return;
+return;
       } catch (error: any) {
         if (error.code !== 'ENOENT') {
           throw new FileOperationError('delete', name, error.message);

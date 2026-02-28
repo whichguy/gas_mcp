@@ -16,7 +16,6 @@ import { SessionAuthManager } from '../auth/sessionManager.js';
 import { SchemaFragments } from '../utils/schemaFragments.js';
 import { LockManager } from '../utils/lockManager.js';
 import { execGitCommand } from '../utils/gitCommands.js';
-import { getCachedGASMetadata } from '../utils/gasMetadataCache.js';
 import { LocalFileManager } from '../utils/localFileManager.js';
 import { ENV_TAGS } from '../utils/deployConstants.js';
 
@@ -279,33 +278,23 @@ export class StatusTool extends BaseTool {
       return { entries: 0, syncFolderExists: false };
     }
 
-    // Count files that have cached xattr metadata
+    // Count local git files (replaces xattr cache coverage stat)
     let entries = 0;
-    let totalFiles = 0;
     try {
       const files = await readdir(syncFolder);
       const codeFiles = files.filter(f =>
         f.endsWith('.gs') || f.endsWith('.html') || f.endsWith('.json')
       );
-      totalFiles = codeFiles.length;
-
-      for (const file of codeFiles) {
-        const filePath = path.join(syncFolder, file);
-        try {
-          const meta = await getCachedGASMetadata(filePath);
-          if (meta) entries++;
-        } catch {
-          // xattr not available or file issue
-        }
-      }
+      entries = codeFiles.length;
     } catch {
       // readdir failed
     }
 
     return {
       entries,
-      totalLocalFiles: totalFiles,
-      syncFolderExists: true
+      totalLocalFiles: entries,
+      syncFolderExists: true,
+      note: 'local git files (xattr cache removed)'
     };
   }
 

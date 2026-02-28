@@ -1,33 +1,25 @@
 import { BaseFileSystemTool } from './shared/BaseFileSystemTool.js';
-import { parsePath } from '../../api/pathParser.js';
-import { ValidationError } from '../../errors/mcpErrors.js';
-import { clearGASMetadata, hasCachedMetadata } from '../../utils/gasMetadataCache.js';
-import { LocalFileManager } from '../../utils/localFileManager.js';
-import { join } from 'path';
 
 /**
- * Clear cached metadata from local files
+ * Cache clear tool — no-op after xattr metadata cache removal.
  *
- * Removes extended attributes containing GAS metadata (updateTime, fileType)
- * from local cache files. Useful for debugging, troubleshooting, and forcing
- * fresh API calls to verify sync status.
+ * The per-file xattr metadata cache (user.gas.updateTime, user.gas.fileType,
+ * user.gas.contentHash) has been replaced by the local git repo as the
+ * content cache. This tool is retained to avoid breaking existing callers
+ * but performs no operation.
+ *
+ * To force a fresh remote fetch, use: cat({..., preferLocal: false})
+ * To pull all files from remote, use: rsync({operation: 'pull', scriptId})
  */
 export class CacheClearTool extends BaseFileSystemTool {
   public name = 'cache_clear';
-  public description = '[FILE:CACHE] Clear local metadata cache for a project. WHEN: cache appears stale or after manual remote changes. AVOID: usually unnecessary — cache auto-invalidates on writes. Example: cache_clear({scriptId})';
+  public description = '[FILE:CACHE] No-op: xattr metadata cache removed. Use preferLocal:false on cat for forced remote refresh, or rsync pull for bulk refresh.';
 
   public outputSchema = {
     type: 'object' as const,
     properties: {
-      status: { type: 'string', description: 'Operation status (success)' },
-      path: { type: 'string', description: 'Path that was cleared' },
-      scriptId: { type: 'string', description: 'GAS project ID' },
-      scope: { type: 'string', description: 'Scope of clear (file or project)' },
-      hadMetadata: { type: 'boolean', description: 'Whether cached metadata existed (file)' },
-      cleared: { type: 'boolean', description: 'Whether metadata was cleared (file)' },
-      totalFiles: { type: 'number', description: 'Total files processed (project)' },
-      totalCleared: { type: 'number', description: 'Files with cleared cache (project)' },
-      message: { type: 'string', description: 'Summary message' }
+      status: { type: 'string', description: 'Operation status' },
+      message: { type: 'string', description: 'Migration message' }
     }
   };
 
@@ -36,140 +28,27 @@ export class CacheClearTool extends BaseFileSystemTool {
     properties: {
       path: {
         type: 'string',
-        description: 'Path to file or directory: scriptId/path/to/file (for single file) or scriptId (for entire project). Extensions are automatically added. Clears cached metadata without affecting file content.',
-        pattern: '^[a-zA-Z0-9_-]{25,60}(/[a-zA-Z0-9_.//-]*)?$',
-        minLength: 25,
-        examples: [
-          'abc123def456.../fibonacci',
-          'abc123def456.../utils/helpers',
-          'abc123def456...',  // Clear entire project
-        ],
-        llmHints: {
-          format: 'scriptId/filename (no extension) or scriptId for entire project',
-          extensions: 'Tool automatically handles .gs, .html, .json extensions',
-          scope: 'Single file: clears one file | Project (scriptId only): clears all files',
-          behavior: 'Only clears cached metadata (xattr), does not modify file content',
-          useCase: 'Debug sync issues, force fresh API calls, verify cache behavior'
-        }
+        description: 'Previously: path to clear. Now unused — this tool is a no-op.',
       },
       accessToken: {
         type: 'string',
-        description: 'Access token for stateless operation (optional)'
+        description: 'Access token (unused)'
       }
     },
     required: ['path'],
-    llmGuidance: {
-      whenToUse: 'Debug sync issues | Force fresh API call to verify metadata | Test cache behavior',
-      effect: 'Clears xattr metadata only (not file content) | Next operation re-caches via API'
-    }
   };
 
   public annotations = {
-    title: 'Clear Cache',
+    title: 'Clear Cache (no-op)',
     readOnlyHint: true,
     destructiveHint: false,
-    openWorldHint: true
+    openWorldHint: false
   };
 
-  async execute(params: any): Promise<any> {
-    const path = this.validate.filePath(params.path, 'cache clearing');
-    const parsedPath = parsePath(path);
-
-    // Determine if this is a file or project-wide operation
-    const isProjectWide = !parsedPath.isFile;
-
-    if (isProjectWide) {
-      // Clear cache for entire project
-      return await this.clearProjectCache(parsedPath.scriptId, path);
-    } else {
-      // Clear cache for single file
-      return await this.clearFileCache(parsedPath, path);
-    }
-  }
-
-  private async clearFileCache(parsedPath: any, fullPath: string): Promise<any> {
-    const projectName = parsedPath.scriptId;
-    const filename = parsedPath.filename!;
-
-    // Resolve local file path
-    const fileExtension = LocalFileManager.getFileExtensionFromName(filename);
-    const fullFilename = filename + fileExtension;
-    const projectPath = await LocalFileManager.getProjectDirectory(projectName);
-
-    if (!projectPath) {
-      throw new ValidationError('path', fullPath, 'project not found in local cache');
-    }
-
-    const localFilePath = join(projectPath, fullFilename);
-
-    // Check if metadata exists
-    const hadMetadata = await hasCachedMetadata(localFilePath);
-
-    // Clear metadata
-    await clearGASMetadata(localFilePath);
-
+  async execute(_params: any): Promise<any> {
     return {
-      status: 'success',
-      path: fullPath,
-      scriptId: projectName,
-      filename,
-      hadMetadata,
-      cleared: hadMetadata,
-      message: hadMetadata
-        ? 'Cached metadata cleared successfully. Next operation will use API call.'
-        : 'No cached metadata found (file may not exist or metadata was already cleared).'
-    };
-  }
-
-  private async clearProjectCache(scriptId: string, fullPath: string): Promise<any> {
-    const projectPath = await LocalFileManager.getProjectDirectory(scriptId);
-
-    if (!projectPath) {
-      throw new ValidationError('path', fullPath, 'project not found in local cache');
-    }
-
-    // Get all files in project
-    const { readdir, stat } = await import('fs/promises');
-    const files = await readdir(projectPath);
-
-    const results: Array<{filename: string, hadMetadata: boolean, cleared: boolean}> = [];
-    let totalCleared = 0;
-
-    for (const file of files) {
-      const filePath = join(projectPath, file);
-      const fileStat = await stat(filePath);
-
-      // Only process regular files, skip directories
-      if (!fileStat.isFile()) {
-        continue;
-      }
-
-      // Check and clear metadata
-      const hadMetadata = await hasCachedMetadata(filePath);
-
-      if (hadMetadata) {
-        await clearGASMetadata(filePath);
-        totalCleared++;
-      }
-
-      results.push({
-        filename: file,
-        hadMetadata,
-        cleared: hadMetadata
-      });
-    }
-
-    return {
-      status: 'success',
-      path: fullPath,
-      scriptId,
-      scope: 'project',
-      totalFiles: results.length,
-      totalCleared,
-      files: results,
-      message: totalCleared > 0
-        ? `Cleared cached metadata from ${totalCleared} file(s). Next operations will use API calls.`
-        : 'No cached metadata found in any files.'
+      status: 'no_op',
+      message: 'xattr metadata cache removed; use preferLocal: false on cat for forced remote refresh, or rsync pull for bulk refresh.'
     };
   }
 }
