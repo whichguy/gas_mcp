@@ -161,8 +161,7 @@ export class MvTool extends BaseFileSystemTool {
     const moveResult = gitResult.result;
     const isCrossProject = fromProjectId !== toProjectId;
 
-    // GitOperationManager handles local file overwrite + xattr cache for destination.
-    // Source file deletion + cache clear also handled by GitOperationManager (empty content = delete).
+    // GitOperationManager handles local git mirror updates for source and destination.
 
     // Return response with compact git hints for LLM guidance
     // Exclude wrappedContent from response (internal use only for hash computation)

@@ -551,9 +551,9 @@ export class WriteTool extends BaseFileSystemTool {
           // This ensures hash matches `git hash-object <file>` on local synced files
           const currentRemoteHash = computeGitSha1(existingFile.source || '');
 
-          // Determine expected hash (priority: param > xattr cache)
+          // Determine expected hash (priority: explicit param > local git cache)
           let expectedHash: string | undefined = params.expectedHash;
-          let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+          let hashSource: 'param' | 'local_git' | 'computed' = 'param';
           let localFilePath: string | undefined;
 
           if (!expectedHash) {
@@ -566,7 +566,7 @@ export class WriteTool extends BaseFileSystemTool {
                 localFilePath = join(localRoot, filename + fileExtension);
                 const localContent = await readFile(localFilePath, 'utf-8');
                 expectedHash = computeGitSha1(localContent);
-                hashSource = 'local_git' as any;
+                hashSource = 'local_git';
               }
             } catch {
               // Local git file not available - continue without conflict detection
@@ -615,7 +615,7 @@ export class WriteTool extends BaseFileSystemTool {
 
             // Fall back to info format if unified diff not available
             if (diffFormat === 'info') {
-              const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
+              const hashSourceLabel = hashSource === 'local_git' ? 'local git cache' : 'previous read';
               diffContent = `File was modified externally since your last read.
   Expected hash: ${expectedHash.slice(0, 8)}... (from ${hashSourceLabel})
   Current hash:  ${currentRemoteHash.slice(0, 8)}...
@@ -1002,7 +1002,7 @@ Or use force:true to overwrite (destructive).`;
         }
       }
 
-      // Delegate conflict detection + remote write + xattr/mtime to WriteOperationStrategy
+      // Delegate conflict detection + remote write + local git update to WriteOperationStrategy
       const writeStrategy = new WriteOperationStrategy({
         scriptId,
         filename,
@@ -1017,7 +1017,7 @@ Or use force:true to overwrite (destructive).`;
       });
 
       try {
-        // applyChanges: conflict detection → updateProjectContent → mtime → xattr
+        // applyChanges: conflict detection → updateProjectContent → local git update
         const validatedMap = new Map([[filename, finalContent]]);
         const strategyResult = await writeStrategy.applyChanges(validatedMap);
 
@@ -1293,7 +1293,8 @@ Or use force:true to overwrite (destructive).`;
         const currentRemoteHash = computeGitSha1(existingFile.source || '');
 
         let expectedHash: string | undefined = params.expectedHash;
-        let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+        let hashSource: 'param' | 'local_git' | 'computed' = 'param';
+        let expectedLocalContent: string | undefined;
 
         if (!expectedHash) {
           // Use local git file content as the conflict detection seed
@@ -1303,9 +1304,9 @@ Or use force:true to overwrite (destructive).`;
             if (localRoot) {
               const fileExtension = LocalFileManager.getFileExtensionFromName(gasName);
               const localPath = join(localRoot, gasName + fileExtension);
-              const localContent = await readFile(localPath, 'utf-8');
-              expectedHash = computeGitSha1(localContent);
-              hashSource = 'local_git' as any;
+              expectedLocalContent = await readFile(localPath, 'utf-8');
+              expectedHash = computeGitSha1(expectedLocalContent);
+              hashSource = 'local_git';
             }
           } catch {
             // Local git file not available - continue without conflict detection
@@ -1318,7 +1319,7 @@ Or use force:true to overwrite (destructive).`;
           const diffContent = createTwoFilesPatch(
             `${gasName} (expected)`,
             `${gasName} (current remote)`,
-            '',
+            expectedLocalContent || '',
             existingFile.source || '',
             'baseline from your last read',
             'modified by another session'
@@ -1335,7 +1336,7 @@ Or use force:true to overwrite (destructive).`;
             currentHash: currentRemoteHash,
             hashSource,
             changeDetails: {
-              sizeChange: `${(existingFile.source?.length || 0) - (existingFile.source?.length || 0)} bytes`
+              sizeChange: `${content.length - (existingFile.source?.length || 0)} bytes`
             },
             diff: {
               format: 'unified',
@@ -1486,14 +1487,15 @@ Or use force:true to overwrite (destructive).`;
         const currentRemoteHash = computeGitSha1(existingFile.source || '');
 
         let expectedHash: string | undefined = params.expectedHash;
-        let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+        let hashSource: 'param' | 'local_git' | 'computed' = 'param';
+        let expectedLocalContent: string | undefined;
 
         if (!expectedHash) {
           // Use local git file content as the conflict detection seed
           try {
-            const localContent = await readFile(filePath, 'utf-8');
-            expectedHash = computeGitSha1(localContent);
-            hashSource = 'local_git' as any;
+            expectedLocalContent = await readFile(filePath, 'utf-8');
+            expectedHash = computeGitSha1(expectedLocalContent);
+            hashSource = 'local_git';
           } catch {
             // Local git file not available - continue without conflict detection
           }
@@ -1505,7 +1507,7 @@ Or use force:true to overwrite (destructive).`;
           const diffContent = createTwoFilesPatch(
             `${filename} (expected)`,
             `${filename} (current remote)`,
-            '',
+            expectedLocalContent || '',
             existingFile.source || '',
             'baseline from your last read',
             'modified by another session'
@@ -1522,7 +1524,7 @@ Or use force:true to overwrite (destructive).`;
             currentHash: currentRemoteHash,
             hashSource,
             changeDetails: {
-              sizeChange: `${(existingFile.source?.length || 0)} bytes`
+              sizeChange: `${content.length - (existingFile.source?.length || 0)} bytes`
             },
             diff: {
               format: 'unified',

@@ -15,7 +15,7 @@
 export interface StaleFile {
   /** File name (GAS format, no extension) */
   file: string;
-  /** Hash expected based on previous cat (from xattr cache) */
+  /** Hash expected based on previous cat (from local git cache) */
   expectedHash: string;
   /** Actual hash of current remote content (null if deleted) */
   actualHash: string | null;

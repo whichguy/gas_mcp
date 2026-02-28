@@ -10,7 +10,7 @@
  * Workflow:
  * 1. computeChanges(): package pre-processed content into Map (no remote reads)
  * 2. GitOperationManager writes locally, runs hooks, reads back validated content
- * 3. applyChanges(validatedContent): write to remote GAS, update xattr + mtime
+ * 3. applyChanges(validatedContent): write to remote GAS, update local git cache
  *
  * Rollback:
  * - Restore original remote content if applyChanges fails
@@ -34,7 +34,7 @@ export interface WriteStrategyParams {
   fileType: 'SERVER_JS' | 'HTML' | 'JSON';
   force?: boolean;
   expectedHash?: string;
-  /** Local file path (with extension) for xattr cache and mtime updates */
+  /** Local file path (with extension) for conflict detection seed (local git cache) */
   localFilePath?: string;
   accessToken?: string;
   gasClient: GASClient;
@@ -81,7 +81,7 @@ export class WriteOperationStrategy implements FileOperationStrategy<WriteStrate
    *
    * Receives hook-validated content (may differ from processedContent if hooks
    * reformatted it), performs conflict detection, writes to remote GAS, and
-   * updates local xattr cache + mtime.
+   * updates local git cache via GitOperationManager.
    */
   async applyChanges(validatedContent: Map<string, string>): Promise<WriteStrategyResult> {
     const { scriptId, filename, fileType, force, expectedHash, localFilePath, accessToken, gasClient, prefetchedFiles } = this.params;
@@ -108,16 +108,16 @@ export class WriteOperationStrategy implements FileOperationStrategy<WriteStrate
       const currentRemoteHash = computeGitSha1(existingFile.source || '');
 
       let resolvedExpectedHash: string | undefined = expectedHash;
-      let hashSource: 'param' | 'xattr' | 'computed' = 'param';
+      let hashSource: 'param' | 'local_git' | 'computed' = 'param';
 
       if (!resolvedExpectedHash && localFilePath) {
         // Use local git file content as the conflict detection seed.
         // The local git file stores the same wrapped content written by the last PUT —
-        // computing its hash is equivalent to what xattr cached previously.
+        // computing its hash is equivalent to the prior write's result.
         try {
           const localContent = await readFile(localFilePath, 'utf-8');
           resolvedExpectedHash = computeGitSha1(localContent);
-          hashSource = 'local_git' as any;
+          hashSource = 'local_git';
         } catch {
           // Local git file not available — skip conflict detection
         }
@@ -144,7 +144,7 @@ export class WriteOperationStrategy implements FileOperationStrategy<WriteStrate
         }
 
         if (diffFormat === 'info') {
-          const hashSourceLabel = hashSource === 'xattr' ? 'local cache' : 'previous read';
+          const hashSourceLabel = hashSource === 'local_git' ? 'local git cache' : 'previous read';
           diffContent = `File was modified externally since your last read.
   Expected hash: ${resolvedExpectedHash.slice(0, 8)}... (from ${hashSourceLabel})
   Current hash:  ${currentRemoteHash.slice(0, 8)}...

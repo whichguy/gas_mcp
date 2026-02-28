@@ -205,8 +205,8 @@ export class SyncExecutor {
    * (_main function, __defineModule__ call). We store WRAPPED content locally
    * so file hashes match remote hashes for accurate sync detection.
    *
-   * CRITICAL: After writing, we cache the WRAPPED content hash in xattr so that
-   * sync status checks (which compare local hash vs remote WRAPPED hash) work correctly.
+   * CRITICAL: Files are stored with WRAPPED content so that hashes match remote
+   * WRAPPED hashes for accurate sync detection via local git content comparison.
    *
    * @returns Per-file content analysis hints (non-empty entries only)
    */
