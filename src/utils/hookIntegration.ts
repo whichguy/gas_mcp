@@ -1,7 +1,6 @@
 import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
 import { dirname } from 'path';
 import { spawn } from 'child_process';
-import { clearGASMetadata } from './gasMetadataCache.js';
 
 /**
  * Result of hook-only validation (no commit)
@@ -34,9 +33,7 @@ async function revertLocalFile(
     } else {
       // Delete new file
       await unlink(filePath);
-      // Clear xattr cache to prevent stale hash detection if file is recreated
-      await clearGASMetadata(filePath).catch(() => {});
-      console.error(`🗑️  [HOOK_VALIDATION] Removed new file: ${filename}`);
+console.error(`🗑️  [HOOK_VALIDATION] Removed new file: ${filename}`);
     }
   } catch (error: any) {
     console.error(`⚠️  [HOOK_VALIDATION] Revert failed: ${error.message}`);

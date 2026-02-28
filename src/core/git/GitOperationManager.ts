@@ -19,8 +19,6 @@
 import { mcpLogger } from '../../utils/mcpLogger.js';
 import { FileFilter } from '../../utils/fileFilter.js';
 import { ensureFeatureBranch } from '../../utils/gitAutoCommit.js';
-import { clearGASMetadata, updateCachedContentHash } from '../../utils/gasMetadataCache.js';
-import { computeGitSha1 } from '../../utils/hashUtils.js';
 import { SessionWorktreeManager } from '../../utils/sessionWorktree.js';
 import { buildCompactGitHint, type CompactGitHint } from '../../utils/gitStatus.js';
 // Note: writeLocalAndValidateWithHooks no longer used - GitOperationManager stages only, doesn't commit
@@ -218,10 +216,6 @@ export class GitOperationManager {
               await unlink(filePath);
               mcpLogger.debug('git', `[GIT-MANAGER] Deleted local file: ${fullFilename}`);
 
-              // Clear xattr cache to prevent stale hash detection if file is recreated
-              await clearGASMetadata(filePath).catch(() => {
-                // Non-fatal: xattr may not be supported or file already gone
-              });
             } catch (error: any) {
               if (error.code !== 'ENOENT') {
                 mcpLogger.warning('git', `[GIT-MANAGER] Failed to delete ${fullFilename}: ${error.message}`);
@@ -365,10 +359,8 @@ export class GitOperationManager {
           const fullFilename = filename + ext;
           const filePath = join(localPath, fullFilename);
           await writeFileAsync(filePath, content, 'utf-8');
-          const hash = computeGitSha1(content);
-          await updateCachedContentHash(filePath, hash);
           wrappedFilesWithExt.push(fullFilename);
-          mcpLogger.debug('git', `[GIT-MANAGER] Overwrote local with wrapped content: ${fullFilename} (hash: ${hash.slice(0, 8)}...)`);
+          mcpLogger.debug('git', `[GIT-MANAGER] Overwrote local with wrapped content: ${fullFilename}`);
         }
 
         // Re-stage so git index matches working tree (WRAPPED content).

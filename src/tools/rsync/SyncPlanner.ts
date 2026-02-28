@@ -33,7 +33,6 @@ import {
   unwrapModuleContent,
   validateCommonJsIntegrity,
 } from '../../utils/moduleWrapper.js';
-import { getValidatedContentHash } from '../../utils/gasMetadataCache.js';
 
 /**
  * Error codes for planning phase
@@ -469,19 +468,9 @@ export class SyncPlanner {
         // Convert path to GAS-style filename (remove extension, convert slashes)
         const filename = this.localPathToGasFilename(entryRelPath);
 
-        // Use validated cached hash if available (from previous sync)
-        // Local files are stored WRAPPED (with CommonJS), so file hash = wrapped hash
-        // This ensures hash comparison works correctly with GAS remote files
-        // getValidatedContentHash() checks mtime to detect external modifications
-        let sha1: string;
-        const validatedHash = await getValidatedContentHash(filePath);
-        if (validatedHash) {
-          sha1 = validatedHash.hash;
-        } else {
-          // File doesn't exist or error - compute from file content
-          // File should be WRAPPED content, so direct hash is correct
-          sha1 = computeGitSha1(content);
-        }
+        // Local files are stored WRAPPED (with CommonJS), so file hash = wrapped hash.
+        // Content is already read above — compute hash directly from it.
+        const sha1 = computeGitSha1(content);
 
         files.push({
           filename,
