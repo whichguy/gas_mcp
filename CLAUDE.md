@@ -94,7 +94,7 @@ These systems are **independent** — choose based on whether you need Sheets cu
 ### 4. File Integrity & Caching
 **Checksums:** Git SHA-1 (`sha1("blob "+size+"\0"+content)`) + SHA-256 + MD5 → verify without download
 **Tools:** ls({checksums:true}) quick | file_status({hashTypes:["git-sha1"]}) detailed
-**Metadata Caching:** 85-95% faster (5-50ms vs 800-1200ms) via extended attributes. See [docs/METADATA_CACHING.md](docs/METADATA_CACHING.md)
+**Local Git Cache:** cat reads from local git repo (~1ms hit) when file exists locally; full GET on miss or preferLocal:false. Use cache_clear to see migration note; use preferLocal:false for forced remote refresh.
 
 ### 5. Deployment
 **Tools:** `deploy` (unified — version snapshot + consumer pin + sheet sync) | `deploy_config` (infrastructure — reset/status only)
