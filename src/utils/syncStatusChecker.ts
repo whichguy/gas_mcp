@@ -166,6 +166,7 @@ export async function checkSyncStatus(
     // Get local file path
     const localFileName = getLocalFileName(filename, remoteFile.type || 'SERVER_JS');
     const localFilePath = path.join(syncFolder, localFileName);
+    let resolvedLocalFilePath = localFilePath;  // tracks actual path after extension fallback
 
     let localHash: string | null = null;
     let localFileExists = false;
@@ -177,7 +178,28 @@ export async function checkSyncStatus(
       const localContent = await fs.readFile(localFilePath, 'utf-8');
       localHash = computeGitSha1(localContent);
     } catch {
-      // Local file doesn't exist
+      // Local file doesn't exist — for SERVER_JS, try the alternate extension (.gs ↔ .js)
+    }
+
+    // Extension fallback: SERVER_JS files may be stored locally as either .gs or .js.
+    // If the primary probe failed, retry with the alternate extension before classifying
+    // as remote_only (which is non-blocking and would silently ignore the stale local file).
+    if (!localFileExists && (remoteFile.type?.toUpperCase() === 'SERVER_JS' || !remoteFile.type)) {
+      const currentExt = path.extname(localFileName);
+      const altExt = currentExt === '.gs' ? '.js' : currentExt === '.js' ? '.gs' : null;
+      if (altExt) {
+        const altFileName = path.basename(localFileName, currentExt) + altExt;
+        const altFilePath = path.join(syncFolder, altFileName);
+        try {
+          await fs.access(altFilePath);
+          localFileExists = true;
+          const localContent = await fs.readFile(altFilePath, 'utf-8');
+          localHash = computeGitSha1(localContent);
+          resolvedLocalFilePath = altFilePath;
+        } catch {
+          // Alternate extension also doesn't exist — genuinely remote_only
+        }
+      }
     }
 
     let syncStatus: SyncStatus;
@@ -224,7 +246,7 @@ export async function checkSyncStatus(
       if (includeContent && contentFilesIncluded < maxContentFiles) {
         fileStatus.remoteContent = remoteFile.source || '';
         try {
-          fileStatus.localContent = await fs.readFile(localFilePath, 'utf-8');
+          fileStatus.localContent = await fs.readFile(resolvedLocalFilePath, 'utf-8');
         } catch {
           // Failed to read local, include remote only
         }
