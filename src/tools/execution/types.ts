@@ -25,6 +25,8 @@ export interface ExecutionResult {
   executedAt?: string;
   cookieAuthUsed?: boolean;
   ide_url_hint?: string;
+  /** Present when the pre-flight drift check was skipped (e.g., no auth token available). */
+  syncWarning?: string;
 }
 
 /**

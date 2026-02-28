@@ -277,6 +277,7 @@ export class ExecTool extends BaseTool {
     // When skipSyncCheck=true, we still check but return collision info instead of throwing
     let collisionInfo: CollisionInfo | undefined;
     let remoteFiles: GASFile[] | null = null;
+    let syncWarning: string | undefined;
 
     try {
       // Get auth token for sync check (best-effort, may be null)
@@ -421,6 +422,9 @@ export class ExecTool extends BaseTool {
         }
       } else {
         console.error(`[SYNC CHECK] Skipped (no auth token available)`);
+        if (!skipSyncCheck) {
+          syncWarning = 'Drift check skipped — no auth token available. Remote state unverified.';
+        }
       }
     } catch (error) {
       // If the error is SyncDriftError, re-throw it
@@ -484,10 +488,11 @@ export class ExecTool extends BaseTool {
         return {
           ...result,
           collision: collisionInfo,
+          ...(syncWarning !== undefined && { syncWarning }),
         };
       }
 
-      return result;
+      return syncWarning !== undefined ? { ...result, syncWarning } : result;
     } catch (error: any) {
       mcpLogger.error('exec', { event: 'exec_error', scriptId, error: error.message, durationMs: Date.now() - execStartTime });
 
@@ -532,7 +537,7 @@ export class ExecTool extends BaseTool {
         // Check if autoRedeploy is disabled FIRST (was previously dead code inside && autoRedeploy block)
         if (!autoRedeploy) {
           // Return structured error response when autoRedeploy is disabled
-          return buildExecErrorResponse(
+          const autoRedeployErrResult = buildExecErrorResponse(
             scriptId,
             js_statement,
             {
@@ -544,6 +549,7 @@ export class ExecTool extends BaseTool {
             error.loggerOutput || '',
             { environment: environment, versionNumber: null }
           );
+          return syncWarning !== undefined ? { ...autoRedeployErrResult, syncWarning } : autoRedeployErrResult;
         }
 
         // autoRedeploy is true - proceed with infrastructure setup
@@ -594,7 +600,7 @@ export class ExecTool extends BaseTool {
       }
 
       // Return structured error response with logger output if available (Path 2 - general catch)
-      return buildExecErrorResponse(
+      const execErrResult = buildExecErrorResponse(
         scriptId,
         js_statement,
         {
@@ -606,6 +612,7 @@ export class ExecTool extends BaseTool {
         error.loggerOutput || '',
         { environment: environment, versionNumber: null }
       );
+      return syncWarning !== undefined ? { ...execErrResult, syncWarning } : execErrResult;
     }
   }
 
