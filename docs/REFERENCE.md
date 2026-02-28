@@ -317,7 +317,7 @@ All work identically for both script types.
 
 ### Execution (3 tools)
 
-**`exec`** / **`exec`** - Execute JavaScript dynamically
+**`exec`** - Execute JavaScript dynamically
 - **Standalone**: ✅ Full Support
 - **Container-Bound**: ✅ Full Support
 - **Key Feature**: Automatically captures `Logger.log()` output
@@ -330,6 +330,11 @@ exec({
 })
 // Returns: { result: ..., logger_output: "..." }
 ```
+- **Response fields** (selected):
+  - `result` — execution return value
+  - `logger_output` — captured `Logger.log()` output
+  - `syncWarning` *(optional)* — present when the pre-flight drift check was skipped because no auth token was available; indicates remote state was not verified before execution. Re-authenticate with `auth({mode:"start"})` and retry if drift correctness matters.
+  - `collision` *(optional)* — present when `skipSyncCheck: true` was passed and drift was actively detected during the pre-flight check. Execution still proceeds and the response includes the full execution result alongside the collision details. Mutually exclusive with `syncWarning` (which applies only when no auth token was available and no drift check ran at all).
 
 **`exec_api`** - Convenient function-style execution (transforms to JavaScript and delegates to exec)
 - **Standalone**: ✅ Full Support
