@@ -1,18 +1,13 @@
 // ExecTool: ad-hoc JS execution in GAS runtime with Logger capture
 import { BaseTool } from '../base.js';
 import { GASClient } from '../../api/gasClient.js';
-import { ValidationError, GASApiError, AuthenticationError, SyncDriftError } from '../../errors/mcpErrors.js';
+import { ValidationError, GASApiError, AuthenticationError } from '../../errors/mcpErrors.js';
 import { SessionAuthManager } from '../../auth/sessionManager.js';
 import { CodeGenerator } from '../../utils/codeGeneration.js';
 import { GASFile } from '../../api/gasClient.js';
 import { ProjectResolver, ProjectParam } from '../../utils/projectResolver.js';
 import { getSuccessHtmlTemplate, getErrorHtmlTemplate } from '../project-lifecycle.js';
 import { SchemaFragments } from '../../utils/schemaFragments.js';
-import { checkSyncStatus, type DriftDetails, type FileSyncStatus } from '../../utils/syncStatusChecker.js';
-import { DiffGenerator, generateFolderDiff } from '../../utils/diffGenerator.js';
-import type { DriftFileInfo } from '../../errors/mcpErrors.js';
-import type { CollisionInfo, StaleFile } from '../../types/collisionTypes.js';
-import { buildMultiFileCollision, NO_COLLISIONS } from '../../types/collisionTypes.js';
 import { fileNameMatches } from '../../api/pathParser.js';
 import { validateCommonJSOrdering, formatCommonJSOrderingIssues } from '../../utils/validation.js';
 import { generateExecHints, generateInfrastructureHints, mergeExecHints, ExecHints } from '../../utils/execHints.js';
@@ -152,12 +147,6 @@ export class ExecTool extends BaseTool {
         maximum: 10000,
         examples: [10, 50, 100]
       },
-      skipSyncCheck: {
-        type: 'boolean',
-        description: 'Bypass pre-flight sync check that detects local vs remote drift. Default: false. Set true to execute even if local files are stale.',
-        default: false,
-        examples: [true, false]
-      },
     },
     required: ['scriptId', 'js_statement'],
     additionalProperties: false,
@@ -265,36 +254,26 @@ export class ExecTool extends BaseTool {
       throw new ValidationError('js_statement', js_statement, 'non-empty JavaScript statement');
     }
 
-    const skipSyncCheck = params.skipSyncCheck === true;
-
     // Compact logging
-    console.error(`[EXEC] ${scriptId.substring(0, 12)}... env:${environment} ${js_statement.substring(0, 60)}...${logFilter ? ` filter:"${logFilter.substring(0, 20)}"` : ''}${logTail ? ` tail:${logTail}` : ''}${skipSyncCheck ? ' (sync check skipped)' : ''}`);
+    console.error(`[EXEC] ${scriptId.substring(0, 12)}... env:${environment} ${js_statement.substring(0, 60)}...${logFilter ? ` filter:"${logFilter.substring(0, 20)}"` : ''}${logTail ? ` tail:${logTail}` : ''}`);
     const execStartTime = Date.now();
     mcpLogger.info('exec', { event: 'exec_start', scriptId, statement: js_statement.substring(0, 100) });
 
-    // PRE-FLIGHT SYNC CHECK: Detect drift between local and remote before execution
-    // This prevents executing stale code when local files have diverged from remote
-    // When skipSyncCheck=true, we still check but return collision info instead of throwing
-    let collisionInfo: CollisionInfo | undefined;
+    // PRE-FLIGHT: Fetch remote files for HTML template checks, CommonJS ordering, and infra preflight
     let remoteFiles: GASFile[] | null = null;
-    let syncWarning: string | undefined;
 
     try {
-      // Get auth token for sync check (best-effort, may be null)
-      const syncCheckToken = params.accessToken || await this.tryGetAuthToken();
+      const preflightToken = params.accessToken || await this.tryGetAuthToken();
 
-      if (syncCheckToken) {
-        console.error(`[SYNC CHECK] Checking for local/remote drift...`);
-
-        // Fetch remote files for comparison
-        remoteFiles = await this.gasClient.getProjectContent(scriptId, syncCheckToken);
+      if (preflightToken) {
+        remoteFiles = await this.gasClient.getProjectContent(scriptId, preflightToken);
 
         // Background deploy: detect and repair missing HTML templates without blocking exec
         const hasSuccessHtml = remoteFiles.some(f => fileNameMatches(f.name, 'common-js/__mcp_exec_success'));
         const hasErrorHtml = remoteFiles.some(f => fileNameMatches(f.name, 'common-js/__mcp_exec_error'));
         if (!hasSuccessHtml || !hasErrorHtml) {
-          console.error(`[SYNC CHECK] Missing HTML templates (success:${hasSuccessHtml}, error:${hasErrorHtml}) — deploying in background`);
-          const bgToken = syncCheckToken;
+          console.error(`[PREFLIGHT] Missing HTML templates (success:${hasSuccessHtml}, error:${hasErrorHtml}) — deploying in background`);
+          const bgToken = preflightToken;
           // canUseCache: only when exactly one template is missing. When BOTH are missing, sequential
           // updateFile calls using the same remoteFiles would cause the 2nd write to overwrite the 1st
           // (stale cache lacks the file added by the 1st write).
@@ -315,124 +294,17 @@ export class ExecTool extends BaseTool {
           });
         }
 
-        // Check sync status (excludes system files by default)
-        // Include content for up to 5 files to generate diffs for LLM assistance
-        const { summary, drift } = await checkSyncStatus(scriptId, remoteFiles, {
-          excludeSystemFiles: true,  // Skip common-js/*, __mcp_exec*
-          includeContent: true,      // Include content for diff generation
-          maxContentFiles: 5         // Limit to prevent large responses
-        });
-
-        // If drift detected, either throw error or build collision info
-        // Only local_stale counts as blocking drift — remote_only files were never locally
-        // modified and can't be "stale" (they just haven't been pulled yet)
-        if (summary.stale > 0) {
-          console.error(`[SYNC CHECK] Drift detected: ${summary.stale} stale files${summary.remoteOnly > 0 ? `, ${summary.remoteOnly} remote-only (not blocking)` : ''}`);
-
-          // Generate diffs for files with content
-          const diffGenerator = new DiffGenerator();
-          const MAX_DIFF_LINES = 200;      // Increased from 50 - LLM needs more context
-          const MAX_PREVIEW_CHARS = 2000;  // Increased from 500 - show more of new files
-
-          const staleWithDiffs: DriftFileInfo[] = drift.staleLocal.map((f: FileSyncStatus) => {
-            const info: DriftFileInfo = {
-              filename: f.filename,
-              localHash: f.localHash,
-              remoteHash: f.remoteHash || '',
-              sizeDiff: f.sizeDiff
-            };
-
-            // Generate diff if we have both local and remote content
-            if (f.localContent && f.remoteContent) {
-              const fullDiff = diffGenerator.generateDiff(f.localContent, f.remoteContent, f.filename);
-              const diffLines = fullDiff.split('\n');
-
-              if (diffLines.length > MAX_DIFF_LINES) {
-                info.diff = diffLines.slice(0, MAX_DIFF_LINES).join('\n') +
-                  `\n... (${diffLines.length - MAX_DIFF_LINES} more lines truncated)`;
-              } else {
-                info.diff = fullDiff;
-              }
-            }
-
-            return info;
-          });
-
-          const missingWithPreview: DriftFileInfo[] = drift.missingLocal.map((f: FileSyncStatus) => {
-            const info: DriftFileInfo = {
-              filename: f.filename,
-              remoteHash: f.remoteHash || ''
-            };
-
-            // Include preview of remote content for new files
-            if (f.remoteContent) {
-              if (f.remoteContent.length > MAX_PREVIEW_CHARS) {
-                info.remotePreview = f.remoteContent.substring(0, MAX_PREVIEW_CHARS) +
-                  `\n... (${f.remoteContent.length - MAX_PREVIEW_CHARS} more chars truncated)`;
-              } else {
-                info.remotePreview = f.remoteContent;
-              }
-            }
-
-            return info;
-          });
-
-          if (!skipSyncCheck) {
-            // Default behavior: throw SyncDriftError to block execution
-            throw new SyncDriftError(scriptId, {
-              staleLocal: staleWithDiffs,
-              missingLocal: missingWithPreview
-            });
-          } else {
-            // skipSyncCheck=true: Build collision info for response (warning, not error)
-            // Convert to StaleFile format for CollisionInfo
-            const staleFiles: StaleFile[] = [
-              ...drift.staleLocal.map((f: FileSyncStatus) => ({
-                file: f.filename,
-                expectedHash: f.localHash || '',
-                actualHash: f.remoteHash || null,
-                action: 'modified' as const,
-              })),
-              ...drift.missingLocal.map((f: FileSyncStatus) => ({
-                file: f.filename,
-                expectedHash: '',
-                actualHash: f.remoteHash || null,
-                action: 'created_externally' as const,
-              })),
-            ];
-
-            collisionInfo = buildMultiFileCollision(staleFiles);
-            console.error(`[SYNC CHECK] Drift warning: ${staleFiles.length} stale files (execution proceeding due to skipSyncCheck=true)`);
-          }
-        } else {
-          console.error(`[SYNC CHECK] ✓ ${summary.inSync} files in sync${summary.remoteOnly > 0 ? ` (${summary.remoteOnly} remote-only, not blocking)` : ''}`);
-        }
-
         // Validate CommonJS file ordering (critical for module system to work)
         const orderingResult = validateCommonJSOrdering(remoteFiles);
-        if (!orderingResult.valid) {
-          console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
-          // Log but don't block - the module system may still work in some cases
-          // Severe ordering issues will manifest as runtime errors
-        } else if (orderingResult.issues.length > 0) {
-          // Warnings only - log but don't block
+        if (!orderingResult.valid || orderingResult.issues.length > 0) {
           console.error(`[COMMONJS CHECK] ${formatCommonJSOrderingIssues(orderingResult)}`);
         } else {
           console.error(`[COMMONJS CHECK] ✓ Critical files in correct order`);
         }
-      } else {
-        console.error(`[SYNC CHECK] Skipped (no auth token available)`);
-        if (!skipSyncCheck) {
-          syncWarning = 'Drift check skipped — no auth token available. Remote state unverified.';
-        }
       }
     } catch (error) {
-      // If the error is SyncDriftError, re-throw it
-      if (error instanceof SyncDriftError) {
-        throw error;
-      }
-      // For other errors (network, API), log but don't block execution
-      console.error(`[SYNC CHECK] Warning: Could not verify sync status: ${(error as Error).message}`);
+      // For fetch errors (network, API), log but don't block execution
+      console.error(`[PREFLIGHT] Warning: Could not fetch remote files: ${(error as Error).message}`);
     }
 
     // PRE-FLIGHT INFRASTRUCTURE CHECK: Verify infra readiness using remoteFiles (zero API calls)
@@ -483,16 +355,7 @@ export class ExecTool extends BaseTool {
 
       mcpLogger.info('exec', { event: 'exec_complete', scriptId, durationMs: Date.now() - execStartTime });
 
-      // Include collision info if drift was detected but skipped
-      if (collisionInfo && collisionInfo.hasCollisions) {
-        return {
-          ...result,
-          collision: collisionInfo,
-          ...(syncWarning !== undefined && { syncWarning }),
-        };
-      }
-
-      return syncWarning !== undefined ? { ...result, syncWarning } : result;
+      return result;
     } catch (error: any) {
       mcpLogger.error('exec', { event: 'exec_error', scriptId, error: error.message, durationMs: Date.now() - execStartTime });
 
@@ -549,7 +412,7 @@ export class ExecTool extends BaseTool {
             error.loggerOutput || '',
             { environment: environment, versionNumber: null }
           );
-          return syncWarning !== undefined ? { ...autoRedeployErrResult, syncWarning } : autoRedeployErrResult;
+          return autoRedeployErrResult;
         }
 
         // autoRedeploy is true - proceed with infrastructure setup
@@ -612,7 +475,7 @@ export class ExecTool extends BaseTool {
         error.loggerOutput || '',
         { environment: environment, versionNumber: null }
       );
-      return syncWarning !== undefined ? { ...execErrResult, syncWarning } : execErrResult;
+      return execErrResult;
     }
   }
 
@@ -756,12 +619,11 @@ export class ExecTool extends BaseTool {
     }, timeoutMs);
 
     try {
-      // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
-      // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
+      // POST request with js_statement in body (avoids URL length limits)
       // ADD MCP_RUN PARAMETER: Signal to __mcp_exec handler via URI-based routing
       const separator = executionUrl.includes('?') ? '&' : '?';
-      const encodedJsStatement = encodeURIComponent(js_statement);
-      const finalUrl = `${executionUrl}${separator}_mcp_run=true&func=${encodedJsStatement}`;
+      const finalUrl = `${executionUrl}${separator}_mcp_run=true`;
+      const postBody = JSON.stringify({ func: js_statement });
 
       // Enhanced request headers
       const requestHeaders = {
@@ -783,8 +645,7 @@ export class ExecTool extends BaseTool {
           scriptId: scriptId,
           jsStatement: js_statement,
           baseUrl: executionUrl,
-          originalUrl: finalUrl,
-          testUrl: finalUrl,
+          finalUrl: finalUrl,
           urlConversion: finalUrl !== executionUrl ? '/exec → /dev' : 'no conversion needed',
           requestHeaders: {
             ...requestHeaders,
@@ -800,11 +661,13 @@ export class ExecTool extends BaseTool {
         console.error(`⚡ [DEPLOYMENT_TEST FAST] Executing: ${js_statement} on cached deployment`);
       }
 
-      // AUTOMATIC REDIRECT: Use native browser redirect handling with JSON Accept header
+      // POST request: js_statement in body avoids URL length limit
       const response = await fetch(finalUrl, {
+        method: 'POST',
         headers: requestHeaders,
+        body: postBody,
         signal: abortController.signal,
-        redirect: 'follow' // Automatically follow redirects
+        redirect: 'follow'
       });
 
       // Build complete headers object for logging
@@ -1000,12 +863,11 @@ export class ExecTool extends BaseTool {
     }, timeoutMs);
 
     try {
-      // ADD FUNCTION PARAMETER: Add the js_statement as a func parameter
-      // IMPORTANT: Properly URL-encode the parameter to handle special characters like +, &, =, etc.
+      // POST request with js_statement in body (avoids URL length limits that cause HTTP 400)
       // ADD MCP_RUN PARAMETER: Signal to __mcp_exec handler via URI-based routing
       const separator = executionUrl.includes('?') ? '&' : '?';
-      const encodedJsStatement = encodeURIComponent(js_statement);
-      const finalUrl = `${executionUrl}${separator}_mcp_run=true&func=${encodedJsStatement}`;
+      const finalUrl = `${executionUrl}${separator}_mcp_run=true`;
+      const postBody = JSON.stringify({ func: js_statement });
 
       // Enhanced request headers
       const requestHeaders = {
@@ -1045,11 +907,13 @@ export class ExecTool extends BaseTool {
         console.error(`⚡ [GAS_RUN FAST] Executing: ${js_statement} on cached deployment`);
       }
 
-      // AUTOMATIC REDIRECT HANDLING: Let fetch handle redirects automatically
+      // POST request: js_statement in body avoids URL length limit (GET caused HTTP 400 for >3.5KB payloads)
       const response = await fetch(finalUrl, {
+        method: 'POST',
         headers: requestHeaders,
+        body: postBody,
         signal: abortController.signal,
-        redirect: 'follow' // Automatically follow redirects
+        redirect: 'follow'
       });
 
       // Build complete headers object for logging
@@ -1141,7 +1005,9 @@ export class ExecTool extends BaseTool {
           // After cookie auth, try the request again
           console.error(`[COOKIE AUTH] Retrying request after domain authorization`);
           const retryResponse = await fetch(finalUrl, {
+            method: 'POST',
             headers: requestHeaders,
+            body: postBody,
             signal: abortController.signal,
             redirect: 'follow'
           });
@@ -1279,7 +1145,7 @@ export class ExecTool extends BaseTool {
         (error as any).loggerOutput = loggerOutput;
         (error as any).config = {
           url: executionUrl,
-          method: 'GET'
+          method: 'POST'
         };
         throw error;
       }
